@@ -12,6 +12,14 @@ npm run dev
 
 `npm run build` writes a GitHub Pages bundle to `dist/` (`base` is relative, so it works as a project site). The seed file is `data/library.json`.
 
+## On a phone
+
+After the Pages workflow on `main` succeeds, the site is:
+
+https://bprewitt11-creator.github.io/My-Lead-Sheet/
+
+Song links use the hash (`#/song/10`), so they load from that same page. `public/404.html` sends any other path back to the site root. Pages has to use GitHub Actions as its source (Settings → Pages) before the deploy step can publish.
+
 ## Phase 1
 
 - Library list, song view, setlists list.

@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Lead Sheets</title>
+    <script>
+      // GitHub Pages serves this file for a path that is not a real file.
+      // The app routes on the hash, and its assets are relative to the site
+      // root, so send the browser back to /My-Lead-Sheet/ before it loads.
+      var root = "/My-Lead-Sheet/";
+      if (location.pathname.replace(/\/$/, "") !== "/My-Lead-Sheet") {
+        location.replace(root + location.search + location.hash);
+      }
+    </script>
+  </head>
+  <body>
+    <p><a href="/My-Lead-Sheet/">Lead Sheets</a></p>
+  </body>
+</html>

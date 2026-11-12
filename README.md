@@ -27,6 +27,6 @@ Song links use the hash (`#/song/10`), so they load from that same page. `public
 - A− / A+ scales the sheet. Edit and Delete are in the ••• menu.
 - First visit copies the seed library into `localStorage` (`leadSheetsLibrary`). Song id 12, the empty duplicate of id 13, is not in the seed.
 
-Transpose, Nashville conversion, auto-scroll, the wake lock, Live Mode, editing, and adding songs are later phases. Screen on stores `leadSheetsKeepAwake` and does not call the Wake Lock API yet.
+Phase 2 is in the song header and Live Mode: transpose, Notes | Nashville, BPM auto-scroll, the screen wake lock, and playing a setlist. Editing, delete, and adding songs are still later phases. Screen on stores `leadSheetsKeepAwake` and, while it is On, asks the browser to keep the screen awake.
 
 The behavior spec, the build plan, the original export, and the phone screenshots are in `docs/handoff/`. See `ANALYSIS.md` for the data check and the open questions.

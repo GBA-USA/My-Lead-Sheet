@@ -1,9 +1,14 @@
 import seedLibrary from "../data/library.json";
+import { clampScrollPercent, type Notation } from "./music";
 import type { LibraryFile, Song } from "./types";
 
 export const LIBRARY_KEY = "leadSheetsLibrary";
 export const AWAKE_KEY = "leadSheetsKeepAwake";
 export const TEXT_SCALE_KEY = "leadSheetsTextScale";
+/** Per-song scroll percentage, JSON map of song id → number. */
+export const SCROLL_PERCENT_KEY = "leadSheetsScrollPercent";
+/** Per-song Notes/Nashville choice. The spec stores it per song and does not name the key. */
+export const NOTATION_KEY = "leadSheetsNotation";
 
 /** Sheet body scale. 100% is the default. Steps are a Phase 1 stand-in; the spec doesn't set them. */
 export const TEXT_SCALES = [0.85, 1, 1.15, 1.3, 1.5, 1.7] as const;
@@ -80,4 +85,39 @@ export function tempoText(tempo: number | null): string {
 
 export function songById(songs: Song[], id: number): Song | undefined {
   return songs.find((song) => song.id === id);
+}
+
+function readMap(key: string): Record<string, unknown> {
+  const raw = readRaw(key);
+  if (!raw) return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    /* Treat a bad value as empty and overwrite it on the next save. */
+  }
+  return {};
+}
+
+export function loadScrollPercent(songId: number): number {
+  const value = readMap(SCROLL_PERCENT_KEY)[String(songId)];
+  return clampScrollPercent(typeof value === "number" && Number.isFinite(value) ? value : 100);
+}
+
+export function saveScrollPercent(songId: number, percent: number) {
+  const map = readMap(SCROLL_PERCENT_KEY);
+  map[String(songId)] = clampScrollPercent(percent);
+  writeRaw(SCROLL_PERCENT_KEY, JSON.stringify(map));
+}
+
+export function loadNotation(songId: number): Notation {
+  return readMap(NOTATION_KEY)[String(songId)] === "nashville" ? "nashville" : "notes";
+}
+
+export function saveNotation(songId: number, notation: Notation) {
+  const map = readMap(NOTATION_KEY);
+  map[String(songId)] = notation;
+  writeRaw(NOTATION_KEY, JSON.stringify(map));
 }

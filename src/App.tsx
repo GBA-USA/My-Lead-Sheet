@@ -1,5 +1,7 @@
 import { useEffect, useState, type KeyboardEvent } from "react";
 import { BackIcon, DotsIcon, OverflowMenu, ScreenToggle, SongControls } from "./controls";
+import { useAutoScroll, usePerformance, useWakeLock } from "./hooks";
+import { displayKeyLabel, scrollPixelsPerSecond } from "./music";
 import { LeadSheet } from "./sheet";
 import {
   TEXT_SCALES,
@@ -18,7 +20,8 @@ type TabName = "songs" | "setlists";
 type Route =
   | { name: "songs" }
   | { name: "setlists" }
-  | { name: "song"; id: number; from: TabName };
+  | { name: "song"; id: number; from: TabName }
+  | { name: "live"; setlistId: number; index: number };
 
 type MenuId = "shell" | "song" | null;
 
@@ -26,6 +29,8 @@ function parseHash(hash: string): Route {
   const raw = hash.replace(/^#/, "");
   const path = (raw.split("?")[0] || "/songs").replace(/\/$/, "") || "/songs";
   const query = raw.includes("?") ? raw.slice(raw.indexOf("?") + 1) : "";
+  const live = path.match(/^\/live\/(\d+)(?:\/(\d+))?$/);
+  if (live) return { name: "live", setlistId: Number(live[1]), index: Number(live[2] ?? 0) };
   const match = path.match(/^\/song\/(\d+)$/);
   if (match) {
     const from = new URLSearchParams(query).get("from") === "setlists" ? "setlists" : "songs";
@@ -61,17 +66,39 @@ export function App() {
       ? "setlists"
       : "songs";
 
+  const liveSetlist = route.name === "live" ? library.setlists.find((set) => set.id === route.setlistId) : undefined;
+  const liveIndex =
+    route.name === "live" && liveSetlist
+      ? Math.min(Math.max(route.index, 0), Math.max(liveSetlist.songIds.length - 1, 0))
+      : 0;
+  const liveSong =
+    route.name === "live" && liveSetlist ? songById(library.songs, liveSetlist.songIds[liveIndex] ?? -1) : undefined;
+  const activeSong =
+    route.name === "song" ? songById(library.songs, route.id) : route.name === "live" ? liveSong : undefined;
+
+  const performance = usePerformance(activeSong?.id ?? null);
+  useAutoScroll(
+    performance.scrolling && activeSong != null,
+    activeSong ? scrollPixelsPerSecond(activeSong.tempo, performance.percent) : 0,
+    performance.stopScroll,
+  );
+  useWakeLock(awake);
+
   useEffect(() => {
     document.getElementById("sheet-scroll")?.scrollTo(0, 0);
     setMenu(null);
     const current = parseHash(hash);
-    if (current.name === "song") {
-      const song = songById(library.songs, current.id);
-      document.title = song ? `${song.title} — Lead Sheets` : "Lead Sheets";
-    } else {
-      document.title = "Lead Sheets";
-    }
-  }, [hash, library.songs]);
+    const titleSong =
+      current.name === "song"
+        ? songById(library.songs, current.id)
+        : current.name === "live"
+          ? songById(
+              library.songs,
+              library.setlists.find((set) => set.id === current.setlistId)?.songIds[current.index] ?? -1,
+            )
+          : undefined;
+    document.title = titleSong ? `${titleSong.title} — Lead Sheets` : "Lead Sheets";
+  }, [hash, library.songs, library.setlists]);
 
   const closeMenu = () => setMenu(null);
   const toggleMenu = (id: Exclude<MenuId, null>) => setMenu((current) => (current === id ? null : id));
@@ -95,6 +122,19 @@ export function App() {
     window.location.hash = tab === "songs" ? "#/setlists" : "#/songs";
   };
 
+  const goBack = () => {
+    if (route.name === "song") {
+      window.location.hash = route.from === "setlists" ? "#/setlists" : "#/songs";
+    } else if (route.name === "live") {
+      window.location.hash = "#/setlists";
+    }
+  };
+
+  const goLive = (index: number) => {
+    if (route.name !== "live") return;
+    window.location.hash = `#/live/${route.setlistId}/${index}`;
+  };
+
   return (
     <div className="app">
       <header className="shell-header">
@@ -102,17 +142,13 @@ export function App() {
           type="button"
           className="icon-btn"
           aria-label="Back"
-          disabled={route.name !== "song"}
-          onClick={() => {
-            if (route.name === "song") {
-              window.location.hash = route.from === "setlists" ? "#/setlists" : "#/songs";
-            }
-          }}
+          disabled={route.name !== "song" && route.name !== "live"}
+          onClick={goBack}
         >
           <BackIcon />
         </button>
         <h1 className="shell-title">Lead Sheets</h1>
-        {route.name === "song" ? (
+        {activeSong ? (
           <OverflowMenu
             label="More"
             size="shell"
@@ -129,31 +165,44 @@ export function App() {
         )}
       </header>
 
-      <div className="tabs" role="tablist" aria-label="Library" onKeyDown={onTabKey}>
-        <a href="#/songs" role="tab" aria-selected={tab === "songs"} className={tab === "songs" ? "tab is-selected" : "tab"}>
-          My Songs
-        </a>
-        <a
-          href="#/setlists"
-          role="tab"
-          aria-selected={tab === "setlists"}
-          className={tab === "setlists" ? "tab is-selected" : "tab"}
-        >
-          Setlists
-        </a>
-      </div>
+      {route.name === "live" ? null : (
+        <div className="tabs" role="tablist" aria-label="Library" onKeyDown={onTabKey}>
+          <a href="#/songs" role="tab" aria-selected={tab === "songs"} className={tab === "songs" ? "tab is-selected" : "tab"}>
+            My Songs
+          </a>
+          <a
+            href="#/setlists"
+            role="tab"
+            aria-selected={tab === "setlists"}
+            className={tab === "setlists" ? "tab is-selected" : "tab"}
+          >
+            Setlists
+          </a>
+        </div>
+      )}
 
-      {route.name === "song" ? (
-        <SongHeader
-          library={library}
-          route={route}
+      {activeSong ? (
+        <SongControls
           textIndex={textIndex}
-          awake={awake}
-          menuOpen={menu === "song"}
+          textCount={TEXT_SCALES.length}
           onTextIndex={changeText}
+          awake={awake}
           onAwake={toggleAwake}
+          menuOpen={menu === "song"}
           onMenuToggle={() => toggleMenu("song")}
           onMenuClose={closeMenu}
+          onEdit={closeMenu}
+          onDelete={closeMenu}
+          notation={performance.notation}
+          onNotation={performance.changeNotation}
+          scrolling={performance.scrolling}
+          onToggleScroll={() => performance.setScrolling((on) => !on)}
+          percent={performance.percent}
+          onPercent={performance.changePercent}
+          keyLabel={displayKeyLabel(activeSong, performance.semitones)}
+          onTransposeDown={() => performance.setSemitones((value) => value - 1)}
+          onTransposeUp={() => performance.setSemitones((value) => value + 1)}
+          onOriginalKey={() => performance.setSemitones(0)}
         />
       ) : (
         <div className="list-tools">
@@ -161,58 +210,70 @@ export function App() {
         </div>
       )}
 
+      {route.name === "live" && liveSetlist ? (
+        <div className="live-nav">
+          <button type="button" aria-label="Previous song" disabled={liveIndex <= 0} onClick={() => goLive(liveIndex - 1)}>
+            Prev
+          </button>
+          <span className="live-count">
+            {liveSetlist.name} · {liveIndex + 1}/{liveSetlist.songIds.length}
+          </span>
+          <button
+            type="button"
+            aria-label="Next song"
+            disabled={liveIndex >= liveSetlist.songIds.length - 1}
+            onClick={() => goLive(liveIndex + 1)}
+          >
+            Next
+          </button>
+        </div>
+      ) : null}
+
       <div className="scroll" id="sheet-scroll">
         {route.name === "songs" ? <SongList songs={library.songs} /> : null}
         {route.name === "setlists" ? <SetlistList setlists={library.setlists} songs={library.songs} /> : null}
         {route.name === "song" ? (
-          <SongBody library={library} id={route.id} scale={TEXT_SCALES[textIndex]} />
+          <SongBody
+            library={library}
+            id={route.id}
+            scale={TEXT_SCALES[textIndex]}
+            semitones={performance.semitones}
+            notation={performance.notation}
+          />
+        ) : null}
+        {route.name === "live" ? (
+          liveSong ? (
+            <LeadSheet
+              song={liveSong}
+              scale={TEXT_SCALES[textIndex]}
+              semitones={performance.semitones}
+              notation={performance.notation}
+            />
+          ) : (
+            <div className="missing">
+              <p>That setlist isn&apos;t in this library.</p>
+              <a href="#/setlists">Back to Setlists</a>
+            </div>
+          )
         ) : null}
       </div>
     </div>
   );
 }
 
-function SongHeader({
+function SongBody({
   library,
-  route,
-  textIndex,
-  awake,
-  menuOpen,
-  onTextIndex,
-  onAwake,
-  onMenuToggle,
-  onMenuClose,
+  id,
+  scale,
+  semitones,
+  notation,
 }: {
   library: LibraryFile;
-  route: Extract<Route, { name: "song" }>;
-  textIndex: number;
-  awake: boolean;
-  menuOpen: boolean;
-  onTextIndex: (index: number) => void;
-  onAwake: () => void;
-  onMenuToggle: () => void;
-  onMenuClose: () => void;
+  id: number;
+  scale: number;
+  semitones: number;
+  notation: "notes" | "nashville";
 }) {
-  const song = songById(library.songs, route.id);
-  if (!song) return null;
-  return (
-    <SongControls
-      song={song}
-      textIndex={textIndex}
-      textCount={TEXT_SCALES.length}
-      onTextIndex={onTextIndex}
-      awake={awake}
-      onAwake={onAwake}
-      menuOpen={menuOpen}
-      onMenuToggle={onMenuToggle}
-      onMenuClose={onMenuClose}
-      onEdit={onMenuClose}
-      onDelete={onMenuClose}
-    />
-  );
-}
-
-function SongBody({ library, id, scale }: { library: LibraryFile; id: number; scale: number }) {
   const song = songById(library.songs, id);
   if (!song) {
     return (
@@ -222,7 +283,7 @@ function SongBody({ library, id, scale }: { library: LibraryFile; id: number; sc
       </div>
     );
   }
-  return <LeadSheet song={song} scale={scale} />;
+  return <LeadSheet song={song} scale={scale} semitones={semitones} notation={notation} />;
 }
 
 function SongList({ songs }: { songs: Song[] }) {
@@ -249,7 +310,12 @@ function SetlistList({ setlists, songs }: { setlists: Setlist[]; songs: Song[] }
     <div className="setlists">
       {setlists.map((setlist) => (
         <section key={setlist.id} className="setlist" aria-label={setlist.name}>
-          <h2>{setlist.name}</h2>
+          <div className="setlist-head">
+            <h2>{setlist.name}</h2>
+            <a className="live-launch" href={`#/live/${setlist.id}/0`}>
+              Live
+            </a>
+          </div>
           <ol>
             {setlist.songIds.map((id, index) => {
               const song = songById(songs, id);

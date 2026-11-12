@@ -1,9 +1,27 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import type { ChartLine, Song } from "./types";
+import {
+  displayBassNote,
+  displayChordCell,
+  displayChordLine,
+  displayKeyLabel,
+  type Notation,
+} from "./music";
 import { tempoText } from "./storage";
+import type { ChartLine, Song } from "./types";
 
-export function LeadSheet({ song, scale }: { song: Song; scale: number }) {
+export function LeadSheet({
+  song,
+  scale,
+  semitones,
+  notation,
+}: {
+  song: Song;
+  scale: number;
+  semitones: number;
+  notation: Notation;
+}) {
   const notes = [song.keyNote, song.tempoNote].filter((note) => note.trim().length > 0);
+  const atAGlance = song.atAGlance ? displayChordLine(song.atAGlance, song, semitones, notation) : "";
 
   return (
     <article className="sheet" style={{ fontSize: `calc(16px * ${scale})` }}>
@@ -15,13 +33,13 @@ export function LeadSheet({ song, scale }: { song: Song; scale: number }) {
       {song.sourceNote ? <p className="source">{song.sourceNote}</p> : null}
 
       <p className="meta">
-        Key: {song.keyLabel} • Time: {song.timeSignature} • Tempo: {tempoText(song.tempo)}
+        Key: {displayKeyLabel(song, semitones)} • Time: {song.timeSignature} • Tempo: {tempoText(song.tempo)}
       </p>
 
       {song.feel ? <p className="feel">Feel: {song.feel}</p> : null}
 
       <h2 className="sheet-label">Your bass notes</h2>
-      <BassTable song={song} />
+      <BassTable song={song} semitones={semitones} notation={notation} />
 
       {song.howToPlay ? (
         <>
@@ -30,12 +48,12 @@ export function LeadSheet({ song, scale }: { song: Song; scale: number }) {
         </>
       ) : null}
 
-      <Chart song={song} scale={scale} />
+      <Chart song={song} scale={scale} semitones={semitones} notation={notation} />
 
       {song.atAGlance ? (
         <>
           <h2 className="sheet-label">At a glance</h2>
-          <p className="prose">{song.atAGlance}</p>
+          <p className="prose">{atAGlance}</p>
         </>
       ) : null}
 
@@ -57,7 +75,15 @@ export function LeadSheet({ song, scale }: { song: Song; scale: number }) {
   );
 }
 
-function BassTable({ song }: { song: Song }) {
+function BassTable({
+  song,
+  semitones,
+  notation,
+}: {
+  song: Song;
+  semitones: number;
+  notation: Notation;
+}) {
   return (
     <table className="bass">
       <thead>
@@ -75,9 +101,9 @@ function BassTable({ song }: { song: Song }) {
       <tbody>
         {song.bassNotes.map((note, index) => (
           <tr key={`${note.chord}-${index}`}>
-            <td className="strong">{note.chord}</td>
+            <td className="strong">{displayChordCell(note.chord, note.nashville, song, semitones, notation)}</td>
             <td>{note.nashville}</td>
-            <td className="strong">{note.bassNote}</td>
+            <td className="strong">{displayBassNote(note.bassNote, song, semitones, notation)}</td>
             <td>{note.position}</td>
           </tr>
         ))}
@@ -86,9 +112,19 @@ function BassTable({ song }: { song: Song }) {
   );
 }
 
-function Chart({ song, scale }: { song: Song; scale: number }) {
+function Chart({
+  song,
+  scale,
+  semitones,
+  notation,
+}: {
+  song: Song;
+  scale: number;
+  semitones: number;
+  notation: Notation;
+}) {
   const ref = useRef<HTMLDivElement>(null);
-  const longest = longestAligned(song);
+  const longest = longestAligned(song, semitones, notation);
   const [fontSize, setFontSize] = useState(12);
 
   useLayoutEffect(() => {
@@ -103,7 +139,7 @@ function Chart({ song, scale }: { song: Song; scale: number }) {
     const observer = new ResizeObserver(fit);
     observer.observe(element);
     return () => observer.disconnect();
-  }, [longest, scale]);
+  }, [longest, scale, semitones, notation]);
 
   return (
     <div className="chart" ref={ref}>
@@ -111,7 +147,14 @@ function Chart({ song, scale }: { song: Song; scale: number }) {
         <section key={`${section.heading}-${index}`} className="chart-section">
           <h3 className="chart-heading">{section.heading}</h3>
           {section.lines.map((line, lineIndex) => (
-            <ChartRow key={lineIndex} line={line} fontSize={fontSize} />
+            <ChartRow
+              key={lineIndex}
+              line={line}
+              fontSize={fontSize}
+              song={song}
+              semitones={semitones}
+              notation={notation}
+            />
           ))}
         </section>
       ))}
@@ -119,15 +162,29 @@ function Chart({ song, scale }: { song: Song; scale: number }) {
   );
 }
 
-function ChartRow({ line, fontSize }: { line: ChartLine; fontSize: number }) {
+function ChartRow({
+  line,
+  fontSize,
+  song,
+  semitones,
+  notation,
+}: {
+  line: ChartLine;
+  fontSize: number;
+  song: Song;
+  semitones: number;
+  notation: Notation;
+}) {
   const mono = { fontSize: `${fontSize}px` };
   const paired = line.chords !== undefined;
+  const chords = line.chords === undefined ? "" : displayChordLine(line.chords, song, semitones, notation);
+  const bars = line.bars === undefined ? "" : displayChordLine(line.bars, song, semitones, notation);
   return (
     <>
       {paired ? (
         <div className="pair">
           <div className="chords" style={mono}>
-            {line.chords}
+            {chords}
           </div>
           {line.lyrics !== undefined ? (
             <div className="lyrics" style={mono}>
@@ -140,7 +197,7 @@ function ChartRow({ line, fontSize }: { line: ChartLine; fontSize: number }) {
       ) : null}
       {line.bars !== undefined ? (
         <div className="bars" style={mono}>
-          {line.bars}
+          {bars}
         </div>
       ) : null}
       {line.note !== undefined ? <p className="chart-note">{line.note}</p> : null}
@@ -148,13 +205,13 @@ function ChartRow({ line, fontSize }: { line: ChartLine; fontSize: number }) {
   );
 }
 
-function longestAligned(song: Song): number {
+function longestAligned(song: Song, semitones: number, notation: Notation): number {
   let max = 1;
   for (const section of song.body) {
     for (const line of section.lines) {
-      if (line.chords) max = Math.max(max, line.chords.length);
+      if (line.chords) max = Math.max(max, displayChordLine(line.chords, song, semitones, notation).length);
       if (line.chords && line.lyrics) max = Math.max(max, line.lyrics.length);
-      if (line.bars) max = Math.max(max, line.bars.length);
+      if (line.bars) max = Math.max(max, displayChordLine(line.bars, song, semitones, notation).length);
     }
   }
   return max;

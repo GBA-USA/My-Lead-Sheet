@@ -1,10 +1,9 @@
 import { useEffect, useRef } from "react";
-import type { Song } from "./types";
+import { SCROLL_MAX, SCROLL_MIN, SCROLL_STEP, type Notation } from "./music";
 
 /**
- * Phase 1 draws the song header in the spec's phone and tablet arrangement.
- * Transpose, Nashville conversion, auto-scroll, and the Wake Lock API are Phase 2.
- * Screen on only stores the preference. Text size is wired.
+ * The song header keeps the Phase 1 phone and tablet arrangement.
+ * Edit and Delete stay in the menu and do not change the library.
  */
 
 export function ScreenToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
@@ -51,57 +50,90 @@ export function TextSizeButtons({
   );
 }
 
-function StepButton({ label }: { label: string }) {
+function StepButton({
+  label,
+  onClick,
+  disabled,
+}: {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  const minus = label.startsWith("Transpose down") || label.startsWith("Scroll slower");
   return (
-    <button type="button" className="step" aria-label={label}>
-      {label.startsWith("Transpose down") || label.startsWith("Scroll slower") ? (
-        <MinusIcon />
-      ) : (
-        <PlusIcon />
-      )}
+    <button type="button" className="step" aria-label={label} onClick={onClick} disabled={disabled}>
+      {minus ? <MinusIcon /> : <PlusIcon />}
     </button>
   );
 }
 
-function NotationSwitch() {
+function NotationSwitch({ value, onChange }: { value: Notation; onChange: (next: Notation) => void }) {
   return (
     <div className="notes-switch" role="group" aria-label="Notes or Nashville">
-      <button type="button" aria-pressed="true">
+      <button type="button" aria-pressed={value === "notes"} onClick={() => onChange("notes")}>
         Notes
       </button>
-      <button type="button" aria-pressed="false">
+      <button type="button" aria-pressed={value === "nashville"} onClick={() => onChange("nashville")}>
         Nashville
       </button>
     </div>
   );
 }
 
-function ScrollGroup() {
+function ScrollGroup({
+  on,
+  percent,
+  onToggle,
+  onPercent,
+}: {
+  on: boolean;
+  percent: number;
+  onToggle: () => void;
+  onPercent: (next: number) => void;
+}) {
   return (
     <div className="scroll-group">
-      <button type="button" className="scroll-pill" aria-pressed="false">
+      <button type="button" className={on ? "scroll-pill is-on" : "scroll-pill"} aria-pressed={on} onClick={onToggle}>
         <PlayIcon />
-        Scroll: Off
+        Scroll: {on ? "On" : "Off"}
       </button>
-      <StepButton label="Scroll slower" />
-      <span className="percent">100%</span>
-      <StepButton label="Scroll faster" />
+      <StepButton
+        label="Scroll slower"
+        onClick={() => onPercent(percent - SCROLL_STEP)}
+        disabled={percent <= SCROLL_MIN}
+      />
+      <span className="percent">{percent}%</span>
+      <StepButton
+        label="Scroll faster"
+        onClick={() => onPercent(percent + SCROLL_STEP)}
+        disabled={percent >= SCROLL_MAX}
+      />
     </div>
   );
 }
 
-export function TransposeStrip({ keyLabel }: { keyLabel: string }) {
+export function TransposeStrip({
+  keyLabel,
+  onDown,
+  onUp,
+  onOriginal,
+}: {
+  keyLabel: string;
+  onDown: () => void;
+  onUp: () => void;
+  onOriginal: () => void;
+}) {
   return (
     <div className="transpose">
       <div className="key-cluster">
-        <StepButton label="Transpose down" />
+        <StepButton label="Transpose down" onClick={onDown} />
         <div className="key-readout">
           <span className="key-kicker">KEY</span>
           <span className={keyLabel.length > 18 ? "key-name key-name-long" : "key-name"}>{keyLabel}</span>
         </div>
-        <StepButton label="Transpose up" />
+        <StepButton label="Transpose up" onClick={onUp} />
       </div>
-      <button type="button" className="original">
+      <button type="button" className="original" onClick={onOriginal}>
         Original Key
       </button>
     </div>
@@ -177,7 +209,6 @@ export function OverflowMenu({
 }
 
 export function SongControls({
-  song,
   textIndex,
   textCount,
   onTextIndex,
@@ -188,8 +219,17 @@ export function SongControls({
   onMenuClose,
   onEdit,
   onDelete,
+  notation,
+  onNotation,
+  scrolling,
+  onToggleScroll,
+  percent,
+  onPercent,
+  keyLabel,
+  onTransposeDown,
+  onTransposeUp,
+  onOriginalKey,
 }: {
-  song: Song;
   textIndex: number;
   textCount: number;
   onTextIndex: (index: number) => void;
@@ -200,6 +240,16 @@ export function SongControls({
   onMenuClose: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  notation: Notation;
+  onNotation: (next: Notation) => void;
+  scrolling: boolean;
+  onToggleScroll: () => void;
+  percent: number;
+  onPercent: (next: number) => void;
+  keyLabel: string;
+  onTransposeDown: () => void;
+  onTransposeUp: () => void;
+  onOriginalKey: () => void;
 }) {
   return (
     <div className="controls">
@@ -215,9 +265,14 @@ export function SongControls({
           onDelete={onDelete}
         />
       </div>
-      <NotationSwitch />
-      <ScrollGroup />
-      <TransposeStrip keyLabel={song.keyLabel} />
+      <NotationSwitch value={notation} onChange={onNotation} />
+      <ScrollGroup on={scrolling} percent={percent} onToggle={onToggleScroll} onPercent={onPercent} />
+      <TransposeStrip
+        keyLabel={keyLabel}
+        onDown={onTransposeDown}
+        onUp={onTransposeUp}
+        onOriginal={onOriginalKey}
+      />
     </div>
   );
 }

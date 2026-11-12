@@ -1,0 +1,3236 @@
+{
+  "exportedFrom": "Lead Sheets app (Muse web artifact, slug: lead-sheets)",
+  "exportedFor": "Handover package for Brian Prewitt — Lead Sheets app",
+  "exportedAt": "2026-11-11",
+  "songCount": 16,
+  "songs": [
+    {
+      "id": 1,
+      "title": "Fire Away",
+      "artist": "Chris Stapleton",
+      "keyLabel": "A major",
+      "keyRoot": "A",
+      "keyMode": "major",
+      "keyNote": "Many online charts write this in G with capo 2 — they sound in A; on bass play the A notes below.",
+      "tempo": 116,
+      "tempoNote": "",
+      "timeSignature": "3/4 — waltz, count 1-2-3",
+      "feel": "Slow soul ballad — big, sparse, let notes ring",
+      "sourceNote": "Album version (Traveller, 2015). Length 4:04.",
+      "atAGlance": "Intro (A E F#m D) → Verse 1 → Pre (Bm F#m E) → Chorus (F#m E A D E) → Verse 2 → Pre 2 → Chorus → Chorus → Outro, end on A.",
+      "howToPlay": "In 3/4, hit the root on beat 1 only and let it ring through 2-3. That's the record. As you get comfortable, add a soft 5th or octave on beat 3 in the choruses only. Verses: stay sparse. Do NOT play busy 1-2-3 patterns — the space is the groove. Good walk-ups: D → E → F#m into the chorus, and E → F# → A coming home.",
+      "practiceTip": "Loop the chorus first — it's the same 5-chord loop (6-5-1-4-5) the whole way. Once your hand knows F#m-E-A-D-E without looking, the verses are just 1-5-6-4.",
+      "bassNotes": [
+        {
+          "chord": "A",
+          "nashville": "1",
+          "bassNote": "A",
+          "position": "Open A string (2nd string)"
+        },
+        {
+          "chord": "E",
+          "nashville": "5",
+          "bassNote": "E",
+          "position": "Open E string (top / 4th string)"
+        },
+        {
+          "chord": "F#m",
+          "nashville": "6",
+          "bassNote": "F#",
+          "position": "E string, 2nd fret"
+        },
+        {
+          "chord": "D",
+          "nashville": "4",
+          "bassNote": "D",
+          "position": "Open D string (3rd string)"
+        },
+        {
+          "chord": "Bm",
+          "nashville": "2",
+          "bassNote": "B",
+          "position": "A string, 2nd fret"
+        }
+      ],
+      "body": [
+        {
+          "heading": "INTRO (instrumental — same pattern as the verse start)",
+          "lines": [
+            {
+              "bars": "| A | E | F#m | F#m |"
+            },
+            {
+              "bars": "| A | E | F#m  D | A |"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 1",
+          "lines": [
+            {
+              "chords": "A               E                F#m",
+              "lyrics": "Honey, load up your questions and pick up your sticks and your stones"
+            },
+            {
+              "chords": "A               E                F#m           D             A",
+              "lyrics": "And pretend I'm a shelter for heartaches that don't have a home"
+            }
+          ]
+        },
+        {
+          "heading": "PRE-CHORUS 1",
+          "lines": [
+            {
+              "chords": "Bm                          F#m",
+              "lyrics": "Choose the words that cut like a razor"
+            },
+            {
+              "chords": "Bm                                   F#m               E",
+              "lyrics": "And all that I'll say is..."
+            }
+          ]
+        },
+        {
+          "heading": "CHORUS",
+          "lines": [
+            {
+              "chords": "F#m         E          A        D     E",
+              "lyrics": "Fire away"
+            },
+            {
+              "chords": "F#m                         E",
+              "lyrics": "Take your best shot, show me what you got"
+            },
+            {
+              "chords": "A                 D           E",
+              "lyrics": "Honey, I'm not afraid"
+            },
+            {
+              "chords": "F#m               E           A",
+              "lyrics": "Rear back and take aim and fire away"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 2 (same pattern as Verse 1)",
+          "lines": [
+            {
+              "chords": "A               E                F#m",
+              "lyrics": "Well, I wish I could say that I've never been here before"
+            },
+            {
+              "chords": "A               E                F#m           D                         A",
+              "lyrics": "But you know and I know that I'll always come back for more"
+            }
+          ]
+        },
+        {
+          "heading": "PRE-CHORUS 2",
+          "lines": [
+            {
+              "chords": "Bm                          F#m",
+              "lyrics": "Your love might be my damnation"
+            },
+            {
+              "chords": "Bm                                                     F#m          E",
+              "lyrics": "But I'll cry to my grave"
+            }
+          ]
+        },
+        {
+          "heading": "CHORUS — repeat twice the second time through",
+          "lines": [
+            {
+              "chords": "F#m         E          A        D     E",
+              "lyrics": "Fire away"
+            },
+            {
+              "chords": "F#m                         E",
+              "lyrics": "Take your best shot, show me what you got"
+            },
+            {
+              "chords": "A                 D           E",
+              "lyrics": "Honey, I'm not afraid"
+            },
+            {
+              "chords": "F#m               E           A",
+              "lyrics": "Rear back and take aim and fire away"
+            }
+          ]
+        },
+        {
+          "heading": "OUTRO",
+          "lines": [
+            {
+              "note": "Repeat the chorus chords | F#m | E | A | D E | singing \"Fire away... fire away...\" — END on A. Last bass note: open A string, let it ring out."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Neon Moon",
+      "artist": "Brooks & Dunn",
+      "keyLabel": "A major",
+      "keyRoot": "A",
+      "keyMode": "major",
+      "keyNote": "",
+      "tempo": 102,
+      "tempoNote": "",
+      "timeSignature": "4/4",
+      "feel": "Slow country ballad — lots of space, roots and 5ths, let notes ring",
+      "sourceNote": "Original version (Brand New Man, 1991). The 2019 Reboot version with Kacey Musgraves is in Eb — this sheet is the original, in A.",
+      "atAGlance": "Intro (A D A E) → Verse 1 → Chorus (D E) → Verse 2 → Chorus → Instrumental → Verse 3 → Chorus → Chorus → Outro, end on A.",
+      "howToPlay": "In 4/4, hit the root on beat 1 and let it ring — this is a slow ballad, and the space is the groove. Add the 5th on beat 3 once in a while (A→E, D→A, E→B) when the chorus lifts, and walk up D → E into the chorus. Verses: stay sparse. Do NOT play busy eighth-note runs — the record is mostly whole notes and long tones under the vocal.",
+      "practiceTip": "Loop the chorus first — it is the same D-E-A loop (4-5-1) every time. Once your hand knows D-E-A without looking, the verses are just 1-4-1-5-1. Only three chords in the whole song, so this one is a fast win.",
+      "bassNotes": [
+        {
+          "chord": "A",
+          "nashville": "1",
+          "bassNote": "A",
+          "position": "Open A string (2nd string)"
+        },
+        {
+          "chord": "D",
+          "nashville": "4",
+          "bassNote": "D",
+          "position": "Open D string (3rd string)"
+        },
+        {
+          "chord": "E",
+          "nashville": "5",
+          "bassNote": "E",
+          "position": "Open E string (top / 4th string)"
+        }
+      ],
+      "body": [
+        {
+          "heading": "INTRO (instrumental — same pattern as the verse start)",
+          "lines": [
+            {
+              "bars": "| A | A | D | A |"
+            },
+            {
+              "bars": "| A | E | A | A |"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 1",
+          "lines": [
+            {
+              "chords": "A",
+              "lyrics": "When the sun goes down on my side of town"
+            },
+            {
+              "chords": "A",
+              "lyrics": "That lonesome feeling comes to my door"
+            },
+            {
+              "chords": "D                 A",
+              "lyrics": "And the whole world turns blue"
+            },
+            {
+              "chords": "A",
+              "lyrics": "And there's a rundown bar across the railroad tracks"
+            },
+            {
+              "chords": "A",
+              "lyrics": "I got a table for two, way in the back"
+            },
+            {
+              "chords": "D                 A",
+              "lyrics": "Where I sit alone and think of losing you"
+            },
+            {
+              "chords": "E                              A",
+              "lyrics": "I spend most every night beneath the light of a neon moon"
+            }
+          ]
+        },
+        {
+          "heading": "CHORUS",
+          "lines": [
+            {
+              "chords": "D              E",
+              "lyrics": "Now, if you lose your one and only"
+            },
+            {
+              "chords": "D              E",
+              "lyrics": "There's always room here for the lonely"
+            },
+            {
+              "chords": "D                                        E",
+              "lyrics": "To watch your broken dreams dance in and out of the beams"
+            },
+            {
+              "chords": "A",
+              "lyrics": "Of a neon moon"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 2",
+          "lines": [
+            {
+              "chords": "A",
+              "lyrics": "I think of two young lovers runnin' wild and free"
+            },
+            {
+              "chords": "A",
+              "lyrics": "I close my eyes and sometimes see"
+            },
+            {
+              "chords": "D                 A",
+              "lyrics": "You in the shadows of this smoke-filled room"
+            },
+            {
+              "chords": "A",
+              "lyrics": "No tellin' how many tears I've sat here and cried"
+            },
+            {
+              "chords": "A",
+              "lyrics": "Or how many lies that I've lied"
+            },
+            {
+              "chords": "D                 A",
+              "lyrics": "Tellin' my poor heart he'll come back some day"
+            },
+            {
+              "chords": "E                             A",
+              "lyrics": "Oh, but I'll be alright as long as there's light from a neon moon"
+            }
+          ]
+        },
+        {
+          "heading": "CHORUS — repeat (same as Chorus)",
+          "lines": []
+        },
+        {
+          "heading": "INSTRUMENTAL (oohs — same chords as the chorus)",
+          "lines": [
+            {
+              "bars": "| D | E | D | E |"
+            },
+            {
+              "bars": "| D | E | A | A |"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 3",
+          "lines": [
+            {
+              "chords": "A",
+              "lyrics": "The jukebox plays on, drink by drink"
+            },
+            {
+              "chords": "A",
+              "lyrics": "And the words to every sad song seem to say what I think"
+            },
+            {
+              "chords": "D                 A",
+              "lyrics": "And this pain inside of me, it ain't ever gonna end"
+            },
+            {
+              "chords": "E                             A",
+              "lyrics": "Oh, but I'll be alright as long as there's light from a neon moon"
+            }
+          ]
+        },
+        {
+          "heading": "CHORUS — repeat twice, then OUTRO",
+          "lines": [
+            {
+              "chords": "D                E",
+              "lyrics": "Now, if you lose your one and only"
+            },
+            {
+              "chords": "D                E",
+              "lyrics": "There's always room here for the lonely"
+            },
+            {
+              "chords": "D                                        E",
+              "lyrics": "To watch your broken dreams dance in and out of the beams"
+            },
+            {
+              "chords": "A",
+              "lyrics": "Of a neon moon"
+            },
+            {
+              "note": "Outro: keep the chorus chords going, | D | E | A |, and END on A. Last bass note: open A string, let it ring out."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Say It Ain't So",
+      "artist": "Weezer",
+      "keyLabel": "Eb major",
+      "keyRoot": "Eb",
+      "keyMode": "major",
+      "keyNote": "Sounds Eb; guitar plays E shapes tuned down 1/2 step.",
+      "tempo": 76,
+      "tempoNote": "",
+      "timeSignature": "4/4",
+      "feel": "Quiet verses, loud choruses — follow the dynamics",
+      "sourceNote": "Blue Album, 1994.",
+      "atAGlance": "Intro (Cm G Ab Eb) → Verse 1 → Chorus → Verse 2 → Chorus → Bridge (Bb Bb/A Eb Gb) → Solo (loop) → Chorus → Outro, end on Eb.",
+      "howToPlay": "The verse is a laid-back, almost reggae skank — hit the root on beat 1 and let it ring, light eighth notes underneath. The chorus is a different beast: dig in, driving eighth-note roots, louder. The bridge builds and builds — walk up into it. The guitar is tuned down a half step and plays C#m-G#-A-E shapes; the concert chords below are what the bass plays in standard tuning.",
+      "practiceTip": "Loop the Cm-G-Ab-Eb loop first — it is the whole song except the bridge. Get the verse quiet and the chorus loud before you worry about anything else. The jump G to Ab (3rd to 4th fret, E string) is the one move to drill.",
+      "bassNotes": [
+        {
+          "chord": "Cm",
+          "nashville": "6",
+          "bassNote": "C",
+          "position": "A string, 3rd fret"
+        },
+        {
+          "chord": "G",
+          "nashville": "3",
+          "bassNote": "G",
+          "position": "E string, 3rd fret"
+        },
+        {
+          "chord": "Ab",
+          "nashville": "4",
+          "bassNote": "Ab",
+          "position": "E string, 4th fret"
+        },
+        {
+          "chord": "Eb",
+          "nashville": "1",
+          "bassNote": "Eb",
+          "position": "D string, 1st fret (or A string, 6th fret)"
+        },
+        {
+          "chord": "Bb",
+          "nashville": "5",
+          "bassNote": "Bb",
+          "position": "A string, 1st fret"
+        },
+        {
+          "chord": "Gb",
+          "nashville": "b3",
+          "bassNote": "Gb",
+          "position": "E string, 2nd fret"
+        }
+      ],
+      "body": [
+        {
+          "heading": "INTRO (guitar riff — bass can play roots under it)",
+          "lines": [
+            {
+              "bars": "| Cm | G | Ab | Eb |"
+            },
+            {
+              "bars": "| Cm | G | Ab | Eb |"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 1",
+          "lines": [
+            {
+              "chords": "Cm           G        Ab        Eb",
+              "lyrics": "Somebody's Heine' is crowdin' my icebox"
+            },
+            {
+              "chords": "Cm           G        Ab        Eb",
+              "lyrics": "Somebody's cold one is givin' me chills"
+            },
+            {
+              "chords": "Cm           G        Ab        Eb",
+              "lyrics": "Guess I'll just close my eyes"
+            },
+            {
+              "chords": "Cm      G",
+              "lyrics": "Oh yeah, alright"
+            },
+            {
+              "chords": "Ab        Eb",
+              "lyrics": "Feels good inside"
+            },
+            {
+              "chords": "Cm           G        Ab        Eb",
+              "lyrics": "Flip on the telly, wrestle with Jimmy"
+            },
+            {
+              "chords": "Cm           G        Ab        Eb",
+              "lyrics": "Something is bubbling behind my back"
+            },
+            {
+              "chords": "Cm           G        Ab        Eb",
+              "lyrics": "The bottle is ready to blow"
+            }
+          ]
+        },
+        {
+          "heading": "CHORUS",
+          "lines": [
+            {
+              "chords": "Cm      G      Ab      Eb",
+              "lyrics": "Say it ain't so"
+            },
+            {
+              "chords": "Cm      G      Ab      Eb",
+              "lyrics": "Your drug is a heartbreaker"
+            },
+            {
+              "chords": "Cm      G      Ab      Eb",
+              "lyrics": "Say it ain't so"
+            },
+            {
+              "chords": "Cm      G      Ab      Eb",
+              "lyrics": "My love is a lifetaker"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 2",
+          "lines": [
+            {
+              "chords": "Cm          G         Ab         Eb",
+              "lyrics": "I can't confront you, I never could do"
+            },
+            {
+              "chords": "Cm          G         Ab         Eb",
+              "lyrics": "That which might hurt you, so try and be cool"
+            },
+            {
+              "chords": "Cm          G         Ab         Eb",
+              "lyrics": "When I say, this way is a waterslide away from me"
+            },
+            {
+              "chords": "Cm          G         Ab         Eb",
+              "lyrics": "That takes you further every day"
+            },
+            {
+              "chords": "Cm      G",
+              "lyrics": "So be cool"
+            }
+          ]
+        },
+        {
+          "heading": "BRIDGE",
+          "lines": [
+            {
+              "chords": "Bb        Bb/A      Eb        Gb",
+              "lyrics": "Dear Daddy, I write you in spite of years of silence"
+            },
+            {
+              "chords": "Bb        Bb/A      Eb        Gb",
+              "lyrics": "You've cleaned up, found Jesus, things are good or so I hear"
+            },
+            {
+              "chords": "Bb        Bb/A      Eb        Gb",
+              "lyrics": "This bottle of Steven's awakens ancient feelings"
+            },
+            {
+              "chords": "Bb        Bb/A      Eb        Gb",
+              "lyrics": "Like father, stepfather, the son is drowning in the flood"
+            },
+            {
+              "lyrics": "Yeah, yeah, yeah, yeah, yeah"
+            }
+          ]
+        },
+        {
+          "heading": "CHORUS — repeat, then GUITAR SOLO (same loop), then CHORUS again",
+          "lines": [
+            {
+              "bars": "| Cm | G | Ab | Eb | (x4 per chorus)"
+            },
+            {
+              "note": "OUTRO: last chorus chords, end on Eb. Last bass note: Eb, D string 1st fret, let it ring out."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "The Middle",
+      "artist": "Jimmy Eat World",
+      "keyLabel": "D major",
+      "keyRoot": "D",
+      "keyMode": "major",
+      "keyNote": "",
+      "tempo": 162,
+      "tempoNote": "",
+      "timeSignature": "4/4",
+      "feel": "Driving pop-punk — eighth-note roots the whole way, don't let up",
+      "sourceNote": "Bleed American, 2001.",
+      "atAGlance": "Intro → Verse 1 → Chorus → Verse 2 → Chorus x2 → Solo (A D A D G D A) → Verse 3 → Chorus x2 → Outro, end on D.",
+      "howToPlay": "In 4/4 at ~162 bpm, play driving eighth-note roots all the way through — verses a little muted and tight, choruses open and loud. All three notes are open strings, so your fretting hand is free: the work is all in the right hand keeping the eighths even. Optional bass intro riff from the tab: A string 9-5-9-7-4-5-4-5, then straight into the verse.",
+      "practiceTip": "Loop D-A-G-D at tempo until the eighths are automatic — the whole song is that loop except the solo section. If 162 bpm is too fast at first, practice at 120 and work up; the pattern never changes, only the speed.",
+      "bassNotes": [
+        {
+          "chord": "D",
+          "nashville": "1",
+          "bassNote": "D",
+          "position": "Open D string (3rd string)"
+        },
+        {
+          "chord": "A",
+          "nashville": "5",
+          "bassNote": "A",
+          "position": "Open A string (2nd string)"
+        },
+        {
+          "chord": "G",
+          "nashville": "4",
+          "bassNote": "G",
+          "position": "Open G string (1st string)"
+        }
+      ],
+      "body": [
+        {
+          "heading": "INTRO (bass riff, then verse chords)",
+          "lines": [
+            {
+              "bars": "| D | A | G | D |"
+            },
+            {
+              "bars": "| D | A | G | D |"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 1",
+          "lines": [
+            {
+              "chords": "D           A           G           D",
+              "lyrics": "Hey, don't write yourself off yet"
+            },
+            {
+              "chords": "D           A           G           D",
+              "lyrics": "It's only in your head you feel left out or looked down on"
+            },
+            {
+              "chords": "D           A           G           D",
+              "lyrics": "Just try your best, try everything you can"
+            },
+            {
+              "chords": "D           A           G           D",
+              "lyrics": "And don't you worry what they tell themselves when you're away"
+            }
+          ]
+        },
+        {
+          "heading": "CHORUS",
+          "lines": [
+            {
+              "chords": "D                       A",
+              "lyrics": "It just takes some time, little girl"
+            },
+            {
+              "chords": "G                       D",
+              "lyrics": "You're in the middle of the ride"
+            },
+            {
+              "chords": "D           A           G            D",
+              "lyrics": "Everything, everything will be just fine"
+            },
+            {
+              "chords": "D           A           G            D",
+              "lyrics": "Everything, everything will be all right, all right"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 2",
+          "lines": [
+            {
+              "chords": "D           A           G           D",
+              "lyrics": "Hey, you know they're all the same"
+            },
+            {
+              "chords": "D           A           G           D",
+              "lyrics": "You know you're doing better on your own, so don't buy in"
+            },
+            {
+              "chords": "D           A           G           D",
+              "lyrics": "Live right now, yeah, just be yourself"
+            },
+            {
+              "chords": "D           A           G           D",
+              "lyrics": "It doesn't matter if it's good enough for someone else"
+            }
+          ]
+        },
+        {
+          "heading": "CHORUS — repeat twice",
+          "lines": [
+            {
+              "bars": "| D | A | G | D | (chorus chords, twice through)"
+            }
+          ]
+        },
+        {
+          "heading": "SOLO SECTION",
+          "lines": [
+            {
+              "bars": "| A | D | A | D | G | D | A |"
+            },
+            {
+              "note": "Two bars each, then back to the verse chords."
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 3",
+          "lines": [
+            {
+              "chords": "D           A           G           D",
+              "lyrics": "Hey, don't write yourself off yet"
+            },
+            {
+              "chords": "D           A           G           D",
+              "lyrics": "It's only in your head you feel left out or looked down on"
+            },
+            {
+              "chords": "D           A           G           D",
+              "lyrics": "Just do your best, do everything you can"
+            },
+            {
+              "chords": "D           A           G           D",
+              "lyrics": "And don't you worry what the bitter hearts are gonna say"
+            }
+          ]
+        },
+        {
+          "heading": "CHORUS — repeat twice, then OUTRO",
+          "lines": [
+            {
+              "bars": "| D | A | G | D | end on D."
+            },
+            {
+              "note": "Last bass note: open D string, let it ring out."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Take Me Out",
+      "artist": "Franz Ferdinand",
+      "keyLabel": "E minor",
+      "keyRoot": "E",
+      "keyMode": "minor",
+      "keyNote": "",
+      "tempo": null,
+      "tempoNote": "Two tempos: verse ~122 bpm, riff ~104 bpm",
+      "timeSignature": "4/4",
+      "feel": "Tense, staccato verse, then the famous chugging riff — the bass carries it",
+      "sourceNote": "Franz Ferdinand, 2004.",
+      "atAGlance": "Intro (Em, fast) → Verse 1 → Link → Riff/Chorus 1 → Verse 2 → Chorus 2 → Middle 8 → Hook x4 → Riff/Outro, end on Em.",
+      "howToPlay": "The verse is short, punchy notes — follow the vocal and stay tense. Then the tempo DROPS into the riff: steady chugging eighth notes on the root, Em-Am-Bm, and do not rush it. That tempo change is the whole trick of the song. F# shows up in the walk as D/F# — E string, 2nd fret.",
+      "practiceTip": "Practice the tempo drop on its own: count the verse fast, then settle into the riff at ~104 and stay there. Loop Em-Am-Bm until the riff is automatic — once your hand knows E-A-B without looking, the verses are just the Am-D-G-Bm-Em walk.",
+      "bassNotes": [
+        {
+          "chord": "Em",
+          "nashville": "1",
+          "bassNote": "E",
+          "position": "Open E string (top / 4th string)"
+        },
+        {
+          "chord": "Am",
+          "nashville": "4",
+          "bassNote": "A",
+          "position": "Open A string (2nd string)"
+        },
+        {
+          "chord": "Bm",
+          "nashville": "5",
+          "bassNote": "B",
+          "position": "A string, 2nd fret"
+        },
+        {
+          "chord": "D",
+          "nashville": "b7",
+          "bassNote": "D",
+          "position": "Open D string (3rd string)"
+        },
+        {
+          "chord": "G",
+          "nashville": "b3",
+          "bassNote": "G",
+          "position": "Open G string (1st string)"
+        }
+      ],
+      "body": [
+        {
+          "heading": "INTRO (fast — pumping E roots)",
+          "lines": [
+            {
+              "bars": "| Em | Em | Em | Em |"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 1 (bass walk: Am - D - G - Bm - Em)",
+          "lines": [
+            {
+              "chords": "Am         D          G            Bm     Em",
+              "lyrics": "So if you're lonely, you know I'm here waiting for you"
+            },
+            {
+              "chords": "Am         D          G            Bm     Em",
+              "lyrics": "I'm just a crosshair, I'm just a shot away from you"
+            },
+            {
+              "chords": "Am         D          G            Bm     Em",
+              "lyrics": "And if you leave here, you leave me broken, shattered, I lie"
+            },
+            {
+              "chords": "Am         D          G            Bm     Em",
+              "lyrics": "I'm just a crosshair, I'm just a shot, then we can die"
+            }
+          ]
+        },
+        {
+          "heading": "LINK",
+          "lines": [
+            {
+              "chords": "G     Am    Em      G     D     Em",
+              "lyrics": "I know I won't be leaving here with you"
+            }
+          ]
+        },
+        {
+          "heading": "RIFF / CHORUS 1 (tempo drops to ~104 — chug it)",
+          "lines": [
+            {
+              "chords": "Em         Em        Am          Bm",
+              "lyrics": "I say, don't you know? You say, you don't know"
+            },
+            {
+              "chords": "Em         Em        Am          Bm",
+              "lyrics": "I say, take me out"
+            },
+            {
+              "chords": "Em         Em        Am          Bm",
+              "lyrics": "I say, you don't show, don't move, time is slow"
+            },
+            {
+              "chords": "Em         Em        Am          Bm",
+              "lyrics": "I say, take me out"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 2 — same as Verse 1",
+          "lines": [
+            {
+              "bars": "Am - D - G - Bm - Em (same lyrics as Verse 1)"
+            }
+          ]
+        },
+        {
+          "heading": "CHORUS 2",
+          "lines": [
+            {
+              "chords": "Em        Em        Am        Bm",
+              "lyrics": "I say, you don't know, you say, you don't go"
+            },
+            {
+              "chords": "Em        Em        Am        Bm",
+              "lyrics": "I say, take me out"
+            },
+            {
+              "chords": "Em        Em        Am        Bm",
+              "lyrics": "If I move, this could die, if eyes move, this could die"
+            },
+            {
+              "chords": "Em        Em        Am        Bm",
+              "lyrics": "I want you to take me out"
+            }
+          ]
+        },
+        {
+          "heading": "MIDDLE 8 + HOOK + OUTRO",
+          "lines": [
+            {
+              "note": "Middle 8: descending bass walk Am - C - G - D - E (follow the recording, one bar each), then the hook four times:"
+            },
+            {
+              "chords": "G       Am       Em         G           D       Em",
+              "lyrics": "I know I won't be leaving here with you (x4)"
+            },
+            {
+              "bars": "| Em | Em | Am | Bm | riff to the end, finish on Em."
+            },
+            {
+              "note": "Last bass note: open E string, let it ring out."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Jumper",
+      "artist": "Third Eye Blind",
+      "keyLabel": "C major",
+      "keyRoot": "C",
+      "keyMode": "major",
+      "keyNote": "",
+      "tempo": 90,
+      "tempoNote": "",
+      "timeSignature": "4/4",
+      "feel": "Urgent but steady — the chorus opens the song, verses stay moving",
+      "sourceNote": "Third Eye Blind, 1997.",
+      "atAGlance": "Chorus → Verse 1 → Chorus → Verse 2 → Chorus → Solo (F-C-G) → Bridge (Dm-F) → Chorus x3 → Outro, end on C.",
+      "howToPlay": "The chorus is steady eighth-note roots, F-C-G, and it opens the song — so you start on the hook. Verses are lighter, Am-C-G, following the vocal. The turnaround into 'put the past away' is Am-Dsus2-C: walk A up to D, then home to C. Bridge is Dm-F, let it breathe.",
+      "practiceTip": "The Fmaj7-C-G loop is the whole hook, and it opens the song — get F (1st fret, E string) to C (3rd fret, A string) clean before adding the verses. The verses are just Am-C-G with the Am-Dsus2-C turnaround.",
+      "bassNotes": [
+        {
+          "chord": "Fmaj7",
+          "nashville": "4",
+          "bassNote": "F",
+          "position": "E string, 1st fret"
+        },
+        {
+          "chord": "C",
+          "nashville": "1",
+          "bassNote": "C",
+          "position": "A string, 3rd fret"
+        },
+        {
+          "chord": "G",
+          "nashville": "5",
+          "bassNote": "G",
+          "position": "E string, 3rd fret"
+        },
+        {
+          "chord": "Am",
+          "nashville": "6",
+          "bassNote": "A",
+          "position": "Open A string (2nd string)"
+        },
+        {
+          "chord": "Dm",
+          "nashville": "2",
+          "bassNote": "D",
+          "position": "Open D string (3rd string)"
+        },
+        {
+          "chord": "Dsus2",
+          "nashville": "2",
+          "bassNote": "D",
+          "position": "Open D string (3rd string)"
+        }
+      ],
+      "body": [
+        {
+          "heading": "CHORUS (opens the song)",
+          "lines": [
+            {
+              "chords": "Fmaj7              C          G",
+              "lyrics": "I wish you would step back from that ledge, my friend"
+            },
+            {
+              "chords": "Fmaj7              C          G",
+              "lyrics": "You could cut ties with all the lies that you've been living in"
+            },
+            {
+              "chords": "Fmaj7              C          G",
+              "lyrics": "And if you do not want to see me again"
+            },
+            {
+              "chords": "Fmaj7              C          G",
+              "lyrics": "I would understand, I would understand"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 1",
+          "lines": [
+            {
+              "chords": "Am        C         G",
+              "lyrics": "The angry boy, a bit too insane"
+            },
+            {
+              "chords": "Am        C         G",
+              "lyrics": "Icing over a secret pain, you know you don't belong"
+            },
+            {
+              "chords": "Am        C         G",
+              "lyrics": "You're the first to fight, you're way too loud"
+            },
+            {
+              "chords": "Am        C         G",
+              "lyrics": "You're the flash of light on a burial shroud, I know something's wrong"
+            },
+            {
+              "chords": "Am              Dsus2       C",
+              "lyrics": "Well, everyone I know has got a reason"
+            },
+            {
+              "chords": "Am              Dsus2       C",
+              "lyrics": "To say, put the past away"
+            }
+          ]
+        },
+        {
+          "heading": "CHORUS — repeat",
+          "lines": [
+            {
+              "bars": "| Fmaj7 | C | G | (chorus chords, full chorus)"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 2",
+          "lines": [
+            {
+              "chords": "Am            C              G",
+              "lyrics": "Well, he's on the table and he's gone to code"
+            },
+            {
+              "chords": "Am        C         G",
+              "lyrics": "And I do not think anyone knows what they're doing here"
+            },
+            {
+              "chords": "Am        C         G",
+              "lyrics": "And your friends have left you, you've been dismissed"
+            },
+            {
+              "chords": "Am        C         G",
+              "lyrics": "I never thought it would come to this, and I, I want you to know"
+            },
+            {
+              "chords": "Am              Dsus2       C",
+              "lyrics": "Everyone's got to face down the demons"
+            },
+            {
+              "chords": "Am              Dsus2       C",
+              "lyrics": "Maybe today, you could put the past away"
+            }
+          ]
+        },
+        {
+          "heading": "GUITAR SOLO (chorus chords)",
+          "lines": [
+            {
+              "bars": "| Fmaj7 | C | G | (x4)"
+            }
+          ]
+        },
+        {
+          "heading": "BRIDGE",
+          "lines": [
+            {
+              "chords": "Dm              F",
+              "lyrics": "Can you put the past away"
+            }
+          ]
+        },
+        {
+          "heading": "CHORUS — repeat three times, then OUTRO",
+          "lines": [
+            {
+              "bars": "| Fmaj7 | C | G | end on C."
+            },
+            {
+              "note": "Last bass note: C, A string 3rd fret, let it ring out."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Possum Kingdom",
+      "artist": "Toadies",
+      "keyLabel": "E major (E-centered)",
+      "keyRoot": "E",
+      "keyMode": "major",
+      "keyNote": "E-centered",
+      "tempo": 101,
+      "tempoNote": "",
+      "timeSignature": "7/4 on the verse riff — count 7, not 4",
+      "feel": "Jagged and tense in the verse, straight-ahead quarter notes in the chorus. The riff is the song — lock in with the drums before you add anything fancy",
+      "sourceNote": "Rubberneck, 1994.",
+      "atAGlance": "Intro riff → Verse 1 → Pre-chorus → Chorus → Verse 2 → Pre-chorus → Chorus → Bridge (Give it up to me, x3) → Instrumental → \"Do you wanna die?\" x8 → Final chorus → Outro, end on E7.",
+      "howToPlay": "The verse is one riff, over and over — E7, E7, E7, Asus4-A. Hit the root on beat 1 and ride it; the guitar riff does the moving, you hold the floor. Count the riff in 7 (1-2-3-4-5-6-7) or you will keep landing a beat early. The chorus is the release: steady quarter-note roots, F# - A - E - G#7, then A - D/F# - E7. The bridge walks up A - G#7 - C#7 - F#m - G#7 - C#7 - B, and the \"Do you wanna die?\" ending is just the verse riff again, louder.",
+      "practiceTip": "Count the verse riff out loud in 7 before you touch the bass — 1-2-3-4-5-6-7, E-E-E-A — until the 7 feels natural. Once the riff is in your hands, the chorus is just four quarter-note roots (F#-A-E-G#7) and the bridge is a straight walk up A-G#-C#-F#-G#-C#-B. The whole song is roots; the odd time is the hard part, not the notes.",
+      "bassNotes": [
+        {
+          "chord": "E7",
+          "nashville": "1",
+          "bassNote": "E",
+          "position": "Open E string (top / 4th string)"
+        },
+        {
+          "chord": "A / Asus4",
+          "nashville": "4",
+          "bassNote": "A",
+          "position": "Open A string (2nd string)"
+        },
+        {
+          "chord": "F#",
+          "nashville": "2",
+          "bassNote": "F#",
+          "position": "E string, 2nd fret"
+        },
+        {
+          "chord": "G#7",
+          "nashville": "3",
+          "bassNote": "G#",
+          "position": "E string, 4th fret"
+        },
+        {
+          "chord": "D / D/F#",
+          "nashville": "b7",
+          "bassNote": "D (F# in bass)",
+          "position": "Open D string (3rd string)"
+        },
+        {
+          "chord": "C#7",
+          "nashville": "6",
+          "bassNote": "C#",
+          "position": "A string, 4th fret"
+        },
+        {
+          "chord": "B",
+          "nashville": "5",
+          "bassNote": "B",
+          "position": "A string, 2nd fret"
+        }
+      ],
+      "body": [
+        {
+          "heading": "INTRO (guitar riff — bass can play roots under it)",
+          "lines": [
+            {
+              "bars": "| E7 | E7 | E7 | Asus4 - A | (x2)"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 1",
+          "lines": [
+            {
+              "chords": "E7                 Asus4                A",
+              "lyrics": "Make up your mind"
+            },
+            {
+              "chords": "E7                 Asus4                A",
+              "lyrics": "Decide to walk with me"
+            },
+            {
+              "chords": "E7                 Asus4                A",
+              "lyrics": "Around the lake tonight"
+            },
+            {
+              "chords": "E7                 Asus4                A",
+              "lyrics": "Around the lake tonight"
+            },
+            {
+              "chords": "E7                 Asus4                A",
+              "lyrics": "By my side, (riff)"
+            },
+            {
+              "chords": "E7                 Asus4                A",
+              "lyrics": "By my side, (riff)"
+            }
+          ]
+        },
+        {
+          "heading": "PRE-CHORUS",
+          "lines": [
+            {
+              "chords": "E7                 Asus4 A",
+              "lyrics": "I'm not gonna lie"
+            },
+            {
+              "chords": "E7                 Asus4 A",
+              "lyrics": "I'll not be a gentleman"
+            },
+            {
+              "chords": "E7                 Asus4 A",
+              "lyrics": "Behind the boathouse"
+            },
+            {
+              "chords": "E7                 Asus4 A",
+              "lyrics": "I'll show you my dark secret"
+            },
+            {
+              "bars": "| E7 | E7 | E7 | Asus4 - A | (riff, x2)"
+            },
+            {
+              "chords": "E7                  Asus4 A",
+              "lyrics": "I'm not gonna lie"
+            },
+            {
+              "chords": "E7                  Asus4 A",
+              "lyrics": "I want you for mine"
+            },
+            {
+              "chords": "E7                  Asus4 A",
+              "lyrics": "My blushing bride"
+            },
+            {
+              "chords": "E7                  Asus4 A",
+              "lyrics": "My lover, be my lover, yeah"
+            }
+          ]
+        },
+        {
+          "heading": "CHORUS (quarter notes)",
+          "lines": [
+            {
+              "chords": "F#      A     E        G#7   A",
+              "lyrics": "Don't be afraid, I didn't mean to scare you"
+            },
+            {
+              "chords": "D/F#          E7",
+              "lyrics": "So help me Jesus"
+            },
+            {
+              "bars": "| E7 | E7 | E7 | Asus4 - A | (riff, x2)"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 2",
+          "lines": [
+            {
+              "chords": "E7                 Asus4   A",
+              "lyrics": "I can promise you"
+            },
+            {
+              "chords": "E7                 Asus4   A",
+              "lyrics": "You'll stay as beautiful"
+            },
+            {
+              "chords": "E7                 Asus4   A",
+              "lyrics": "With dark hair,"
+            },
+            {
+              "chords": "E7                 Asus4   A",
+              "lyrics": "And soft skin"
+            },
+            {
+              "chords": "E7                 Asus4   A",
+              "lyrics": "Forever,"
+            },
+            {
+              "chords": "E7                 Asus4   A",
+              "lyrics": "Forever,"
+            }
+          ]
+        },
+        {
+          "heading": "PRE-CHORUS",
+          "lines": [
+            {
+              "chords": "E7                 Asus4   A",
+              "lyrics": "Make up your mind"
+            },
+            {
+              "chords": "E7                 Asus4   A",
+              "lyrics": "Make up your mind"
+            },
+            {
+              "chords": "E7",
+              "lyrics": "And I'll promise you"
+            }
+          ]
+        },
+        {
+          "heading": "CHORUS — repeat",
+          "lines": [
+            {
+              "chords": "F#      A     E      G#7     A",
+              "lyrics": "I will treat you well, my sweet angel"
+            },
+            {
+              "chords": "D/F#          E7",
+              "lyrics": "So help me Jesus (hey, ah)"
+            }
+          ]
+        },
+        {
+          "heading": "BRIDGE",
+          "lines": [
+            {
+              "chords": "A       G#7  C#7",
+              "lyrics": "Give it up to me"
+            },
+            {
+              "chords": "F#m     G#   C#7",
+              "lyrics": "Give it up to me"
+            },
+            {
+              "chords": "D       G#",
+              "lyrics": "Do you want to be"
+            },
+            {
+              "chords": "C#7     B",
+              "lyrics": "My angel?"
+            },
+            {
+              "note": "Repeat the bridge 3 times in total; third time ends:"
+            },
+            {
+              "chords": "A       D",
+              "lyrics": "So help me!"
+            }
+          ]
+        },
+        {
+          "heading": "INSTRUMENTAL (verse riff, x2) — then the ending",
+          "lines": [
+            {
+              "bars": "| E7 | E7 | E7 | A - A |   Be my angel (sung over the bass line, x3)"
+            }
+          ]
+        },
+        {
+          "heading": "DO YOU WANNA DIE? (verse riff, building)",
+          "lines": [
+            {
+              "chords": "E7                 Asus4 A",
+              "lyrics": "Do you wanna die?"
+            },
+            {
+              "chords": "E7                 Asus4 A",
+              "lyrics": "Do you wanna die?"
+            },
+            {
+              "chords": "E7                 Asus4 A",
+              "lyrics": "Do you wanna die?"
+            },
+            {
+              "chords": "E7                 Asus4 A",
+              "lyrics": "Do you wanna die?"
+            },
+            {
+              "note": "Repeat once more, building — 8 in total; last one ends:"
+            },
+            {
+              "chords": "E7                 Asus4 A",
+              "lyrics": "Do you wanna die? Well, I promise you"
+            }
+          ]
+        },
+        {
+          "heading": "CHORUS — final",
+          "lines": [
+            {
+              "chords": "F#      A      E     G#7     A",
+              "lyrics": "I will treat you well, my sweet angel"
+            },
+            {
+              "chords": "D/F#           E7",
+              "lyrics": "So help me Jesus"
+            },
+            {
+              "lyrics": "Jesus... Jesus... Jesus... — slow down on the last E7 and let it ring out."
+            },
+            {
+              "note": "Last bass note: E, open E string, let it ring out."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Truth",
+      "artist": "Luke Bower",
+      "keyLabel": "Bb major",
+      "keyRoot": "Bb",
+      "keyMode": "major",
+      "keyNote": "",
+      "tempo": 104,
+      "tempoNote": "",
+      "timeSignature": "4/4",
+      "feel": "Gentle, quiet indie-folk — fingerpicked acoustic, low energy, lots of space",
+      "sourceNote": "Closing track (No. 10) on Luke Bower's debut album \"Dopamine and Jesus\" (Fair Trade Services, April 25, 2025); written by Luke Bower. Indie Christian folk / Americana — NOT a congregational worship standard, so no church chord chart exists. No published chart exists under the title \"Truth\"; chords follow the only published chart for this song's verses and chorus — the Ultimate Guitar chart for the album's companion track \"Spirit,\" which uses the same opening verse and the same \"spirit and the truth\" chorus — transposed from its written key of B down into Truth's recorded key of Bb.",
+      "atAGlance": "Intro (Bb–Gm–F–Bb) → Verse 1 → Verse 2 → Chorus → Verse 3 → Verse 4 → Chorus → Instrumental → Verse 5 (outro, ends on Bb)",
+      "howToPlay": "Play the root on beat 1 and let it ring — that's most of the job. This song is quiet and reflective, so less is more: one root per chord change, long notes, no busy fills. Verses sit on the Gm and come home to Bb; the only lift is the Eb–F move in the middle of each verse, so a simple walk-up F → G → Bb into the next line feels great there. In the chorus, keep the same restraint — root on 1 for Eb, Bb, then F into Gm, and let the last line walk Gm – F – Bb back home. Match the singer's dynamics: verses soft, chorus just a touch fuller, final verse softest of all. Only four chords in the whole song — and three of the four roots sit at the 1st or 3rd fret. This is a stay-in-one-spot song.",
+      "practiceTip": "Learn the verse as one loop — Gm, Bb, Gm, F, Eb, F, Bb — and the chorus as Eb, Bb, F, Gm. Two little patterns cover all 3:42; after that, just listen for the singer's repeated tag lines at the end of each verse.",
+      "bassNotes": [
+        {
+          "chord": "Bb",
+          "nashville": "1",
+          "bassNote": "Bb",
+          "position": "A string, 1st fret"
+        },
+        {
+          "chord": "Gm",
+          "nashville": "6m",
+          "bassNote": "G",
+          "position": "E string, 3rd fret"
+        },
+        {
+          "chord": "F",
+          "nashville": "5",
+          "bassNote": "F",
+          "position": "E string, 1st fret"
+        },
+        {
+          "chord": "Eb",
+          "nashville": "4",
+          "bassNote": "Eb",
+          "position": "D string, 1st fret (or A string, 6th fret)"
+        }
+      ],
+      "body": [
+        {
+          "heading": "INTRO",
+          "lines": [
+            {
+              "bars": "Bb   Gm   F   Bb",
+              "note": "Instrumental — same chords as the chorus tag"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 1",
+          "lines": [
+            {
+              "chords": "Gm                                  Bb",
+              "lyrics": "I was walking down the highway to Damascus"
+            },
+            {
+              "chords": "Gm                                    Bb",
+              "lyrics": "When a light as bright as God did make me blind"
+            },
+            {
+              "chords": "Gm                      F",
+              "lyrics": "In my pride I carried on"
+            },
+            {
+              "chords": "Eb                      F",
+              "lyrics": "Crashing into every wall"
+            },
+            {
+              "chords": "Bb",
+              "lyrics": "I'm still waiting for the scales to leave my eyes"
+            },
+            {
+              "chords": "Bb",
+              "lyrics": "Yeah, I'm still waiting for the scales to leave my eyes"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 2",
+          "lines": [
+            {
+              "chords": "Gm                                  Bb",
+              "lyrics": "So I wandered to some far and foreign cities"
+            },
+            {
+              "chords": "Gm                                Bb",
+              "lyrics": "I was looking for that El Dorado gold"
+            },
+            {
+              "chords": "Gm                         F",
+              "lyrics": "But it was always the wrong place"
+            },
+            {
+              "chords": "Eb                   F",
+              "lyrics": "I got tired of the chase"
+            },
+            {
+              "chords": "Bb",
+              "lyrics": "Thinking maybe we weren't made to fill the hole"
+            },
+            {
+              "chords": "Bb",
+              "lyrics": "I don't think that we were made to fill the hole"
+            }
+          ]
+        },
+        {
+          "heading": "CHORUS",
+          "lines": [
+            {
+              "chords": "Eb",
+              "lyrics": "Oh, praise Him"
+            },
+            {
+              "chords": "Bb",
+              "lyrics": "Praise Him"
+            },
+            {
+              "chords": "F                 Gm",
+              "lyrics": "I don't know what else to do"
+            },
+            {
+              "chords": "Gm",
+              "lyrics": "I got nothing"
+            },
+            {
+              "chords": "Gm",
+              "lyrics": "I got nothing"
+            },
+            {
+              "chords": "Gm        F         Bb",
+              "lyrics": "But a spirit and the truth"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 3",
+          "lines": [
+            {
+              "chords": "Gm                                  Bb",
+              "lyrics": "So tell me when the world became so angry"
+            },
+            {
+              "chords": "Gm                               Bb",
+              "lyrics": "Tell me why I followed in its ways"
+            },
+            {
+              "chords": "Gm                        F",
+              "lyrics": "Are we just destined to become"
+            },
+            {
+              "chords": "Eb                             F",
+              "lyrics": "Like all the places that we're from?"
+            },
+            {
+              "chords": "Bb",
+              "lyrics": "Is there still a little heaven in my veins?"
+            },
+            {
+              "chords": "Bb",
+              "lyrics": "Is there still a little heaven in my veins?"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 4",
+          "lines": [
+            {
+              "chords": "Gm                                     Bb",
+              "lyrics": "So I have learned to bare my soul to my Creator"
+            },
+            {
+              "chords": "Gm                                Bb",
+              "lyrics": "I have given up the hiding of the mess"
+            },
+            {
+              "chords": "Gm                       F",
+              "lyrics": "'Cause that narrow road is hard"
+            },
+            {
+              "chords": "Eb                    F",
+              "lyrics": "And every mile's way too far"
+            },
+            {
+              "chords": "Gm               F         Bb",
+              "lyrics": "To walk it all while being overdressed"
+            },
+            {
+              "chords": "Bb",
+              "lyrics": "To walk it all while being overdressed"
+            }
+          ]
+        },
+        {
+          "heading": "CHORUS — repeat",
+          "lines": [
+            {
+              "chords": "Eb",
+              "lyrics": "Oh, praise Him"
+            },
+            {
+              "chords": "Bb",
+              "lyrics": "Praise Him"
+            },
+            {
+              "chords": "F                 Gm",
+              "lyrics": "I don't know what else to do"
+            },
+            {
+              "chords": "Gm",
+              "lyrics": "I got nothing"
+            },
+            {
+              "chords": "Gm",
+              "lyrics": "I got nothing"
+            },
+            {
+              "chords": "Gm        F         Bb",
+              "lyrics": "But a spirit and the truth"
+            }
+          ]
+        },
+        {
+          "heading": "INSTRUMENTAL",
+          "lines": [
+            {
+              "bars": "Bb   Gm   F   Bb"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 5 — OUTRO",
+          "lines": [
+            {
+              "chords": "Gm                                  Bb",
+              "lyrics": "I have come here to be let in on a secret"
+            },
+            {
+              "chords": "Gm                               Bb",
+              "lyrics": "To smuggle out that secret in a life"
+            },
+            {
+              "chords": "Gm                          F",
+              "lyrics": "So when they put me in the ground"
+            },
+            {
+              "chords": "Eb                            F",
+              "lyrics": "There'll be something growing out of"
+            },
+            {
+              "chords": "Bb",
+              "lyrics": "Something I was never strong enough to find"
+            },
+            {
+              "chords": "Bb",
+              "lyrics": "Something I was never strong enough to find"
+            },
+            {
+              "chords": "Bb",
+              "lyrics": "Something I was never strong enough to find (end on Bb)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "To The Table",
+      "artist": "Zach Williams",
+      "keyLabel": "A major",
+      "keyRoot": "A",
+      "keyMode": "major",
+      "keyNote": "",
+      "tempo": 68,
+      "tempoNote": "SongSelect chart marks 67; automated analysis reads double-time 134 — play it at ~68",
+      "timeSignature": "4/4",
+      "feel": "Slow country-gospel worship ballad — gentle, unhurried, acoustic-led, half-time pulse under a laid-back vocal",
+      "sourceNote": "Track 4 on \"Chain Breaker\" (2016). Written by Zach Williams, Jonathan Smith & Tony Wood. CCLI Song No. 7055780. Brian's name for it — \"Bring It All to the Table\" — is the chorus hook; the published title is \"To The Table.\"",
+      "atAGlance": "Intro (A5–D2 x2) → Verse 1 (A–D, A–D, F#m–D, A–D) → Verse 2 (same, ends on E) → Chorus 1 (F#m–D–A–E x2, F#m–D–A, E/G#–F#m–D–A) → Verse 3 (verse loop, ends on E) → Chorus 2 (chorus loop) → Interlude (F#m–D2–A5 loop with A5/G# step-down, ends Esus) → Bridge x2 (F#m–D, A–E/G#, F#m–D, A–E/G#) → Final Chorus → Outro (A)",
+      "howToPlay": "Play roots only, and play them on beat 1 — this song breathes, so whole notes and half notes are your friends; never crowd the vocal. Verses: one soft root per chord change, nice and low. Choruses: root on 1 and 3 is plenty, a touch fuller as the band builds. Two passing notes do all the fancy work: on E/G# (the chorus turnaround and every bridge line) play G# — E string, 4th fret — and in the interlude the A5/G# is the same G#, a one-step walk-down A → G# → F# that leads you home. On Esus chords just play E (open E string) and let it hang — the suspense is the point. The record stays restrained throughout: the bass supports, it never shows off. End on a single A and let it ring out.",
+      "practiceTip": "Loop the chorus by itself first — F#m–D–A–E, roots on 1 and 3 — until the E/G# walk-down (G#, E string 4th fret) feels automatic. That one passing note is the only move in the song; once your hand knows it, the whole chart is yours.",
+      "bassNotes": [
+        {
+          "chord": "A / A5",
+          "nashville": "1",
+          "bassNote": "A",
+          "position": "Open A string (2nd string) (or E string, 5th fret)"
+        },
+        {
+          "chord": "D / D2",
+          "nashville": "4",
+          "bassNote": "D",
+          "position": "Open D string (3rd string) (or A string, 5th fret)"
+        },
+        {
+          "chord": "F#m",
+          "nashville": "6m",
+          "bassNote": "F#",
+          "position": "E string, 2nd fret"
+        },
+        {
+          "chord": "E / Esus",
+          "nashville": "5",
+          "bassNote": "E",
+          "position": "Open E string (top / 4th string)"
+        },
+        {
+          "chord": "E/G#",
+          "nashville": "5, 3rd in bass",
+          "bassNote": "G#",
+          "position": "E string, 4th fret (the passing note — chorus turnaround + every bridge line)"
+        },
+        {
+          "chord": "A5/G#",
+          "nashville": "1, 3rd in bass",
+          "bassNote": "G#",
+          "position": "E string, 4th fret (interlude step-down, same G#)"
+        }
+      ],
+      "body": [
+        {
+          "heading": "INTRO (instrumental)",
+          "lines": [
+            {
+              "bars": "| A5 | D2 | A5 | D2 |"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 1",
+          "lines": [
+            {
+              "chords": "A                             D",
+              "lyrics": "Hear the voice of love that's calling"
+            },
+            {
+              "chords": "A                             D",
+              "lyrics": "There's a chair that waits for you"
+            },
+            {
+              "chords": "F#m                           D",
+              "lyrics": "And a friend who understands"
+            },
+            {
+              "chords": "A                             D",
+              "lyrics": "Everything you're going through"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 2",
+          "lines": [
+            {
+              "chords": "A                             D",
+              "lyrics": "But you keep standing at a distance"
+            },
+            {
+              "chords": "A                             D",
+              "lyrics": "In the shadows of your shame"
+            },
+            {
+              "chords": "F#m                           D",
+              "lyrics": "But there's a light of hope that's shining"
+            },
+            {
+              "chords": "E",
+              "lyrics": "Won't you come and take your place"
+            }
+          ]
+        },
+        {
+          "heading": "CHORUS 1",
+          "lines": [
+            {
+              "chords": "F#m        D           A      E",
+              "lyrics": "So bring it all to the table"
+            },
+            {
+              "chords": "F#m        D           A      E",
+              "lyrics": "It's nothing He ain't seen before"
+            },
+            {
+              "chords": "F#m             D              A",
+              "lyrics": "For all your sin, all your sorrow and your sadness"
+            },
+            {
+              "chords": "E/G#                 F#m        D         A",
+              "lyrics": "There's a Savior and He calls, bring it all to the table"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 3",
+          "lines": [
+            {
+              "chords": "A                          D",
+              "lyrics": "He can see the weight you carry"
+            },
+            {
+              "chords": "A                          D",
+              "lyrics": "And the fears that hold your heart"
+            },
+            {
+              "chords": "F#m                        D",
+              "lyrics": "But through the cross you've been forgiven"
+            },
+            {
+              "chords": "E",
+              "lyrics": "You're accepted as you are"
+            }
+          ]
+        },
+        {
+          "heading": "CHORUS 2",
+          "lines": [
+            {
+              "note": "Same chords as Chorus 1 — only line 3 changes:"
+            },
+            {
+              "chords": "F#m             D              A",
+              "lyrics": "For all your trials, all your worries and your burdens"
+            }
+          ]
+        },
+        {
+          "heading": "INTERLUDE",
+          "lines": [
+            {
+              "chords": "F#m       D2       A5",
+              "lyrics": "Bring it all"
+            },
+            {
+              "chords": "F#m          D2          Esus",
+              "lyrics": "You can bring it all"
+            },
+            {
+              "bars": "| F#m | D2 | A5 | (x3) then | A5/G# | F#m | D2 | Esus |",
+              "note": "On A5/G# play G# — E string, 4th fret — the step-down into F#m"
+            }
+          ]
+        },
+        {
+          "heading": "BRIDGE (x2)",
+          "lines": [
+            {
+              "chords": "F#m        D",
+              "lyrics": "Come on in, take your place"
+            },
+            {
+              "chords": "A          E/G#",
+              "lyrics": "There's no one who's turned away"
+            },
+            {
+              "chords": "F#m        D",
+              "lyrics": "All you sinners, all you saints"
+            },
+            {
+              "chords": "A          E/G#",
+              "lyrics": "Come right in and find your grace"
+            },
+            {
+              "note": "2nd time through, the last E/G# leads back to the final chorus"
+            }
+          ]
+        },
+        {
+          "heading": "FINAL CHORUS",
+          "lines": [
+            {
+              "note": "Chorus 1 again, exact same chords"
+            }
+          ]
+        },
+        {
+          "heading": "OUTRO",
+          "lines": [
+            {
+              "bars": "| A |",
+              "note": "One final chord — let it ring"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Chain Breaker",
+      "artist": "Zach Williams",
+      "keyLabel": "C major",
+      "keyRoot": "C",
+      "keyMode": "major",
+      "keyNote": "",
+      "tempo": 78,
+      "tempoNote": "Automated track analysis reads the beat double-time at 156 — 78 is the count to play",
+      "timeSignature": "4/4",
+      "feel": "Slow-building Southern gospel-rock ballad — starts sparse with a pickup vocal line, grows through each chorus, peaks on the repeated bridge chant. Guitar charts often play G shapes with capo 5 — on bass there's no capo: play the concert C-major notes.",
+      "sourceNote": "Title track of \"Chain Breaker\" (2016). Written by Zach Williams, Jonathan Smith & Mia Fieldes.",
+      "atAGlance": "Verse (C–Am–G–F/G) → Chorus (C–F–C–G–C–Am–F–G) → Verse 2 → Chorus → Bridge chant x3 (C–Am–F) → Final chorus + tag (G/B and C/E slash chords) → Ending (C–F–C)",
+      "howToPlay": "Root on beat 1 and let it ring — this song lives in half notes and whole notes at 78 bpm. Verses stay sparse: root on 1, and as you settle in you can add the 5th on beat 3. Choruses open up — roots on 1 and 3, and walk C → B → A down into the Am on the \"freedom\" line. Treat every Gsus–G as a plain G root; the suspension is the guitar's job, not yours. The bridge chant is the build: steady quarter-note roots on the C–Am–F loop, a little stronger each time through, then drop back down for the final chorus. In the final chorus and tag, honor the slash chords — play B under G/B and E under C/E; those two passing notes are the lift at the end. Finish on C (A string, 3rd fret) and let it ring out.",
+      "practiceTip": "Loop the chorus first — C–F–C–G is the whole hook. Once your hand knows 1–4–1–5 without looking, the verses are just 1–6–5–4 and the bridge is 1–6–4 on repeat.",
+      "bassNotes": [
+        {
+          "chord": "C",
+          "nashville": "1",
+          "bassNote": "C",
+          "position": "A string, 3rd fret"
+        },
+        {
+          "chord": "F",
+          "nashville": "4",
+          "bassNote": "F",
+          "position": "E string, 1st fret"
+        },
+        {
+          "chord": "G",
+          "nashville": "5",
+          "bassNote": "G",
+          "position": "E string, 3rd fret"
+        },
+        {
+          "chord": "Gsus",
+          "nashville": "5",
+          "bassNote": "G",
+          "position": "E string, 3rd fret (same root as G — the sus is the guitar's color)"
+        },
+        {
+          "chord": "Am / Am7",
+          "nashville": "6",
+          "bassNote": "A",
+          "position": "Open A string (2nd string)"
+        },
+        {
+          "chord": "Dm",
+          "nashville": "2",
+          "bassNote": "D",
+          "position": "Open D string (3rd string)"
+        },
+        {
+          "chord": "G/B",
+          "nashville": "5 over 3",
+          "bassNote": "B",
+          "position": "A string, 2nd fret (final chorus/tag only)"
+        },
+        {
+          "chord": "C/E",
+          "nashville": "1 over 3",
+          "bassNote": "E",
+          "position": "Open E string (top / 4th string) (final chorus/tag only)"
+        }
+      ],
+      "body": [
+        {
+          "heading": "VERSE 1",
+          "lines": [
+            {
+              "chords": "            C                                  F         C",
+              "lyrics": "If you've been walking the same old road for miles and miles"
+            },
+            {
+              "chords": "                 Am7                                 Asus4    Am",
+              "lyrics": "If you've been hearing the same old voice tell the same old lies"
+            },
+            {
+              "chords": "            G                           Gsus4   G",
+              "lyrics": "If you're trying to fill the same old holes inside"
+            },
+            {
+              "chords": "                   F",
+              "lyrics": "There's a better life"
+            },
+            {
+              "chords": "                   Gsus  G",
+              "lyrics": "There's a better life"
+            }
+          ]
+        },
+        {
+          "heading": "CHORUS",
+          "lines": [
+            {
+              "chords": "                C",
+              "lyrics": "If you've got pain"
+            },
+            {
+              "chords": "         F    C",
+              "lyrics": "He's a pain taker"
+            },
+            {
+              "chords": "              G",
+              "lyrics": "If you feel lost"
+            },
+            {
+              "chords": "             C",
+              "lyrics": "He's a way maker"
+            },
+            {
+              "chords": "              Am7",
+              "lyrics": "If you need freedom or saving"
+            },
+            {
+              "chords": "         F",
+              "lyrics": "He's a prison-shaking Savior"
+            },
+            {
+              "chords": "                Gsus4   G",
+              "lyrics": "If you've got chains"
+            },
+            {
+              "chords": "               C       F  C",
+              "lyrics": "He's a chain breaker"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 2",
+          "lines": [
+            {
+              "chords": "            C                                    F       C",
+              "lyrics": "We've all searched for the light of day in the dead of night"
+            },
+            {
+              "chords": "                 Am7",
+              "lyrics": "We've all found ourselves worn out from the same old fight"
+            },
+            {
+              "chords": "            G                           Gsus4   G",
+              "lyrics": "We've all run to things we know just ain't right"
+            },
+            {
+              "chords": "                   F                    G",
+              "lyrics": "When there's a better life, there's a better life"
+            }
+          ]
+        },
+        {
+          "heading": "CHORUS — repeat",
+          "lines": [
+            {
+              "chords": "                C",
+              "lyrics": "If you've got pain"
+            },
+            {
+              "chords": "         F    C",
+              "lyrics": "He's a pain taker"
+            },
+            {
+              "chords": "              G",
+              "lyrics": "If you feel lost"
+            },
+            {
+              "chords": "             C",
+              "lyrics": "He's a way maker"
+            },
+            {
+              "chords": "              Am7",
+              "lyrics": "If you need freedom or saving"
+            },
+            {
+              "chords": "         F",
+              "lyrics": "He's a prison-shaking Savior"
+            },
+            {
+              "chords": "                Gsus4   G",
+              "lyrics": "If you've got chains"
+            },
+            {
+              "chords": "               C       F  C",
+              "lyrics": "He's a chain breaker"
+            }
+          ]
+        },
+        {
+          "heading": "BRIDGE (chant, x3)",
+          "lines": [
+            {
+              "chords": "C                Am        F",
+              "lyrics": "If you believe it, if you receive it"
+            },
+            {
+              "chords": "C                Am        F",
+              "lyrics": "If you can feel it, somebody testify"
+            },
+            {
+              "note": "3rd time ends: \"testify, testify\""
+            }
+          ]
+        },
+        {
+          "heading": "FINAL CHORUS (watch the slash chords)",
+          "lines": [
+            {
+              "chords": "C              F    C",
+              "lyrics": "If you've got pain, He's a pain taker"
+            },
+            {
+              "chords": "G                        C        G/B",
+              "lyrics": "If you feel lost, He's a way maker"
+            },
+            {
+              "chords": "Am7             C/E   F",
+              "lyrics": "If you need freedom or saving, He's a prison-shaking Savior"
+            },
+            {
+              "chords": "Gsus     G            C",
+              "lyrics": "If you got chains, He's a chain breaker"
+            }
+          ]
+        },
+        {
+          "heading": "TAG",
+          "lines": [
+            {
+              "chords": "Am7             C/E   F",
+              "lyrics": "If you need freedom or saving, He's a prison-shaking Savior"
+            },
+            {
+              "chords": "Gsus     G            C      F   C",
+              "lyrics": "If you got chains, He's a chain breaker"
+            }
+          ]
+        },
+        {
+          "heading": "ENDING",
+          "lines": [
+            {
+              "bars": "| C | F | C | F | C |",
+              "note": "Let the last C ring"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "East to West",
+      "artist": "Casting Crowns",
+      "keyLabel": "F# minor",
+      "keyRoot": "F#",
+      "keyMode": "minor",
+      "keyNote": "",
+      "tempo": 73,
+      "tempoNote": "Published sheet music marks ~77",
+      "timeSignature": "4/4",
+      "feel": "Slow worship ballad — piano-led, quiet verses that build into a big chorus. Lots of space; let the roots ring under the vocal.",
+      "sourceNote": "Original version (The Altar and the Door, 2007) — written by Mark Hall & Bernie Herms. Note: this is Casting Crowns, not MercyMe — MercyMe has no song by this title. Casting Crowns re-recorded it with Ben Fuller in 2023, in Ab — this sheet is the 2007 original.",
+      "atAGlance": "Intro (F#m–Esus–E) → Verse 1 (D–E–F#m–A–D) → Chorus 1 (D–F#m–E–Bm) → Verse 2 (D–E–F#m–D) → Chorus 1 → Bridge (A–E/G#–F#m, D/F#–D–A, C#m) → Chorus 2 (E–A–E/G#–F#m–D) → Outro (F#m–E), end on F#m.",
+      "howToPlay": "This is a slow ballad, so the root on beat 1, held long, is the whole job — whole notes and half notes, let them ring and breathe with the piano. Verses stay quiet and sparse: one root per chord change, nothing busy underneath the vocal. The choruses open up — same roots, played with more weight, and you can add a soft root on beat 3 to keep the pulse. The one signature move is the walk in the verses: D → E → F#m rising into each line, so lean on that climb. In the bridge the bass walks A → E/G# (play G#, E string 4th fret) → F#m, then D/F# (play F#, E string 2nd fret) → D → A — follow those slash-chord bass notes, they're the movement under \"I need Your peace.\" Final chorus changes key center to E–A — same roots, just don't autopilot back to the first chorus pattern. End on F# and let it ring out.",
+      "practiceTip": "Loop the verse climb first — D → E → F#m, root on 1, let each one ring — until the rise feels automatic. That three-note climb is under almost every line of the song; once your hand knows it, the choruses are just D–F#m–E and the whole song is in reach.",
+      "bassNotes": [
+        {
+          "chord": "F#m",
+          "nashville": "1",
+          "bassNote": "F#",
+          "position": "E string, 2nd fret"
+        },
+        {
+          "chord": "A",
+          "nashville": "b3",
+          "bassNote": "A",
+          "position": "Open A string (2nd string)"
+        },
+        {
+          "chord": "Bm",
+          "nashville": "4",
+          "bassNote": "B",
+          "position": "A string, 2nd fret"
+        },
+        {
+          "chord": "C#m",
+          "nashville": "5",
+          "bassNote": "C#",
+          "position": "A string, 4th fret"
+        },
+        {
+          "chord": "D",
+          "nashville": "b6",
+          "bassNote": "D",
+          "position": "Open D string (3rd string)"
+        },
+        {
+          "chord": "E",
+          "nashville": "b7",
+          "bassNote": "E",
+          "position": "Open E string (top / 4th string)"
+        },
+        {
+          "chord": "Esus",
+          "nashville": "b7",
+          "bassNote": "E",
+          "position": "Open E string (same root as E — the sus is the guitar's color, your note doesn't change)"
+        }
+      ],
+      "body": [
+        {
+          "heading": "INTRO (instrumental)",
+          "lines": [
+            {
+              "bars": "| F#m | Esus | E | (x2)"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 1",
+          "lines": [
+            {
+              "chords": "D          E             F#m                 A         D",
+              "lyrics": "Here I am Lord and I'm drowning, in Your sea of forgetfulness"
+            },
+            {
+              "chords": "      E            F#m           A           D",
+              "lyrics": "The chains of yesterday surround me, I yearn for peace and rest"
+            },
+            {
+              "chords": "           E               F#m               E            D",
+              "lyrics": "I don't want to end up where You found me, and it echoes in my mind"
+            },
+            {
+              "chords": "    E          D",
+              "lyrics": "Keeps me awake tonight"
+            },
+            {
+              "chords": "D               E             F#m         A              D",
+              "lyrics": "I know You've cast my sin as far as the east is from the west"
+            },
+            {
+              "chords": "    E               F#m         A                 D",
+              "lyrics": "And I stand before You now, as though I've never sinned"
+            },
+            {
+              "chords": "           E                F#m          C#m            D               E",
+              "lyrics": "But today I feel like I'm just one mistake away from You leaving me this way"
+            }
+          ]
+        },
+        {
+          "heading": "CHORUS 1",
+          "lines": [
+            {
+              "chords": "D                              F#m                 E",
+              "lyrics": "Jesus can You show me just how far the east is from the west"
+            },
+            {
+              "chords": "             Bm                                 D            E",
+              "lyrics": "'Cause I can't bear to see the man I've been come rising up in me again"
+            },
+            {
+              "chords": "     F#m                 E",
+              "lyrics": "In the arms of Your mercy I find rest"
+            },
+            {
+              "chords": "              Bm                      A       D",
+              "lyrics": "'Cause You know just how far the east is from the west"
+            },
+            {
+              "lyrics": "From one scarred hand to the other"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 2",
+          "lines": [
+            {
+              "chords": "D              E           F#m                      D",
+              "lyrics": "I start the day the war begins, endless reminding of my sin"
+            },
+            {
+              "chords": "        E             F#m                          D",
+              "lyrics": "Time and time again Your truth is drowned out by the storm I'm in"
+            },
+            {
+              "chords": "       E                F#m          C#m              D            E",
+              "lyrics": "Today I feel like I'm just one mistake away from You leaving me this way"
+            }
+          ]
+        },
+        {
+          "heading": "CHORUS 1 — repeat",
+          "lines": [
+            {
+              "chords": "D                              F#m                 E",
+              "lyrics": "Jesus can You show me just how far the east is from the west"
+            },
+            {
+              "chords": "             Bm                                 D            E",
+              "lyrics": "'Cause I can't bear to see the man I've been come rising up in me again"
+            },
+            {
+              "chords": "     F#m                 E",
+              "lyrics": "In the arms of Your mercy I find rest"
+            },
+            {
+              "chords": "              Bm                      A       D           E",
+              "lyrics": "'Cause You know just how far the east is from the west"
+            },
+            {
+              "lyrics": "From one scarred hand to the other"
+            }
+          ]
+        },
+        {
+          "heading": "BRIDGE",
+          "lines": [
+            {
+              "chords": "A                         E/G#                           F#m",
+              "lyrics": "I know You've washed me white, turned my darkness into light"
+            },
+            {
+              "chords": "                    D/F#                 D                   A",
+              "lyrics": "I need Your peace to get me through, to get me through this night"
+            },
+            {
+              "chords": "                     C#m                                F#m",
+              "lyrics": "I can't live by what I feel, but by the truth Your Word reveals"
+            },
+            {
+              "chords": "                    D                            F#m   E",
+              "lyrics": "I'm not holding on to You, but You're holding on to me"
+            },
+            {
+              "chords": "                  F#m       E",
+              "lyrics": "You're holding on to me"
+            }
+          ]
+        },
+        {
+          "heading": "CHORUS 2 (different from Chorus 1 — watch the chords)",
+          "lines": [
+            {
+              "chords": "E                       A                       E/G#",
+              "lyrics": "Jesus You know just how far the east is from the west"
+            },
+            {
+              "chords": "            F#m                                D          D",
+              "lyrics": "'Cause I don't have to see the man I've been come rising up in me again"
+            },
+            {
+              "chords": "      A                       E/G#",
+              "lyrics": "In the arms of Your mercy I find rest"
+            },
+            {
+              "chords": "              Bm                      A       D",
+              "lyrics": "'Cause You know just how far the east is from the west"
+            },
+            {
+              "lyrics": "From one scarred hand to the other"
+            }
+          ]
+        },
+        {
+          "heading": "OUTRO",
+          "lines": [
+            {
+              "chords": "         E                       F#m              E",
+              "lyrics": "(Just how far, the east is from the west, just how far)"
+            },
+            {
+              "lyrics": "From one scarred hand to the other"
+            },
+            {
+              "chords": "                  E                       F#m              D",
+              "lyrics": "(You know just how far, the east is from the west, just how far)"
+            },
+            {
+              "lyrics": "From one scarred hand to the other"
+            },
+            {
+              "note": "End on F#m. Last bass note: F#, E string 2nd fret, let it ring out."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "no half steppin",
+      "artist": "sean costello",
+      "keyLabel": "A major",
+      "keyRoot": "A",
+      "keyMode": "major",
+      "keyNote": "",
+      "tempo": null,
+      "tempoNote": "",
+      "timeSignature": "4/4",
+      "feel": "",
+      "sourceNote": "",
+      "atAGlance": "",
+      "howToPlay": "",
+      "practiceTip": "",
+      "bassNotes": [],
+      "body": []
+    },
+    {
+      "id": 13,
+      "title": "No Half Steppin'",
+      "artist": "Sean Costello",
+      "keyLabel": "A (practice version — recording key unverified)",
+      "keyRoot": "A",
+      "keyMode": "major",
+      "keyNote": "",
+      "tempo": null,
+      "tempoNote": "Up-tempo — no published BPM (unverified); reviews call it bouncy and punchy",
+      "timeSignature": "4/4",
+      "feel": "Driving soul-blues with horns and a hook guitar figure; shuffle-leaning groove, played with push",
+      "sourceNote": "Album version — opening track of the self-titled album \"Sean Costello\" (Artemis Records / Tone-Cool, released October 5, 2004; often catalogued as 2005). Written by Sean Costello (Night Latch Music). Running time 3:52. HONESTY NOTE: No published chord chart, tab, key, tempo, or transcription of this recording exists anywhere (checked Ultimate Guitar, Chordify, ChordU, PaidTabs, SongData, Shazam). Reviews describe an up-tempo, horn-driven soul-blues original — NOT a straight slow blues. The chords are the standard 12-bar blues framework written in A as a practice/jam version so you can learn the form and the feel. The recording's actual key, tempo, and exact form are unverified — confirm the key against the record before playing it with a band.",
+      "atAGlance": "(Practice form) 12-bar blues: A7 x4 → D7 x2 → A7 x2 → E7 → D7 → A7 → E7, repeat. Song shape: Verse 1 → Hook → Verse 2 → Bridge (\"light\" lines) → Hook → Verse 3 → Closing hook.",
+      "howToPlay": "Lock the root on beat 1 of every bar — that is non-negotiable, it is what holds a 12-bar together. The working pattern for this kind of up-tempo soul-blues is the classic shuffle walk inside each bar: root – 5th – flat-7 – 5th (in A: A – E – G – E), one note per beat, even and pushing, never rushing. Keep it simple under the verses, and let the pattern open up in the hook sections. Follow the standard blues dynamics: verses tight and in the pocket, hook bigger, and watch for stops — Vintage Guitar's review of this album notes a stop-time segment mid-song on this record, so keep your eyes up and be ready to hit beat 1 and lay out with the band. On the turnaround (last two bars), walk E7 down through D7 back to A7 and set up the next time through. If the record's key turns out not to be A, every pattern here moves with the Nashville numbers unchanged — that is the whole point of learning it this way.",
+      "practiceTip": "Loop one 12-bar alone with the A–E–G–E shuffle pattern until you can feel bar 9 (the E7 climb) coming without counting — then play along with the record and check the key with your open A string. If it clashes, move the whole pattern to the key your ear finds; the numbers never change.",
+      "bassNotes": [
+        {
+          "chord": "A7",
+          "nashville": "1",
+          "bassNote": "A",
+          "position": "Open A string (2nd string)"
+        },
+        {
+          "chord": "D7",
+          "nashville": "4",
+          "bassNote": "D",
+          "position": "Open D string (3rd string)"
+        },
+        {
+          "chord": "E7",
+          "nashville": "5",
+          "bassNote": "E",
+          "position": "Open E string (top / 4th string)"
+        },
+        {
+          "chord": "A7 pattern notes",
+          "nashville": "5 / b7",
+          "bassNote": "E / G",
+          "position": "E: open E string (the 5th); G: E string, 3rd fret (the flat-7)"
+        },
+        {
+          "chord": "D7 pattern notes",
+          "nashville": "5 / b7",
+          "bassNote": "A / C",
+          "position": "A: open A string (the 5th); C: A string, 3rd fret (the flat-7)"
+        },
+        {
+          "chord": "E7 pattern notes",
+          "nashville": "5 / b7",
+          "bassNote": "B / D",
+          "position": "B: A string, 2nd fret (the 5th); D: open D string (the flat-7)"
+        }
+      ],
+      "body": [
+        {
+          "heading": "THE FORM (standard 12-bar blues — form guidance, not a transcription)",
+          "lines": [
+            {
+              "bars": "| A7 | A7 | A7 | A7 | D7 | D7 | A7 | A7 | E7 | D7 | A7 | E7 |"
+            },
+            {
+              "note": "Bars 1–4: A7 — stay home, pattern A–E–G–E each bar. Bars 5–6: D7 — lift, same pattern shape from D. Bars 7–8: A7 — back home. Bar 9: E7 — the climb. Bar 10: D7 — the fall. Bar 11: A7 — home. Bar 12: E7 — turnaround, leads back to bar 1 (or ends the song)."
+            },
+            {
+              "note": "Common variation (quick change): D7 in bar 2 instead of A7. Either version is standard — listen for which one the band uses."
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 1",
+          "lines": [
+            {
+              "chords": "A7",
+              "lyrics": "\"Wake me in the morning…\" (first stanza: getting up and pushing on)"
+            },
+            {
+              "lyrics": "(Second stanza cue: \"I've come so far, I ain't gonna turn back now…\" — leading into the hook)"
+            }
+          ]
+        },
+        {
+          "heading": "HOOK (the refrain — verified lyric)",
+          "lines": [
+            {
+              "lyrics": "There'll be no half-steppin'"
+            },
+            {
+              "lyrics": "I got to keep on pushin'"
+            },
+            {
+              "lyrics": "There'll be no half-steppin'"
+            },
+            {
+              "lyrics": "I've got to keep on pushin' all the time"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 2",
+          "lines": [
+            {
+              "note": "The \"criticized / talked about\" verse (cue): he's been criticised and talked about, has made mistakes and had bad days, but won't be written off."
+            }
+          ]
+        },
+        {
+          "heading": "BRIDGE / HOOK",
+          "lines": [
+            {
+              "lyrics": "\"I got a light that keeps on shinin' in my mind…\""
+            },
+            {
+              "note": "…then the hook again (\"…and there'll be no half steppin'…\")."
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 3",
+          "lines": [
+            {
+              "note": "The \"stumble\" verse (cue): you might see him stumble or slip, but nobody turns him around and he won't be brought down."
+            }
+          ]
+        },
+        {
+          "heading": "CLOSING HOOK",
+          "lines": [
+            {
+              "note": "The \"light\" lines and the hook one last time to end."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "title": "Give Me One Reason",
+      "artist": "Tracy Chapman",
+      "keyLabel": "F# major",
+      "keyRoot": "F#",
+      "keyMode": "major",
+      "keyNote": "Sometimes spelled enharmonically as Gb major in charts; the sounding pitch is the same.",
+      "tempo": 100,
+      "tempoNote": "",
+      "timeSignature": "4/4",
+      "feel": "Laid-back shuffling blues-rock / soul-blues groove. The recording is spacious and unhurried: clean electric guitar carries the signature riff, the drums keep a steady shuffle, and the bass stays deep, simple and locked to the kick rather than busy.",
+      "sourceNote": "From New Beginning (1995), Tracy Chapman's fourth studio album, written by Tracy Chapman and released as a single from the album; it went on to win the Grammy Award for Best Rock Song.",
+      "atAGlance": "Instrumental intro, then three 12-bar blues verses, a guitar solo, four more 12-bar verses, and a short outro. The 'give me one reason' hook returns inside several verses, and the same 12-bar progression is used throughout.",
+      "howToPlay": "Play the root on beat 1 of every bar and sit on it, mostly roots with an occasional fifth or short approach note if you want it. Follow the 12-bar shape: four bars on F#, two on B, two back on F#, then the C# - B - F# - C# turnaround. Lock in with the kick drum, keep the notes even and leave plenty of space for the vocal and guitar riff.",
+      "practiceTip": "Count the 12-bar form in three groups of four bars, and learn the last four bars — C#7, B7, F#7, C#7 — as your turnaround cue. If you can hear and count that, you will never get lost, no matter which verse you are in.",
+      "bassNotes": [
+        {
+          "chord": "F#7",
+          "nashville": "1",
+          "bassNote": "F#",
+          "position": "E string, 2nd fret"
+        },
+        {
+          "chord": "B7",
+          "nashville": "4",
+          "bassNote": "B",
+          "position": "A string, 2nd fret"
+        },
+        {
+          "chord": "C#7",
+          "nashville": "5",
+          "bassNote": "C#",
+          "position": "A string, 4th fret"
+        }
+      ],
+      "body": [
+        {
+          "heading": "INTRO",
+          "lines": [
+            {
+              "note": "Intro — instrumental, 12-bar blues in F# major, 4/4"
+            },
+            {
+              "bars": "| F#7 | F#7 | F#7 | F#7 |"
+            },
+            {
+              "bars": "| B7 | B7 | F#7 | F#7 |"
+            },
+            {
+              "bars": "| C#7 | B7 | F#7 | C#7 |"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 1",
+          "lines": [
+            {
+              "chords": "F#7",
+              "lyrics": "Give me one reason to stay here"
+            },
+            {
+              "chords": "F#7",
+              "lyrics": "And I'll turn right back around"
+            },
+            {
+              "chords": "B7",
+              "lyrics": "Give me one reason to stay here"
+            },
+            {
+              "chords": "F#7",
+              "lyrics": "And I'll turn right back around"
+            },
+            {
+              "chords": "C#7                          B7",
+              "lyrics": "Said I don't wanna leave you lonely"
+            },
+            {
+              "chords": "F#7                         C#7",
+              "lyrics": "You gotta make me change my mind"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 2",
+          "lines": [
+            {
+              "note": "Verse 2 — 12-bar blues in F# major, 4/4"
+            },
+            {
+              "chords": "F#7",
+              "lyrics": "Baby I got your number, oh, and I know that you got mine"
+            },
+            {
+              "chords": "B7                          F#7",
+              "lyrics": "You know that I called you, I called you many times"
+            },
+            {
+              "chords": "C#7                   B7",
+              "lyrics": "You can call me baby, you can call me anytime"
+            },
+            {
+              "chords": "F#7             C#7",
+              "lyrics": "You got to call me"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 3",
+          "lines": [
+            {
+              "chords": "F#7                F#7",
+              "lyrics": "Give me one reason to stay here"
+            },
+            {
+              "chords": "F#7                 F#7",
+              "lyrics": "And I'll turn right back around"
+            },
+            {
+              "chords": "B7                 B7",
+              "lyrics": "Give me one reason to stay here"
+            },
+            {
+              "chords": "F#7                 F#7",
+              "lyrics": "And I'll turn right back around"
+            },
+            {
+              "chords": "C#7                          B7",
+              "lyrics": "Said I don't wanna leave you lonely"
+            },
+            {
+              "chords": "F#7                         C#7",
+              "lyrics": "You gotta make me change my mind"
+            }
+          ]
+        },
+        {
+          "heading": "GUITAR SOLO",
+          "lines": [
+            {
+              "note": "Guitar solo — instrumental, 12-bar blues in F# (no vocals)"
+            },
+            {
+              "bars": "| F#7 | F#7 | F#7 | F#7 | B7 | B7 | F#7 | F#7 | C#7 | B7 | F#7 | C#7 |"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 4",
+          "lines": [
+            {
+              "chords": "F#7",
+              "lyrics": "I don't want no one to squeeze me"
+            },
+            {
+              "chords": "F#7",
+              "lyrics": "They might take away my life"
+            },
+            {
+              "chords": "B7",
+              "lyrics": "I don't want no one to squeeze me"
+            },
+            {
+              "chords": "F#7",
+              "lyrics": "They might take away my life"
+            },
+            {
+              "chords": "C#7                    B7",
+              "lyrics": "I just want someone to hold me"
+            },
+            {
+              "chords": "F#7         C#7",
+              "lyrics": "And rock me through the night"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 5",
+          "lines": [
+            {
+              "chords": "F#7",
+              "lyrics": "This youthful heart can love you"
+            },
+            {
+              "chords": "F#7",
+              "lyrics": "Yes, and give you what you need"
+            },
+            {
+              "chords": "B7",
+              "lyrics": "I said, this youthful heart can love you"
+            },
+            {
+              "chords": "F#7",
+              "lyrics": "Oh, and give you what you need"
+            },
+            {
+              "chords": "C#7                   B7",
+              "lyrics": "But I'm too old to go chasing you around"
+            },
+            {
+              "chords": "F#7                 C#7",
+              "lyrics": "Wasting my precious energy"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 6",
+          "lines": [
+            {
+              "chords": "F#7",
+              "lyrics": "Give me one reason to stay here"
+            },
+            {
+              "chords": "F#7",
+              "lyrics": "Yes, and I'll turn right back around"
+            },
+            {
+              "chords": "B7",
+              "lyrics": "Give me one reason to stay here"
+            },
+            {
+              "chords": "F#7",
+              "lyrics": "Oh, I'll turn right back around"
+            },
+            {
+              "chords": "C#7                          B7",
+              "lyrics": "Said I don't wanna leave you lonely"
+            },
+            {
+              "chords": "F#7                         C#7",
+              "lyrics": "You gotta make me change my mind"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 7",
+          "lines": [
+            {
+              "chords": "F#7",
+              "lyrics": "Baby, just give me one reason"
+            },
+            {
+              "chords": "F#7",
+              "lyrics": "Oh, give me just one reason why"
+            },
+            {
+              "chords": "B7",
+              "lyrics": "Baby, just give me one reason"
+            },
+            {
+              "chords": "F#7",
+              "lyrics": "Oh, give me just one reason why I should stay"
+            },
+            {
+              "chords": "C#7             B7",
+              "lyrics": "Said I told you that I loved you"
+            },
+            {
+              "chords": "F#7                C#7",
+              "lyrics": "And there ain't no more to say"
+            }
+          ]
+        },
+        {
+          "heading": "OUTRO",
+          "lines": [
+            {
+              "note": "Instrumental outro — no vocals. Bass continues the 12-bar blues pattern under the lead guitar."
+            },
+            {
+              "bars": "| F#7 | F#7 | F#7 | F#7 | B7 | B7 | F#7 | F#7 | C#7 | B7 | F#7 | C#7 |"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "title": "Born on the Bayou",
+      "artist": "Creedence Clearwater Revival",
+      "keyLabel": "E major",
+      "keyRoot": "E",
+      "keyMode": "major",
+      "keyNote": "Built on an E7 vamp with a Mixolydian, bluesy feel, so the chorus uses a natural D (bVII) rather than a D-sharp chord.",
+      "tempo": 121,
+      "tempoNote": "",
+      "timeSignature": "4/4",
+      "feel": "Laid-back but driving swamp rock in 4/4. The bass should sit deep and steady under the tremolo guitar riff, locking with Doug Clifford's drums and leaving plenty of space rather than overplaying.",
+      "sourceNote": "Written by John Fogerty. Opening track on Creedence Clearwater Revival's Bayou Country (1969); also released as the B-side of the 'Proud Mary' single.",
+      "atAGlance": "Long E7 intro, then Verse 1, chorus, Verse 2, chorus, a guitar solo over the E7 vamp, a final chorus beginning with the 'hound dog' lines, and an outro jam. Apart from the chorus tag of D-A-E7, the whole song sits on E7.",
+      "howToPlay": "Play a solid E on beat 1 and keep a simple, repeating root pulse on the open E string through the long E7 vamps - most of the song does not move. Lock in with the kick drum and stay out of the guitar's way. The only real movement is in the chorus, where you take the roots D (open D string) to A (open A string) and back home to E for each 'Born on the bayou' line.",
+      "practiceTip": "Loop just the chorus change D-A-E7 until the three open-string roots feel automatic, then practise counting through the long E7 vamps so you do not make the change early.",
+      "bassNotes": [
+        {
+          "chord": "E7",
+          "nashville": "1",
+          "bassNote": "E",
+          "position": "Open E string"
+        },
+        {
+          "chord": "D",
+          "nashville": "b7",
+          "bassNote": "D",
+          "position": "Open D string"
+        },
+        {
+          "chord": "A",
+          "nashville": "4",
+          "bassNote": "A",
+          "position": "Open A string"
+        }
+      ],
+      "body": [
+        {
+          "heading": "INTRO",
+          "lines": [
+            {
+              "note": "Intro — instrumental, key of E major, 4/4: E7 vamp, bass on root E with a steady swamp groove"
+            },
+            {
+              "bars": "| E7 | E7 | E7 | E7 |"
+            },
+            {
+              "bars": "| E7 | E7 | E7 | E7 |"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 1",
+          "lines": [
+            {
+              "note": "Verse 1 — E7 vamp throughout, key of E major, 4/4"
+            },
+            {
+              "chords": "E7",
+              "lyrics": "Now when I was just a little boy"
+            },
+            {
+              "chords": "E7",
+              "lyrics": "Standin' to my daddy's knee"
+            },
+            {
+              "chords": "E7",
+              "lyrics": "My poppa said, \"Son, don't let the man get you"
+            },
+            {
+              "chords": "E7",
+              "lyrics": "Do what he done to me\""
+            },
+            {
+              "chords": "E7",
+              "lyrics": "'Cause he'll get you"
+            },
+            {
+              "chords": "E7",
+              "lyrics": "'Cause he'll get you now, now"
+            },
+            {
+              "chords": "E7",
+              "lyrics": "And I can remember the Fourth of July"
+            },
+            {
+              "chords": "E7",
+              "lyrics": "Runnin' through the backwood bare"
+            },
+            {
+              "chords": "E7",
+              "lyrics": "And I can still hear my old hound dog barkin'"
+            },
+            {
+              "chords": "E7",
+              "lyrics": "Chasin' down a hoodoo there"
+            },
+            {
+              "chords": "E7",
+              "lyrics": "Chasin' down a hoodoo there"
+            }
+          ]
+        },
+        {
+          "heading": "CHORUS",
+          "lines": [
+            {
+              "chords": "D       A   E7",
+              "lyrics": "Born on the bayou"
+            },
+            {
+              "chords": "D       A   E7",
+              "lyrics": "Born on the bayou"
+            },
+            {
+              "chords": "D       A   E7",
+              "lyrics": "Born on the bayou"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 2",
+          "lines": [
+            {
+              "chords": "E7",
+              "lyrics": "Wish I was back on the bayou"
+            },
+            {
+              "chords": "E7",
+              "lyrics": "Rollin' with some Cajun queen"
+            },
+            {
+              "chords": "E7",
+              "lyrics": "Wishin' I were a fast freight train"
+            },
+            {
+              "chords": "E7",
+              "lyrics": "Just a-chooglin' on down to New Orleans"
+            }
+          ]
+        },
+        {
+          "heading": "CHORUS",
+          "lines": [
+            {
+              "chords": "D       A   E7",
+              "lyrics": "Born on the bayou"
+            },
+            {
+              "chords": "D       A   E7",
+              "lyrics": "Born on the bayou"
+            },
+            {
+              "chords": "D       A   E7",
+              "lyrics": "Born on the bayou"
+            }
+          ]
+        },
+        {
+          "heading": "GUITAR SOLO",
+          "lines": [
+            {
+              "note": "Instrumental — no vocals. Guitar solo over an E7 vamp; bass keeps the E7 groove throughout, repeating until the cue into the Chorus."
+            },
+            {
+              "bars": "| E7 | E7 | E7 | E7 |"
+            }
+          ]
+        },
+        {
+          "heading": "CHORUS",
+          "lines": [
+            {
+              "chords": "D       A   E7",
+              "lyrics": "Born on the bayou"
+            },
+            {
+              "chords": "D       A   E7",
+              "lyrics": "Born on the bayou"
+            },
+            {
+              "chords": "D       A   E7",
+              "lyrics": "Born on the bayou"
+            }
+          ]
+        },
+        {
+          "heading": "OUTRO",
+          "lines": [
+            {
+              "chords": "D    A      E7",
+              "lyrics": "Born on the bayou"
+            },
+            {
+              "chords": "D    A      E7",
+              "lyrics": "Born on the bayou"
+            },
+            {
+              "chords": "D    A      E7",
+              "lyrics": "Born on the bayou"
+            },
+            {
+              "bars": "| E7 | E7 | E7 | E7 |"
+            },
+            {
+              "note": "Repeat E7 vamp and fade out"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "title": "Brown Eyed Girl",
+      "artist": "Van Morrison",
+      "keyLabel": "G major",
+      "keyRoot": "G",
+      "keyMode": "major",
+      "keyNote": "",
+      "tempo": 149,
+      "tempoNote": "",
+      "timeSignature": "4/4",
+      "feel": "Bright, upbeat 1960s pop-rock in straight 4/4 with a light, bouncy lilt. The bass is prominent and buoyant, based mainly on roots with simple fifth/octave movement, and it gets a short featured break, so keep the tone round and the notes clean and dancing rather than heavy.",
+      "sourceNote": "Written by Van Morrison. Released as a single in 1967 and on his debut solo album Blowin' Your Mind! (1967).",
+      "atAGlance": "Intro (G-C-G-D), then Verse 1 and Verse 2, each ending with the C-D-G-Em / C-D-G-D 'my brown eyed girl' turnaround, then the 'sha la la' Chorus, a short bass solo/interlude, Verse 3 with the same turnaround, and a final chorus repeated to a fade.",
+      "howToPlay": "Play the root on beat 1 of every bar and keep it simple: the chords change one per bar, mostly G to C to G to D, so you can settle into that loop and lock in with the kick drum. At the end of each verse the chords step C to D up into G to Em, then C to D back to G to D — watch for that step-up. Add a fifth or an octave only once the root movement feels secure, and keep the pulse steady at this brisk tempo.",
+      "practiceTip": "Loop the four bars G-C-G-D slowly with a metronome, saying the Nashville numbers 1-4-1-5 as you play, then gradually work up to tempo; add the C-D-G-Em turnaround only once the main loop is automatic.",
+      "bassNotes": [
+        {
+          "chord": "G",
+          "nashville": "1",
+          "bassNote": "G",
+          "position": "E string, 3rd fret"
+        },
+        {
+          "chord": "C",
+          "nashville": "4",
+          "bassNote": "C",
+          "position": "A string, 3rd fret"
+        },
+        {
+          "chord": "D",
+          "nashville": "5",
+          "bassNote": "D",
+          "position": "Open D string"
+        },
+        {
+          "chord": "Em",
+          "nashville": "6m",
+          "bassNote": "E",
+          "position": "Open E string"
+        }
+      ],
+      "body": [
+        {
+          "heading": "INTRO",
+          "lines": [
+            {
+              "note": "INTRO — Instrumental, key of G major, 4/4, one chord per bar"
+            },
+            {
+              "bars": "| G | C | G | D |"
+            },
+            {
+              "bars": "| G | C | G | D |"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 1",
+          "lines": [
+            {
+              "note": "Verse 1 — Key: G major, 4/4, one chord per bar"
+            },
+            {
+              "chords": "G                 C   G             D",
+              "lyrics": "Hey, where did we go, days when the rains came"
+            },
+            {
+              "chords": "G           C       G             D",
+              "lyrics": "Down in the hollow, playin' a new game"
+            },
+            {
+              "chords": "G            C                    G            D",
+              "lyrics": "Laughin' and a-runnin', hey, hey, skippin' and a-jumpin'"
+            },
+            {
+              "chords": "G            C                G          D",
+              "lyrics": "In the misty morning fog with our hearts a-thumpin' and you"
+            },
+            {
+              "chords": "C  D          G    Em",
+              "lyrics": "My brown-eyed girl"
+            },
+            {
+              "chords": "C       D          G    D",
+              "lyrics": "You, my brown-eyed girl"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 2",
+          "lines": [
+            {
+              "chords": "G        C        G          D",
+              "lyrics": "Whatever happened to Tuesday and so slow"
+            },
+            {
+              "chords": "G          C          G           D",
+              "lyrics": "Going down to the old mine with a transistor radio"
+            },
+            {
+              "chords": "G               C                  G               D",
+              "lyrics": "Standing in the sunlight laughing, hiding behind a rainbow's wall"
+            },
+            {
+              "chords": "G            C         G             D",
+              "lyrics": "Slipping and a-sliding all along the waterfall"
+            },
+            {
+              "chords": "C    D       G          Em",
+              "lyrics": "With you, my brown-eyed girl"
+            },
+            {
+              "chords": "C    D  G          D",
+              "lyrics": "You, my brown-eyed girl"
+            }
+          ]
+        },
+        {
+          "heading": "CHORUS",
+          "lines": [
+            {
+              "note": "Chorus — G major, 4/4, one chord per bar (G–C–G–D loop)"
+            },
+            {
+              "chords": "G      C        G       D",
+              "lyrics": "Do you remember when we used to sing"
+            },
+            {
+              "chords": "G            C        G           D",
+              "lyrics": "Sha la la la la la la la la la la te da (just like that)"
+            },
+            {
+              "chords": "G            C        G           D",
+              "lyrics": "Sha la la la la la la la la la la te da"
+            },
+            {
+              "chords": "G",
+              "lyrics": "La te da"
+            }
+          ]
+        },
+        {
+          "heading": "BASS SOLO",
+          "lines": [
+            {
+              "note": "Bass solo (instrumental) — bass takes the lead, one chord per bar"
+            },
+            {
+              "bars": "| G | C | G | D |"
+            },
+            {
+              "bars": "| G | C | G | D |"
+            }
+          ]
+        },
+        {
+          "heading": "VERSE 3",
+          "lines": [
+            {
+              "chords": "G          C",
+              "lyrics": "So hard to find my way"
+            },
+            {
+              "chords": "G            D",
+              "lyrics": "Now that I'm all on my own"
+            },
+            {
+              "chords": "G              C",
+              "lyrics": "I saw you just the other day"
+            },
+            {
+              "chords": "G           D",
+              "lyrics": "My, how you have grown"
+            },
+            {
+              "chords": "G              C",
+              "lyrics": "Cast my memory back there, Lord"
+            },
+            {
+              "chords": "G                      D",
+              "lyrics": "Sometimes I'm overcome thinking 'bout"
+            },
+            {
+              "chords": "G              C",
+              "lyrics": "Making love in the green grass"
+            },
+            {
+              "chords": "G                  D",
+              "lyrics": "Behind the stadium with you"
+            },
+            {
+              "chords": "C  D     G    Em",
+              "lyrics": "My brown-eyed girl"
+            },
+            {
+              "chords": "C       D     G    D",
+              "lyrics": "You, my brown-eyed girl"
+            }
+          ]
+        },
+        {
+          "heading": "CHORUS",
+          "lines": [
+            {
+              "note": "Chorus — G major, 4/4, one chord per bar (G–C–G–D loop)"
+            },
+            {
+              "chords": "G      C        G       D",
+              "lyrics": "Do you remember when we used to sing"
+            },
+            {
+              "chords": "G            C        G           D",
+              "lyrics": "Sha la la la la la la la la la la te da (just like that)"
+            },
+            {
+              "chords": "G            C        G           D",
+              "lyrics": "Sha la la la la la la la la la la te da"
+            },
+            {
+              "chords": "G",
+              "lyrics": "La te da"
+            }
+          ]
+        },
+        {
+          "heading": "OUTRO",
+          "lines": [
+            {
+              "note": "Outro — fade out: bass repeats G–C–G–D"
+            },
+            {
+              "chords": "G         C        G        D",
+              "lyrics": "Sha-la-la-la-la-la-la-la-la-la-te-da"
+            },
+            {
+              "chords": "G         C        G        D",
+              "lyrics": "Sha-la-la-la-la-la-la-la-la-la-te-da"
+            },
+            {
+              "chords": "G         C        G        D",
+              "lyrics": "Sha-la-la-la-la-la-la-la-la-la-te-da"
+            },
+            {
+              "chords": "G         C        G        D",
+              "lyrics": "Sha-la-la-la-la-la-la-la-la-la-te-da"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "setlists": [
+    {
+      "id": 1,
+      "name": "Worship Set",
+      "songIds": [
+        11,
+        8,
+        10,
+        9
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Biker church",
+      "songIds": [
+        10,
+        11,
+        9,
+        8
+      ]
+    }
+  ]
+}

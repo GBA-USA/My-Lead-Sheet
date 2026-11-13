@@ -108,9 +108,11 @@ class FakeElement extends FakeNode {
 class FakeDocument extends FakeElement {
   activeElement: FakeElement | null = null;
   visibilityState = "visible";
+  readonly body: FakeElement;
   constructor() {
     super(9, "#document", undefined as unknown as FakeDocument);
     Object.defineProperty(this, "ownerDocument", { value: this });
+    this.body = this.appendChild(this.createElement("body")) as FakeElement;
   }
   createElement(name: string) {
     return new FakeElement(1, name.toUpperCase(), this);
@@ -127,7 +129,7 @@ export type { FakeElement };
 export function fakeDom() {
   const document = new FakeDocument();
   const container = document.createElement("div");
-  document.appendChild(container);
+  document.body.appendChild(container);
 
   /** Fires a click the way a browser does: capture listeners on the way down, then bubble listeners up. */
   const click = (target: FakeElement) => {

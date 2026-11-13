@@ -360,17 +360,10 @@ interface LearnChoice {
 }
 
 /**
- * The confirmed result as a normal timing version. The clock opens with a one-bar count-in at the
- * opening tempo, then each heading reaches its place in the chart (`fractions`, 0 to 1) when its section starts.
+ * The confirmed result as a timing version. The clock opens with a one-bar count-in at the opening tempo.
+ * The scroll places each heading from the chart as laid out when it plays, so only the song's end is a mark.
  */
-export function learnedVersion(
-  analysis: Analysis,
-  choice: LearnChoice,
-  headings: string[],
-  fractions: number[],
-  bar: number,
-  bpm: number,
-): Omit<ScrollVersion, "name"> {
+export function learnedVersion(analysis: Analysis, choice: LearnChoice, headings: string[], bar: number, bpm: number): Omit<ScrollVersion, "name"> {
   const shift = (bar * 60) / analysis.tempos[0].bpm - analysis.beats[0];
   const clock = (seconds: number) => Math.round(Math.max(0, seconds + shift) * 1000) / 1000;
   const sections = headings.map((heading, i) => ({
@@ -384,10 +377,5 @@ export function learnedVersion(
     sections,
     vocals: choice.vocals.map((span) => ({ start: clock(span.start), end: clock(span.end) })),
   };
-  const marks = [
-    { at: 0, progress: 0 },
-    ...sections.map((section, i) => ({ at: section.at, progress: i === 0 ? 0 : fractions[i] })),
-    { at: clock(analysis.sound.end), progress: 1 },
-  ];
-  return { bpm, marks, learned };
+  return { bpm, marks: [{ at: 0, progress: 0 }, { at: clock(analysis.sound.end), progress: 1 }], learned };
 }

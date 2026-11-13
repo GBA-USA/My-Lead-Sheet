@@ -291,8 +291,8 @@ function frame() {
   frames.clear();
   for (const [, run] of due) run(now * 1000);
 }
-const elements = () => dom.container.elements;
-const text = () => dom.container.textContent;
+const elements = () => dom.document.body.elements;
+const text = () => dom.document.body.textContent;
 const button = (name: string) =>
   elements().find((el) => el.nodeName === "BUTTON" && (el.getAttribute("aria-label") ?? el.textContent) === name);
 const checkbox = (label: string) =>
@@ -392,8 +392,9 @@ check(JSON.stringify(loaded.versions[0]) === JSON.stringify(version) && loaded.s
 store.set("leadSheetsScrollVersions.6", JSON.stringify({ versions: [{ ...version, learned: { ...learned, beats: "x" } }], selected: 0 }));
 check(learn.loadScrollVersions(6).versions.length === 0, "a broken learned version is dropped instead of breaking the song");
 const beat = 60 / analysis.tempos[0].bpm;
-check(Math.abs(learned.downbeat - 4 * beat) < 0.002 && learnedPlan.marks[0].at === 0 && learnedPlan.marks[1].progress === 0, `the clock opens with one bar of count-in before bar 1 (${learned.downbeat.toFixed(3)} s)`);
-check(JSON.stringify(learnedPlan.marks.slice(2, 4).map((mark) => mark.progress)) === "[0.3,0.65]", "each heading reaches its place in the chart as its section starts");
+check(Math.abs(learned.downbeat - 4 * beat) < 0.002 && learnedPlan.marks[0].at === 0, `the clock opens with one bar of count-in before bar 1 (${learned.downbeat.toFixed(3)} s)`);
+const songEnd = learnedPlan.marks[learnedPlan.marks.length - 1];
+check(learnedPlan.marks.length === 2 && songEnd.progress === 1 && songEnd.at > learned.sections[2].at, `the saved marks keep only the song's end, at ${songEnd.at.toFixed(2)} s, so no layout is frozen into the version`);
 check(bpm === 122, `the version's BPM is the accepted song BPM (${bpm})`);
 
 class Sheet {
@@ -403,13 +404,15 @@ class Sheet {
   addEventListener() {}
   removeEventListener() {}
 }
-const RANGE = { start: 1000, end: 3200 };
+/** The chart from 1000 px to 2000 px of the page, with its headings at 1000, 1300 and 1650 px. */
+const HEADINGS = [1000, 1300, 1650];
+const RANGE = { start: 1000, end: 2000 - 800, lines: () => [...HEADINGS, 2000].map((top) => top - learn.READING_LINE) };
 
 /** Plays the version the way the app does: the cues mount first, then runScroll drives the sheet at the metronome's BPM. */
 async function perform(metronomeBpm: number) {
   clicks.length = 0;
   const motion = learn.scrollMotion(song, version, null, metronomeBpm, 100);
-  if (motion.kind !== "timed") throw new Error("a learned version plays as a timed motion");
+  if (motion.kind !== "learned") throw new Error("a learned version plays by its headings");
   const sheet = new Sheet();
   const clock = { current: 0 };
   let ended = false;
@@ -418,7 +421,7 @@ async function perform(metronomeBpm: number) {
   await settle();
   const cancel = learn.runScroll(sheet, { current: motion }, () => RANGE, clock, () => (ended = true));
   const started = now;
-  const seen: { wall: number; clock: number; cue: string; lit: number; progress: number }[] = [];
+  const seen: { wall: number; clock: number; cue: string; lit: number; progress: number; top: number }[] = [];
   while (!ended) {
     frame();
     await settle();
@@ -428,6 +431,7 @@ async function perform(metronomeBpm: number) {
       cue: elements().find((el) => el.getAttribute("role") === "status")?.textContent ?? "",
       lit: chartSections.findIndex((section) => section.hasAttribute("data-next")),
       progress: (sheet.scrollTop - RANGE.start) / (RANGE.end - RANGE.start),
+      top: sheet.scrollTop,
     });
   }
   cancel();
@@ -443,7 +447,7 @@ check(real.clicks.length === 4, `the metronome counts in one bar of 4 and stops 
 check(spacing.every((gap) => Math.abs(gap - 60 / 122) < 0.002), `count-in clicks are a beat of the opening tempo apart (${spacing.map((gap) => gap.toFixed(3)).join(", ")} s)`);
 const bar1 = real.clicks[0] + 4 * (60 / 122);
 check(Math.abs(bar1 - downbeatWall) <= 60 / 122 / 8, `bar 1 after the count-in lands on the first downbeat within a 32nd note (click bar 1 at ${bar1.toFixed(3)} s, scroll at bar 1 at ${downbeatWall.toFixed(3)} s)`);
-check(real.seen.filter((each) => each.clock < learned.sections[0].at).every((each) => each.progress === 0), "the sheet waits at the top through the count-in");
+check(real.seen.filter((each) => each.clock < learned.sections[0].at).every((each) => each.top === HEADINGS[0] - learn.READING_LINE), "the sheet waits with the first heading on the reading line through the count-in");
 
 for (const section of [1, 2]) {
   const { heading, at: change } = learned.sections[section];
@@ -456,7 +460,8 @@ for (const section of [1, 2]) {
   check(real.seen.some((each) => each.cue === `${name} in 1 bar`), `the cue counts down to "${name} in 1 bar"`);
   check(!!lit && lit.clock >= lastBar && lit.clock - lastBar <= 2 / 60 && real.seen.filter((each) => each.lit === section).every((each) => each.clock <= change + 2 / 60), `the ${name} heading lights for the last bar before it arrives (from ${lit?.clock.toFixed(3)} s, last bar ${lastBar.toFixed(3)} s, until ${change.toFixed(3)} s)`);
   const arrival = real.seen.find((each) => each.clock >= change)!;
-  check(Math.abs(arrival.progress - [0, 0.3, 0.65][section]) < 0.01, `the sheet reaches ${name} as it starts (progress ${arrival.progress.toFixed(3)})`);
+  const line = HEADINGS[section] - arrival.top;
+  check(Math.abs(line - learn.READING_LINE) < 1, `${name}'s heading is on the reading line as it starts (${line.toFixed(1)} px down the view, reading line ${learn.READING_LINE} px)`);
 }
 check(real.seen[real.seen.length - 1].cue === "" && chartSections.every((section) => !section.hasAttribute("data-next")), "cues and the highlight clear when the song ends");
 

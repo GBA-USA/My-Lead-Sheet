@@ -46,6 +46,9 @@ export interface Take {
   holding: boolean;
 }
 
+/** How far below the top of the sheet a learned section's heading sits as its music starts: about two lines. */
+export const READING_LINE = 40;
+
 /** What the scroll loop follows. Songs without a runtime and tempo keep the fixed page speed. */
 export type Motion =
   | { kind: "pace"; pxPerSec: number }
@@ -53,6 +56,13 @@ export type Motion =
       kind: "timed";
       progressAt: (clock: number) => number;
       startAt: (progress: number, slack: number) => number;
+      rate: number;
+    }
+  | {
+      /** Each heading reaches the reading line as its section starts, and the chart's end as the song ends. */
+      kind: "learned";
+      /** When each section starts, then when the song ends. */
+      arrivals: number[];
       rate: number;
     };
 
@@ -125,6 +135,10 @@ export function scrollMotion(song: Song, version: ScrollVersion | null, take: Ta
   const plan = version ?? evenPlan(song);
   if (!plan) return { kind: "pace", pxPerSec: scrollPixelsPerSecond(song.tempo, percent) };
   const rate = clockRate(plan.bpm, bpm ?? plan.bpm, percent);
+  if (version?.learned) {
+    const end = plan.marks[plan.marks.length - 1].at;
+    return { kind: "learned", rate, arrivals: [...version.learned.sections.map((section) => section.at), end] };
+  }
   return { kind: "timed", rate, progressAt: (at) => progressAt(plan.marks, at), startAt: (progress, slack) => timeAt(plan.marks, progress, slack) };
 }
 
@@ -139,6 +153,30 @@ export function nextVersionName(versions: ScrollVersion[]): string {
 export interface Section {
   start: number;
   end: number;
+  /** The scroll positions that put each heading, then the chart's end, on the reading line. */
+  lines?: () => number[];
+}
+
+/** Where a timed motion goes in the sheet as laid out this frame. */
+interface Track extends Section {
+  progressAt: (clock: number) => number;
+  startAt: (progress: number, slack: number) => number;
+}
+
+/**
+ * The sheet reaches each of `lines` at its arrival, in straight lines between. Sections and headings pair up in
+ * order; when one list is longer, its extras are skipped, and the chart's end still comes with the song's end.
+ */
+function learnedTrack(arrivals: number[], lines: number[]): Track {
+  const start = lines[0];
+  const end = lines[lines.length - 1];
+  const progress = (line: number) => (line - start) / (end - start || 1);
+  const marks = [
+    { at: 0, progress: 0 },
+    ...arrivals.slice(0, Math.min(arrivals.length, lines.length) - 1).map((at, i) => ({ at, progress: progress(lines[i]) })),
+    { at: arrivals[arrivals.length - 1], progress: 1 },
+  ];
+  return { start, end, progressAt: (at) => progressAt(marks, at), startAt: (fraction, slack) => timeAt(marks, fraction, slack) };
 }
 
 interface Scroller {
@@ -165,26 +203,29 @@ export function runScroll(
   onStop: (reason: "user" | "end") => void,
 ): () => void {
   const limit = () => Math.max(0, el.scrollHeight - el.clientHeight);
-  const range = (): Section => {
+  const track = (current: Exclude<Motion, { kind: "pace" }>): Track => {
     const max = limit();
+    const clamp = (at: number) => Math.min(max, Math.max(0, at));
     const found = section() ?? { start: 0, end: max };
-    const start = Math.min(max, Math.max(0, found.start));
-    return { start, end: Math.min(max, Math.max(start, found.end)) };
+    if (current.kind === "learned") return learnedTrack(current.arrivals, (found.lines?.() ?? [found.start, found.end]).map(clamp));
+    const start = clamp(found.start);
+    return { start, end: Math.max(start, clamp(found.end)), progressAt: current.progressAt, startAt: current.startAt };
   };
 
   // scrollTop is integer on some browsers, and 78 BPM is only ~19px/s,
   // so a per-frame bump of a fraction of a pixel would be rounded away.
   let position = el.scrollTop;
   const initial = motion.current;
-  if (initial.kind === "timed") {
-    const { start, end } = range();
+  const first = initial.kind === "pace" ? null : track(initial);
+  if (first) {
+    const { start, end } = first;
     const progress = end > start ? (position - start) / (end - start) : 0;
-    clock.current = progress < 0 || position >= end - 2 ? 0 : initial.startAt(progress, 2 / (end - start));
+    clock.current = progress < 0 || position >= end - 2 ? 0 : first.startAt(progress, 2 / (end - start));
   } else if (position >= limit() - 2) {
     position = 0;
     el.scrollTop = 0;
   }
-  const length = initial.kind === "timed" ? initial.startAt(1, 0) : 0;
+  const length = first ? first.startAt(1, 0) : 0;
   const even =
     initial.kind === "timed" && length > 2 && [0.25, 0.5, 0.75].every((f) => Math.abs(initial.progressAt(length * f) - f) < 1e-6);
   const hold = even && clock.current === 0 ? 2 : 0;
@@ -215,11 +256,11 @@ export function runScroll(
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     const current = motion.current;
-    if (current.kind === "timed") {
+    if (current.kind !== "pace") {
       clock.current += dt * current.rate;
-      const progress = current.progressAt(planTime(clock.current));
-      const { start, end } = range();
-      place(start + (end - start) * progress);
+      const path = track(current);
+      const progress = path.progressAt(planTime(clock.current));
+      place(path.start + (path.end - path.start) * progress);
       if (progress >= 1) return onStop("end");
     } else {
       const max = limit();

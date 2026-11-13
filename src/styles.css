@@ -675,11 +675,11 @@ a:focus-visible {
   text-align: left;
   vertical-align: top;
   padding: 0.45em 0.45em 0.45em 0;
-  overflow-wrap: break-word;
 }
 
+/* Headers wrap only between words, so they stop growing once "Nashville" would no longer fit its 20% column. */
 .bass th {
-  font-size: 0.72em;
+  font-size: min(0.72em, 3.3vw);
   font-weight: 700;
   color: var(--ink);
   vertical-align: bottom;
@@ -688,6 +688,7 @@ a:focus-visible {
 }
 
 .bass td {
+  overflow-wrap: break-word;
   font-size: 0.94em;
   border-bottom: 1px solid #e4d9c6;
   line-height: 1.35;

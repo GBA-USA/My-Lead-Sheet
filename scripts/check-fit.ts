@@ -241,7 +241,7 @@ for (const [bpm, percent] of [[78, 100], [117, 100], [78, 50], [78, 150]]) {
   const run = scroll(app.scrollMotion(chain, null, null, bpm, percent));
   const { landed, held } = holdOf(run);
   check(landed, `Scroll On still jumps to the top of the chord section at ${bpm} BPM ${percent}%`);
-  check(near(held, 1 / rate, 0.04), `the chart holds still for 1 s of song time before moving at ${bpm} BPM ${percent}% (${held.toFixed(2)} s, want ${(1 / rate).toFixed(2)})`);
+  check(near(held, 2 / rate, 0.04), `the chart holds still for 2 s of song time before moving at ${bpm} BPM ${percent}% (${held.toFixed(2)} s, want ${(2 / rate).toFixed(2)})`);
   play(197 / rate + 2);
   const end = run.stops[0];
   check(end?.reason === "end" && near(end.at, 197 / rate, 0.05), `the chord section still ends at runtime / rate at ${bpm} BPM ${percent}% (${end?.at.toFixed(2)} s, want ${(197 / rate).toFixed(2)})`);
@@ -304,4 +304,4 @@ if (failures) {
   console.error(`${failures} fit check(s) failed`);
   process.exit(1);
 }
-console.log("fit ok: no page zoom, rows wrap with chords over their syllables at every width and scale, the scroll re-measures through text size and window changes, 1 s hold at the top inside the runtime");
+console.log("fit ok: no page zoom, rows wrap with chords over their syllables at every width and scale, the scroll re-measures through text size and window changes, 2 s hold at the top inside the runtime");

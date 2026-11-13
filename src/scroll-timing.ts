@@ -153,7 +153,7 @@ interface Scroller {
  * Drives `el` until `onStop`. Grabbing or a manual scroll stops with "user"; reaching the end stops with "end".
  * `motion` and `section` are read every frame, so a BPM, percent or text size change applies at once.
  * The timed clock is written to `clock` for teach taps.
- * The even pace started from the top of the chord section holds there for its first second, so the first chords
+ * The even pace started from the top of the chord section holds there for its first 2 seconds, so the first chords
  * can be read, and plays the rest a touch faster to still end on time. A taught version keeps its own timing, and
  * a resume or a live take does not hold.
  */
@@ -186,8 +186,8 @@ export function runScroll(
   }
   const length = initial.kind === "timed" ? initial.startAt(1, 0) : 0;
   const even =
-    initial.kind === "timed" && length > 1 && [0.25, 0.5, 0.75].every((f) => Math.abs(initial.progressAt(length * f) - f) < 1e-6);
-  const hold = even && clock.current === 0 ? 1 : 0;
+    initial.kind === "timed" && length > 2 && [0.25, 0.5, 0.75].every((f) => Math.abs(initial.progressAt(length * f) - f) < 1e-6);
+  const hold = even && clock.current === 0 ? 2 : 0;
   const planTime = (at: number) => (hold ? (Math.max(0, at - hold) * length) / (length - hold) : at);
   let expected = position;
   let armed = false;

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { BackIcon, DotsIcon, OverflowMenu, ScreenToggle, SongControls } from "./controls";
+import { LearnedCues } from "./cues";
 import { useAutoScroll, usePerformance, useWakeLock } from "./hooks";
+import { LearnSong } from "./learn-song";
 import { initialMetronomeBpm } from "./metronome";
 import { useMetronome } from "./metronome-view";
 import { displayKeyLabel } from "./music";
@@ -103,6 +105,7 @@ export function App() {
   const versions = useScrollVersions(activeSong?.id ?? null);
   if (take && !performance.scrolling) setTake(null);
   const version = versions.selected == null ? null : versions.versions[versions.selected];
+  const learned = take ? undefined : version?.learned;
   const even = activeSong ? evenPlan(activeSong) : null;
   // The metronome's speed against the plan's BPM scales the timed scroll, so a tempo change applies at once.
   const motion = activeSong
@@ -247,7 +250,7 @@ export function App() {
         </div>
       )}
 
-      {activeSong && (even || versions.versions.length > 0) ? (
+      {activeSong && (even || versions.versions.length > 0 || route.name === "song") ? (
         <TeachBar
           names={versions.versions.map((item) => item.name)}
           selected={versions.selected}
@@ -258,7 +261,19 @@ export function App() {
           onRename={versions.rename}
           onTeach={teach}
           onHold={() => setTake((current) => current && toggleHold(current, clock.current))}
-        />
+        >
+          {route.name === "song" ? (
+            <LearnSong
+              song={activeSong}
+              original={withSongData(songById(stored.songs, activeSong.id)!, {})}
+              metronomeBpm={metronome.bpm}
+              onSave={(plan, data) => {
+                versions.add(plan);
+                if (data) saveData(activeSong, data);
+              }}
+            />
+          ) : null}
+        </TeachBar>
       ) : null}
 
       {activeSong && editing ? (
@@ -295,6 +310,9 @@ export function App() {
         role={showTabs ? "tabpanel" : undefined}
         aria-labelledby={showTabs ? `tab-${tab}` : undefined}
       >
+        {performance.scrolling && learned && motion.kind === "timed" ? (
+          <LearnedCues learned={learned} clock={clock} rate={motion.rate} metronomeOn={metronome.playing} />
+        ) : null}
         {route.name === "songs" ? <SongList songs={library.songs} /> : null}
         {route.name === "setlists" ? <SetlistList setlists={library.setlists} songs={library.songs} /> : null}
         {route.name === "song" ? (

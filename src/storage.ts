@@ -1,6 +1,6 @@
 import seedLibrary from "../data/library.json";
 import { clampScrollPercent, pitchClass, type Notation } from "./music";
-import type { Mark, ScrollVersion } from "./scroll-timing";
+import type { Learned, Mark, ScrollVersion, Span } from "./scroll-timing";
 import type { BassNote, ChartLine, ChartSection, LibraryFile, Setlist, Song, SongData } from "./types";
 
 export const LIBRARY_KEY = "leadSheetsLibrary";
@@ -297,13 +297,24 @@ export interface ScrollVersions {
   selected: number | null;
 }
 
+const isTime: Check = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0;
+
 const isMark = shaped<Mark>({
-  at: (value) => typeof value === "number" && Number.isFinite(value) && value >= 0,
+  at: isTime,
   progress: (value) => typeof value === "number" && value >= 0 && value <= 1,
 });
 
+const isLearned = shaped<Learned>({
+  beatsPerBar: (value) => Number.isInteger(value) && (value as number) > 0,
+  downbeat: isPositive,
+  beats: listOf(isTime),
+  sections: listOf(shaped<Learned["sections"][number]>({ heading: isString, at: isTime })),
+  vocals: listOf(shaped<Span>({ start: isTime, end: isTime })),
+});
+
 const isVersion: Check = (value) => {
-  if (!shaped<ScrollVersion>({ name: isString, bpm: isPositive, marks: listOf(isMark) })(value)) return false;
+  const fields = { name: isString, bpm: isPositive, marks: listOf(isMark), learned: optional(isLearned) };
+  if (!shaped<ScrollVersion>(fields)(value)) return false;
   const marks = (value as ScrollVersion).marks;
   return (
     marks.length >= 2 &&

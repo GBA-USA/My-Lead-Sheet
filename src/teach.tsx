@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { nextVersionName, type ScrollPlan } from "./scroll-timing";
+import { useState, type ReactNode } from "react";
+import { nextVersionName, type ScrollVersion } from "./scroll-timing";
 import { loadScrollVersions, saveScrollVersions, type ScrollVersions } from "./storage";
 import "./teach.css";
 
@@ -25,7 +25,7 @@ export function useScrollVersions(songId: number | null) {
     select: (selected: number | null) => update({ ...state, selected }),
     rename: (index: number, name: string) =>
       update({ ...state, versions: state.versions.map((version, i) => (i === index ? { ...version, name } : version)) }),
-    add: (plan: ScrollPlan) =>
+    add: (plan: Omit<ScrollVersion, "name">) =>
       update({
         versions: [...state.versions, { name: nextVersionName(state.versions), ...plan }],
         selected: state.versions.length,
@@ -43,6 +43,7 @@ export function TeachBar({
   onRename,
   onTeach,
   onHold,
+  children,
 }: {
   names: string[];
   selected: number | null;
@@ -53,6 +54,8 @@ export function TeachBar({
   onRename: (index: number, name: string) => void;
   onTeach: () => void;
   onHold: () => void;
+  /** More buttons after Teach. */
+  children?: ReactNode;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
 
@@ -116,6 +119,7 @@ export function TeachBar({
       <button type="button" className="teach-btn" disabled={!canTeach} onClick={onTeach}>
         Teach
       </button>
+      {children}
     </div>
   );
 }

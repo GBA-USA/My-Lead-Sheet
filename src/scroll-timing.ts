@@ -13,8 +13,28 @@ export interface ScrollPlan {
   marks: Mark[];
 }
 
+export interface Span {
+  start: number;
+  end: number;
+}
+
+/**
+ * What Learn this song heard, in seconds on the version's clock. The clock's first bar is the count-in,
+ * so `downbeat` (bar 1) is one bar of the opening tempo after 0.
+ */
+export interface Learned {
+  beatsPerBar: number;
+  downbeat: number;
+  beats: number[];
+  /** One per chart section, in order. The first starts at the first note. */
+  sections: { heading: string; at: number }[];
+  /** Vocal regions the player kept from the suggestions. */
+  vocals: Span[];
+}
+
 export interface ScrollVersion extends ScrollPlan {
   name: string;
+  learned?: Learned;
 }
 
 /** Teach mode: the even pace, stopped while held, with a mark at every Hold and Continue tap. */

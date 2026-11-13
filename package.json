@@ -11,6 +11,7 @@
     "check:music": "node --experimental-strip-types scripts/check-music.ts",
     "check:scroll": "node --experimental-strip-types scripts/check-scroll.ts",
     "check:bpm": "node --experimental-strip-types scripts/check-bpm.ts",
+    "check:learn": "node --experimental-strip-types scripts/check-learn.ts",
     "check:storage": "node --experimental-strip-types scripts/check-storage.ts",
     "check:screens": "node --experimental-strip-types scripts/check-screens.ts",
     "check:search": "node --experimental-strip-types scripts/check-search.ts",

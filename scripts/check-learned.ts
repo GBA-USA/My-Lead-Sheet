@@ -12,6 +12,7 @@ const TRUTH = 8;
 
 const root = new URL("..", import.meta.url).pathname;
 const seed = JSON.parse(readFileSync(join(root, "data/library.json"), "utf8")) as LibraryFile;
+const original = JSON.parse(readFileSync(join(root, "docs/handoff/lead-sheets-data-export.json"), "utf8")) as LibraryFile;
 const modules = await bundle({
   stdin: { contents: 'export * from "./src/storage.ts"; export * from "./src/metronome.ts";', resolveDir: root, loader: "ts" },
   bundle: true,
@@ -33,6 +34,9 @@ function check(ok: boolean, message: string) {
  * plays in a moment. The mic is a stand-in the check feeds a click track to, as fast as it likes.
  */
 const STAND_INS = `(() => {
+  window.__errors = [];
+  addEventListener("error", (event) => window.__errors.push(String(event.message)));
+  addEventListener("unhandledrejection", (event) => window.__errors.push(String(event.reason)));
   let now = 0;
   let next = 0;
   const frames = new Map();
@@ -138,7 +142,24 @@ try {
   await send("Emulation.setDeviceMetricsOverride", PHONE);
 
   await openSong(NO_HALF_STEPPIN, 1, "localStorage.clear()");
+  const chart = await evaluate<{ heading: string; bars: number }[]>(
+    `[...document.querySelectorAll("#chord-section .chart-section")].map((section) => ({ heading: section.querySelector(".chart-heading").textContent, bars: section.querySelectorAll(".bars").length }))`,
+  );
+  await shoot("no-half-steppin-top");
+  await evaluate(`(() => {
+    const sheet = document.getElementById("sheet-scroll");
+    const verse = [...document.querySelectorAll(".chart-heading")].find((heading) => heading.textContent === "VERSE 2");
+    sheet.scrollTop += verse.getBoundingClientRect().top - sheet.getBoundingClientRect().top - 8;
+  })()`);
+  await pause(100);
+  await shoot("no-half-steppin-verse-2-3");
+  const headingList = chart.map((section) => `${section.heading} (${section.bars} bar rows)`).join(", ");
+  check(chart.length === 6 && chart[0].heading === "VERSE 1" && !chart.some((section) => section.heading.startsWith("THE FORM")), `No Half Steppin' shows its 6 song sections from VERSE 1, no THE FORM heading (${headingList})`);
+  check(chart.every((section) => section.bars > 0), `every No Half Steppin' section shows chord bars on screen (${headingList})`);
+
   await learnOnce();
+  const asked = await evaluate<string[]>(`[...document.querySelectorAll(".learn-sections .learn-heading")].map((heading) => heading.textContent)`);
+  check(asked.length === 6 && asked[0] === "VERSE 1", `Learn asks for No Half Steppin's 6 song sections, from VERSE 1 (${asked.join(", ")})`);
   const cover = await evaluate<{ top: number; bottom: number; points: number; misses: string[]; under: string[] }>(`(() => {
     const panel = document.querySelector(".learn");
     const box = panel.getBoundingClientRect();
@@ -277,6 +298,50 @@ try {
     await pause(50);
     check(!(await place()).on, `${where}: the scroll stops at the song's end`);
     await send("Emulation.setDeviceMetricsOverride", PHONE);
+  }
+
+  {
+    const oldChart = original.songs.find((song) => song.id === NO_HALF_STEPPIN)!.body.map((section) => section.heading);
+    const at = [1, 12, 45, 75, 110, 150, 190];
+    const end = 232;
+    const downbeat = at[0] + (4 * 60) / 112;
+    const beats = Array.from({ length: Math.floor(((end - downbeat) * 112) / 60) }, (_, k) => +(downbeat + (k * 60) / 112).toFixed(3));
+    const sections = oldChart.map((heading, i) => ({ heading, at: at[i] }));
+    const version = { name: "V1", bpm: 112, marks: [{ at: 0, progress: 0 }, { at: end, progress: 1 }], learned: { beatsPerBar: 4, downbeat, beats, sections, vocals: [] } };
+    await openSong(NO_HALF_STEPPIN, 1, `localStorage.clear(); localStorage.setItem("${app.SCROLL_VERSIONS_KEY}.${NO_HALF_STEPPIN}", ${JSON.stringify(JSON.stringify({ versions: [version], selected: 0 }))})`);
+    const headings = await evaluate<string[]>(`[...document.querySelectorAll(".chart-heading")].map((heading) => heading.textContent)`);
+    check(sections.length > headings.length, `a V1 learned on the old chart has more sections (${sections.length}) than No Half Steppin' now has headings (${headings.length})`);
+    await click(".scroll-pill");
+    await until(`window.__frames(0) > 0`, "the scroll loop");
+    let reading = 0;
+    const seen: string[] = [];
+    let frames = 0;
+    let top = 0;
+    let forward = true;
+    for (const section of sections) {
+      const count = Math.round(section.at * 60) - frames;
+      frames += count;
+      await evaluate(`window.__frames(${count})`);
+      const now = await evaluate<{ top: number; ys: number[]; cue: string }>(`(() => {
+        const sheet = document.getElementById("sheet-scroll");
+        const view = sheet.getBoundingClientRect().top;
+        return { top: sheet.scrollTop, ys: [...document.querySelectorAll(".chart-heading")].map((heading) => heading.getBoundingClientRect().top - view), cue: document.querySelector(".cue")?.textContent ?? "" };
+      })()`);
+      forward &&= now.top >= top;
+      top = now.top;
+      if (section === sections[0]) reading = now.ys[0];
+      const nearest = now.ys.reduce((best, y, i) => (Math.abs(y - reading) < Math.abs(now.ys[best] - reading) ? i : best), 0);
+      seen.push(`${section.at} s old ${section.heading.split(/\s+[(—]/)[0]} -> ${headings[nearest].split(/\s+[(—]/)[0]} on the reading line`);
+    }
+    console.log(`     old 7-section V1 on the 6-heading chart: ${seen.join("; ")}`);
+    await evaluate(`window.__frames(${Math.round((end - 0.5) * 60) - frames})`);
+    const late = await evaluate<{ on: boolean; top: number }>(`({ on: document.querySelector(".scroll-pill").textContent.includes("On"), top: document.getElementById("sheet-scroll").scrollTop })`);
+    await evaluate(`window.__frames(60)`);
+    await pause(50);
+    const stopped = !(await evaluate<boolean>(`document.querySelector(".scroll-pill").textContent.includes("On")`));
+    const errors = await evaluate<string[]>(`window.__errors`);
+    check(forward && late.on && late.top > top && stopped, `the old V1 plays: the sheet moves forward through every section and keeps going until the song's end, then stops (${top.toFixed(0)} px at the last old section, ${late.top.toFixed(0)} px near the end, stopped ${stopped})`);
+    check(errors.length === 0 && !!(await evaluate<boolean>(`!!document.querySelector(".chart-heading")`)), `the old V1 throws nothing and the sheet stays up (${errors.length ? errors.join("; ") : "no page errors"})`);
   }
 } finally {
   await site.close();

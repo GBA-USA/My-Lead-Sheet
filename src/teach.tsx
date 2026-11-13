@@ -1,4 +1,5 @@
-import { useId, useState, type ReactNode } from "react";
+import { useId, useState } from "react";
+import { Menu } from "./controls";
 import { finishTake, nextVersionName, takeProgress, toggleHold, type ScrollPlan, type ScrollVersion, type Take } from "./scroll-timing";
 import { loadScrollVersions, saveScrollVersions, type ScrollVersions } from "./storage";
 import "./teach.css";
@@ -38,46 +39,59 @@ export function taughtPlan(take: Take, at: number): ScrollPlan {
   return finishTake(moving, at + (1 - takeProgress(moving, at)) / take.slope);
 }
 
+export type BarMenu = "timing" | "scroll";
+
+const versionLabel = (version: ScrollVersion) => (version.learned ? `${version.name} · learned` : version.name);
+
 export function TeachBar({
-  names,
+  versions,
   selected,
   canTeach,
   teaching,
   holding,
+  menu,
+  onToggleMenu,
+  onCloseMenu,
   onSelect,
   onRename,
   onDelete,
   onTeach,
+  onListen,
   onHold,
   onDone,
   onDiscard,
-  children,
 }: {
-  names: string[];
+  versions: ScrollVersion[];
   selected: number | null;
   canTeach: boolean;
   teaching: boolean;
   holding: boolean;
+  menu: string | null;
+  onToggleMenu: (menu: BarMenu) => void;
+  onCloseMenu: () => void;
   onSelect: (index: number | null) => void;
   onRename: (index: number, name: string) => void;
   onDelete: () => void;
   onTeach: () => void;
+  /** Missing in a live setlist, where Learn by listen is not offered. */
+  onListen?: () => void;
   onHold: () => void;
   onDone: () => void;
   onDiscard: () => void;
-  /** More buttons after Teach. */
-  children?: ReactNode;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const reasonId = useId();
 
   if (teaching) return <TakeBar holding={holding} onHold={onHold} onDone={onDone} onDiscard={onDiscard} />;
 
-  if (deleting && selected != null) {
+  const chosen = selected == null ? null : versions[selected];
+
+  if (deleting && chosen) {
     return (
       <div className="teach-bar">
         <Confirm
-          question={`Delete ${names[selected]}?`}
+          question={`Delete ${chosen.name}?`}
           action="Delete"
           onConfirm={() => {
             setDeleting(false);
@@ -94,6 +108,16 @@ export function TeachBar({
     if (name && selected != null) onRename(selected, name);
     setDraft(null);
   };
+  const pick = (run: () => void) => () => {
+    onCloseMenu();
+    run();
+  };
+  const choice = (label: string, checked: boolean, index: number | null) => (
+    <button key={index ?? "default"} type="button" role="menuitemradio" aria-checked={checked} onClick={pick(() => onSelect(index))}>
+      {checked ? <span aria-hidden="true">✓ </span> : null}
+      {label}
+    </button>
+  );
 
   return (
     <div className="teach-bar">
@@ -110,40 +134,72 @@ export function TeachBar({
             if (event.key === "Escape") setDraft(null);
           }}
         />
-      ) : names.length > 0 ? (
-        <select
-          className="teach-select"
-          aria-label="Scroll version"
-          value={selected ?? ""}
-          onChange={(event) => onSelect(event.target.value === "" ? null : Number(event.target.value))}
+      ) : (
+        <Menu
+          button={
+            <>
+              <span className="teach-dim">Timing:</span> {chosen ? versionLabel(chosen) : "Default"}
+              <Caret />
+            </>
+          }
+          className="teach-btn"
+          open={menu === "timing"}
+          onToggle={() => onToggleMenu("timing")}
+          onClose={onCloseMenu}
         >
-          <option value="">Default</option>
-          {names.map((name, index) => (
-            <option key={index} value={index}>
-              {name}
-            </option>
-          ))}
-        </select>
-      ) : null}
-      {selected != null && draft == null ? (
-        <>
-          <button type="button" className="teach-btn" onClick={() => setDraft(names[selected])}>
-            Rename
+          {versions.map((version, index) => choice(versionLabel(version), index === selected, index))}
+          {choice("Default (even pace)", chosen == null, null)}
+          {chosen ? (
+            <>
+              <div className="menu-divider" role="separator" />
+              <button type="button" role="menuitem" onClick={pick(() => setDraft(chosen.name))}>
+                Rename {chosen.name}…
+              </button>
+              <button type="button" role="menuitem" onClick={pick(() => setDeleting(true))}>
+                Delete {chosen.name}…
+              </button>
+            </>
+          ) : null}
+        </Menu>
+      )}
+      <Menu
+        button={
+          <>
+            Customize scroll
+            <Caret />
+          </>
+        }
+        className="teach-btn"
+        open={menu === "scroll"}
+        onToggle={() => onToggleMenu("scroll")}
+        onClose={onCloseMenu}
+      >
+        <button
+          type="button"
+          role="menuitem"
+          disabled={!canTeach}
+          aria-describedby={canTeach ? undefined : reasonId}
+          onClick={pick(onTeach)}
+        >
+          Learn by user (scroll it yourself)
+        </button>
+        {canTeach ? null : (
+          <p className="menu-note" id={reasonId}>
+            Needs the song's length and BPM
+          </p>
+        )}
+        {onListen ? (
+          <button type="button" role="menuitem" onClick={pick(onListen)}>
+            Learn by listen (play the song)
           </button>
-          <button type="button" className="teach-btn" onClick={() => onSelect(null)}>
-            Reset
-          </button>
-          <button type="button" className="teach-btn" onClick={() => setDeleting(true)}>
-            Delete
-          </button>
-        </>
-      ) : null}
-      <button type="button" className="teach-btn" disabled={!canTeach} onClick={onTeach}>
-        Teach
-      </button>
-      {children}
+        ) : null}
+      </Menu>
     </div>
   );
+}
+
+function Caret() {
+  return <span aria-hidden="true"> ▾</span>;
 }
 
 function TakeBar({

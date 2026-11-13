@@ -358,17 +358,26 @@ const song = {
 } as unknown as Song;
 const saves: { version: Omit<import("../src/scroll-timing.ts").ScrollVersion, "name">; data: SongData | null }[] = [];
 let root = learn.createRoot(dom.container);
-const mount = async () => {
+let opened = 0;
+const close = () => root.render(null);
+/** Opens the sheet the way the app does when Learn by listen is picked, and closes it on Save or Cancel. */
+const learnSong = async () => {
   root.render(
-    learn.createElement(learn.LearnSong, { song, original: song, metronomeBpm: null, onSave: (version: never, data: SongData | null) => saves.push({ version, data }) }),
+    learn.createElement(learn.LearnSong, {
+      key: (opened += 1),
+      song,
+      original: song,
+      metronomeBpm: null,
+      onSave: (version: never, data: SongData | null) => (saves.push({ version, data }), close()),
+      onClose: close,
+    }),
   );
   await settle();
 };
-await mount();
 
-check(micAsks === 0, "the song screen does not ask for the mic before Learn this song is tapped");
-await tap(button("Learn this song"), "Learn this song");
-check(micAsks === 1, "tapping Learn this song asks for the mic");
+check(micAsks === 0, "nothing asks for the mic before the Learn sheet opens");
+await learnSong();
+check(micAsks === 1, "opening the Learn sheet asks for the mic");
 check(text().includes("Play the whole song near the phone"), "listening asks for the whole song");
 await play(truth.samples.subarray(0, 20 * SAMPLE_RATE));
 const progress = () => elements().find((el) => el.nodeName === "PROGRESS");
@@ -394,7 +403,7 @@ await tap(button("Save"), "Save");
 check(saves.length === 1 && JSON.stringify(saves[0].data) === JSON.stringify({ officialRuntimeSec: Math.round(truth.end - HEAD), tempo: 122 }), `accepting sends ${length} and 122 BPM through the song data path (${JSON.stringify(saves[0]?.data)})`);
 check(!text().includes("Suggested vocals"), "Save closes the sheet");
 
-await tap(button("Learn this song"), "Learn this song");
+await learnSong();
 await play(truth.samples);
 await tap(button("Stop"), "Stop");
 await tap(checkbox(`${verse}–`), "vocal suggestion");
@@ -402,20 +411,19 @@ await tap(button("Save"), "Save");
 check(saves[1]?.data === null, "without accepting, the song's length and BPM are left alone");
 check(saves[1]?.version.learned?.vocals.length === 0 && saves[0].version.learned?.vocals.length === 1, "a cleared vocal suggestion is not saved, a kept one is");
 
-await tap(button("Learn this song"), "Learn this song");
+await learnSong();
 await play(truth.samples.subarray(0, 2 * SAMPLE_RATE));
 await tap(button("Cancel"), "Cancel");
 check(latest().stopped && FakeAudioContext.last.state === "closed" && saves.length === 2, "Cancel stops the mic track and saves nothing");
-await tap(button("Learn this song"), "Learn this song");
+await learnSong();
 root.unmount();
 await settle();
 check(latest().stopped, "leaving the song while listening stops the mic track");
 root = learn.createRoot(dom.container);
-await mount();
 micAllowed = false;
-await tap(button("Learn this song"), "Learn this song");
+await learnSong();
 check(text().includes("The mic isn't available."), "a denied mic says so");
-check(micAsks === 5, `the mic was asked for once per Learn tap (${micAsks})`);
+check(micAsks === 5, `the mic was asked for once each time the sheet opened (${micAsks})`);
 root.unmount();
 
 const learnedPlan = saves[0].version;

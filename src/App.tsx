@@ -22,7 +22,7 @@ import {
   tempoText,
   withSongData,
 } from "./storage";
-import { SaveTake, TeachBar, taughtPlan, useScrollVersions } from "./teach";
+import { SaveTake, TeachBar, taughtPlan, useScrollVersions, type BarMenu } from "./teach";
 import type { LibraryFile, Setlist, Song, SongData } from "./types";
 import { SearchBox } from "./search-box";
 import { matchingSetlists, matchingSongs } from "./search";
@@ -35,12 +35,12 @@ type Route =
   | { name: "song"; id: number; from: TabName }
   | { name: "live"; setlistId: number; index: number };
 
-type MenuId = "shell" | "song" | null;
+type MenuId = "shell" | "song" | BarMenu | null;
 
 type SongDataById = Record<number, SongData>;
 
-/** Teach mode: the take while it plays, then what the take or Learn this song taught, until Save or Discard. */
-type Teaching = { take: Take } | { taught: Omit<ScrollVersion, "name">; data?: SongData | null };
+/** Teach mode: the take while it plays or Learn this song while it listens, then what either taught, until Save or Discard. */
+type Teaching = { take: Take } | { learning: true } | { taught: Omit<ScrollVersion, "name">; data?: SongData | null };
 
 function parseHash(hash: string): Route {
   const raw = hash.replace(/^#/, "");
@@ -266,28 +266,33 @@ export function App() {
 
       {activeSong && (even || versions.versions.length > 0 || route.name === "song") ? (
         <TeachBar
-          names={versions.versions.map((item) => item.name)}
+          versions={versions.versions}
           selected={versions.selected}
           canTeach={even != null}
           teaching={take != null}
           holding={take?.holding ?? false}
+          menu={menu}
+          onToggleMenu={toggleMenu}
+          onCloseMenu={closeMenu}
           onSelect={versions.select}
           onRename={versions.rename}
           onDelete={versions.remove}
           onTeach={teach}
+          onListen={route.name === "song" ? () => setTeaching({ learning: true }) : undefined}
           onHold={() => take && setTeaching({ take: toggleHold(take, clock.current) })}
           onDone={() => take && finishTake(take)}
           onDiscard={discardTake}
-        >
-          {route.name === "song" ? (
-            <LearnSong
-              song={activeSong}
-              original={withSongData(songById(stored.songs, activeSong.id)!, {})}
-              metronomeBpm={metronome.bpm}
-              onSave={(taught, data) => setTeaching({ taught, data })}
-            />
-          ) : null}
-        </TeachBar>
+        />
+      ) : null}
+
+      {activeSong && teaching && "learning" in teaching ? (
+        <LearnSong
+          song={activeSong}
+          original={withSongData(songById(stored.songs, activeSong.id)!, {})}
+          metronomeBpm={metronome.bpm}
+          onSave={(taught, data) => setTeaching({ taught, data })}
+          onClose={() => setTeaching(null)}
+        />
       ) : null}
 
       {activeSong && teaching && "taught" in teaching ? (

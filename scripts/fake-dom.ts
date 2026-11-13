@@ -97,6 +97,10 @@ class FakeElement extends FakeNode {
     if (this.ownerDocument.activeElement === this) this.ownerDocument.activeElement = null;
   }
   select() {}
+  contains(node: FakeElement | null): boolean {
+    for (let at = node; at; at = at.parentNode) if (at === this) return true;
+    return false;
+  }
   getContext() {
     return null;
   }

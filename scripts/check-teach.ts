@@ -62,28 +62,6 @@ Object.assign(dom.document, {
   createElementNS: (_namespace: string, name: string) => dom.document.createElement(name),
 });
 
-/** React picks a select's option through select.options, so the fake select keeps the picked value. */
-type Select = FakeElement & { picked?: string };
-Object.defineProperty(Object.getPrototypeOf(dom.container), "options", {
-  get(this: Select) {
-    const select = this;
-    return this.elements
-      .filter((el) => el.nodeName === "OPTION")
-      .map((el) => ({
-        get value() {
-          return el.getAttribute("value") ?? "";
-        },
-        get selected() {
-          return select.picked === this.value;
-        },
-        set selected(on: boolean) {
-          if (on) select.picked = this.value;
-        },
-        set defaultSelected(_: boolean) {},
-      }));
-  },
-});
-
 const location = { hash: `#/song/${CHAIN_BREAKER}` };
 Object.assign(globalThis, {
   window: {
@@ -144,7 +122,9 @@ const button = (name: string, within: () => FakeElement | undefined = () => dom.
   within()?.elements.find((el) => el.nodeName === "BUTTON" && (el.getAttribute("aria-label") ?? el.textContent) === name);
 const dialog = () => elements().find((el) => el.getAttribute("role") === "dialog");
 const nameField = () => dialog()?.elements.find((el) => el.nodeName === "INPUT");
-const picked = () => (elements().find((el) => el.getAttribute("aria-label") === "Scroll version") as Select | undefined)?.picked;
+const menuButton = (name: string) => elements().find((el) => el.getAttribute("aria-haspopup") === "menu" && el.textContent.startsWith(name));
+const menuItems = () => elements().filter((el) => el.getAttribute("role")?.startsWith("menuitem"));
+const chip = () => menuButton("Timing:")?.textContent;
 const scrollOn = () => !!button("Scroll: On");
 
 async function tap(target: FakeElement | undefined, name: string) {
@@ -152,6 +132,11 @@ async function tap(target: FakeElement | undefined, name: string) {
   dom.click(target);
   await settle();
 }
+async function choose(menu: string, item: string) {
+  await tap(menuButton(menu), menu);
+  await tap(menuItems().find((el) => el.textContent === item), item);
+}
+const teach = () => choose("Customize scroll", "Learn by user (scroll it yourself)");
 /** Types into a text field the way a browser does: a text input's value changes, then an input event bubbles up. */
 async function type(field: FakeElement | undefined, text: string) {
   if (!field) throw new Error("no text field to type into");
@@ -198,7 +183,7 @@ async function scenario(name: string, run: () => Promise<void>) {
 await scenario("Discard while teaching", async () => {
   const before = { versions: [V1], selected: 0 };
   await open(before);
-  await tap(button("Teach"), "Teach");
+  await teach();
   check(barText().startsWith("Teaching") && scrollOn(), "Teach starts a take and the scroll");
   check(!!button("Discard", bar) && !!button("Done", bar), `while teaching the bar offers Discard and Done (${barText()})`);
   await play(20);
@@ -218,19 +203,20 @@ await scenario("Discard while teaching", async () => {
 
 await scenario("Delete a saved version", async () => {
   await open({ versions: [V1, LEARNED], selected: 1 });
-  await tap(button("Delete", bar), "Delete");
+  await choose("Timing:", "Delete Slow intro…");
   check(barText().includes("Delete Slow intro?"), `Delete names the version and asks once (${barText()})`);
   await tap(button("Cancel", bar), "Cancel");
   check(saved().versions.length === 2 && saved().selected === 1, "Cancel keeps it");
-  await tap(button("Delete", bar), "Delete");
+  await choose("Timing:", "Delete Slow intro…");
   await tap(button("Delete", bar), "Delete (confirm)");
   const after = saved();
   check(after.versions.length === 1 && after.versions[0].name === "V1", `only the learned "Slow intro" is deleted (${JSON.stringify(after.versions.map((v) => v.name))})`);
-  check(after.selected === null && picked() === "", `the selection falls back to the default even scroll (selected ${after.selected})`);
-  check(!button("Delete", bar), "with Default chosen there is nothing to delete");
+  check(after.selected === null && chip() === "Timing: Default ▾", `the selection falls back to the default even scroll (selected ${after.selected}, ${chip()})`);
+  await tap(menuButton("Timing:"), "Timing");
+  check(!menuItems().some((el) => el.textContent.startsWith("Delete")), "with Default chosen there is nothing to delete");
 
   await open({ versions: [V1, LEARNED], selected: 0 });
-  await tap(button("Delete", bar), "Delete");
+  await choose("Timing:", "Delete V1…");
   await tap(button("Delete", bar), "Delete (confirm)");
   check(JSON.stringify(saved().versions.map((v) => v.name)) === '["Slow intro"]' && saved().selected === null, "deleting V1 keeps the other version and resets the selection");
 });
@@ -238,7 +224,7 @@ await scenario("Delete a saved version", async () => {
 await scenario("The take reaches the end", async () => {
   const before = { versions: [V1], selected: null };
   await open(before);
-  await tap(button("Teach"), "Teach");
+  await teach();
   await play(RUNTIME + 2);
   check(!scrollOn() && !!dialog(), "at the end of the song the save sheet appears");
   check(nameField()?.value === "V2", `its name is the next V# (${nameField()?.value})`);
@@ -250,13 +236,13 @@ await scenario("The take reaches the end", async () => {
   check(after.versions.length === 2 && after.versions[1].name === "Sunday" && after.selected === 1, `Save stores the take under the typed name and selects it (${JSON.stringify(after.versions.map((v) => v.name))}, selected ${after.selected})`);
   const last = after.versions[1].marks.at(-1)!;
   check(after.versions[1].bpm === 78 && last.progress === 1 && Math.abs(last.at - RUNTIME) < 0.1, `the saved take ends where the song did (${last.at.toFixed(2)} s)`);
-  check(!dialog() && picked() === "1", "the sheet closes and the picker shows Sunday");
+  check(!dialog() && chip() === "Timing: Sunday ▾", `the sheet closes and the chip shows Sunday (${chip()})`);
 });
 
 await scenario("Done, then Discard on the sheet", async () => {
   const before = { versions: [V1], selected: 0 };
   await open(before);
-  await tap(button("Teach"), "Teach");
+  await teach();
   await play(30);
   await tap(button("Hold"), "Hold");
   await play(5);
@@ -268,7 +254,7 @@ await scenario("Done, then Discard on the sheet", async () => {
 
 await scenario("Done mid-song, then Save", async () => {
   await open({ versions: [], selected: null });
-  await tap(button("Teach"), "Teach");
+  await teach();
   await play(30);
   await tap(button("Hold"), "Hold");
   await play(5);
@@ -287,7 +273,7 @@ await scenario("Done mid-song, then Save", async () => {
 await scenario("Stopping the scroll mid-take", async () => {
   const before = { versions: [V1], selected: 0 };
   await open(before);
-  await tap(button("Teach"), "Teach");
+  await teach();
   await play(10);
   await tap(button("Hold"), "Hold");
   await play(2);
@@ -301,7 +287,7 @@ await scenario("Stopping the scroll mid-take", async () => {
   check(saved().versions.length === 2 && saved().versions[1].name === "V2", "Save from a stopped take stores it");
 
   await open(before);
-  await tap(button("Teach"), "Teach");
+  await teach();
   await play(10);
   await tap(button("Hold"), "Hold");
   await tap(button("Scroll: On"), "Scroll: On");
@@ -310,7 +296,7 @@ await scenario("Stopping the scroll mid-take", async () => {
   check(same(saved(), before), "Discard from it stores nothing");
 
   await open(before);
-  await tap(button("Teach"), "Teach");
+  await teach();
   await play(10);
   sheet.listeners.get("pointerdown")?.();
   await settle();

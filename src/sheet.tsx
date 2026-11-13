@@ -5,6 +5,8 @@ import {
   displayChordCell,
   displayChordLine,
   displayKeyLabel,
+  nashvilleNumber,
+  originalKey,
   type Notation,
 } from "./music";
 import { tempoText } from "./storage";
@@ -25,6 +27,8 @@ export function LeadSheet({
 }) {
   const notes = [song.keyNote, song.tempoNote].filter((note) => note.trim().length > 0);
   const atAGlance = song.atAGlance ? displayChordLine(song.atAGlance, song, semitones, notation) : "";
+  const original = originalKey(song, semitones);
+  const inOriginalKey = original ? <span className="hint"> · original key ({original})</span> : null;
 
   return (
     <article className="sheet" style={{ fontSize: `calc(16px * ${scale})` }}>
@@ -57,7 +61,7 @@ export function LeadSheet({
 
       {song.howToPlay ? (
         <>
-          <h2 className="sheet-label">How to play</h2>
+          <h2 className="sheet-label">How to play{inOriginalKey}</h2>
           <p className="prose">{song.howToPlay}</p>
         </>
       ) : null}
@@ -73,7 +77,7 @@ export function LeadSheet({
 
       {song.practiceTip ? (
         <>
-          <h2 className="sheet-label">Practice tip</h2>
+          <h2 className="sheet-label">Practice tip{inOriginalKey}</h2>
           <p className="prose">{song.practiceTip}</p>
         </>
       ) : null}
@@ -109,18 +113,32 @@ function BassTable({
             <br />
             note
           </th>
-          <th scope="col">Easiest place to play it</th>
+          <th scope="col">
+            Easiest place to play it
+            {originalKey(song, semitones) ? (
+              <>
+                <br />
+                <span className="hint">original key</span>
+              </>
+            ) : null}
+          </th>
         </tr>
       </thead>
       <tbody>
-        {song.bassNotes.map((note, index) => (
-          <tr key={`${note.chord}-${index}`}>
-            <td className="strong">{displayChordCell(note.chord, note.nashville, song, semitones, notation)}</td>
-            <td>{note.nashville}</td>
-            <td className="strong">{displayBassNote(note.bassNote, song, semitones, notation)}</td>
-            <td>{note.position}</td>
-          </tr>
-        ))}
+        {song.bassNotes.map((note, index) => {
+          const number = nashvilleNumber(note, song);
+          return (
+            <tr key={`${note.chord}-${index}`}>
+              <td className="strong">{displayChordCell(note, song, semitones, notation)}</td>
+              <td>
+                {number}
+                {number === note.nashville ? null : <span className="hint"> ({note.nashville})</span>}
+              </td>
+              <td className="strong">{displayBassNote(note.bassNote, song, semitones, notation)}</td>
+              <td>{note.position}</td>
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   );

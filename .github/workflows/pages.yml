@@ -34,6 +34,8 @@ jobs:
         run: npm ci
       - name: Check the seed library
         run: npm run check:data
+      - name: Check the music rules
+        run: npm run check:music
       - name: Build
         run: npm run build
       - name: Setup Pages

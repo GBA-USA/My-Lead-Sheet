@@ -8,8 +8,12 @@ const TEMPO_WINDOW_SECONDS = 10;
 const TEMPO_STEP_SECONDS = 2;
 /** How strongly the beat tracker keeps to the local tempo. */
 const TIGHTNESS = 100;
-/** A tempo change is a run of beats more than 4% off the current tempo. */
-const TEMPO_CHANGE = 0.04;
+/** Live bands drift a few percent over a song; a real change of tempo is bigger (Take Me Out drops 15%). */
+const TEMPO_CHANGE = 0.1;
+/** A tempo change holds at least this long, so a fill or a push is not one. */
+const TEMPO_HOLD_BARS = 4;
+/** Neighboring tempos this close are one tempo. */
+const SAME_TEMPO_BPM = 3;
 /** Voice-band share that sets the vocal suggestions apart from the rest of the song. */
 const MIN_VOICE_LIFT = 0.08;
 
@@ -212,7 +216,7 @@ function median(values: number[]): number {
   return percentile(values, 0.5);
 }
 
-/** The opening tempo and every lasting change, each from the beats it covers. */
+/** The opening tempo and every lasting change, each from the steady beats it covers. */
 function tempoChanges(beats: number[], beatsPerBar: number): Tempo[] {
   const gaps = beats.slice(1).map((beat, i) => beat - beats[i]);
   const local = gaps.map((_, i) => median(gaps.slice(Math.max(0, i - beatsPerBar), i + beatsPerBar)));
@@ -221,14 +225,19 @@ function tempoChanges(beats: number[], beatsPerBar: number): Tempo[] {
     const current = local[starts[starts.length - 1]];
     if (Math.abs(local[i] - current) / current > TEMPO_CHANGE) starts.push(i);
   }
-  const lasting = starts.filter((start, k) => (starts[k + 1] ?? gaps.length) - start >= 2 * beatsPerBar || k === 0);
-  const tempos = lasting.map((start, k) => {
-    const run = gaps.slice(start, lasting[k + 1] ?? gaps.length);
+  const lasting = starts.filter((start, k) => k === 0 || (starts[k + 1] ?? gaps.length) - start >= TEMPO_HOLD_BARS * beatsPerBar);
+  const bpm = (from: number, to: number) => {
+    const run = gaps.slice(from, to);
     const typical = median(run);
     const steady = run.filter((gap) => Math.abs(gap - typical) / typical <= TEMPO_CHANGE);
-    return { at: beats[start], bpm: (60 * steady.length) / steady.reduce((sum, gap) => sum + gap, 0) };
+    return (60 * steady.length) / steady.reduce((sum, gap) => sum + gap, 0);
+  };
+  const kept: number[] = [];
+  lasting.forEach((start, k) => {
+    const previous = kept[kept.length - 1];
+    if (previous === undefined || Math.abs(bpm(start, lasting[k + 1] ?? gaps.length) - bpm(previous, start)) > SAME_TEMPO_BPM) kept.push(start);
   });
-  return tempos.filter((tempo, k) => k === 0 || Math.abs(tempo.bpm - tempos[k - 1].bpm) / tempos[k - 1].bpm > TEMPO_CHANGE);
+  return kept.map((start, k) => ({ at: beats[start], bpm: bpm(start, kept[k + 1] ?? gaps.length) }));
 }
 
 interface BeatFeatures {

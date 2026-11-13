@@ -1,4 +1,5 @@
 import { useEffect, useId, useState } from "react";
+import { BpmFinder } from "./bpm-finder";
 import { METRONOME_MAX, METRONOME_MIN } from "./metronome";
 import type { Song, SongData } from "./types";
 import "./song-data-editor.css";
@@ -44,21 +45,23 @@ export function songDataFromForm(original: Song, form: SongDataForm): SongData |
   return data;
 }
 
-/** The BPM entry on its own, so a tempo finder can sit beside the input later. */
+/** The BPM entry on its own, with the tempo finder beside the input. */
 export function BpmField({ value, placeholder, onChange }: { value: string; placeholder: string; onChange: (next: string) => void }) {
   const id = useId();
   return (
     <div className="song-data-field">
       <label htmlFor={id}>BPM</label>
-      <input
-        id={id}
-        inputMode="numeric"
-        autoComplete="off"
-        placeholder={placeholder}
-        value={value}
-        aria-invalid={value.trim() !== "" && parseBpm(value) == null}
-        onChange={(event) => onChange(event.target.value.replace(/\D/g, "").slice(0, 3))}
-      />
+      <BpmFinder onAccept={(bpm) => onChange(String(bpm))}>
+        <input
+          id={id}
+          inputMode="numeric"
+          autoComplete="off"
+          placeholder={placeholder}
+          value={value}
+          aria-invalid={value.trim() !== "" && parseBpm(value) == null}
+          onChange={(event) => onChange(event.target.value.replace(/\D/g, "").slice(0, 3))}
+        />
+      </BpmFinder>
     </div>
   );
 }

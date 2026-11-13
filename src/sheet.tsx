@@ -32,7 +32,7 @@ export function LeadSheet({
 
   return (
     <article className="sheet" style={{ fontSize: `calc(16px * ${scale})` }}>
-      {metronome.playing ? <BeatDot /> : null}
+      {metronome.playing && metronome.prefs.indicator ? <BeatDot offsetMs={metronome.prefs.syncOffsetMs} /> : null}
       <h1 className="sheet-title">
         <span className="sheet-name">{song.title}</span>
         <span className="sheet-artist"> — {song.artist}</span>
@@ -44,16 +44,7 @@ export function LeadSheet({
         Key: {displayKeyLabel(song, semitones)} • Time: {song.timeSignature} • Tempo: {tempoText(song.tempo)}
       </p>
 
-      <MetronomeControl
-        key={song.id}
-        songTempo={song.tempo}
-        bpm={metronome.bpm}
-        playing={metronome.playing}
-        onBpm={metronome.setBpm}
-        onNudge={metronome.nudge}
-        onToggle={metronome.toggle}
-        onStop={metronome.stop}
-      />
+      <MetronomeControl key={song.id} songTempo={song.tempo} metronome={metronome} />
 
       {song.feel ? <p className="feel">Feel: {song.feel}</p> : null}
 

@@ -128,11 +128,11 @@ check(chain.officialRuntimeSec === 197 && chain.tempo === 78, "Chain Breaker has
   const run = scroller(app, app.scrollMotion(chain, null, null, 78, 100));
   play(0.02);
   check(near(run.sheet.scrollTop, SECTION.start, 1), `even pace starts at the top of the chord section (at ${run.sheet.scrollTop})`);
-  play(0.9);
-  check(near(run.sheet.scrollTop, SECTION.start, 1), `even pace holds still for its first second (at ${run.sheet.scrollTop})`);
-  play(9.1);
-  const speed = DISTANCE / 196;
-  check(near(run.sheet.scrollTop, SECTION.start + speed * (run.elapsed() - 1)), `after the 1 s hold, even pace is section / (runtime - 1 s) px/s (${run.sheet.scrollTop.toFixed(1)} after ${run.elapsed().toFixed(2)}s)`);
+  play(1.9);
+  check(near(run.sheet.scrollTop, SECTION.start, 1), `even pace holds still for its first 2 seconds (at ${run.sheet.scrollTop})`);
+  play(8.1);
+  const speed = DISTANCE / 195;
+  check(near(run.sheet.scrollTop, SECTION.start + speed * (run.elapsed() - 2)), `after the 2 s hold, even pace is section / (runtime - 2 s) px/s (${run.sheet.scrollTop.toFixed(1)} after ${run.elapsed().toFixed(2)}s)`);
 
   const before = run.sheet.scrollTop;
   run.motion.current = app.scrollMotion(chain, null, null, 117, 100);

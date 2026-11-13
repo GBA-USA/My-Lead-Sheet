@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import { MetronomeControl, type MetronomeState } from "./metronome-view";
+import { BeatDot, MetronomeControl, type MetronomeState } from "./metronome-view";
 import {
   displayBassNote,
   displayChordCell,
@@ -32,6 +32,7 @@ export function LeadSheet({
 
   return (
     <article className="sheet" style={{ fontSize: `calc(16px * ${scale})` }}>
+      {metronome.playing ? <BeatDot /> : null}
       <h1 className="sheet-title">
         <span className="sheet-name">{song.title}</span>
         <span className="sheet-artist"> — {song.artist}</span>
@@ -260,7 +261,11 @@ function charAdvance(size: number): number {
   return measureCanvas.measureText("0").width;
 }
 
-/** Largest chart size that keeps a Chain-Breaker-length line inside the sheet, then scaled by A+/A−. */
+/**
+ * 13px times the text scale when the longest line fits. Otherwise, at 100% and below, shrink until it fits
+ * (not under 8px). Above 100%, grow the 100% fit by the scale instead, so A+ can push a long line past the
+ * sheet and the chart scrolls sideways on purpose.
+ */
 function fitChartFont(width: number, longest: number, scale: number): number {
   if (width <= 0) return 12 * scale;
   const preferred = 13 * scale;

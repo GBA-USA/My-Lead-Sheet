@@ -38,3 +38,11 @@ export function metronomePadAction(
   if (double && hasBpm) return "toggle";
   return "edit";
 }
+
+export const BEAT_FLASH_SECONDS = 0.1;
+
+/** The sheet's beat dot: lit just after a click, dim between clicks, hidden with no click to show. */
+export function beatDotState(secondsSinceClick: number | null): "on" | "rest" | "off" {
+  if (secondsSinceClick == null) return "off";
+  return secondsSinceClick < BEAT_FLASH_SECONDS ? "on" : "rest";
+}

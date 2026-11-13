@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent } from "react";
-import { setMetronomeBpm, startMetronome, stopMetronome } from "./metronome-audio";
+import { secondsSinceClick, setMetronomeBpm, startMetronome, stopMetronome } from "./metronome-audio";
 import {
   METRONOME_MAX,
   METRONOME_MIN,
+  beatDotState,
   clampMetronomeBpm,
   initialMetronomeBpm,
   metronomePadAction,
@@ -42,7 +43,7 @@ export function useMetronome(songId: number | null, tempo: number | null) {
       stopMetronome();
       return;
     }
-    startMetronome(bpmRef.current ?? bpm);
+    startMetronome(bpmRef.current ?? bpm, stop);
     return () => stopMetronome();
   }, [playing, songId, unset]);
 
@@ -76,15 +77,38 @@ export function useMetronome(songId: number | null, tempo: number | null) {
       stop();
       return;
     }
-    startMetronome(current);
     playingRef.current = true;
     setPlaying(true);
+    startMetronome(current, stop);
   };
 
   return { bpm, playing, setBpm, nudge, toggle, stop };
 }
 
 export type MetronomeState = ReturnType<typeof useMetronome>;
+
+/** Mount only while the metronome plays. Each frame reads the audio clock, so the dot never re-renders React. */
+export function BeatDot() {
+  const ref = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    let frame = 0;
+    const draw = () => {
+      const el = ref.current;
+      const state = beatDotState(secondsSinceClick());
+      if (el && el.dataset.beat !== state) el.dataset.beat = state;
+      frame = requestAnimationFrame(draw);
+    };
+    frame = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(frame);
+  }, []);
+
+  return (
+    <div className="beat-rail" aria-hidden="true">
+      <span ref={ref} className="beat-dot" data-beat="off" />
+    </div>
+  );
+}
 
 export function MetronomeControl({
   songTempo,

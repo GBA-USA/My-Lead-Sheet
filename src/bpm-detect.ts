@@ -7,15 +7,18 @@ const GRID_STEP = 0.05;
 const HARMONICS = 4;
 /** Clicks buried in heavy noise score 0.10 and up; hiss, hum and pads with no beat stay under 0.04. */
 const MIN_CLARITY = 0.06;
+/** Loudness is read over 25 ms, one cycle of a bass guitar's low E, so a held bass note doesn't ripple like onsets. */
+const LEVEL_HOPS = 5;
 
 /**
- * Hears audio a chunk at a time and keeps only an onset envelope: how much louder each 5 ms got.
+ * Hears audio a chunk at a time and keeps only an onset envelope: how much louder it got every 5 ms.
  * Raw samples are never stored.
  */
 export class TempoDetector {
   private readonly hop: number;
   private readonly rate: number;
   private readonly onsets: number[] = [];
+  private readonly recent: number[] = [];
   private energy = 0;
   private filled = 0;
   private level = 0;
@@ -29,11 +32,23 @@ export class TempoDetector {
     return this.onsets.length / this.rate;
   }
 
+  /** The onset envelope heard so far, `hopsPerSecond` values a second. */
+  get envelope(): readonly number[] {
+    return this.onsets;
+  }
+
+  get hopsPerSecond(): number {
+    return this.rate;
+  }
+
   push(samples: Float32Array) {
     for (const sample of samples) {
       this.energy += sample * sample;
       if (++this.filled < this.hop) continue;
-      const level = Math.log1p(1000 * Math.sqrt(this.energy / this.hop));
+      this.recent.push(this.energy);
+      if (this.recent.length > LEVEL_HOPS) this.recent.shift();
+      const energy = this.recent.reduce((sum, each) => sum + each, 0) / (this.recent.length * this.hop);
+      const level = Math.log1p(1000 * Math.sqrt(energy));
       this.onsets.push(Math.max(0, level - this.level));
       this.level = level;
       this.energy = 0;
@@ -43,28 +58,33 @@ export class TempoDetector {
 
   /** The steadiest beat between 60 and 180 BPM, or null when nothing steady was heard. */
   tempo(): number | null {
-    const longestLag = Math.ceil((HARMONICS * 60 * this.rate) / SLOWEST) + 1;
-    if (this.onsets.length < 2 * longestLag) return null;
-    const correlation = autocorrelate(centered(smoothed(this.onsets)), longestLag);
-    if (correlation[0] <= 0) return null;
-
-    let best = SLOWEST;
-    let bestScore = -Infinity;
-    for (let bpm = SLOWEST; bpm <= FASTEST; bpm += GRID_STEP) {
-      let score = 0;
-      for (let harmonic = 1; harmonic <= HARMONICS; harmonic++) score += at(correlation, (harmonic * 60 * this.rate) / bpm);
-      if (score > bestScore) [best, bestScore] = [bpm, score];
-    }
-    return bestScore / (HARMONICS * correlation[0]) >= MIN_CLARITY ? best : null;
+    return tempoOf(this.onsets, this.rate);
   }
 }
 
-function smoothed(values: number[]): number[] {
+/** The steadiest beat in an onset envelope sampled `rate` times a second. Needs about 8 s of it. */
+export function tempoOf(onsets: readonly number[], rate: number): number | null {
+  const longestLag = Math.ceil((HARMONICS * 60 * rate) / SLOWEST) + 1;
+  if (onsets.length < 2 * longestLag) return null;
+  const correlation = autocorrelate(centered(smoothed(onsets)), longestLag);
+  if (correlation[0] <= 0) return null;
+
+  let best = SLOWEST;
+  let bestScore = -Infinity;
+  for (let bpm = SLOWEST; bpm <= FASTEST; bpm += GRID_STEP) {
+    let score = 0;
+    for (let harmonic = 1; harmonic <= HARMONICS; harmonic++) score += at(correlation, (harmonic * 60 * rate) / bpm);
+    if (score > bestScore) [best, bestScore] = [bpm, score];
+  }
+  return bestScore / (HARMONICS * correlation[0]) >= MIN_CLARITY ? best : null;
+}
+
+export function smoothed(values: readonly number[]): number[] {
   const kernel = [1, 2, 3, 2, 1];
   return values.map((_, index) => kernel.reduce((sum, weight, k) => sum + weight * (values[index + k - 2] ?? 0), 0) / 9);
 }
 
-function centered(values: number[]): number[] {
+function centered(values: readonly number[]): number[] {
   const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
   return values.map((value) => value - mean);
 }

@@ -6,7 +6,7 @@ export const LISTEN_SECONDS = 15;
 const NO_MIC = "The mic isn't available. You can tap along instead.";
 const NO_BEAT = "No steady beat heard. Try again or tap along.";
 /** Music, not speech: the browser's voice cleanup would flatten the beats. */
-const RAW_MIC: MediaTrackConstraints = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+export const RAW_MIC: MediaTrackConstraints = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
 
 interface Listener {
   progress: (heard: number) => void;

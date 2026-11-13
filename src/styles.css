@@ -713,6 +713,7 @@ a:focus-visible {
 }
 
 .chart {
+  display: flow-root;
   margin-top: 0.2em;
   color-scheme: light;
 }

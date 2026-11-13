@@ -1,6 +1,13 @@
 import { readFileSync } from "node:fs";
 import type { Song } from "../src/types.ts";
 import {
+  METRONOME_DOUBLE_TAP_MS,
+  clampMetronomeBpm,
+  initialMetronomeBpm,
+  metronomeBeatSeconds,
+  metronomePadAction,
+} from "../src/metronome.ts";
+import {
   convertNoteNames,
   degree,
   displayChordLine,
@@ -86,6 +93,40 @@ if (displayChordLine("C", chain, 1, "notes") !== "Db") fail("single C");
 if (scrollPixelsPerSecond(78, 100) !== 19.5) fail("chain pace");
 if (scrollPixelsPerSecond(null, 100) !== 22.5) fail("fallback pace");
 if (scrollPixelsPerSecond(78, 50) !== 9.75) fail("half pace");
+if (scrollPixelsPerSecond(78, 120) !== 23.4) fail("chain 120");
+
+if (initialMetronomeBpm(78) !== 78) fail("metronome should open on the stored tempo");
+if (initialMetronomeBpm(null) !== null) fail("null tempo must not invent a metronome bpm");
+if (initialMetronomeBpm(null) === 90) fail("scroll fallback leaked into the metronome");
+if (clampMetronomeBpm(20) !== 30) fail("metronome min");
+if (clampMetronomeBpm(400) !== 300) fail("metronome max");
+if (clampMetronomeBpm(100.4) !== 100) fail("metronome round");
+if (metronomeBeatSeconds(78) !== 60 / 78) fail("beat length");
+
+if (metronomePadAction(1, null, true) !== "edit") fail("single tap edits");
+if (metronomePadAction(1, METRONOME_DOUBLE_TAP_MS, true) !== "edit") fail("slow second tap edits");
+if (metronomePadAction(1, METRONOME_DOUBLE_TAP_MS - 1, true) !== "toggle") fail("fast second tap toggles");
+if (metronomePadAction(2, 10, true) !== "toggle") fail("detail double tap toggles");
+if (metronomePadAction(2, 10, false) !== "edit") fail("double tap with no bpm must not start");
+if (metronomePadAction(1, 10, false) !== "edit") fail("unset single tap edits");
+
+const take = library.songs.find((song) => song.id === 5);
+const half = library.songs.find((song) => song.id === 13);
+if (!take || take.tempo !== null) fail("Take Me Out tempo must stay null");
+if (!half || half.tempo !== null) fail("No Half Steppin' tempo must stay null");
+if (take.tempoNote.indexOf("122") < 0 || take.tempoNote.indexOf("104") < 0) fail("Take Me Out tempo note");
+if (initialMetronomeBpm(take.tempo) !== null) fail("Take Me Out metronome invented a bpm");
+if (scrollPixelsPerSecond(take.tempo, 100) !== 22.5) fail("Take Me Out scroll still uses 90");
+
+let performanceBpm = initialMetronomeBpm(chain.tempo);
+const pace100 = scrollPixelsPerSecond(chain.tempo, 100);
+const pace120 = scrollPixelsPerSecond(chain.tempo, 120);
+performanceBpm = 100;
+if (performanceBpm !== 100) fail("metronome override");
+if (chain.tempo !== 78) fail("Chain Breaker stored tempo changed");
+if (scrollPixelsPerSecond(chain.tempo, 100) !== pace100) fail("metronome bpm changed 100% scroll");
+if (scrollPixelsPerSecond(chain.tempo, 120) !== pace120) fail("scroll percent changed by metronome");
+if (pace100 === performanceBpm * 0.25) fail("100% scroll followed the metronome instead of 78");
 
 const east = library.songs.find((song) => song.id === 11)!;
 if (toNashvilleSymbol("A", east) !== "b3") fail("east A");

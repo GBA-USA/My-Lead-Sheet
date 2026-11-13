@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
+import { MetronomeControl, type MetronomeState } from "./metronome-view";
 import {
   displayBassNote,
   displayChordCell,
@@ -14,11 +15,13 @@ export function LeadSheet({
   scale,
   semitones,
   notation,
+  metronome,
 }: {
   song: Song;
   scale: number;
   semitones: number;
   notation: Notation;
+  metronome: MetronomeState;
 }) {
   const notes = [song.keyNote, song.tempoNote].filter((note) => note.trim().length > 0);
   const atAGlance = song.atAGlance ? displayChordLine(song.atAGlance, song, semitones, notation) : "";
@@ -35,6 +38,17 @@ export function LeadSheet({
       <p className="meta">
         Key: {displayKeyLabel(song, semitones)} • Time: {song.timeSignature} • Tempo: {tempoText(song.tempo)}
       </p>
+
+      <MetronomeControl
+        key={song.id}
+        songTempo={song.tempo}
+        bpm={metronome.bpm}
+        playing={metronome.playing}
+        onBpm={metronome.setBpm}
+        onNudge={metronome.nudge}
+        onToggle={metronome.toggle}
+        onStop={metronome.stop}
+      />
 
       {song.feel ? <p className="feel">Feel: {song.feel}</p> : null}
 

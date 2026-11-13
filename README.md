@@ -29,4 +29,6 @@ Song links use the hash (`#/song/10`), so they load from that same page. `public
 
 Phase 2 is in the song header and Live Mode: transpose, Notes | Nashville, BPM auto-scroll, the screen wake lock, and playing a setlist. Editing, delete, and adding songs are still later phases. Screen on stores `leadSheetsKeepAwake` and, while it is On, asks the browser to keep the screen awake.
 
+The song sheet has its own metronome, under the Key / Time / Tempo line. It opens on the song's stored BPM. Tap the number to change that speed, double-tap Metronome to start or stop, and use Stop while it is playing. The speed is a performance setting only: it is not written back onto the song, and a song with `tempo: null` stays unset until you type one. Auto-scroll keeps using the stored tempo (90 BPM only when tempo is null) and the scroll percentage. Changing the metronome does not change auto-scroll, and changing the scroll percentage does not change the metronome.
+
 The behavior spec, the build plan, the original export, and the phone screenshots are in `docs/handoff/`. See `ANALYSIS.md` for the data check and the open questions.

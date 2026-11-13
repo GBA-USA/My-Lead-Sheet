@@ -1,6 +1,7 @@
 import { useEffect, useState, type KeyboardEvent } from "react";
 import { BackIcon, DotsIcon, OverflowMenu, ScreenToggle, SongControls } from "./controls";
 import { useAutoScroll, usePerformance, useWakeLock } from "./hooks";
+import { useMetronome } from "./metronome-view";
 import { displayKeyLabel, scrollPixelsPerSecond } from "./music";
 import { LeadSheet } from "./sheet";
 import {
@@ -77,6 +78,9 @@ export function App() {
     route.name === "song" ? songById(library.songs, route.id) : route.name === "live" ? liveSong : undefined;
 
   const performance = usePerformance(activeSong?.id ?? null);
+  const metronome = useMetronome(activeSong?.id ?? null, activeSong ? activeSong.tempo : null);
+  // Scroll reads the stored song tempo and the scroll percentage only.
+  // metronome.bpm is a separate performance setting and must not be passed in.
   useAutoScroll(
     performance.scrolling && activeSong != null,
     activeSong ? scrollPixelsPerSecond(activeSong.tempo, performance.percent) : 0,
@@ -239,6 +243,7 @@ export function App() {
             scale={TEXT_SCALES[textIndex]}
             semitones={performance.semitones}
             notation={performance.notation}
+            metronome={metronome}
           />
         ) : null}
         {route.name === "live" ? (
@@ -248,6 +253,7 @@ export function App() {
               scale={TEXT_SCALES[textIndex]}
               semitones={performance.semitones}
               notation={performance.notation}
+              metronome={metronome}
             />
           ) : (
             <div className="missing">
@@ -267,12 +273,14 @@ function SongBody({
   scale,
   semitones,
   notation,
+  metronome,
 }: {
   library: LibraryFile;
   id: number;
   scale: number;
   semitones: number;
   notation: "notes" | "nashville";
+  metronome: ReturnType<typeof useMetronome>;
 }) {
   const song = songById(library.songs, id);
   if (!song) {
@@ -283,7 +291,7 @@ function SongBody({
       </div>
     );
   }
-  return <LeadSheet song={song} scale={scale} semitones={semitones} notation={notation} />;
+  return <LeadSheet song={song} scale={scale} semitones={semitones} notation={notation} metronome={metronome} />;
 }
 
 function SongList({ songs }: { songs: Song[] }) {

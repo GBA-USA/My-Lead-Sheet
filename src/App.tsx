@@ -266,6 +266,7 @@ export function App() {
 
       {activeSong && (even || versions.versions.length > 0 || route.name === "song") ? (
         <TeachBar
+          key={activeSong.id}
           versions={versions.versions}
           selected={versions.selected}
           canTeach={even != null}

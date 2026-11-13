@@ -8,6 +8,7 @@ const shots = process.env.SHOTS;
 const PHONE = { width: 390, height: 844, deviceScaleFactor: 2, mobile: true };
 const CHAIN_BREAKER = 10;
 const TAKE_ME_OUT = 5;
+const EAST_TO_WEST = 11;
 
 const root = new URL("..", import.meta.url).pathname;
 const modules = await bundle({
@@ -27,6 +28,9 @@ function check(ok: boolean, message: string) {
 }
 
 const STAND_INS = `(() => {
+  window.__errors = [];
+  addEventListener("error", (event) => window.__errors.push(String(event.message)));
+  addEventListener("unhandledrejection", (event) => window.__errors.push(String(event.reason)));
   Object.defineProperty(navigator.mediaDevices, "getUserMedia", { value: async () => ({ getTracks: () => [{ stop() {} }] }) });
   addEventListener("click", () => (window.__tapping = true), true);
   addEventListener("click", () => (window.__tapping = false));
@@ -118,15 +122,15 @@ const menus = () =>
   })`);
 
 let loads = 0;
-async function openSong(id: number, versions: object | null, scale = 1) {
+async function openSong(id: number, versions: object | null, scale = 1, route = `#/song/${id}`, others: number[] = []) {
   await send("Page.navigate", { url: `${site.origin}/?load=${(loads += 1)}#/songs` });
   await until(`document.readyState === "complete"`, "the app");
   await evaluate(`(() => {
     localStorage.clear();
     localStorage.setItem("${app.TEXT_SCALE_KEY}", "${app.TEXT_SCALES.indexOf(scale as (typeof app.TEXT_SCALES)[number])}");
-    ${versions ? `localStorage.setItem("${app.SCROLL_VERSIONS_KEY}.${id}", ${JSON.stringify(JSON.stringify(versions))});` : ""}
+    ${versions ? [id, ...others].map((song) => `localStorage.setItem("${app.SCROLL_VERSIONS_KEY}.${song}", ${JSON.stringify(JSON.stringify(versions))});`).join("") : ""}
   })()`);
-  await send("Page.navigate", { url: `${site.origin}/?load=${(loads += 1)}#/song/${id}` });
+  await send("Page.navigate", { url: `${site.origin}/?load=${(loads += 1)}${route}` });
   await until(`!!document.querySelector(".teach-bar") && !!document.querySelector(".chart-heading")`, `song ${id}`);
   await evaluate(`document.fonts.ready.then(() => true)`);
   await pause(100);
@@ -256,7 +260,22 @@ try {
     check(await evaluate<boolean>(`document.querySelector(".learn[role=dialog]")?.innerText.includes("Play the whole song near the phone")`), "Learn by listen opens the Learn sheet and starts listening");
     check(await evaluate<boolean>(`window.__audioInTap === true`), "its audio starts inside the tap itself, where browsers allow it");
     await tap(".learn-actions button", "Cancel");
+    await pause(200);
+    const errors = await evaluate<string[]>(`window.__errors`);
     check(await evaluate<boolean>(`!document.querySelector("[role=dialog]")`), "Cancel closes it");
+    check(errors.length === 0, `opening and closing the Learn sheet throws nothing (${errors.join("; ") || "no page errors"})`);
+  });
+
+  await scenario("a live setlist", async () => {
+    await openSong(CHAIN_BREAKER, { versions: [LEARNED, TAUGHT], selected: 0 }, 1, "#/live/2/0", [EAST_TO_WEST]);
+    await tap(BUTTONS, CUSTOMIZE);
+    check(JSON.stringify((await menus())[0]?.items) === '["Learn by user (scroll it yourself)"]', "a live setlist offers Learn by user but not Learn by listen");
+    await tap(BUTTONS, CHIP);
+    await tap(ITEMS, "Delete V1…");
+    await tap("[aria-label='Next song']", "Next");
+    await until(`location.hash === "#/live/2/1"`, "the next song");
+    const next = await bar();
+    check(next.controls[0] === CHIP && (await stored(EAST_TO_WEST)).versions.length === 2, `a Delete left unconfirmed does not follow to the next song (${next.controls.join(" | ")})`);
   });
 
   await scenario("a song with no tempo", async () => {

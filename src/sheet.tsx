@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import { chartColumns, fitChartFont, wrapAligned } from "./chart-fit";
+import { chartColumns, chartFont, fitChartFont, wrapAligned, type ChartPiece } from "./chart-fit";
 import { BeatDot, MetronomeControl, type MetronomeState } from "./metronome-view";
 import {
   displayBassNote,
@@ -149,24 +149,20 @@ function Chart({
   notation: Notation;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const longest = longestAligned(song, semitones, notation);
-  const [{ fontSize, columns }, setFit] = useState({ fontSize: 12, columns: Infinity });
+  const [width, setWidth] = useState(0);
 
   useLayoutEffect(() => {
     const element = ref.current;
     if (!element) return;
-
-    const fit = () => {
-      const width = element.clientWidth;
-      const size = fitChartFont(width, longest, scale, charAdvance);
-      const across = chartColumns(width, size, charAdvance);
-      setFit((current) => (current.fontSize === size && current.columns === across ? current : { fontSize: size, columns: across }));
-    };
-    fit();
-    const observer = new ResizeObserver(fit);
+    const measure = () => setWidth(element.clientWidth);
+    measure();
+    const observer = new ResizeObserver(measure);
     observer.observe(element);
     return () => observer.disconnect();
-  }, [longest, scale, semitones, notation]);
+  }, []);
+
+  const columns = chartColumns(width, chartFont(scale), charAdvance);
+  const fontFor = (piece: ChartPiece) => `${fitChartFont(width, Math.max(piece.chords.length, piece.lyrics?.length ?? 0), scale, charAdvance)}px`;
 
   return (
     <div className="chart" id="chord-section" ref={ref}>
@@ -177,8 +173,8 @@ function Chart({
             <ChartRow
               key={lineIndex}
               line={line}
-              fontSize={fontSize}
               columns={columns}
+              fontFor={fontFor}
               song={song}
               semitones={semitones}
               notation={notation}
@@ -192,41 +188,43 @@ function Chart({
 
 function ChartRow({
   line,
-  fontSize,
   columns,
+  fontFor,
   song,
   semitones,
   notation,
 }: {
   line: ChartLine;
-  fontSize: number;
   columns: number;
+  fontFor: (piece: ChartPiece) => string;
   song: Song;
   semitones: number;
   notation: Notation;
 }) {
-  const mono = { fontSize: `${fontSize}px` };
   return (
     <>
       {line.chords !== undefined ? (
-        wrapAligned(displayChordLine(line.chords, song, semitones, notation), line.lyrics, columns).map((piece, index) => (
-          <div className="pair" key={index}>
-            <div className="chords" style={mono}>
-              {piece.chords}
-            </div>
-            {piece.lyrics !== undefined ? (
-              <div className="lyrics" style={mono}>
-                {piece.lyrics}
+        wrapAligned(displayChordLine(line.chords, song, semitones, notation), line.lyrics, columns).map((piece, index) => {
+          const mono = { fontSize: fontFor(piece) };
+          return (
+            <div className="pair" key={index}>
+              <div className="chords" style={mono}>
+                {piece.chords}
               </div>
-            ) : null}
-          </div>
-        ))
+              {piece.lyrics !== undefined ? (
+                <div className="lyrics" style={mono}>
+                  {piece.lyrics}
+                </div>
+              ) : null}
+            </div>
+          );
+        })
       ) : line.lyrics !== undefined ? (
         <p className="lyric-only">{line.lyrics}</p>
       ) : null}
       {line.bars !== undefined
         ? wrapAligned(displayChordLine(line.bars, song, semitones, notation), undefined, columns).map((piece, index) => (
-            <div className="bars" style={mono} key={index}>
+            <div className="bars" style={{ fontSize: fontFor(piece) }} key={index}>
               {piece.chords}
             </div>
           ))
@@ -234,18 +232,6 @@ function ChartRow({
       {line.note !== undefined ? <p className="chart-note">{line.note}</p> : null}
     </>
   );
-}
-
-function longestAligned(song: Song, semitones: number, notation: Notation): number {
-  let max = 1;
-  for (const section of song.body) {
-    for (const line of section.lines) {
-      if (line.chords) max = Math.max(max, displayChordLine(line.chords, song, semitones, notation).length);
-      if (line.chords && line.lyrics) max = Math.max(max, line.lyrics.length);
-      if (line.bars) max = Math.max(max, displayChordLine(line.bars, song, semitones, notation).length);
-    }
-  }
-  return max;
 }
 
 let measureCanvas: CanvasRenderingContext2D | null | undefined;

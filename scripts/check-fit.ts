@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import type { LibraryFile, Song } from "../src/types.ts";
 import type { Motion, Section } from "../src/scroll-timing.ts";
+import { canWrap, chordAnchors, lyricWords } from "./chord-anchors.ts";
 
 const root = new URL("..", import.meta.url);
 const read = (path: string) => readFileSync(new URL(path, root), "utf8");
@@ -63,7 +64,8 @@ const advance = (size: number) => size * 0.6;
 /** The sheet's text width: 10px margins and 16px padding on a phone, 16px and 28px from 768px. */
 const chartWidth = (window: number) => (window >= 768 ? window - 2 * 16 - 2 * 28 : window - 2 * 10 - 2 * 16);
 const wrap = app.wrapAligned ?? ((chords: string, lyrics?: string) => [{ chords, lyrics }]);
-const font = app.fitChartFont ?? ((_width: number, _longest: number, scale: number) => 13 * scale);
+const chartFont = app.chartFont ?? ((scale: number) => 13 * scale);
+const font = app.fitChartFont ?? ((_width: number, _span: number, scale: number) => 13 * scale);
 const columnsFor = app.chartColumns ?? ((width: number, size: number) => Math.floor((width - 1) / advance(size)));
 const filled = (line: string | undefined, column: number) => line !== undefined && column < line.length && line[column] !== " ";
 
@@ -92,7 +94,7 @@ function aligned(chords: string, lyrics: string | undefined, pieces: { chords: s
 const splits = (line: string | undefined, column: number) => filled(line, column - 1) && filled(line, column);
 let rows = 0;
 let wrapped = 0;
-let wordSplits = 0;
+let shrunk = 0;
 for (const song of seed.songs) {
   const views = [
     ...Array.from({ length: 12 }, (_, semitones) => ({ semitones: semitones - 5, notation: "notes" as const })),
@@ -101,12 +103,10 @@ for (const song of seed.songs) {
   for (const { semitones, notation } of views) {
     const lines = song.body.flatMap((section) => section.lines);
     const shown = (text: string) => app.displayChordLine(text, song as Song, semitones, notation);
-    const longest = Math.max(1, ...lines.flatMap((line) => [line.chords ? shown(line.chords).length : 0, line.chords && line.lyrics ? line.lyrics.length : 0, line.bars ? shown(line.bars).length : 0]));
-    for (const window of [320, 390, 768]) {
+    for (const window of [320, 390, 768, 1280]) {
       for (const scale of app.TEXT_SCALES) {
         const width = chartWidth(window);
-        const size = font(width, longest, scale, advance);
-        const columns = columnsFor(width, size, advance);
+        const columns = columnsFor(width, chartFont(scale), advance);
         const where = `${song.title} ${notation} ${semitones >= 0 ? "+" : ""}${semitones} @${window}px x${scale}`;
         for (const [chords, lyrics] of lines.flatMap((line) => [
           ...(line.chords !== undefined ? [[shown(line.chords), line.lyrics] as const] : []),
@@ -114,8 +114,14 @@ for (const song of seed.songs) {
         ])) {
           rows += 1;
           const pieces = wrap(chords, lyrics, columns);
-          const widest = Math.max(...pieces.map((piece) => Math.max(piece.chords.length, piece.lyrics?.length ?? 0)));
-          check(widest * advance(size) <= width, `a row never paints past the chart: ${where} (${widest} columns of ${columns}: "${chords.trim().slice(0, 24)}")`);
+          for (const piece of pieces) {
+            const span = Math.max(piece.chords.length, piece.lyrics?.length ?? 0);
+            const size = font(width, span, scale, advance);
+            check(span * advance(size) <= width, `a row never paints past the chart: ${where} (${span} columns at ${size}px: "${piece.chords.trim().slice(0, 24)}")`);
+            if (size === chartFont(scale)) continue;
+            shrunk += 1;
+            check(span > columns && !canWrap(piece), `only a lone chord and word wider than the chart is drawn below 13px x scale: ${where} (${size}px: "${piece.lyrics ?? piece.chords}")`);
+          }
           if (Math.max(chords.length, lyrics?.length ?? 0) <= columns) {
             check(pieces.length === 1 && pieces[0].chords === chords && pieces[0].lyrics === lyrics, `a row that fits stays exactly as it was: ${where}`);
             continue;
@@ -123,20 +129,18 @@ for (const song of seed.songs) {
           wrapped += 1;
           const { ok, starts } = aligned(chords, lyrics, pieces);
           check(ok, `wrapped chords stay over the same lyric columns: ${where} ("${chords.trim().slice(0, 24)}")`);
-          for (let k = 1; k < starts.length; k += 1) {
-            const cut = starts[k];
-            check(!splits(chords, cut), `a wrap never cuts a chord name: ${where} (column ${cut})`);
-            if (!splits(lyrics, cut)) continue;
-            wordSplits += 1;
-            const reach = Array.from({ length: columns }, (_, i) => starts[k - 1] + 1 + i);
-            check(!reach.some((c) => !splits(chords, c) && !splits(lyrics, c)), `a wrap breaks at a lyric space when one is in reach: ${where} (column ${cut})`);
-          }
+          for (const cut of starts.slice(1)) check(!splits(chords, cut), `a wrap never cuts a chord name: ${where} (column ${cut})`);
+          check(lyricWords(pieces).join(" ") === lyricWords([{ chords, lyrics }]).join(" "), `a wrap never cuts a lyric word: ${where} ("${lyrics?.slice(0, 24)}")`);
+          const want = chordAnchors([{ chords, lyrics }]);
+          const got = chordAnchors(pieces);
+          const miss = want.findIndex((anchor, k) => anchor !== got[k]);
+          check(miss < 0, `a wrap never parts a chord from its syllable: ${where} (notated ${want[miss]}, wrapped ${got[miss]})`);
         }
       }
     }
   }
 }
-console.log(`wrap: ${rows} chord rows across 15 songs x 13 notations x 3 widths x ${app.TEXT_SCALES.length} scales, ${wrapped} wrapped, ${wordSplits} lyric words split for want of a space`);
+console.log(`wrap: ${rows} chord rows across 15 songs x 13 notations x 4 widths x ${app.TEXT_SCALES.length} scales, ${wrapped} wrapped, ${shrunk} lone units drawn below the chart font`);
 
 let now = 0;
 let frames: ((time: number) => void)[] = [];

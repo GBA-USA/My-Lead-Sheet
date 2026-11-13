@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
+import { chartColumns, fitChartFont, wrapAligned } from "./chart-fit";
 import { BeatDot, MetronomeControl, type MetronomeState } from "./metronome-view";
 import {
   displayBassNote,
@@ -149,7 +150,7 @@ function Chart({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const longest = longestAligned(song, semitones, notation);
-  const [fontSize, setFontSize] = useState(12);
+  const [{ fontSize, columns }, setFit] = useState({ fontSize: 12, columns: Infinity });
 
   useLayoutEffect(() => {
     const element = ref.current;
@@ -157,7 +158,9 @@ function Chart({
 
     const fit = () => {
       const width = element.clientWidth;
-      setFontSize(fitChartFont(width, longest, scale));
+      const size = fitChartFont(width, longest, scale, charAdvance);
+      const across = chartColumns(width, size, charAdvance);
+      setFit((current) => (current.fontSize === size && current.columns === across ? current : { fontSize: size, columns: across }));
     };
     fit();
     const observer = new ResizeObserver(fit);
@@ -175,6 +178,7 @@ function Chart({
               key={lineIndex}
               line={line}
               fontSize={fontSize}
+              columns={columns}
               song={song}
               semitones={semitones}
               notation={notation}
@@ -189,41 +193,44 @@ function Chart({
 function ChartRow({
   line,
   fontSize,
+  columns,
   song,
   semitones,
   notation,
 }: {
   line: ChartLine;
   fontSize: number;
+  columns: number;
   song: Song;
   semitones: number;
   notation: Notation;
 }) {
   const mono = { fontSize: `${fontSize}px` };
-  const paired = line.chords !== undefined;
-  const chords = line.chords === undefined ? "" : displayChordLine(line.chords, song, semitones, notation);
-  const bars = line.bars === undefined ? "" : displayChordLine(line.bars, song, semitones, notation);
   return (
     <>
-      {paired ? (
-        <div className="pair">
-          <div className="chords" style={mono}>
-            {chords}
-          </div>
-          {line.lyrics !== undefined ? (
-            <div className="lyrics" style={mono}>
-              {line.lyrics}
+      {line.chords !== undefined ? (
+        wrapAligned(displayChordLine(line.chords, song, semitones, notation), line.lyrics, columns).map((piece, index) => (
+          <div className="pair" key={index}>
+            <div className="chords" style={mono}>
+              {piece.chords}
             </div>
-          ) : null}
-        </div>
+            {piece.lyrics !== undefined ? (
+              <div className="lyrics" style={mono}>
+                {piece.lyrics}
+              </div>
+            ) : null}
+          </div>
+        ))
       ) : line.lyrics !== undefined ? (
         <p className="lyric-only">{line.lyrics}</p>
       ) : null}
-      {line.bars !== undefined ? (
-        <div className="bars" style={mono}>
-          {bars}
-        </div>
-      ) : null}
+      {line.bars !== undefined
+        ? wrapAligned(displayChordLine(line.bars, song, semitones, notation), undefined, columns).map((piece, index) => (
+            <div className="bars" style={mono} key={index}>
+              {piece.chords}
+            </div>
+          ))
+        : null}
       {line.note !== undefined ? <p className="chart-note">{line.note}</p> : null}
     </>
   );
@@ -250,24 +257,4 @@ function charAdvance(size: number): number {
   if (!measureCanvas) return size * 0.6;
   measureCanvas.font = `500 ${size}px "IBM Plex Mono", ui-monospace, monospace`;
   return measureCanvas.measureText("0").width;
-}
-
-/**
- * 13px times the text scale when the longest line fits. Otherwise, at 100% and below, shrink until it fits
- * (not under 8px). Above 100%, grow the 100% fit by the scale instead, so A+ can push a long line past the
- * sheet and the chart scrolls sideways on purpose.
- */
-function fitChartFont(width: number, longest: number, scale: number): number {
-  if (width <= 0) return 12 * scale;
-  const preferred = 13 * scale;
-  const fits = (size: number) => longest * charAdvance(size) <= width - 1;
-  if (fits(preferred)) return preferred;
-  let size = preferred;
-  const floor = 8;
-  while (size > floor && !fits(size)) size -= 0.25;
-  if (scale > 1) {
-    const base = fitChartFont(width, longest, 1);
-    return Math.min(preferred, Math.max(size, base * scale));
-  }
-  return Math.max(floor, size);
 }

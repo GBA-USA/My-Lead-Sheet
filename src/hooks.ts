@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { clampScrollPercent, type Notation } from "./music";
-import { runScroll, type Motion } from "./scroll-timing";
+import { runScroll, type Motion, type Section } from "./scroll-timing";
 import { loadNotation, loadScrollPercent, saveNotation, saveScrollPercent } from "./storage";
 
 export function usePerformance(songId: number | null) {
@@ -75,16 +75,45 @@ export function useAutoScroll(
     if (!active) return;
     const el = document.getElementById("sheet-scroll");
     if (!el) return;
-    const section = () => {
-      const chart = document.getElementById("chord-section");
-      if (!chart) return null;
-      const start = chart.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;
-      return { start, end: start + chart.offsetHeight - el.clientHeight };
-    };
-    return runScroll(el, motionRef, section, clock, (reason) => onStopRef.current(reason));
+    return scrollChart(el, () => document.getElementById("chord-section"), motionRef, clock, (reason) => onStopRef.current(reason));
   }, [active, plan]);
 
   return clock;
+}
+
+/**
+ * Runs `runScroll` over the chord section, measured afresh every frame so a text size or window change keeps the
+ * same progress. When the section has moved since the last frame, the browser shifted or clamped the scroll for
+ * the new layout, so that scroll event is not passed on as the player scrolling.
+ */
+export function scrollChart(
+  el: HTMLElement,
+  chart: () => HTMLElement | null,
+  motion: { current: Motion },
+  clock: { current: number },
+  onStop: (reason: "user" | "end") => void,
+): () => void {
+  let last: Section | null = null;
+  const section = () => {
+    const found = chart();
+    if (!found) return null;
+    const start = found.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;
+    last = { start, end: start + found.offsetHeight - el.clientHeight };
+    return last;
+  };
+  const relaid = (event: Event) => {
+    const before = last;
+    const now = section();
+    if (before && now && (Math.abs(now.start - before.start) >= 1 || Math.abs(now.end - before.end) >= 1)) {
+      event.stopImmediatePropagation();
+    }
+  };
+  el.addEventListener("scroll", relaid, { passive: true });
+  const stop = runScroll(el, motion, section, clock, onStop);
+  return () => {
+    stop();
+    el.removeEventListener("scroll", relaid);
+  };
 }
 
 /** Screen Wake Lock. Missing support and rejected requests are silent. The OS drops the lock when the page hides, so it is requested again on return. */

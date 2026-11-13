@@ -62,6 +62,7 @@ export function App() {
   }, []);
 
   const route = parseHash(hash);
+  const showTabs = route.name !== "live";
   const tab: TabName =
     route.name === "setlists" || (route.name === "song" && route.from === "setlists")
       ? "setlists"
@@ -91,18 +92,11 @@ export function App() {
   useEffect(() => {
     document.getElementById("sheet-scroll")?.scrollTo(0, 0);
     setMenu(null);
-    const current = parseHash(hash);
-    const titleSong =
-      current.name === "song"
-        ? songById(library.songs, current.id)
-        : current.name === "live"
-          ? songById(
-              library.songs,
-              library.setlists.find((set) => set.id === current.setlistId)?.songIds[current.index] ?? -1,
-            )
-          : undefined;
-    document.title = titleSong ? `${titleSong.title} — Lead Sheets` : "Lead Sheets";
-  }, [hash, library.songs, library.setlists]);
+  }, [hash]);
+
+  useEffect(() => {
+    document.title = activeSong ? `${activeSong.title} — Lead Sheets` : "Lead Sheets";
+  }, [activeSong]);
 
   const closeMenu = () => setMenu(null);
   const toggleMenu = (id: Exclude<MenuId, null>) => setMenu((current) => (current === id ? null : id));
@@ -123,7 +117,9 @@ export function App() {
   const onTabKey = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
     event.preventDefault();
-    window.location.hash = tab === "songs" ? "#/setlists" : "#/songs";
+    const next: TabName = tab === "songs" ? "setlists" : "songs";
+    document.getElementById(`tab-${next}`)?.focus();
+    window.location.hash = `#/${next}`;
   };
 
   const goBack = () => {
@@ -151,7 +147,7 @@ export function App() {
         >
           <BackIcon />
         </button>
-        <h1 className="shell-title">Lead Sheets</h1>
+        {activeSong ? <p className="shell-title">Lead Sheets</p> : <h1 className="shell-title">Lead Sheets</h1>}
         {activeSong ? (
           <OverflowMenu
             label="More"
@@ -159,8 +155,6 @@ export function App() {
             open={menu === "shell"}
             onToggle={() => toggleMenu("shell")}
             onClose={closeMenu}
-            onEdit={closeMenu}
-            onDelete={closeMenu}
           />
         ) : (
           <button type="button" className="icon-btn" aria-label="More">
@@ -169,21 +163,16 @@ export function App() {
         )}
       </header>
 
-      {route.name === "live" ? null : (
+      {showTabs ? (
         <div className="tabs" role="tablist" aria-label="Library" onKeyDown={onTabKey}>
-          <a href="#/songs" role="tab" aria-selected={tab === "songs"} className={tab === "songs" ? "tab is-selected" : "tab"}>
+          <Tab name="songs" selected={tab === "songs"}>
             My Songs
-          </a>
-          <a
-            href="#/setlists"
-            role="tab"
-            aria-selected={tab === "setlists"}
-            className={tab === "setlists" ? "tab is-selected" : "tab"}
-          >
+          </Tab>
+          <Tab name="setlists" selected={tab === "setlists"}>
             Setlists
-          </a>
+          </Tab>
         </div>
-      )}
+      ) : null}
 
       {activeSong ? (
         <SongControls
@@ -195,8 +184,6 @@ export function App() {
           menuOpen={menu === "song"}
           onMenuToggle={() => toggleMenu("song")}
           onMenuClose={closeMenu}
-          onEdit={closeMenu}
-          onDelete={closeMenu}
           notation={performance.notation}
           onNotation={performance.changeNotation}
           scrolling={performance.scrolling}
@@ -214,7 +201,7 @@ export function App() {
         </div>
       )}
 
-      {route.name === "live" && liveSetlist ? (
+      {liveSetlist && liveSetlist.songIds.length > 0 ? (
         <div className="live-nav">
           <button type="button" aria-label="Previous song" disabled={liveIndex <= 0} onClick={() => goLive(liveIndex - 1)}>
             Prev
@@ -233,7 +220,12 @@ export function App() {
         </div>
       ) : null}
 
-      <div className="scroll" id="sheet-scroll">
+      <div
+        className="scroll"
+        id="sheet-scroll"
+        role={showTabs ? "tabpanel" : undefined}
+        aria-labelledby={showTabs ? `tab-${tab}` : undefined}
+      >
         {route.name === "songs" ? <SongList songs={library.songs} /> : null}
         {route.name === "setlists" ? <SetlistList setlists={library.setlists} songs={library.songs} /> : null}
         {route.name === "song" ? (
@@ -257,13 +249,29 @@ export function App() {
             />
           ) : (
             <div className="missing">
-              <p>That setlist isn&apos;t in this library.</p>
+              <p>{liveSetlist?.songIds.length === 0 ? "This setlist is empty." : "That setlist isn't in this library."}</p>
               <a href="#/setlists">Back to Setlists</a>
             </div>
           )
         ) : null}
       </div>
     </div>
+  );
+}
+
+function Tab({ name, selected, children }: { name: TabName; selected: boolean; children: string }) {
+  return (
+    <a
+      href={`#/${name}`}
+      id={`tab-${name}`}
+      role="tab"
+      aria-selected={selected}
+      aria-controls="sheet-scroll"
+      tabIndex={selected ? 0 : -1}
+      className={selected ? "tab is-selected" : "tab"}
+    >
+      {children}
+    </a>
   );
 }
 
@@ -324,29 +332,33 @@ function SetlistList({ setlists, songs }: { setlists: Setlist[]; songs: Song[] }
               Live
             </a>
           </div>
-          <ol>
-            {setlist.songIds.map((id, index) => {
-              const song = songById(songs, id);
-              return (
-                <li key={`${setlist.id}-${id}-${index}`}>
-                  {song ? (
-                    <a className="song-row setlist-row" href={songHref(song.id, "setlists")}>
-                      <span className="setlist-num">{index + 1}</span>
-                      <span className="setlist-copy">
-                        <span className="song-title">{song.title}</span>
-                        <span className="song-artist">{song.artist}</span>
-                      </span>
-                    </a>
-                  ) : (
-                    <div className="song-row setlist-row">
-                      <span className="setlist-num">{index + 1}</span>
-                      <span className="song-artist">Missing from this library</span>
-                    </div>
-                  )}
-                </li>
-              );
-            })}
-          </ol>
+          {setlist.songIds.length === 0 ? (
+            <p className="setlist-empty">This setlist is empty.</p>
+          ) : (
+            <ol>
+              {setlist.songIds.map((id, index) => {
+                const song = songById(songs, id);
+                return (
+                  <li key={`${setlist.id}-${id}-${index}`}>
+                    {song ? (
+                      <a className="song-row setlist-row" href={songHref(song.id, "setlists")}>
+                        <span className="setlist-num">{index + 1}</span>
+                        <span className="setlist-copy">
+                          <span className="song-title">{song.title}</span>
+                          <span className="song-artist">{song.artist}</span>
+                        </span>
+                      </a>
+                    ) : (
+                      <div className="song-row setlist-row">
+                        <span className="setlist-num">{index + 1}</span>
+                        <span className="song-artist">Missing from this library</span>
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ol>
+          )}
         </section>
       ))}
     </div>

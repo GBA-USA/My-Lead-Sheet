@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "check:data": "node scripts/check-library.mjs",
     "check:music": "node --experimental-strip-types scripts/check-music.ts",
-    "check:storage": "node --experimental-strip-types scripts/check-storage.ts"
+    "check:storage": "node --experimental-strip-types scripts/check-storage.ts",
+    "check:screens": "node --experimental-strip-types scripts/check-screens.ts"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.5",

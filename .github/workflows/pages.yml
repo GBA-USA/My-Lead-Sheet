@@ -36,6 +36,10 @@ jobs:
         run: npm run check:data
       - name: Check the music rules
         run: npm run check:music
+      - name: Check stored-library repair
+        run: npm run check:storage
+      - name: Check screens
+        run: npm run check:screens
       - name: Build
         run: npm run build
       - name: Setup Pages

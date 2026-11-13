@@ -40,6 +40,8 @@ jobs:
         run: npm run check:storage
       - name: Check screens
         run: npm run check:screens
+      - name: Check the metronome
+        run: npm run check:metronome
       - name: Build
         run: npm run build
       - name: Setup Pages

@@ -1008,3 +1008,29 @@ a:focus-visible {
   font-weight: 700;
   text-decoration: underline;
 }
+
+.beat-rail {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  height: 0;
+}
+
+.beat-dot {
+  position: absolute;
+  top: 8px;
+  right: -10px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #d7263d;
+  opacity: 0.3;
+}
+
+.beat-dot[data-beat="on"] {
+  opacity: 1;
+}
+
+.beat-dot[data-beat="off"] {
+  visibility: hidden;
+}

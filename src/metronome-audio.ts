@@ -7,6 +7,8 @@ let running = false;
 let armed = false;
 let bpm = 0;
 let listening = false;
+let clicks: number[] = [];
+let onFail = () => {};
 
 function newContext(): AudioContext {
   const webkit = window as Window & { webkitAudioContext?: typeof AudioContext };
@@ -26,11 +28,18 @@ function context(): AudioContext | null {
     listening = true;
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible" && running && audio && audio.state !== "running") {
-        void audio.resume();
+        resume(audio, () => {});
       }
     });
   }
   return audio;
+}
+
+function resume(ctx: AudioContext, then: () => void) {
+  ctx.resume().then(then, () => {
+    stopMetronome();
+    onFail();
+  });
 }
 
 function scheduleClick(ctx: AudioContext, time: number) {
@@ -50,6 +59,7 @@ function scheduleClick(ctx: AudioContext, time: number) {
     osc.disconnect();
     gain.disconnect();
   };
+  clicks.push(time);
 }
 
 function queue() {
@@ -80,12 +90,19 @@ function arm(ctx: AudioContext) {
   queue();
 }
 
-/** Start or keep the click going. Call this from the user gesture so mobile audio can resume. */
-export function startMetronome(nextBpm: number) {
+/**
+ * Start or keep the click going. Call this from the user gesture so mobile audio can resume.
+ * fail runs when no click can sound: no AudioContext, or the browser refused to resume it now or on a return to the page.
+ */
+export function startMetronome(nextBpm: number, fail: () => void) {
   if (!(nextBpm > 0)) return;
   bpm = nextBpm;
+  onFail = fail;
   const ctx = context();
-  if (!ctx) return;
+  if (!ctx) {
+    onFail();
+    return;
+  }
   running = true;
   const kick = () => {
     if (!running) return;
@@ -93,7 +110,7 @@ export function startMetronome(nextBpm: number) {
     else if (!timer) queue();
   };
   if (ctx.state === "running") kick();
-  else void ctx.resume().then(kick);
+  else resume(ctx, kick);
 }
 
 export function setMetronomeBpm(nextBpm: number) {
@@ -108,6 +125,15 @@ export function setMetronomeBpm(nextBpm: number) {
 export function stopMetronome() {
   running = false;
   armed = false;
+  clicks = [];
   window.clearTimeout(timer);
   timer = 0;
+}
+
+/** Seconds since the latest scheduled click the audio clock has reached, or null before the first one and after stop. */
+export function secondsSinceClick(): number | null {
+  if (!audio) return null;
+  const now = audio.currentTime;
+  while (clicks.length > 1 && clicks[1] <= now) clicks.shift();
+  return clicks.length > 0 && clicks[0] <= now ? now - clicks[0] : null;
 }

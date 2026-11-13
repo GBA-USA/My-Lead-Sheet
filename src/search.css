@@ -1,0 +1,27 @@
+.search-box {
+  display: block;
+  width: calc(100% - 32px);
+  min-height: 44px;
+  margin: 10px 16px 4px;
+  padding: 0 14px;
+  border: 1px solid rgba(247, 242, 232, 0.16);
+  border-radius: 10px;
+  background: var(--bg-2);
+  color: var(--text);
+  font-size: 16px;
+}
+
+.search-box::placeholder {
+  color: var(--text-dim);
+}
+
+.search-box:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.search-empty {
+  margin: 0;
+  padding: 16px;
+  color: var(--text-dim);
+}

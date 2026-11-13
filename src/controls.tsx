@@ -143,12 +143,14 @@ export function OverflowMenu({
   open,
   onToggle,
   onClose,
+  onSongData,
 }: {
   label: string;
   size?: "compact" | "shell";
   open: boolean;
   onToggle: () => void;
   onClose: () => void;
+  onSongData?: () => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const noteId = useId();
@@ -188,6 +190,18 @@ export function OverflowMenu({
       </button>
       {open ? (
         <div className="menu" role="menu">
+          {onSongData ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                onClose();
+                onSongData();
+              }}
+            >
+              Song timing
+            </button>
+          ) : null}
           <button type="button" role="menuitem" disabled aria-describedby={noteId}>
             Edit
           </button>
@@ -212,6 +226,7 @@ export function SongControls({
   menuOpen,
   onMenuToggle,
   onMenuClose,
+  onSongData,
   notation,
   onNotation,
   scrolling,
@@ -231,6 +246,7 @@ export function SongControls({
   menuOpen: boolean;
   onMenuToggle: () => void;
   onMenuClose: () => void;
+  onSongData: () => void;
   notation: Notation;
   onNotation: (next: Notation) => void;
   scrolling: boolean;
@@ -252,6 +268,7 @@ export function SongControls({
           open={menuOpen}
           onToggle={onMenuToggle}
           onClose={onMenuClose}
+          onSongData={onSongData}
         />
       </div>
       <NotationSwitch value={notation} onChange={onNotation} />

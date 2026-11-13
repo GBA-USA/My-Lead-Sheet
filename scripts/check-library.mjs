@@ -16,6 +16,7 @@ const SONG_KEYS = [
   "tempo",
   "tempoNote",
   "timeSignature",
+  "officialRuntimeSec",
   "feel",
   "sourceNote",
   "atAGlance",
@@ -50,7 +51,13 @@ if (nullTempos.join(",") !== "5,13") {
   fail(`null tempos should be ids 5 and 13, found ${nullTempos.join(",") || "(none)"}`);
 }
 
+/** MusicBrainz album-track lengths in seconds. Truth (8) is from the album page. */
+const RUNTIMES = { 1: 244, 2: 261, 3: 259, 4: 166, 5: 237, 6: 273, 7: 310, 8: 222, 9: 240, 10: 197, 11: 267, 13: 233, 14: 272, 15: 310, 16: 183 };
+
 for (const song of library.songs) {
+  if (song.officialRuntimeSec !== RUNTIMES[song.id]) {
+    fail(`song ${song.id} officialRuntimeSec should be ${RUNTIMES[song.id]}, found ${song.officialRuntimeSec}`);
+  }
   const keys = Object.keys(song);
   if (keys.join("|") !== SONG_KEYS.join("|")) {
     fail(`song ${song.id} keys differ: ${keys.join(",")}`);
@@ -98,4 +105,4 @@ if (!chain.feel.startsWith("Slow-building Southern gospel-rock ballad")) {
 }
 if (chain.bassNotes[0].position !== "A string, 3rd fret") fail("Chain Breaker bass position changed");
 
-console.log("library.json ok: 15 songs, id 12 dropped, id 13 kept, Chain Breaker intact");
+console.log("library.json ok: 15 songs, id 12 dropped, id 13 kept, Chain Breaker intact, official runtimes set");

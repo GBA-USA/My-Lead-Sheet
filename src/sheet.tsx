@@ -175,7 +175,7 @@ function Chart({
   }, [longest, scale, semitones, notation]);
 
   return (
-    <div className="chart" ref={ref}>
+    <div className="chart" id="chord-section" ref={ref}>
       {song.body.map((section, index) => (
         <section key={`${section.heading}-${index}`} className="chart-section">
           <h3 className="chart-heading">{section.heading}</h3>

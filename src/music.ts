@@ -235,9 +235,8 @@ export function displayChordCell(row: BassNote, song: Song, semitones: number, n
 }
 
 /**
- * 100% = the song's stored BPM × 0.25 pixels per second.
- * A null tempo uses 90 BPM for scroll only. The metronome's performance BPM
- * is a different control and is not read here.
+ * The whole-page scroll for a song without a runtime and BPM. 100% = the song's stored BPM × 0.25 pixels
+ * per second. A null tempo uses 90 BPM for scroll only, never for the metronome.
  */
 export function scrollPixelsPerSecond(tempo: number | null, percent: number): number {
   const bpm = tempo == null ? 90 : tempo;

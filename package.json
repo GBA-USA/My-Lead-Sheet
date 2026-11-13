@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "check:data": "node scripts/check-library.mjs",
     "check:music": "node --experimental-strip-types scripts/check-music.ts",
+    "check:scroll": "node --experimental-strip-types scripts/check-scroll.ts",
     "check:storage": "node --experimental-strip-types scripts/check-storage.ts",
     "check:screens": "node --experimental-strip-types scripts/check-screens.ts",
     "check:metronome": "node --experimental-strip-types scripts/check-metronome.ts"

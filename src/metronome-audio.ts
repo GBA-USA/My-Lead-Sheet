@@ -1,4 +1,4 @@
-import { metronomeBeatSeconds } from "./metronome";
+import { isHighLatencyOutput, metronomeBeatSeconds } from "./metronome";
 
 let audio: AudioContext | null = null;
 let timer = 0;
@@ -6,6 +6,7 @@ let nextAt = 0;
 let running = false;
 let armed = false;
 let bpm = 0;
+let sound = true;
 let listening = false;
 let clicks: number[] = [];
 let onFail = () => {};
@@ -43,6 +44,8 @@ function resume(ctx: AudioContext, then: () => void) {
 }
 
 function scheduleClick(ctx: AudioContext, time: number) {
+  clicks.push(time);
+  if (!sound) return;
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
   osc.type = "sine";
@@ -59,7 +62,6 @@ function scheduleClick(ctx: AudioContext, time: number) {
     osc.disconnect();
     gain.disconnect();
   };
-  clicks.push(time);
 }
 
 function queue() {
@@ -130,10 +132,38 @@ export function stopMetronome() {
   timer = 0;
 }
 
-/** Seconds since the latest scheduled click the audio clock has reached, or null before the first one and after stop. */
-export function secondsSinceClick(): number | null {
+/** Sound off keeps the clock and the beat dot running without scheduling an audible click. */
+export function setMetronomeSound(on: boolean) {
+  sound = on;
+}
+
+/** Seconds from the audio clock to the speaker, as the browser reports it now. It changes when the output does. */
+function outputLatency(ctx: AudioContext): number {
+  for (const seconds of [ctx.outputLatency, ctx.baseLatency]) {
+    if (Number.isFinite(seconds) && seconds > 0) return seconds;
+  }
+  return 0;
+}
+
+/**
+ * Seconds since the latest click reached the listener, or null before the first one and after stop.
+ * offsetSeconds is the player's manual sync on top of the reported output latency.
+ */
+export function secondsSinceHeardClick(offsetSeconds: number): number | null {
   if (!audio) return null;
-  const now = audio.currentTime;
-  while (clicks.length > 1 && clicks[1] <= now) clicks.shift();
-  return clicks.length > 0 && clicks[0] <= now ? now - clicks[0] : null;
+  const heard = audio.currentTime - outputLatency(audio) - offsetSeconds;
+  while (clicks.length > 1 && clicks[1] <= heard) clicks.shift();
+  return clicks.length > 0 && clicks[0] <= heard ? heard - clicks[0] : null;
+}
+
+/**
+ * Whether the browser says the output is slow: a large reported outputLatency, or an output named like Bluetooth.
+ * Reads only what is already exposed. It never creates an AudioContext and never asks for a permission.
+ */
+export async function highLatencyOutput(): Promise<boolean> {
+  const devices = await (navigator.mediaDevices?.enumerateDevices() ?? Promise.resolve([])).catch(() => []);
+  const outputs = devices.filter((device) => device.kind === "audiooutput");
+  const current = outputs.filter((device) => device.deviceId === "default");
+  const labels = (current.length > 0 ? current : outputs).map((device) => device.label);
+  return isHighLatencyOutput(audio?.outputLatency ?? 0, labels);
 }

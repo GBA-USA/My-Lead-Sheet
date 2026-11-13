@@ -176,6 +176,21 @@ export function saveTextScaleIndex(index: number): boolean {
   return writeRaw(TEXT_SCALE_KEY, String(index));
 }
 
+/** Device-wide metronome settings. The metronome module parses what comes back. */
+export const METRONOME_PREFS_KEY = "leadSheetsMetronome";
+
+export function loadMetronomePrefs(): unknown {
+  try {
+    return JSON.parse(readRaw(METRONOME_PREFS_KEY) ?? "null");
+  } catch {
+    return null;
+  }
+}
+
+export function saveMetronomePrefs(prefs: object): boolean {
+  return writeRaw(METRONOME_PREFS_KEY, JSON.stringify(prefs));
+}
+
 export function tempoText(tempo: number | null): string {
   return tempo == null ? "—" : `~${tempo} bpm`;
 }

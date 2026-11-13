@@ -1,13 +1,28 @@
-import { useEffect, useRef, useState, type CSSProperties, type MouseEvent } from "react";
-import { secondsSinceClick, setMetronomeBpm, startMetronome, stopMetronome } from "./metronome-audio";
+import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
+import {
+  highLatencyOutput,
+  secondsSinceHeardClick,
+  setMetronomeBpm,
+  setMetronomeSound,
+  startMetronome,
+  stopMetronome,
+} from "./metronome-audio";
 import {
   METRONOME_MAX,
   METRONOME_MIN,
+  SYNC_OFFSET_MAX_MS,
+  SYNC_OFFSET_MIN_MS,
+  SYNC_OFFSET_STEP_MS,
   beatDotState,
   clampMetronomeBpm,
+  clampSyncOffsetMs,
   initialMetronomeBpm,
-  metronomePadAction,
+  parseMetronomePrefs,
+  type MetronomePrefs,
+  type SyncMode,
 } from "./metronome";
+import { loadMetronomePrefs, saveMetronomePrefs } from "./storage";
+import "./metronome.css";
 
 /**
  * Performance tempo for the current song. A song change restores song.tempo
@@ -18,6 +33,7 @@ export function useMetronome(songId: number | null, tempo: number | null) {
   const [bpm, setBpmState] = useState<number | null>(() => initialMetronomeBpm(tempo));
   const [playing, setPlaying] = useState(false);
   const [boundId, setBoundId] = useState<number | null>(songId);
+  const [prefs, setPrefsState] = useState(() => parseMetronomePrefs(loadMetronomePrefs()));
   const bpmRef = useRef(bpm);
   const playingRef = useRef(playing);
   bpmRef.current = bpm;
@@ -37,6 +53,8 @@ export function useMetronome(songId: number | null, tempo: number | null) {
   useEffect(() => {
     if (bpm != null) setMetronomeBpm(bpm);
   }, [bpm]);
+
+  useEffect(() => setMetronomeSound(prefs.sound), [prefs.sound]);
 
   useEffect(() => {
     if (!playing || bpm == null) {
@@ -82,26 +100,32 @@ export function useMetronome(songId: number | null, tempo: number | null) {
     startMetronome(current, stop);
   };
 
-  return { bpm, playing, setBpm, nudge, toggle, stop };
+  const setPrefs = (patch: Partial<MetronomePrefs>) => {
+    const next = { ...prefs, ...patch };
+    setPrefsState(next);
+    saveMetronomePrefs(next);
+  };
+
+  return { bpm, playing, setBpm, nudge, toggle, stop, prefs, setPrefs };
 }
 
 export type MetronomeState = ReturnType<typeof useMetronome>;
 
 /** Mount only while the metronome plays. Each frame reads the audio clock, so the dot never re-renders React. */
-export function BeatDot() {
+export function BeatDot({ offsetMs }: { offsetMs: number }) {
   const ref = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
     let frame = 0;
     const draw = () => {
       const el = ref.current;
-      const state = beatDotState(secondsSinceClick());
+      const state = beatDotState(secondsSinceHeardClick(offsetMs / 1000));
       if (el && el.dataset.beat !== state) el.dataset.beat = state;
       frame = requestAnimationFrame(draw);
     };
     frame = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(frame);
-  }, []);
+  }, [offsetMs]);
 
   return (
     <div className="beat-rail" aria-hidden="true">
@@ -110,28 +134,82 @@ export function BeatDot() {
   );
 }
 
-export function MetronomeControl({
-  songTempo,
-  bpm,
-  playing,
-  onBpm,
-  onNudge,
-  onToggle,
-  onStop,
+/** Auto polls because the browser fires no event when outputLatency changes. */
+function useHighLatencyOutput(watch: boolean): boolean {
+  const [high, setHigh] = useState(false);
+  useEffect(() => {
+    if (!watch) return;
+    let live = true;
+    const check = () => {
+      highLatencyOutput().then((next) => {
+        if (live) setHigh(next);
+      });
+    };
+    check();
+    const timer = window.setInterval(check, 1000);
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+    };
+  }, [watch]);
+  return high;
+}
+
+const ON_OFF = [
+  { value: true, label: "On" },
+  { value: false, label: "Off" },
+];
+const SYNC_MODES: { value: SyncMode; label: string }[] = [
+  { value: "auto", label: "Auto" },
+  { value: "on", label: "On" },
+  { value: "off", label: "Off" },
+];
+
+function Choice<T>({
+  label,
+  value,
+  options,
+  onChange,
 }: {
-  songTempo: number | null;
-  bpm: number | null;
-  playing: boolean;
-  onBpm: (next: number | null) => void;
-  onNudge: (delta: number) => void;
-  onToggle: () => void;
-  onStop: () => void;
+  label: string;
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (next: T) => void;
 }) {
+  return (
+    <div className="metro-choice" role="group" aria-label={label}>
+      <span className="metro-choice-label">{label}</span>
+      <span className="metro-segments">
+        {options.map((option) => (
+          <button
+            key={option.label}
+            type="button"
+            aria-pressed={option.value === value}
+            onClick={() => onChange(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </span>
+    </div>
+  );
+}
+
+function offsetText(ms: number): string {
+  return `${ms > 0 ? "+" : ms < 0 ? "−" : ""}${Math.abs(ms)} ms`;
+}
+
+export function MetronomeControl({ songTempo, metronome }: { songTempo: number | null; metronome: MetronomeState }) {
+  const { bpm, playing, prefs, setPrefs } = metronome;
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const draftRef = useRef<string | null>(null);
-  const lastTap = useRef<number | null>(null);
   const [draft, setDraft] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const panelId = useId();
+  const highLatency = useHighLatencyOutput(prefs.syncMode === "auto");
+  const syncShown = prefs.indicator && (prefs.syncMode === "on" || (prefs.syncMode === "auto" && highLatency));
+  const offset = prefs.syncOffsetMs;
 
   useEffect(() => {
     const el = rootRef.current;
@@ -152,12 +230,12 @@ export function MetronomeControl({
     draftRef.current = null;
     setDraft(null);
     if (!text.trim()) {
-      onBpm(initialMetronomeBpm(songTempo));
+      metronome.setBpm(initialMetronomeBpm(songTempo));
       return;
     }
     const parsed = Number(text);
     if (!Number.isFinite(parsed)) return;
-    onBpm(clampMetronomeBpm(parsed));
+    metronome.setBpm(clampMetronomeBpm(parsed));
   };
 
   const openSpeed = () => {
@@ -167,29 +245,20 @@ export function MetronomeControl({
     requestAnimationFrame(() => input.select());
   };
 
-  const onPadClick = (event: MouseEvent<HTMLButtonElement>) => {
-    const now = performance.now();
-    const since = lastTap.current == null ? null : now - lastTap.current;
-    const action = metronomePadAction(event.detail, since, bpm != null);
-    if (action === "toggle") {
-      lastTap.current = null;
-      inputRef.current?.blur();
-      onToggle();
+  const onPadClick = () => {
+    if (bpm == null) {
+      openSpeed();
       return;
     }
-    lastTap.current = now;
-    // Focus inside the tap so the phone keyboard can open. A following tap
-    // still toggles playback and leaves this field without changing speed.
-    openSpeed();
+    inputRef.current?.blur();
+    metronome.toggle();
   };
 
-  const status = playing ? "Playing" : bpm == null ? "Off" : "Stopped";
+  const status = playing ? "On" : "Off";
   const hint =
     bpm == null
       ? "No tempo stored. Tap the number to set a speed."
-      : playing
-        ? "Tap the number to change speed. Double-tap Metronome or tap Stop."
-        : "Tap the number to change speed. Double-tap Metronome to start.";
+      : "Tap Metronome to turn it on or off. Tap the number to change speed.";
 
   return (
     <div
@@ -198,33 +267,44 @@ export function MetronomeControl({
       data-bpm={bpm ?? ""}
       data-playing={playing ? "true" : "false"}
     >
-      <button
-        type="button"
-        className={playing ? "metro-pad is-on" : "metro-pad"}
-        style={bpm != null ? ({ "--metro-bpm": String(bpm) } as CSSProperties) : undefined}
-        aria-pressed={playing}
-        aria-label={
-          bpm == null
-            ? "Metronome off. No tempo stored. Tap to set a speed."
-            : playing
-              ? `Metronome playing at ${bpm} bpm. Tap to change speed. Double-tap to stop.`
-              : `Metronome ${bpm} bpm. Tap to change speed. Double-tap to start.`
-        }
-        onClick={onPadClick}
-      >
-        <span className="metro-name">Metronome</span>
-        <span className="metro-status">
-          <span className="metro-lamp" aria-hidden="true" />
-          {status}
-        </span>
-      </button>
+      <div className="metro-top">
+        <button
+          type="button"
+          className={playing ? "metro-pad is-on" : "metro-pad"}
+          style={bpm != null ? ({ "--metro-bpm": String(bpm) } as CSSProperties) : undefined}
+          aria-pressed={playing}
+          aria-label={
+            bpm == null
+              ? "Metronome off. No tempo stored. Tap to set a speed."
+              : playing
+                ? `Metronome on at ${bpm} bpm. Tap to turn off.`
+                : `Metronome off, ${bpm} bpm. Tap to turn on.`
+          }
+          onClick={onPadClick}
+        >
+          <span className="metro-name">Metronome</span>
+          <span className="metro-status">
+            <span className="metro-lamp" aria-hidden="true" />
+            {status}
+          </span>
+        </button>
+        <button
+          type="button"
+          className="metro-settings"
+          aria-expanded={settingsOpen}
+          aria-controls={settingsOpen ? panelId : undefined}
+          onClick={() => setSettingsOpen(!settingsOpen)}
+        >
+          Settings
+        </button>
+      </div>
       <div className="metronome-controls">
         <button
           type="button"
           className="metro-step"
           aria-label="Slower metronome"
           disabled={bpm == null || bpm <= METRONOME_MIN}
-          onClick={() => onNudge(-1)}
+          onClick={() => metronome.nudge(-1)}
         >
           −
         </button>
@@ -276,17 +356,46 @@ export function MetronomeControl({
           className="metro-step"
           aria-label="Faster metronome"
           disabled={bpm == null || bpm >= METRONOME_MAX}
-          onClick={() => onNudge(1)}
+          onClick={() => metronome.nudge(1)}
         >
           +
         </button>
-        {playing ? (
-          <button type="button" className="metro-stop" onClick={onStop}>
-            Stop
-          </button>
-        ) : null}
       </div>
+      {syncShown ? (
+        <div className="metro-sync">
+          <span className="metro-choice-label">Dot sync</span>
+          <button
+            type="button"
+            className="metro-step"
+            aria-label="Dot earlier"
+            disabled={offset <= SYNC_OFFSET_MIN_MS}
+            onClick={() => setPrefs({ syncOffsetMs: clampSyncOffsetMs(offset - SYNC_OFFSET_STEP_MS) })}
+          >
+            −
+          </button>
+          <output className="metro-sync-value" aria-label="Dot sync offset">
+            {offsetText(offset)}
+          </output>
+          <button
+            type="button"
+            className="metro-step"
+            aria-label="Dot later"
+            disabled={offset >= SYNC_OFFSET_MAX_MS}
+            onClick={() => setPrefs({ syncOffsetMs: clampSyncOffsetMs(offset + SYNC_OFFSET_STEP_MS) })}
+          >
+            +
+          </button>
+        </div>
+      ) : null}
       <p className="metro-hint">{hint}</p>
+      {settingsOpen ? (
+        <div className="metro-panel" id={panelId}>
+          <Choice label="Beat dot" value={prefs.indicator} options={ON_OFF} onChange={(indicator) => setPrefs({ indicator })} />
+          <Choice label="Sound" value={prefs.sound} options={ON_OFF} onChange={(sound) => setPrefs({ sound })} />
+          <Choice label="Dot sync" value={prefs.syncMode} options={SYNC_MODES} onChange={(syncMode) => setPrefs({ syncMode })} />
+          <p className="metro-hint">Auto shows Dot sync when the browser reports a delayed output, like Bluetooth.</p>
+        </div>
+      ) : null}
     </div>
   );
 }

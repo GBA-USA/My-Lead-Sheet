@@ -974,3 +974,29 @@ a:focus-visible {
   font-weight: 600;
   color: var(--ink-soft);
 }
+
+.menu button:disabled {
+  opacity: 0.45;
+}
+
+.menu-note {
+  margin: 4px 12px 6px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.setlist-empty {
+  margin: 0;
+  padding: 4px 16px;
+  color: var(--text-dim);
+}
+
+.missing button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--gold);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+}

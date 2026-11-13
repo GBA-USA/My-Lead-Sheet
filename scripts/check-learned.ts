@@ -145,14 +145,18 @@ try {
   const chart = await evaluate<{ heading: string; bars: number }[]>(
     `[...document.querySelectorAll("#chord-section .chart-section")].map((section) => ({ heading: section.querySelector(".chart-heading").textContent, bars: section.querySelectorAll(".bars").length }))`,
   );
-  await shoot("no-half-steppin-top");
-  await evaluate(`(() => {
-    const sheet = document.getElementById("sheet-scroll");
-    const verse = [...document.querySelectorAll(".chart-heading")].find((heading) => heading.textContent === "VERSE 2");
-    sheet.scrollTop += verse.getBoundingClientRect().top - sheet.getBoundingClientRect().top - 8;
-  })()`);
-  await pause(100);
-  await shoot("no-half-steppin-verse-2-3");
+  const shootAt = async (selector: string, text: string, name: string) => {
+    await evaluate(`(() => {
+      const sheet = document.getElementById("sheet-scroll");
+      const target = [...document.querySelectorAll(${JSON.stringify(selector)})].find((el) => el.textContent.startsWith(${JSON.stringify(text)}));
+      sheet.scrollTop += target.getBoundingClientRect().top - sheet.getBoundingClientRect().top - 8;
+    })()`);
+    await pause(100);
+    await shoot(name);
+  };
+  await shootAt(".chart-heading", "VERSE 1", "no-half-steppin-chart-top");
+  await shootAt(".chart-heading", "VERSE 2", "no-half-steppin-verse-2-3");
+  await shootAt(".prose", "Lock the root", "no-half-steppin-how-to-play");
   const headingList = chart.map((section) => `${section.heading} (${section.bars} bar rows)`).join(", ");
   check(chart.length === 6 && chart[0].heading === "VERSE 1" && !chart.some((section) => section.heading.startsWith("THE FORM")), `No Half Steppin' shows its 6 song sections from VERSE 1, no THE FORM heading (${headingList})`);
   check(chart.every((section) => section.bars > 0), `every No Half Steppin' section shows chord bars on screen (${headingList})`);

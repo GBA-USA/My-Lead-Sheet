@@ -13,6 +13,7 @@
     "check:teach": "node --experimental-strip-types scripts/check-teach.ts",
     "check:bpm": "node --experimental-strip-types scripts/check-bpm.ts",
     "check:learn": "node --experimental-strip-types scripts/check-learn.ts",
+    "check:learned": "node --experimental-strip-types scripts/check-learned.ts",
     "check:storage": "node --experimental-strip-types scripts/check-storage.ts",
     "check:fit": "node --experimental-strip-types scripts/check-fit.ts",
     "check:chords": "node --experimental-strip-types scripts/check-chords.ts",

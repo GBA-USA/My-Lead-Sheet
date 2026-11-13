@@ -6,7 +6,7 @@ import { LearnSong } from "./learn-song";
 import { initialMetronomeBpm } from "./metronome";
 import { useMetronome } from "./metronome-view";
 import { displayKeyLabel } from "./music";
-import { evenPlan, nextVersionName, scrollMotion, startTake, toggleHold, type ScrollPlan, type Take } from "./scroll-timing";
+import { READING_LINE, evenPlan, nextVersionName, scrollMotion, startTake, toggleHold, type ScrollVersion, type Take } from "./scroll-timing";
 import { LeadSheet } from "./sheet";
 import { SongDataEditor } from "./song-data-editor";
 import {
@@ -39,8 +39,8 @@ type MenuId = "shell" | "song" | null;
 
 type SongDataById = Record<number, SongData>;
 
-/** Teach mode: the take while it plays, then what it taught until Save or Discard. */
-type Teaching = { take: Take } | { taught: ScrollPlan };
+/** Teach mode: the take while it plays, then what the take or Learn this song taught, until Save or Discard. */
+type Teaching = { take: Take } | { taught: Omit<ScrollVersion, "name">; data?: SongData | null };
 
 function parseHash(hash: string): Route {
   const raw = hash.replace(/^#/, "");
@@ -284,10 +284,7 @@ export function App() {
               song={activeSong}
               original={withSongData(songById(stored.songs, activeSong.id)!, {})}
               metronomeBpm={metronome.bpm}
-              onSave={(plan, data) => {
-                versions.add(plan);
-                if (data) saveData(activeSong, data);
-              }}
+              onSave={(taught, data) => setTeaching({ taught, data })}
             />
           ) : null}
         </TeachBar>
@@ -298,6 +295,7 @@ export function App() {
           name={nextVersionName(versions.versions)}
           onSave={(name) => {
             versions.add(teaching.taught, name);
+            if (teaching.data) saveData(activeSong, teaching.data);
             setTeaching(null);
           }}
           onDiscard={() => setTeaching(null)}
@@ -338,7 +336,7 @@ export function App() {
         role={showTabs ? "tabpanel" : undefined}
         aria-labelledby={showTabs ? `tab-${tab}` : undefined}
       >
-        {performance.scrolling && learned && motion.kind === "timed" ? (
+        {performance.scrolling && learned && motion.kind === "learned" ? (
           <LearnedCues learned={learned} clock={clock} rate={motion.rate} metronomeOn={metronome.playing} />
         ) : null}
         {route.name === "songs" ? <SongList songs={library.songs} /> : null}
@@ -369,6 +367,8 @@ export function App() {
             </div>
           )
         ) : null}
+        {/* Room below the sheet, so a learned version can bring the chart's end up to the reading line. */}
+        {learned ? <div style={{ height: `calc(100% - ${READING_LINE}px)` }} /> : null}
       </div>
     </div>
   );

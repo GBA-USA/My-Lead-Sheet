@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { clampScrollPercent, type Notation } from "./music";
-import { runScroll, type Motion, type Section } from "./scroll-timing";
+import { READING_LINE, runScroll, type Motion, type Section } from "./scroll-timing";
 import { loadNotation, loadScrollPercent, saveNotation, saveScrollPercent } from "./storage";
 
 export function usePerformance(songId: number | null) {
@@ -56,8 +56,9 @@ export function usePerformance(songId: number | null) {
 
 /**
  * Scrolls #sheet-scroll by `motion`. A timed motion moves #chord-section only: from its top at the top of the
- * view to its bottom at the bottom. Grabbing or a manual scroll pauses. A new `plan` re-syncs from where the
- * sheet is. Returns the timed clock, in seconds at the plan's BPM.
+ * view to its bottom at the bottom. A learned one brings each heading, then the chart's end, to the reading line.
+ * Grabbing or a manual scroll pauses. A new `plan` re-syncs from where the sheet is. Returns the timed clock, in
+ * seconds at the plan's BPM.
  */
 export function useAutoScroll(
   active: boolean,
@@ -94,12 +95,14 @@ export function scrollChart(
   onStop: (reason: "user" | "end") => void,
 ): () => void {
   let last: Section | null = null;
-  const section = () => {
+  const section = (): Section | null => {
     const found = chart();
     if (!found) return null;
-    const start = found.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;
+    const origin = el.getBoundingClientRect().top - el.scrollTop;
+    const start = found.getBoundingClientRect().top - origin;
     last = { start, end: start + found.offsetHeight - el.clientHeight };
-    return last;
+    const tops = () => [...found.querySelectorAll(".chart-heading")].map((heading) => heading.getBoundingClientRect().top - origin);
+    return { ...last, lines: () => [...tops(), start + found.offsetHeight].map((top) => top - READING_LINE) };
   };
   const relaid = (event: Event) => {
     const before = last;

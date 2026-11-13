@@ -6,7 +6,7 @@ import { LearnSong } from "./learn-song";
 import { initialMetronomeBpm } from "./metronome";
 import { useMetronome } from "./metronome-view";
 import { displayKeyLabel } from "./music";
-import { evenPlan, finishTake, scrollMotion, startTake, toggleHold, type Take } from "./scroll-timing";
+import { evenPlan, nextVersionName, scrollMotion, startTake, toggleHold, type ScrollPlan, type Take } from "./scroll-timing";
 import { LeadSheet } from "./sheet";
 import { SongDataEditor } from "./song-data-editor";
 import {
@@ -22,7 +22,7 @@ import {
   tempoText,
   withSongData,
 } from "./storage";
-import { TeachBar, useScrollVersions } from "./teach";
+import { SaveTake, TeachBar, taughtPlan, useScrollVersions } from "./teach";
 import type { LibraryFile, Setlist, Song, SongData } from "./types";
 import { SearchBox } from "./search-box";
 import { matchingSetlists, matchingSongs } from "./search";
@@ -38,6 +38,9 @@ type Route =
 type MenuId = "shell" | "song" | null;
 
 type SongDataById = Record<number, SongData>;
+
+/** Teach mode: the take while it plays, then what it taught until Save or Discard. */
+type Teaching = { take: Take } | { taught: ScrollPlan };
 
 function parseHash(hash: string): Route {
   const raw = hash.replace(/^#/, "");
@@ -68,7 +71,7 @@ export function App() {
     [stored, songData],
   );
   const [editing, setEditing] = useState(false);
-  const [take, setTake] = useState<Take | null>(null);
+  const [teaching, setTeaching] = useState<Teaching | null>(null);
   const [hash, setHash] = useState(() => window.location.hash);
   const [textIndex, setTextIndex] = useState(() => loadTextScaleIndex());
   const [awake, setAwake] = useState(() => loadAwake());
@@ -103,7 +106,7 @@ export function App() {
   const performance = usePerformance(activeSong?.id ?? null);
   const metronome = useMetronome(activeSong?.id ?? null, activeSong ? activeSong.tempo : null);
   const versions = useScrollVersions(activeSong?.id ?? null);
-  if (take && !performance.scrolling) setTake(null);
+  const take = teaching && "take" in teaching ? teaching.take : null;
   const version = versions.selected == null ? null : versions.versions[versions.selected];
   const learned = take ? undefined : version?.learned;
   const even = activeSong ? evenPlan(activeSong) : null;
@@ -115,10 +118,7 @@ export function App() {
     performance.scrolling && activeSong != null,
     motion,
     take ? "take" : version ? `version ${versions.selected}` : `even ${activeSong?.officialRuntimeSec} ${activeSong?.tempo}`,
-    (reason) => {
-      if (reason === "end" && take) versions.add(finishTake(take, clock.current));
-      performance.stopScroll();
-    },
+    (reason) => (take ? (reason === "end" ? finishTake(take) : stopTake(take)) : performance.stopScroll()),
   );
   useWakeLock(awake);
 
@@ -126,6 +126,7 @@ export function App() {
     document.getElementById("sheet-scroll")?.scrollTo(0, 0);
     setMenu(null);
     setEditing(false);
+    setTeaching(null);
   }, [hash]);
 
   useEffect(() => {
@@ -166,9 +167,22 @@ export function App() {
 
   const teach = () => {
     if (!even) return;
-    setTake(startTake(even, metronome.bpm ?? even.bpm));
+    setTeaching({ take: startTake(even, metronome.bpm ?? even.bpm) });
     performance.setScrolling(true);
   };
+
+  const finishTake = (current: Take) => {
+    performance.stopScroll();
+    setTeaching({ taught: taughtPlan(current, clock.current) });
+  };
+
+  const discardTake = () => {
+    performance.stopScroll();
+    setTeaching(null);
+  };
+
+  /** A stop mid-take offers to save it, unless nothing was taught yet. */
+  const stopTake = (current: Take) => (current.marks.length > 1 ? finishTake(current) : discardTake());
 
   const saveData = (song: Song, data: SongData) => {
     saveSongData(song.id, data);
@@ -236,7 +250,7 @@ export function App() {
           notation={performance.notation}
           onNotation={performance.changeNotation}
           scrolling={performance.scrolling}
-          onToggleScroll={() => performance.setScrolling((on) => !on)}
+          onToggleScroll={() => (take ? stopTake(take) : performance.setScrolling((on) => !on))}
           percent={performance.percent}
           onPercent={performance.changePercent}
           keyLabel={displayKeyLabel(activeSong, performance.semitones)}
@@ -259,8 +273,11 @@ export function App() {
           holding={take?.holding ?? false}
           onSelect={versions.select}
           onRename={versions.rename}
+          onDelete={versions.remove}
           onTeach={teach}
-          onHold={() => setTake((current) => current && toggleHold(current, clock.current))}
+          onHold={() => take && setTeaching({ take: toggleHold(take, clock.current) })}
+          onDone={() => take && finishTake(take)}
+          onDiscard={discardTake}
         >
           {route.name === "song" ? (
             <LearnSong
@@ -274,6 +291,17 @@ export function App() {
             />
           ) : null}
         </TeachBar>
+      ) : null}
+
+      {activeSong && teaching && "taught" in teaching ? (
+        <SaveTake
+          name={nextVersionName(versions.versions)}
+          onSave={(name) => {
+            versions.add(teaching.taught, name);
+            setTeaching(null);
+          }}
+          onDiscard={() => setTeaching(null)}
+        />
       ) : null}
 
       {activeSong && editing ? (

@@ -1,10 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 import { SCROLL_MAX, SCROLL_MIN, SCROLL_STEP, type Notation } from "./music";
 
-/**
- * The song header keeps the Phase 1 phone and tablet arrangement.
- * Edit and Delete stay in the menu and do not change the library.
- */
+/** The song header keeps the Phase 1 phone and tablet arrangement. */
 
 export function ScreenToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   return (
@@ -146,25 +143,20 @@ export function OverflowMenu({
   open,
   onToggle,
   onClose,
-  onEdit,
-  onDelete,
 }: {
   label: string;
   size?: "compact" | "shell";
   open: boolean;
   onToggle: () => void;
   onClose: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const noteId = useId();
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
-    menuRef.current?.querySelector("button")?.focus();
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") onCloseRef.current();
     };
@@ -195,13 +187,16 @@ export function OverflowMenu({
         <DotsIcon />
       </button>
       {open ? (
-        <div className="menu" role="menu" ref={menuRef}>
-          <button type="button" role="menuitem" onClick={onEdit}>
+        <div className="menu" role="menu">
+          <button type="button" role="menuitem" disabled aria-describedby={noteId}>
             Edit
           </button>
-          <button type="button" role="menuitem" className="danger" onClick={onDelete}>
+          <button type="button" role="menuitem" disabled aria-describedby={noteId}>
             Delete
           </button>
+          <p className="menu-note" id={noteId}>
+            Coming in a later version
+          </p>
         </div>
       ) : null}
     </div>
@@ -217,8 +212,6 @@ export function SongControls({
   menuOpen,
   onMenuToggle,
   onMenuClose,
-  onEdit,
-  onDelete,
   notation,
   onNotation,
   scrolling,
@@ -238,8 +231,6 @@ export function SongControls({
   menuOpen: boolean;
   onMenuToggle: () => void;
   onMenuClose: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
   notation: Notation;
   onNotation: (next: Notation) => void;
   scrolling: boolean;
@@ -261,8 +252,6 @@ export function SongControls({
           open={menuOpen}
           onToggle={onMenuToggle}
           onClose={onMenuClose}
-          onEdit={onEdit}
-          onDelete={onDelete}
         />
       </div>
       <NotationSwitch value={notation} onChange={onNotation} />

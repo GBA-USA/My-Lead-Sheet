@@ -48,11 +48,78 @@
   padding: 0 12px;
 }
 
-.teach-status {
+.teach-btn.is-danger {
+  color: var(--danger);
+}
+
+.teach-status,
+.teach-question {
   margin-right: auto;
-  color: var(--gold);
   font-weight: 700;
   font-size: 13px;
+}
+
+.teach-status {
+  color: var(--gold);
+}
+
+.teach-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: end center;
+  padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.teach-sheet {
+  width: min(100%, 420px);
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  background: #322c24;
+  border-radius: 16px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  color: var(--text);
+}
+
+.teach-sheet h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.teach-sheet input {
+  min-width: 0;
+  height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 16px;
+}
+
+.teach-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.teach-actions button {
+  height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--bg-2);
+  color: var(--text);
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.teach-actions .is-primary {
+  background: var(--gold);
+  color: var(--on-gold);
 }
 
 @media (min-width: 768px) {

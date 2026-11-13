@@ -214,7 +214,11 @@ export function displayChordCell(chord: string, nashville: string, song: Song, s
   return displayChordLine(chord, song, semitones, "notes");
 }
 
-/** 100% = BPM × 0.25 pixels per second. Missing tempo uses 90 BPM. */
+/**
+ * 100% = the song's stored BPM × 0.25 pixels per second.
+ * A null tempo uses 90 BPM for scroll only. The metronome's performance BPM
+ * is a different control and is not read here.
+ */
 export function scrollPixelsPerSecond(tempo: number | null, percent: number): number {
   const bpm = tempo == null ? 90 : tempo;
   return bpm * 0.25 * (percent / 100);

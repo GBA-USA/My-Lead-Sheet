@@ -15,6 +15,7 @@
     "check:learn": "node --experimental-strip-types scripts/check-learn.ts",
     "check:storage": "node --experimental-strip-types scripts/check-storage.ts",
     "check:fit": "node --experimental-strip-types scripts/check-fit.ts",
+    "check:chords": "node --experimental-strip-types scripts/check-chords.ts",
     "check:headers": "node --experimental-strip-types scripts/check-headers.ts",
     "check:screens": "node --experimental-strip-types scripts/check-screens.ts",
     "check:search": "node --experimental-strip-types scripts/check-search.ts",

@@ -28,6 +28,10 @@ body,
   background: var(--bg);
 }
 
+html {
+  touch-action: pan-x pan-y;
+}
+
 body {
   color: var(--text);
   -webkit-font-smoothing: antialiased;
@@ -594,6 +598,7 @@ a:focus-visible {
   line-height: 1.02;
   letter-spacing: -0.03em;
   text-transform: uppercase;
+  overflow-wrap: break-word;
 }
 
 .sheet-name {
@@ -680,11 +685,6 @@ a:focus-visible {
   vertical-align: bottom;
   border-bottom: 2px solid var(--ink);
   padding-bottom: 0.4em;
-  white-space: nowrap;
-}
-
-.bass th:nth-child(3) {
-  white-space: normal;
 }
 
 .bass td {
@@ -714,7 +714,6 @@ a:focus-visible {
 
 .chart {
   margin-top: 0.2em;
-  overflow-x: auto;
   color-scheme: light;
 }
 
@@ -742,8 +741,6 @@ a:focus-visible {
   font-feature-settings: "liga" 0, "calt" 0;
   white-space: pre;
   line-height: 1.35;
-  width: max-content;
-  min-width: 100%;
 }
 
 .chords,

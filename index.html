@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#13120d" />
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
     <meta
@@ -10,6 +10,9 @@
       content="Lead Sheets — Brian Prewitt's private bass lead-sheet library."
     />
     <title>Lead Sheets</title>
+    <script>
+      document.addEventListener("gesturestart", (event) => event.preventDefault());
+    </script>
   </head>
   <body>
     <div id="root"></div>

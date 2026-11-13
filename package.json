@@ -12,6 +12,7 @@
     "check:scroll": "node --experimental-strip-types scripts/check-scroll.ts",
     "check:bpm": "node --experimental-strip-types scripts/check-bpm.ts",
     "check:storage": "node --experimental-strip-types scripts/check-storage.ts",
+    "check:fit": "node --experimental-strip-types scripts/check-fit.ts",
     "check:screens": "node --experimental-strip-types scripts/check-screens.ts",
     "check:search": "node --experimental-strip-types scripts/check-search.ts",
     "check:metronome": "node --experimental-strip-types scripts/check-metronome.ts"

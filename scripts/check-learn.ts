@@ -164,6 +164,43 @@ check(analysis.tempos.length === 2, `one tempo change is found (${tempos})`);
 check(Math.abs(analysis.tempos[0]?.bpm - 122) <= 1 && Math.abs(analysis.tempos[1]?.bpm - 104) <= 1, `the tempos read 122 then 104 BPM (${tempos})`);
 check(Math.abs((analysis.tempos[1]?.at ?? 0) - truth.starts[2]) <= 60 / 104, `the change lands on the riff within a beat (${analysis.tempos[1]?.at.toFixed(2)} s, want ${truth.starts[2].toFixed(2)} s)`);
 
+/** What the listener hears in a kick on each beat over room hiss, each beat up to `jitter` of a beat early or late. */
+function temposHeard(bars: number, bpmAt: (beat: number) => number, jitter = 0.01) {
+  const beats: number[] = [];
+  for (let k = 0, at = HEAD; k < 4 * bars; at += 60 / bpmAt(k), k++) beats.push(at + (jitter * (random() * 2 - 1) * 60) / bpmAt(k));
+  const samples = new Float32Array(Math.round((beats[beats.length - 1] + 0.5 + TAIL) * SAMPLE_RATE));
+  for (let i = 0; i < samples.length; i++) samples[i] = 0.003 * (random() * 2 - 1);
+  for (const beat of beats) {
+    const first = Math.round(beat * SAMPLE_RATE);
+    for (let i = 0; i < 0.3 * SAMPLE_RATE; i++) {
+      const t = i / SAMPLE_RATE;
+      samples[first + i] += 0.3 * Math.sin(2 * Math.PI * (50 * t + 0.9 * (1 - Math.exp(-t / 0.013)))) * Math.exp(-t / 0.12);
+    }
+  }
+  const ear = new learn.SongListener(SAMPLE_RATE);
+  for (let at = 0; at < samples.length; at += 4096) ear.push(samples.subarray(at, at + 4096));
+  const tempos = ear.analyze(1, 4)?.tempos ?? [];
+  return {
+    tempos,
+    average: (60 * (beats.length - 1)) / (beats[beats.length - 1] - beats[0]),
+    text: tempos.map((tempo) => `${tempo.bpm.toFixed(2)} BPM at ${tempo.at.toFixed(2)} s`).join(", ") || "nothing heard",
+  };
+}
+const studio = temposHeard(64, () => 112, 0.02);
+check(studio.tempos.length === 1 && Math.abs(studio.tempos[0].bpm - 112) <= 1, `a steady 112 BPM take with ±2% timing reads as one tempo within 1 BPM (${studio.text})`);
+for (const to of [104, 108]) {
+  const drift = temposHeard(96, (beat) => 100 + ((to - 100) * beat) / (96 * 4));
+  check(
+    drift.tempos.length === 1 && Math.abs(drift.tempos[0].bpm - drift.average) <= 1,
+    `a live band drifting from 100 to ${to} BPM reads as one tempo, the song's average ${drift.average.toFixed(2)} BPM within 1 BPM (${drift.text})`,
+  );
+}
+for (const { bars, by } of [{ bars: 2, by: 1.08 }, { bars: 2, by: 0.92 }, { bars: 3, by: 1.15 }]) {
+  const pushed = temposHeard(64, (beat) => (beat >= 128 && beat < 128 + 4 * bars ? 112 * by : 112));
+  const push = `${by > 1 ? "push" : "pull"} to ${by > 1 ? "+" : "−"}${Math.round(Math.abs(by - 1) * 100)}%`;
+  check(pushed.tempos.length === 1 && Math.abs(pushed.tempos[0].bpm - 112) <= 1, `a ${bars}-bar ${push} at bar 33 of a 112 BPM take is not a tempo change (${pushed.text})`);
+}
+
 const boundaryTimes = analysis.boundaries.map((beat) => analysis.beats[beat]);
 check(analysis.boundaries.length === 2, `two boundaries for three headings (${analysis.boundaries.length})`);
 boundaryTimes.forEach((time, i) => {

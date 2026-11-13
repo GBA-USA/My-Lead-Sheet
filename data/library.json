@@ -2344,7 +2344,7 @@
       "feel": "Driving soul-blues with horns and a hook guitar figure; shuffle-leaning groove, played with push",
       "sourceNote": "Album version — opening track of the self-titled album \"Sean Costello\" (Artemis Records / Tone-Cool, released October 5, 2004; often catalogued as 2005). Written by Sean Costello (Night Latch Music). Running time 3:52. HONESTY NOTE: No published chord chart, tab, key, tempo, or transcription of this recording exists anywhere (checked Ultimate Guitar, Chordify, ChordU, PaidTabs, SongData, Shazam). Reviews describe an up-tempo, horn-driven soul-blues original — NOT a straight slow blues. The chords are the standard 12-bar blues framework written in A as a practice/jam version so you can learn the form and the feel. The recording's actual key, tempo, and exact form are unverified — confirm the key against the record before playing it with a band.",
       "atAGlance": "(Practice form) 12-bar blues: A7 x4 → D7 x2 → A7 x2 → E7 → D7 → A7 → E7, repeat. Song shape: Verse 1 → Hook → Verse 2 → Bridge (\"light\" lines) → Hook → Verse 3 → Closing hook.",
-      "howToPlay": "Lock the root on beat 1 of every bar — that is non-negotiable, it is what holds a 12-bar together. The working pattern for this kind of up-tempo soul-blues is the classic shuffle walk inside each bar: root – 5th – flat-7 – 5th (in A: A – E – G – E), one note per beat, even and pushing, never rushing. Keep it simple under the verses, and let the pattern open up in the hook sections. Follow the standard blues dynamics: verses tight and in the pocket, hook bigger, and watch for stops — Vintage Guitar's review of this album notes a stop-time segment mid-song on this record, so keep your eyes up and be ready to hit beat 1 and lay out with the band. On the turnaround (last two bars), walk E7 down through D7 back to A7 and set up the next time through. If the record's key turns out not to be A, every pattern here moves with the Nashville numbers unchanged — that is the whole point of learning it this way.",
+      "howToPlay": "Lock the root on beat 1 of every bar — that is non-negotiable, it is what holds a 12-bar together. The working pattern for this kind of up-tempo soul-blues is the classic shuffle walk inside each bar: root – 5th – flat-7 – 5th (in A: A – E – G – E), one note per beat, even and pushing, never rushing. Keep it simple under the verses, and let the pattern open up in the hook sections. Follow the standard blues dynamics: verses tight and in the pocket, hook bigger, and watch for stops — Vintage Guitar's review of this album notes a stop-time segment mid-song on this record, so keep your eyes up and be ready to hit beat 1 and lay out with the band. On the turnaround (last two bars), walk E7 down through D7 back to A7 and set up the next time through. If the record's key turns out not to be A, every pattern here moves with the Nashville numbers unchanged — that is the whole point of learning it this way. Bars 1–4: A7 — stay home, pattern A–E–G–E each bar. Bars 5–6: D7 — lift, same pattern shape from D. Bars 7–8: A7 — back home. Bar 9: E7 — the climb. Bar 10: D7 — the fall. Bar 11: A7 — home. Bar 12: E7 — turnaround, leads back to bar 1 (or ends the song). Common variation (quick change): D7 in bar 2 instead of A7. Either version is standard — listen for which one the band uses.",
       "practiceTip": "Loop one 12-bar alone with the A–E–G–E shuffle pattern until you can feel bar 9 (the E7 climb) coming without counting — then play along with the record and check the key with your open A string. If it clashes, move the whole pattern to the key your ear finds; the numbers never change.",
       "bassNotes": [
         {
@@ -2386,22 +2386,11 @@
       ],
       "body": [
         {
-          "heading": "THE FORM (standard 12-bar blues — form guidance, not a transcription)",
+          "heading": "VERSE 1",
           "lines": [
             {
               "bars": "| A7 | A7 | A7 | A7 | D7 | D7 | A7 | A7 | E7 | D7 | A7 | E7 |"
             },
-            {
-              "note": "Bars 1–4: A7 — stay home, pattern A–E–G–E each bar. Bars 5–6: D7 — lift, same pattern shape from D. Bars 7–8: A7 — back home. Bar 9: E7 — the climb. Bar 10: D7 — the fall. Bar 11: A7 — home. Bar 12: E7 — turnaround, leads back to bar 1 (or ends the song)."
-            },
-            {
-              "note": "Common variation (quick change): D7 in bar 2 instead of A7. Either version is standard — listen for which one the band uses."
-            }
-          ]
-        },
-        {
-          "heading": "VERSE 1",
-          "lines": [
             {
               "chords": "A7",
               "lyrics": "\"Wake me in the morning…\" (first stanza: getting up and pushing on)"
@@ -2414,6 +2403,9 @@
         {
           "heading": "HOOK (the refrain — verified lyric)",
           "lines": [
+            {
+              "bars": "| A7 | A7 | A7 | A7 | D7 | D7 | A7 | A7 | E7 | D7 | A7 | E7 |"
+            },
             {
               "lyrics": "There'll be no half-steppin'"
             },
@@ -2432,6 +2424,9 @@
           "heading": "VERSE 2",
           "lines": [
             {
+              "bars": "| A7 | A7 | A7 | A7 | D7 | D7 | A7 | A7 | E7 | D7 | A7 | E7 |"
+            },
+            {
               "note": "The \"criticized / talked about\" verse (cue): he's been criticised and talked about, has made mistakes and had bad days, but won't be written off."
             }
           ]
@@ -2439,6 +2434,9 @@
         {
           "heading": "BRIDGE / HOOK",
           "lines": [
+            {
+              "bars": "| A7 | A7 | A7 | A7 | D7 | D7 | A7 | A7 | E7 | D7 | A7 | E7 |"
+            },
             {
               "lyrics": "\"I got a light that keeps on shinin' in my mind…\""
             },
@@ -2451,6 +2449,9 @@
           "heading": "VERSE 3",
           "lines": [
             {
+              "bars": "| A7 | A7 | A7 | A7 | D7 | D7 | A7 | A7 | E7 | D7 | A7 | E7 |"
+            },
+            {
               "note": "The \"stumble\" verse (cue): you might see him stumble or slip, but nobody turns him around and he won't be brought down."
             }
           ]
@@ -2458,6 +2459,9 @@
         {
           "heading": "CLOSING HOOK",
           "lines": [
+            {
+              "bars": "| A7 | A7 | A7 | A7 | D7 | D7 | A7 | A7 | E7 | D7 | A7 | E7 |"
+            },
             {
               "note": "The \"light\" lines and the hook one last time to end."
             }

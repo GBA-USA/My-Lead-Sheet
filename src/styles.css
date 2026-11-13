@@ -1018,17 +1018,12 @@ a:focus-visible {
 
 .beat-dot {
   position: absolute;
-  top: 8px;
-  right: -10px;
-  width: 8px;
-  height: 8px;
+  top: 6px;
+  right: -12px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
   background: #d7263d;
-  opacity: 0.3;
-}
-
-.beat-dot[data-beat="on"] {
-  opacity: 1;
 }
 
 .beat-dot[data-beat="off"] {

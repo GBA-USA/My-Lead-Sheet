@@ -1,0 +1,74 @@
+.metro-top {
+  display: flex;
+  gap: 6px;
+}
+
+.metro-top .metro-pad {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.metro-settings,
+.metro-segments button {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1.5px solid #c4b396;
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
+  touch-action: manipulation;
+}
+
+.metro-settings {
+  flex: none;
+}
+
+.metro-settings[aria-expanded="true"],
+.metro-segments button[aria-pressed="true"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+
+.metro-sync,
+.metro-choice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.metro-choice-label {
+  flex: 1 1 auto;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--olive);
+}
+
+.metro-sync-value {
+  min-width: 5.5em;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.metro-panel {
+  margin-top: 8px;
+  padding-top: 2px;
+  border-top: 1.5px solid #e0d3bc;
+}
+
+.metro-segments {
+  display: flex;
+  gap: 4px;
+}
+
+.metro-segments button {
+  min-height: 40px;
+  min-width: 52px;
+}

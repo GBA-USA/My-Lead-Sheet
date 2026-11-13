@@ -1,0 +1,82 @@
+.song-data-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: end center;
+  padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.song-data {
+  width: min(100%, 420px);
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  background: #322c24;
+  border-radius: 16px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  color: var(--text);
+}
+
+.song-data h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.song-data-field {
+  display: grid;
+  grid-template-columns: 9em minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.song-data-field label {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.song-data-field input {
+  min-width: 0;
+  height: 40px;
+  padding: 0 12px;
+  border: 1.5px solid transparent;
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 16px;
+}
+
+.song-data-field input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.song-data-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.song-data-actions button {
+  height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--bg-2);
+  color: var(--text);
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.song-data-actions button:disabled {
+  opacity: 0.35;
+}
+
+.song-data-actions .is-primary {
+  background: var(--gold);
+  color: var(--on-gold);
+}
+
+.song-data-actions button:first-child {
+  margin-right: auto;
+}

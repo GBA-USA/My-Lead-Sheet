@@ -1,6 +1,7 @@
 import seedLibrary from "../data/library.json";
 import { clampScrollPercent, pitchClass, type Notation } from "./music";
-import type { BassNote, ChartLine, ChartSection, LibraryFile, Setlist, Song } from "./types";
+import type { Mark, ScrollVersion } from "./scroll-timing";
+import type { BassNote, ChartLine, ChartSection, LibraryFile, Setlist, Song, SongData } from "./types";
 
 export const LIBRARY_KEY = "leadSheetsLibrary";
 export const AWAKE_KEY = "leadSheetsKeepAwake";
@@ -70,6 +71,7 @@ const isSong = shaped<Song>({
   tempo: (value) => value === null || (typeof value === "number" && Number.isFinite(value)),
   tempoNote: isString,
   timeSignature: isString,
+  officialRuntimeSec: (value) => value == null || isPositive(value),
   feel: isString,
   sourceNote: isString,
   atAGlance: isString,
@@ -227,4 +229,82 @@ export function loadNotation(songId: number): Notation {
 
 export function saveNotation(songId: number, notation: Notation): boolean {
   return writeSongPref(NOTATION_KEY, songId, notation);
+}
+
+/** Per-song runtime, BPM and time signature entered in the app, under `leadSheetsSongData.<song id>`. */
+export const SONG_DATA_KEY = "leadSheetsSongData";
+/** Per-song taught scroll versions and which one plays, under `leadSheetsScrollVersions.<song id>`. */
+export const SCROLL_VERSIONS_KEY = "leadSheetsScrollVersions";
+
+function isPositive(value: unknown): boolean {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function removeRaw(key: string): boolean {
+  try {
+    localStorage.removeItem(key);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const SONG_DATA_FIELDS: Record<keyof SongData, Check> = {
+  officialRuntimeSec: isPositive,
+  tempo: isPositive,
+  timeSignature: (value) => isString(value) && (value as string).trim().length > 0,
+};
+
+export function loadSongData(songId: number): SongData {
+  const value = readSongPref(SONG_DATA_KEY, songId);
+  if (!value || typeof value !== "object") return {};
+  const data: Record<string, unknown> = {};
+  for (const [name, check] of Object.entries<Check>(SONG_DATA_FIELDS)) {
+    const field = (value as Record<string, unknown>)[name];
+    if (check(field)) data[name] = field;
+  }
+  return data as SongData;
+}
+
+/** An empty `data` removes the entry, so the song goes back to the library's values. */
+export function saveSongData(songId: number, data: SongData): boolean {
+  if (Object.keys(data).length === 0) return removeRaw(`${SONG_DATA_KEY}.${songId}`);
+  return writeRaw(`${SONG_DATA_KEY}.${songId}`, JSON.stringify(data));
+}
+
+export function withSongData(song: Song, data: SongData): Song {
+  return { ...song, officialRuntimeSec: song.officialRuntimeSec ?? null, ...data };
+}
+
+export interface ScrollVersions {
+  versions: ScrollVersion[];
+  /** Index into `versions`, or null for the even pace. */
+  selected: number | null;
+}
+
+const isMark = shaped<Mark>({
+  at: (value) => typeof value === "number" && Number.isFinite(value) && value >= 0,
+  progress: (value) => typeof value === "number" && value >= 0 && value <= 1,
+});
+
+const isVersion: Check = (value) => {
+  if (!shaped<ScrollVersion>({ name: isString, bpm: isPositive, marks: listOf(isMark) })(value)) return false;
+  const marks = (value as ScrollVersion).marks;
+  return (
+    marks.length >= 2 &&
+    marks[marks.length - 1].progress === 1 &&
+    marks.every((mark, i) => i === 0 || (mark.at >= marks[i - 1].at && mark.progress >= marks[i - 1].progress))
+  );
+};
+
+export function loadScrollVersions(songId: number): ScrollVersions {
+  const value = readSongPref(SCROLL_VERSIONS_KEY, songId) as Partial<ScrollVersions> | undefined;
+  const versions = Array.isArray(value?.versions) ? value.versions.filter(isVersion) : [];
+  const selected = value?.selected;
+  const valid = typeof selected === "number" && Number.isInteger(selected) && selected >= 0 && selected < versions.length;
+  return { versions, selected: valid ? selected : null };
+}
+
+export function saveScrollVersions(songId: number, value: ScrollVersions): boolean {
+  return writeRaw(`${SCROLL_VERSIONS_KEY}.${songId}`, JSON.stringify(value));
 }

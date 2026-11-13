@@ -1,0 +1,69 @@
+.teach-bar {
+  position: relative;
+  z-index: 2;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 10px 8px;
+}
+
+.teach-btn,
+.teach-select,
+.teach-name {
+  height: 32px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--bg-2);
+  color: var(--text);
+  font-weight: 700;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.teach-btn {
+  padding: 0 12px;
+}
+
+.teach-btn.is-on {
+  background: var(--gold);
+  color: var(--on-gold);
+}
+
+.teach-btn:disabled {
+  opacity: 0.35;
+}
+
+.teach-select {
+  min-width: 0;
+  max-width: 40%;
+  padding: 0 10px;
+}
+
+.teach-name {
+  min-width: 0;
+  width: 9em;
+  padding: 0 12px;
+}
+
+.teach-status {
+  margin-right: auto;
+  color: var(--gold);
+  font-weight: 700;
+  font-size: 13px;
+}
+
+@media (min-width: 768px) {
+  .teach-bar {
+    padding: 0 20px 12px;
+  }
+
+  .teach-btn,
+  .teach-select,
+  .teach-name {
+    height: 36px;
+    font-size: 14px;
+  }
+}

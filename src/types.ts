@@ -33,6 +33,8 @@ export interface Song {
   tempo: number | null;
   tempoNote: string;
   timeSignature: string;
+  /** The recording's length. With `tempo`, it sets the even auto-scroll pace through the chart. */
+  officialRuntimeSec: number | null;
   feel: string;
   sourceNote: string;
   atAGlance: string;
@@ -41,6 +43,9 @@ export interface Song {
   bassNotes: BassNote[];
   body: ChartSection[];
 }
+
+/** Values entered on this device that replace the library's for one song. A missing field keeps the library's. */
+export type SongData = Partial<Pick<Song, "officialRuntimeSec" | "tempo" | "timeSignature">>;
 
 export interface Setlist {
   id: number;

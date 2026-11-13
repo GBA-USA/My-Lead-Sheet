@@ -1,20 +1,27 @@
-import { useEffect, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { BackIcon, DotsIcon, OverflowMenu, ScreenToggle, SongControls } from "./controls";
 import { useAutoScroll, usePerformance, useWakeLock } from "./hooks";
+import { initialMetronomeBpm } from "./metronome";
 import { useMetronome } from "./metronome-view";
-import { displayKeyLabel, scrollPixelsPerSecond } from "./music";
+import { displayKeyLabel } from "./music";
+import { evenPlan, finishTake, scrollMotion, startTake, toggleHold, type Take } from "./scroll-timing";
 import { LeadSheet } from "./sheet";
+import { SongDataEditor } from "./song-data-editor";
 import {
   TEXT_SCALES,
   loadAwake,
   loadLibrary,
+  loadSongData,
   loadTextScaleIndex,
   saveAwake,
+  saveSongData,
   saveTextScaleIndex,
   songById,
   tempoText,
+  withSongData,
 } from "./storage";
-import type { LibraryFile, Setlist, Song } from "./types";
+import { TeachBar, useScrollVersions } from "./teach";
+import type { LibraryFile, Setlist, Song, SongData } from "./types";
 
 type TabName = "songs" | "setlists";
 
@@ -25,6 +32,8 @@ type Route =
   | { name: "live"; setlistId: number; index: number };
 
 type MenuId = "shell" | "song" | null;
+
+type SongDataById = Record<number, SongData>;
 
 function parseHash(hash: string): Route {
   const raw = hash.replace(/^#/, "");
@@ -46,7 +55,16 @@ function songHref(id: number, from: TabName): string {
 }
 
 export function App() {
-  const [library] = useState<LibraryFile>(() => loadLibrary());
+  const [stored] = useState<LibraryFile>(() => loadLibrary());
+  const [songData, setSongData] = useState<SongDataById>(() =>
+    Object.fromEntries(stored.songs.map((song) => [song.id, loadSongData(song.id)])),
+  );
+  const library = useMemo<LibraryFile>(
+    () => ({ ...stored, songs: stored.songs.map((song) => withSongData(song, songData[song.id] ?? {})) }),
+    [stored, songData],
+  );
+  const [editing, setEditing] = useState(false);
+  const [take, setTake] = useState<Take | null>(null);
   const [hash, setHash] = useState(() => window.location.hash);
   const [textIndex, setTextIndex] = useState(() => loadTextScaleIndex());
   const [awake, setAwake] = useState(() => loadAwake());
@@ -80,18 +98,29 @@ export function App() {
 
   const performance = usePerformance(activeSong?.id ?? null);
   const metronome = useMetronome(activeSong?.id ?? null, activeSong ? activeSong.tempo : null);
-  // Scroll reads the stored song tempo and the scroll percentage only.
-  // metronome.bpm is a separate performance setting and must not be passed in.
-  useAutoScroll(
+  const versions = useScrollVersions(activeSong?.id ?? null);
+  if (take && !performance.scrolling) setTake(null);
+  const version = versions.selected == null ? null : versions.versions[versions.selected];
+  const even = activeSong ? evenPlan(activeSong) : null;
+  // The metronome's speed against the plan's BPM scales the timed scroll, so a tempo change applies at once.
+  const motion = activeSong
+    ? scrollMotion(activeSong, version, take, metronome.bpm, performance.percent)
+    : ({ kind: "pace", pxPerSec: 0 } as const);
+  const clock = useAutoScroll(
     performance.scrolling && activeSong != null,
-    activeSong ? scrollPixelsPerSecond(activeSong.tempo, performance.percent) : 0,
-    performance.stopScroll,
+    motion,
+    take ? "take" : version ? `version ${versions.selected}` : `even ${activeSong?.officialRuntimeSec} ${activeSong?.tempo}`,
+    (reason) => {
+      if (reason === "end" && take) versions.add(finishTake(take, clock.current));
+      performance.stopScroll();
+    },
   );
   useWakeLock(awake);
 
   useEffect(() => {
     document.getElementById("sheet-scroll")?.scrollTo(0, 0);
     setMenu(null);
+    setEditing(false);
   }, [hash]);
 
   useEffect(() => {
@@ -128,6 +157,20 @@ export function App() {
     } else if (route.name === "live") {
       window.location.hash = "#/setlists";
     }
+  };
+
+  const teach = () => {
+    if (!even) return;
+    setTake(startTake(even, metronome.bpm ?? even.bpm));
+    performance.setScrolling(true);
+  };
+
+  const saveData = (song: Song, data: SongData) => {
+    saveSongData(song.id, data);
+    setSongData((current) => ({ ...current, [song.id]: data }));
+    const tempo = data.tempo ?? songById(stored.songs, song.id)?.tempo ?? null;
+    if (tempo !== song.tempo) metronome.setBpm(initialMetronomeBpm(tempo));
+    setEditing(false);
   };
 
   const goLive = (index: number) => {
@@ -184,6 +227,7 @@ export function App() {
           menuOpen={menu === "song"}
           onMenuToggle={() => toggleMenu("song")}
           onMenuClose={closeMenu}
+          onSongData={() => setEditing(true)}
           notation={performance.notation}
           onNotation={performance.changeNotation}
           scrolling={performance.scrolling}
@@ -200,6 +244,29 @@ export function App() {
           <ScreenToggle on={awake} onToggle={toggleAwake} />
         </div>
       )}
+
+      {activeSong && (even || versions.versions.length > 0) ? (
+        <TeachBar
+          names={versions.versions.map((item) => item.name)}
+          selected={versions.selected}
+          canTeach={even != null}
+          teaching={take != null}
+          holding={take?.holding ?? false}
+          onSelect={versions.select}
+          onRename={versions.rename}
+          onTeach={teach}
+          onHold={() => setTake((current) => current && toggleHold(current, clock.current))}
+        />
+      ) : null}
+
+      {activeSong && editing ? (
+        <SongDataEditor
+          song={activeSong}
+          original={withSongData(songById(stored.songs, activeSong.id)!, {})}
+          onSave={(data) => saveData(activeSong, data)}
+          onClose={() => setEditing(false)}
+        />
+      ) : null}
 
       {liveSetlist && liveSetlist.songIds.length > 0 ? (
         <div className="live-nav">

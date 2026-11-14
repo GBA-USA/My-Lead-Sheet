@@ -38,7 +38,8 @@
     "check:band-library": "node --experimental-strip-types scripts/check-band-library.ts",
     "check:setlist-code": "node --experimental-strip-types scripts/check-setlist-code.ts",
     "check:codes": "node --experimental-strip-types scripts/check-codes.ts",
-    "check:sync-rating": "node --experimental-strip-types scripts/check-sync-rating.ts"
+    "check:sync-rating": "node --experimental-strip-types scripts/check-sync-rating.ts",
+    "check:chat": "node --experimental-strip-types scripts/check-chat.ts"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.5",

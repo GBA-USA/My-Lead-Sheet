@@ -1,0 +1,55 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "mls-rooms",
+  "main": "index.ts",
+  "compatibility_date": "2026-11-01",
+  "durable_objects": {
+    "bindings": [
+      { "name": "DIRECTORY", "class_name": "Directory" },
+      { "name": "ROOM", "class_name": "Room" }
+    ]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Directory", "Room"] }],
+  "env": {
+    "test": {
+      "name": "mls-rooms",
+      "durable_objects": {
+        "bindings": [
+          { "name": "DIRECTORY", "class_name": "Directory" },
+          { "name": "ROOM", "class_name": "Room" }
+        ]
+      },
+      "vars": {
+        "APP_ORIGIN": "",
+        "RP_ID": "",
+        "RP_NAME": "My Lead Sheet",
+        "GOOGLE_CLIENT_ID": "",
+        "GOOGLE_REDIRECT_URI": "",
+        "PRIVACY_CONTACT": "",
+        "CF_ACCOUNT_ID": "",
+        "TURN_KEY_ID": "",
+        "RELAY_CAP_GB": "50"
+      }
+    },
+    "production": {
+      "name": "mls-rooms",
+      "durable_objects": {
+        "bindings": [
+          { "name": "DIRECTORY", "class_name": "Directory" },
+          { "name": "ROOM", "class_name": "Room" }
+        ]
+      },
+      "vars": {
+        "APP_ORIGIN": "",
+        "RP_ID": "",
+        "RP_NAME": "My Lead Sheet",
+        "GOOGLE_CLIENT_ID": "",
+        "GOOGLE_REDIRECT_URI": "",
+        "PRIVACY_CONTACT": "",
+        "CF_ACCOUNT_ID": "",
+        "TURN_KEY_ID": "",
+        "RELAY_CAP_GB": "50"
+      }
+    }
+  }
+}

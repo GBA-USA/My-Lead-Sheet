@@ -103,7 +103,7 @@ const bar = () =>
     const controls = [...bar.querySelectorAll("button, input, select")].filter((el) => !el.closest(".menu"));
     const tops = new Set(controls.map((el) => Math.round(el.getBoundingClientRect().top)));
     const overflow = bar.scrollWidth > bar.clientWidth || controls.some((el) => { const box = el.getBoundingClientRect(); return box.left < 0 || box.right > innerWidth; });
-    return { rows: tops.size, height: Math.round(bar.getBoundingClientRect().height), controls: controls.map((el) => el.innerText.trim()), overflow, shortest: Math.min(...controls.map((el) => el.getBoundingClientRect().height)) };
+    return { rows: tops.size, height: Math.round(bar.getBoundingClientRect().height), controls: controls.map((el) => el.innerText.trim() || el.getAttribute("aria-label")), overflow, shortest: Math.min(...controls.map((el) => el.getBoundingClientRect().height)) };
   })()`);
 type Menu = { items: string[]; checked: string[]; disabled: string[]; notes: string[]; shortest: number; inside: boolean; expanded: string[] };
 const menus = () =>
@@ -168,11 +168,12 @@ try {
     await tap(BUTTONS, CHIP);
     const [open] = await menus();
     await shoot("menu-timing-open");
-    const want = ["✓ V1 · learned", "Sunday", "Default (even pace)", "Rename V1…", "Delete V1…"];
+    const want = ["✓ V1 · learned", "Sunday", "Default (even pace)", "Rename V1…", "Edit tempo…", "Delete V1…"];
     check(JSON.stringify(open?.items) === JSON.stringify(want), `the Timing menu lists ${want.join(", ")} (${open?.items.join(", ")})`);
     check(JSON.stringify(open?.checked) === '["✓ V1 · learned"]' && JSON.stringify(open?.expanded) === JSON.stringify([CHIP]), `V1 is the checked choice and the chip says it is expanded (${open?.checked}, ${open?.expanded})`);
     check(open.shortest >= 44 && open.inside, `menu items are at least 44 px tall and the menu stays on screen (${open.shortest} px)`);
-    check(await evaluate<boolean>(`!!document.querySelector(".menu-divider[role=separator]")`), "a divider separates the choices from Rename and Delete");
+    const divider = await evaluate<string>(`(() => { const line = document.querySelector("[role=menu] .menu-divider[role=separator]"); return line ? line.previousElementSibling.innerText.trim() + " | " + line.nextElementSibling.innerText.trim() : "none"; })()`);
+    check(divider === "Default (even pace) | Rename V1…", `a divider separates the choices from Rename, Edit tempo and Delete (${divider})`);
 
     await key("Escape");
     check((await menus()).length === 0, "Escape closes the menu");
@@ -233,10 +234,12 @@ try {
     await tap(ITEMS, "Learn by user (scroll it yourself)");
     const teachingBar = await bar();
     await shoot("teaching");
-    check(JSON.stringify(teachingBar.controls) === '["Discard","Done","Hold"]' && teachingBar.rows === 1, `Learn by user starts teaching: Teaching with Discard, Done and Hold in one row (${teachingBar.controls.join(", ")})`);
+    check(JSON.stringify(teachingBar.controls) === '["Discard","Done","Hold","BPM"]' && teachingBar.rows === 1, `Learn by user starts teaching: Teaching with Discard, Done, Hold and the BPM field in one row (${teachingBar.rows} rows: ${teachingBar.controls.join(", ")})`);
+    check(teachingBar.height <= 46 && !teachingBar.overflow && teachingBar.shortest >= 44, `the teaching bar is ${teachingBar.height} px tall, nothing spills out, and every control is at least 44 px tall (${teachingBar.shortest} px)`);
     check(await evaluate<boolean>(`document.querySelector(".teach-status")?.innerText === "Teaching" && !!${find("button", "Scroll: On")}`), "the take scrolls the sheet");
     await tap(BUTTONS, "Hold");
-    check((await bar()).controls.includes("Continue"), "Hold still pauses the take");
+    const holding = await bar();
+    check(holding.controls.includes("Continue") && holding.rows === 1 && !holding.overflow, `Hold still pauses the take and Continue keeps the bar on one row (${holding.rows} rows: ${holding.controls.join(", ")})`);
     await tap(BUTTONS, "Discard");
     await tap(BUTTONS, "Discard");
     check((await bar()).controls[0] === CHIP, "Discard ends the take and the chip comes back");

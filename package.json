@@ -11,6 +11,7 @@
     "check:music": "node --experimental-strip-types scripts/check-music.ts",
     "check:scroll": "node --experimental-strip-types scripts/check-scroll.ts",
     "check:teach": "node --experimental-strip-types scripts/check-teach.ts",
+    "check:teach-screen": "node --experimental-strip-types scripts/check-teach-screen.ts",
     "check:bpm": "node --experimental-strip-types scripts/check-bpm.ts",
     "check:learn": "node --experimental-strip-types scripts/check-learn.ts",
     "check:learned": "node --experimental-strip-types scripts/check-learned.ts",
@@ -24,7 +25,11 @@
     "check:bar": "node --experimental-strip-types scripts/check-bar.ts",
     "check:heard": "node --experimental-strip-types scripts/check-heard.ts",
     "check:gig": "node --experimental-strip-types scripts/check-gig.ts",
-    "check:time": "node --experimental-strip-types scripts/check-time.ts"
+    "check:time": "node --experimental-strip-types scripts/check-time.ts",
+    "check:api": "tsc -p worker && node --experimental-strip-types scripts/check-api.ts",
+    "check:portable": "node --experimental-strip-types scripts/check-portable.ts",
+    "check:share-rule": "node --experimental-strip-types scripts/check-share-rule.ts",
+    "check:friends": "node --experimental-strip-types scripts/check-friends.ts"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.5",
@@ -33,10 +38,12 @@
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261114.1",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.4.1",
     "typescript": "^5.8.3",
-    "vite": "^6.3.5"
+    "vite": "^6.3.5",
+    "wrangler": "^4.162.0"
   }
 }

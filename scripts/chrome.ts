@@ -102,7 +102,7 @@ export async function openSite(root: string, name: string, apiBase?: () => strin
     chrome.kill();
     server.close();
     await new Promise((resolve) => (chrome.exitCode === null ? chrome.once("exit", resolve) : resolve(null)));
-    rmSync(profile, { recursive: true, force: true });
+    rmSync(profile, { recursive: true, force: true, maxRetries: 10 });
     rmSync(out, { recursive: true, force: true });
   };
   return { origin, send, evaluate, close };

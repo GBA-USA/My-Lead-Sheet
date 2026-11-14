@@ -1,4 +1,5 @@
 import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
+import type { BackupResult } from "./backup";
 import { PRIVACY_HREF } from "./data-kinds";
 import { ApiError, SIGN_IN_METHODS, api, type Account, type SignedIn } from "./sign-in-methods";
 import "./account.css";
@@ -31,9 +32,25 @@ const message = (error: unknown) => {
 
 const methodsThatWork = SIGN_IN_METHODS.filter((method) => method.works());
 
+const backupLine = (backup: BackupResult | null) => {
+  if (backup?.ok && backup.at) return `Backed up · ${new Date(backup.at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`;
+  if (backup && !backup.ok) return "Not backed up · can't reach the server";
+  return "Backing up this phone…";
+};
+
 const added = (ms: number) => new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 
-export function AccountSheet({ account, onAccount, onClose }: { account: Account | null; onAccount: (account: Account | null) => void; onClose: () => void }) {
+export function AccountSheet({
+  account,
+  backup,
+  onAccount,
+  onClose,
+}: {
+  account: Account | null;
+  backup: BackupResult | null;
+  onAccount: (account: Account | null) => void;
+  onClose: () => void;
+}) {
   const titleId = useId();
   const nameId = useId();
   const handleId = useId();
@@ -220,6 +237,9 @@ export function AccountSheet({ account, onAccount, onClose }: { account: Account
         body: (
           <>
             <p className="account-handle">@{account.handle}</p>
+            <p className="account-note" role="status">
+              {backupLine(backup)}
+            </p>
             <h3 className="account-section">Ways to sign in</h3>
             <ul className="account-ways">
               {account.ways.map((way) => {

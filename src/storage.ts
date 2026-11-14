@@ -110,14 +110,15 @@ function fingerprint(item: unknown): string {
   return (hash >>> 0).toString(36);
 }
 
+const ownItems = <T extends { id: number }>(stored: T[], prints: SeedPrints | undefined) =>
+  stored.filter((item) => prints && prints[item.id] !== fingerprint(item));
+
 /**
  * Seed items win unless the stored copy is the user's: added (no print) or edited (print differs).
  * A library stored before prints existed holds only seed copies, so `prints` is undefined there.
  */
 function mergeSeed<T extends { id: number }>(seed: T[], stored: T[], prints: SeedPrints | undefined) {
-  const own = new Map(
-    stored.filter((item) => prints && prints[item.id] !== fingerprint(item)).map((item) => [item.id, item]),
-  );
+  const own = new Map(ownItems(stored, prints).map((item) => [item.id, item]));
   const seedIds = new Set(seed.map((item) => item.id));
   const items = [...seed.map((item) => own.get(item.id) ?? item), ...[...own.values()].filter((item) => !seedIds.has(item.id))];
   const nextPrints: SeedPrints = {};
@@ -170,6 +171,67 @@ export function loadLibrary(): Library {
     songs: library.songs.map((song) => ({ ...song, ref: localRef(song.id) })),
     setlists: library.setlists.map(({ songIds, ...setlist }) => ({ ...setlist, songRefs: songIds.map(localRef) })),
   };
+}
+
+type OwnPart<T> = { items: T[]; prints: SeedPrints };
+
+function ownPart<T extends { id: number }>(stored: T[] | undefined, prints: SeedPrints | undefined): OwnPart<T> {
+  const items = ownItems(stored ?? [], prints);
+  return { items, prints: Object.fromEntries(items.flatMap((item) => (prints?.[item.id] === undefined ? [] : [[item.id, prints[item.id]]]))) };
+}
+
+const ownJson = (songs: OwnPart<StoredSong>, setlists: OwnPart<StoredSetlist>) =>
+  JSON.stringify({ songs: songs.items, setlists: setlists.items, seedPrints: { songs: songs.prints, setlists: setlists.prints } });
+
+/**
+ * The songs and setlists this phone added or edited, with their seed prints, as stored library JSON. Seed copies are
+ * left out because every phone has them. Written back under `LIBRARY_KEY`, `loadLibrary` merges the seed in again.
+ */
+export function ownLibrary(raw: string | null): string | null {
+  const stored = parseStored(raw);
+  return stored && ownJson(ownPart(stored.songs, stored.seedPrints?.songs), ownPart(stored.setlists, stored.seedPrints?.setlists));
+}
+
+/** Adds the phone's items to the server's. Same id and same content is one item. Same id with other content keeps both, the phone's under a new id. */
+function keepBoth<T extends { id: number }>(server: OwnPart<T>, phone: OwnPart<T>, seed: T[], rename: (item: T) => T) {
+  const items = [...server.items];
+  const prints = { ...server.prints };
+  const byId = new Map(items.map((item) => [item.id, JSON.stringify(item)]));
+  const moved = new Map<number, number>();
+  let next = Math.max(0, ...[...seed, ...server.items, ...phone.items].map((item) => item.id)) + 1;
+  for (const item of phone.items) {
+    const there = byId.get(item.id);
+    if (there === JSON.stringify(item)) continue;
+    if (there === undefined) {
+      items.push(item);
+      if (phone.prints[item.id] !== undefined) prints[item.id] = phone.prints[item.id];
+    } else {
+      moved.set(item.id, next);
+      items.push({ ...rename(item), id: next });
+      next += 1;
+    }
+  }
+  return { items, prints, moved };
+}
+
+/**
+ * Merges two `ownLibrary` values so nothing is dropped. A song or setlist both sides changed differently is kept
+ * twice, and the phone's copy is named "· from <phone>". The phone's setlists follow its songs to their new ids.
+ */
+export function mergeOwnLibraries(server: string | null, phone: string | null, phoneLabel: string): string | null {
+  const ours = parseStored(server);
+  const theirs = parseStored(phone);
+  if (!ours || !theirs) return server ?? phone;
+  const seed = seedLibrary as LibraryFile;
+  const from = (name: string) => `${name} · from ${phoneLabel}`;
+  const serverSongs = ownPart(ours.songs, ours.seedPrints?.songs);
+  const serverSetlists = ownPart(ours.setlists, ours.seedPrints?.setlists);
+  const songs = keepBoth(serverSongs, ownPart(theirs.songs, theirs.seedPrints?.songs), seed.songs, (song) => ({ ...song, title: from(song.title) }));
+  const phoneSetlists = ownPart(theirs.setlists, theirs.seedPrints?.setlists);
+  phoneSetlists.items = phoneSetlists.items.map((setlist) => ({ ...setlist, songIds: setlist.songIds.map((id) => songs.moved.get(id) ?? id) }));
+  const setlists = keepBoth(serverSetlists, phoneSetlists, seed.setlists, (setlist) => ({ ...setlist, name: from(setlist.name) }));
+  const added = songs.items.length > serverSongs.items.length || setlists.items.length > serverSetlists.items.length;
+  return added ? ownJson(songs, setlists) : server;
 }
 
 export function loadAwake(): boolean {

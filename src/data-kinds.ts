@@ -22,6 +22,11 @@ export const DATA_KINDS: readonly DataKind[] = [
     place: "phone",
     what: "The scroll timings you taught or learned for each song: tap times, beat times, section times and chord names heard. No sound is kept.",
   },
+  {
+    key: "leadSheetsBackup",
+    place: "phone",
+    what: "While you are signed in: which account this phone backs up to, and what it last sent and received, so it only sends changes. Removed when you sign out.",
+  },
   { key: "users", place: "server", what: "Your account: the name bandmates see, your handle (the name others find you by), when you joined, and a number that goes up when you sign out everywhere." },
   {
     key: "passkeys",
@@ -32,5 +37,10 @@ export const DATA_KINDS: readonly DataKind[] = [
   { key: "challenges", place: "server", what: "A random value for a sign-in in progress, with the name you typed, deleted when you finish or after 5 minutes." },
   { key: "open_rooms", place: "server", what: "Which bands and chats you have opened since you last signed out everywhere, so signing out everywhere can close them." },
   { key: "room_closes", place: "server", what: "Rooms still to be told you signed out everywhere, deleted once each one is told." },
+  {
+    key: "backup_items",
+    place: "server",
+    what: "Your backup, in a room only your account can open: the songs and setlists you added or changed, your timing versions, the runtime, tempo and time signature you entered, the scroll speed and Notes or Nashville choice for each song, and your text size and Screen on choice. Your phones sync it when you are signed in.",
+  },
   { key: "session_floors", place: "server", what: "In each band or chat room, the oldest sign-in it still lets in for each person, after they signed out everywhere." },
 ];

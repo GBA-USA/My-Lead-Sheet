@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { AccountSheet } from "./account";
+import { backupOff, backupOn, syncBackup, type BackupResult } from "./backup";
 import { BackIcon, DotsIcon, Menu, OverflowMenu, ScreenToggle, SongControls } from "./controls";
 import { LearnedCues } from "./cues";
 import { useAutoScroll, usePerformance, useWakeLock } from "./hooks";
@@ -65,11 +66,13 @@ function songHref(id: number, from: TabName): string {
   return from === "setlists" ? `#/song/${id}?from=setlists` : `#/song/${id}`;
 }
 
+const BACKUP_EVERY_MS = 60_000;
+
+const loadAllSongData = (library: Library): SongDataByRef => Object.fromEntries(library.songs.map((song) => [song.ref, loadSongData(song.ref)]));
+
 export function App() {
-  const [stored] = useState<Library>(() => loadLibrary());
-  const [songData, setSongData] = useState<SongDataByRef>(() =>
-    Object.fromEntries(stored.songs.map((song) => [song.ref, loadSongData(song.ref)])),
-  );
+  const [stored, setStored] = useState<Library>(() => loadLibrary());
+  const [songData, setSongData] = useState<SongDataByRef>(() => loadAllSongData(stored));
   const library = useMemo<Library>(
     () => ({ ...stored, songs: stored.songs.map((song) => withSongData(song, songData[song.ref] ?? {})) }),
     [stored, songData],
@@ -82,6 +85,45 @@ export function App() {
   const [menu, setMenu] = useState<MenuId>(null);
   const [account, setAccount] = useState<Account | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [backup, setBackup] = useState<BackupResult | null>(null);
+
+  const runBackup = useCallback(async () => {
+    const result = await syncBackup();
+    if (result.signedOut) setAccount(null);
+    if (result.changed.length > 0) {
+      const next = loadLibrary();
+      setStored(next);
+      setSongData(loadAllSongData(next));
+      setTextIndex(loadTextScaleIndex());
+      setAwake(loadAwake());
+    }
+    setBackup(result);
+  }, []);
+
+  useEffect(() => {
+    runBackup();
+    const timer = setInterval(runBackup, BACKUP_EVERY_MS);
+    const onShow = () => document.visibilityState === "visible" && runBackup();
+    document.addEventListener("visibilitychange", onShow);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onShow);
+    };
+  }, [runBackup]);
+
+  const onAccount = useCallback(
+    (next: Account | null) => {
+      setAccount(next);
+      if (next) {
+        backupOn(next.userId);
+        runBackup();
+      } else {
+        backupOff();
+        setBackup(null);
+      }
+    },
+    [runBackup],
+  );
 
   useEffect(() => {
     if (!window.location.hash) {
@@ -342,7 +384,7 @@ export function App() {
         />
       ) : null}
 
-      {accountOpen ? <AccountSheet account={account} onAccount={setAccount} onClose={() => setAccountOpen(false)} /> : null}
+      {accountOpen ? <AccountSheet account={account} backup={backup} onAccount={onAccount} onClose={() => setAccountOpen(false)} /> : null}
 
       {liveSetlist && liveSetlist.songRefs.length > 0 ? (
         <div className="live-nav">

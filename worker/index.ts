@@ -1,6 +1,7 @@
 import type { Directory } from "./directory";
 import { Refused } from "./refused";
-import { SESSION_HEADER, USER_HEADER, type Room } from "./room";
+import { BACKUP_PATH, SESSION_HEADER, USER_HEADER, type Room } from "./room";
+import { selfRoomId } from "./room-backup";
 import { readSession } from "./session";
 
 export { Directory } from "./directory";
@@ -24,10 +25,11 @@ const refuse = (error: string, status: number) => Response.json({ error }, { sta
 /** A browser always sends Origin on a POST and a socket upgrade, so anything else is another site or not a browser. */
 const fromApp = (request: Request, env: Env) => !!env.APP_ORIGIN && request.headers.get("Origin") === env.APP_ORIGIN;
 
-async function enterRoom(request: Request, env: Env, roomId: string): Promise<Response> {
-  const upgrade = request.headers.get("Upgrade") === "websocket";
-  if (upgrade && !fromApp(request, env)) return refuse("wrong-origin", 403);
+async function enterRoom(request: Request, env: Env, roomOf: (userId: string) => string): Promise<Response> {
+  const writes = request.headers.get("Upgrade") === "websocket" || request.method !== "GET";
+  if (writes && !fromApp(request, env)) return refuse("wrong-origin", 403);
   const session = await readSession(env.SESSION_SECRET, request.headers.get("Cookie"), Date.now());
+  const roomId = session ? roomOf(session.userId) : "";
   if (!session || !(await env.DIRECTORY.getByName("directory").authorizeRoom(session.userId, session.version, roomId))) return refuse("signed-out", 401);
   const forwarded = new Request(request);
   forwarded.headers.set(USER_HEADER, session.userId);
@@ -41,7 +43,8 @@ export default {
     if (pathname === "/api/health") return Response.json({ ok: true });
     try {
       const room = ROOM_PATH.exec(pathname)?.[1];
-      if (room) return await enterRoom(request, env, room);
+      if (room) return await enterRoom(request, env, () => room);
+      if (pathname === BACKUP_PATH) return await enterRoom(request, env, selfRoomId);
     } catch (error) {
       if (error instanceof Refused) return refuse(error.reason, error.status);
       throw error;

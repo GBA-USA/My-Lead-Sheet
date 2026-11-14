@@ -94,6 +94,22 @@ const drills: [string, () => [boolean, string]][] = [
     },
   ],
   [
+    "mike misses the backup move to joe and both take over; joe names a new backup: every phone ends on joe's state, whatever order it hears them",
+    () => {
+      const base = gig();
+      const moved = ok(act(base, "terry", 1000, { kind: "setBackup", userId: "joe" }));
+      const joeTakes = ok(act(moved, "joe", 40_000, { kind: "takeOver" }));
+      const mikeTakes = ok(act(base, "mike", 40_000, { kind: "takeOver" }));
+      const joeNames = ok(act(joeTakes, "joe", 41_000, { kind: "setBackup", userId: "terry" }));
+      const sent = { joeTakes, mikeTakes, joeNames };
+      const orders = (names: string[]): string[][] => (names.length ? names.flatMap((n) => orders(names.filter((m) => m !== n)).map((rest) => [n, ...rest])) : [[]]);
+      const ends = orders(Object.keys(sent)).map((order) => order.reduce<GigState | null>((phone, name) => G.receive(phone, sent[name as keyof typeof sent]).state, null)!);
+      const finals = new Set(ends.map((s) => JSON.stringify(s)));
+      const pass = finals.size === 1 && ends[0] === joeNames && joeTakes.backup === null && mikeTakes.backup === null;
+      return [pass, `${finals.size} final state(s): ${ends.map((s) => `${s.leader}@rev${s.rev}`).join(" ")}; backup after joe takes over ${joeTakes.backup}`];
+    },
+  ],
+  [
     "the old leader comes back after a take-over: it sees the higher epoch, steps down, and its taps are refused",
     () => {
       const base = gig();

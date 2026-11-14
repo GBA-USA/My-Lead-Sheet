@@ -4,6 +4,9 @@ export type UserId = string;
 export type SongKey = string;
 export type RouteChoice = "auto" | "band_wifi" | "direct_cell" | "server";
 
+/** Why the leader holds this epoch, fixed when the epoch began. Two take-overs of one epoch go to the admin, then the backup, then anyone else. */
+export type Claim = "admin" | "backup" | "other";
+
 export interface Scheduled<T> {
   value: T;
   at: BandMs;
@@ -34,6 +37,7 @@ export interface GigState extends Shown {
   route: RouteChoice;
   scrollAlong: boolean;
   leader: UserId;
+  claim: Claim;
   backup: UserId | null;
   admin: UserId;
   lineup: UserId[];
@@ -87,6 +91,9 @@ const shown = <T>(s: Scheduled<T>, t: BandMs): T => (t >= s.at ? s.value : s.bef
 const still = <T>(value: T, at: BandMs): Scheduled<T> => ({ value, at, before: value });
 const schedule = <T>(s: Scheduled<T>, value: T, at: BandMs, now: BandMs): Scheduled<T> => ({ value, at, before: shown(s, now) });
 
+const CLAIM_ORDER: Record<Claim, number> = { admin: 0, backup: 1, other: 2 };
+const claimOf = (s: { admin: UserId; backup: UserId | null }, by: UserId): Claim => (by === s.admin ? "admin" : by === s.backup ? "backup" : "other");
+
 export function startGig(plan: {
   gigId: string;
   order: SongKey[];
@@ -101,6 +108,8 @@ export function startGig(plan: {
   const { now, order, ...rest } = plan;
   return {
     ...rest,
+    claim: claimOf(plan, plan.leader),
+    backup: plan.backup === plan.leader ? null : plan.backup,
     rev: 0,
     epoch: 0,
     status: "live",
@@ -213,6 +222,15 @@ const MAY: Record<Op["kind"], (state: GigState, by: UserId) => boolean> = {
   takeOver: (s, by) => by !== s.leader && (by === s.admin || by === s.backup),
 };
 
+const lead = (state: GigState, by: UserId): Partial<GigState> => ({
+  leader: by,
+  epoch: state.epoch + 1,
+  claim: claimOf(state, by),
+  backup: state.backup === by ? null : state.backup,
+  handoff: null,
+  last: null,
+});
+
 function control(state: GigState, op: Control, by: UserId, now: BandMs): Partial<GigState> | Refusal {
   switch (op.kind) {
     case "undo": {
@@ -226,9 +244,9 @@ function control(state: GigState, op: Control, by: UserId, now: BandMs): Partial
       return { handoff: { to: op.to, until: (now + HANDOFF_WAIT_MS) as BandMs } };
     case "accept":
       if (now >= state.handoff!.until) return "offer-expired";
-      return { leader: by, epoch: state.epoch + 1, handoff: null, last: null };
+      return lead(state, by);
     case "takeOver":
-      return { leader: by, epoch: state.epoch + 1, handoff: null, last: null };
+      return lead(state, by);
     case "setBackup":
       if (op.userId !== null && (!state.lineup.includes(op.userId) || op.userId === state.leader)) return "not-on-lineup";
       if (op.userId === state.backup) return "same-target";
@@ -284,24 +302,21 @@ export function reduce(state: GigState, op: Op, ctx: { by: UserId; now: BandMs; 
 
 export type Received = "applied" | "duplicate" | "old" | "old-epoch" | "lost-tie" | "other-gig";
 
-const rank = (s: GigState) => (s.leader === s.admin ? 0 : s.leader === s.backup ? 1 : 2);
+const LOSES: Received[] = ["old-epoch", "lost-tie", "lost-tie", "old"];
 
-function outranks(a: GigState, b: GigState) {
-  return rank(a) - rank(b) || (a.leader < b.leader ? -1 : 1);
-}
-
-/** Ordered by (epoch, rev), so a take-over wins even when the cut-off old leader counted more revs. */
+/** Ordered by (higher epoch, earlier claim, lower leader id, higher rev), so a take-over wins even when the cut-off old leader counted more revs. */
 export function receive(local: GigState | null, incoming: GigState): { state: GigState; result: Received } {
   if (!local) return { state: incoming, result: "applied" };
   if (incoming.gigId !== local.gigId) return { state: local, result: "other-gig" };
-  if (incoming.epoch < local.epoch) return { state: local, result: "old-epoch" };
-  if (incoming.epoch > local.epoch) return { state: incoming, result: "applied" };
-  if (incoming.leader !== local.leader) {
-    return outranks(incoming, local) < 0 ? { state: incoming, result: "applied" } : { state: local, result: "lost-tie" };
-  }
-  if (incoming.rev === local.rev) return { state: local, result: "duplicate" };
-  if (incoming.rev < local.rev) return { state: local, result: "old" };
-  return { state: incoming, result: "applied" };
+  const gaps = [
+    incoming.epoch - local.epoch,
+    CLAIM_ORDER[local.claim] - CLAIM_ORDER[incoming.claim],
+    incoming.leader < local.leader ? 1 : incoming.leader > local.leader ? -1 : 0,
+    incoming.rev - local.rev,
+  ];
+  const first = gaps.findIndex((gap) => gap !== 0);
+  if (first === -1) return { state: local, result: "duplicate" };
+  return gaps[first] > 0 ? { state: incoming, result: "applied" } : { state: local, result: LOSES[first] };
 }
 
 export interface Position {

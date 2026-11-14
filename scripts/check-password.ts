@@ -6,9 +6,11 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { Phone, startApi } from "./api-session.ts";
 import { openSite } from "./chrome.ts";
+import { signInCpuMs } from "./sign-in-cpu.ts";
 import { newSalt, parseCommonPasswords, passwordKey, passwordProblem } from "../src/password.ts";
 
 const MINUTE_MS = 100;
+const RACE_ROUNDS = 40;
 const PEPPER = "check-only-password-pepper-0123456789abcdef";
 const root = new URL("..", import.meta.url).pathname;
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
@@ -176,6 +178,32 @@ async function apiChecks() {
     assert.equal((await other.call("/api/me")).status, 401, "every other phone is signed out");
     assert.equal((await laptop.call("/api/me")).status, 401, "including the one signed in earlier");
 
+    const raceKey = (n: number) => Buffer.alloc(32, n).toString("base64url");
+    const raceSalt = newSalt();
+    const outcomes = new Map<string, number>();
+    for (let round = 0; round < RACE_ROUNDS; round += 1) {
+      for (const other of ["sign-out-everywhere", "change-password"] as const) {
+        const k = new Phone(base);
+        await k.createAccount(`Race ${round}`);
+        const a = new Phone(base, k.authenticator);
+        await a.signIn();
+        const [change, rival] = await Promise.all([
+          a.call("/api/me/password", { salt: raceSalt, key: raceKey(1) }),
+          other === "sign-out-everywhere" ? k.call("/api/auth/sign-out-everywhere", {}) : k.call("/api/me/password", { salt: raceSalt, key: raceKey(2) }),
+        ]);
+        const outcome = `Change password on A ${change.status}, ${other} on K ${rival.status}, then A ${(await a.call("/api/me")).status} K ${(await k.call("/api/me")).status}`;
+        outcomes.set(outcome, (outcomes.get(outcome) ?? 0) + 1);
+      }
+    }
+    const serial = new Set([
+      "Change password on A 200, sign-out-everywhere on K 401, then A 200 K 401",
+      "Change password on A 401, sign-out-everywhere on K 200, then A 401 K 401",
+      "Change password on A 200, change-password on K 401, then A 200 K 401",
+      "Change password on A 401, change-password on K 200, then A 401 K 200",
+    ]);
+    const report = [...outcomes].map(([outcome, n]) => `${n}x ${outcome}`).join("; ");
+    assert.ok([...outcomes.keys()].every((outcome) => serial.has(outcome)), `in ${RACE_ROUNDS} rounds of each race, every outcome matches one of the two serial orders: ${report}`);
+
     const lastWay = await keeper.call("/api/me/remove-password", { id: "password" });
     assert.deepEqual([lastWay.status, lastWay.body.error], [409, "last-way"], "removing the only password is refused");
     const kimRemoved = await passkeyOnly.call("/api/me/remove-password", { id: "password" });
@@ -319,12 +347,20 @@ async function screenChecks() {
   }
 }
 
+async function cpuChecks() {
+  const perTry = await signInCpuMs(PEPPER);
+  const report = Object.entries(perTry).map(([label, ms]) => `${label} ${ms.toFixed(3)} ms`).join(", ");
+  console.log(`sign-in handler CPU per try: ${report}`);
+  assert.ok(Object.values(perTry).every((ms) => ms < 2), `the Worker's sign-in handler stays under 2 ms of CPU locally (${report})`);
+}
+
 let failed = false;
 try {
+  await cpuChecks();
   await apiChecks();
   await screenChecks();
   console.log(
-    "check:password passed: PBKDF2 600,000 rounds on the phone, made-up salts look real, right and wrong passwords, waits of 1, 5, 15 and 60 minutes and reset on success, no permanent lockout, 30 per address, backup code once then a new password, Change password signs out other phones, common passwords refused, the sheet's password screens",
+    "check:password passed: PBKDF2 600,000 rounds on the phone, made-up salts look real, right and wrong passwords, waits of 1, 5, 15 and 60 minutes and reset on success, no permanent lockout, 30 per address, backup code once then a new password, Change password signs out other phones even when it races Sign out everywhere or another Change password, the sign-in handler under 2 ms of CPU, common passwords refused, the sheet's password screens",
   );
 } catch (error) {
   failed = true;

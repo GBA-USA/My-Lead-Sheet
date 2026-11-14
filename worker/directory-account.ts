@@ -187,9 +187,10 @@ function insertUser(c: Context, userId: string, name: string, handle = freeHandl
   return userById(c.sql, userId);
 }
 
-/** Signs out every phone on the account (`session_version` goes up) and closes its room sockets. Returns the user under the new version. */
-async function bumpSession(c: Context, user: User): Promise<User> {
-  c.storage.transactionSync(() => {
+/** Signs out every phone on the caller's account (`session_version` goes up) and closes its room sockets. Returns the user under the new version. */
+async function bumpSession(c: Context): Promise<User> {
+  const user = c.storage.transactionSync(() => {
+    const user = signedIn(c);
     const version = user.session_version + 1;
     c.sql.exec(`UPDATE users SET session_version = ? WHERE user_id = ?`, version, user.user_id);
     c.sql.exec(
@@ -199,6 +200,7 @@ async function bumpSession(c: Context, user: User): Promise<User> {
       user.user_id,
     );
     c.sql.exec(`DELETE FROM open_rooms WHERE user_id = ?`, user.user_id);
+    return user;
   });
   await closeRooms(c.storage, c.env);
   return userById(c.sql, user.user_id);
@@ -357,15 +359,26 @@ interface Context {
   now: number;
   request: Request;
   body: Record<string, unknown>;
-  user: User | null;
+  session: Session | null;
 }
 
 /** A JSON `body`, or for a browser coming back from Google, `googleReturn`: the word the app shows once it is sent back there. */
 type Reply = ({ body: unknown; googleReturn?: undefined } | { googleReturn: string; body?: undefined }) & { signIn?: User; signOut?: true; cookies?: string[] };
 
+/** The caller's users row as it is now, or null once another request has moved its `session_version` on. */
+function currentUser(sql: SqlStorage, session: Session | null): User | null {
+  const user = session ? userById(sql, session.userId) : undefined;
+  return user && user.session_version === session?.version ? user : null;
+}
+
+/**
+ * The signed-in caller, read fresh on every call. Other requests run while this one awaits,
+ * so a route calls this again in the same synchronous segment as its write.
+ */
 function signedIn(c: Context): User {
-  if (!c.user) throw new Refused("signed-out", 401);
-  return c.user;
+  const user = currentUser(c.sql, c.session);
+  if (!user) throw new Refused("signed-out", 401);
+  return user;
 }
 
 const ROUTES: Record<string, (c: Context) => Promise<Reply>> = {
@@ -400,8 +413,9 @@ const ROUTES: Record<string, (c: Context) => Promise<Reply>> = {
   },
 
   async "POST /api/auth/passkey/add/finish"(c) {
-    const user = signedIn(c);
+    signedIn(c);
     const { challenge, passkey } = await registeredPasskey(c, "add");
+    const user = signedIn(c);
     if (challenge.user_id !== user.user_id) throw new Refused("wrong-challenge");
     insertPasskey(c.sql, user.user_id, passkey, c.now);
     return { body: { account: accountView(c.sql, user) } };
@@ -439,8 +453,8 @@ const ROUTES: Record<string, (c: Context) => Promise<Reply>> = {
   },
 
   async "POST /api/me/backup-codes"(c) {
+    const codes = await makeBackupCodes(signedIn(c).user_id);
     const user = signedIn(c);
-    const codes = await makeBackupCodes(user.user_id);
     storeBackupCodes(c.sql, user.user_id, codes.hashes);
     return { body: { account: accountView(c.sql, user), backupCodes: codes.shown } };
   },
@@ -530,10 +544,10 @@ const ROUTES: Record<string, (c: Context) => Promise<Reply>> = {
   },
 
   async "POST /api/me/password"(c) {
-    const user = signedIn(c);
+    signedIn(c);
     const password = await passwordFields(c, await passwordSecrets(c.env));
-    storePassword(c, user.user_id, password);
-    const fresh = await bumpSession(c, user);
+    storePassword(c, signedIn(c).user_id, password);
+    const fresh = await bumpSession(c);
     return { body: { account: accountView(c.sql, fresh) }, signIn: fresh };
   },
 
@@ -542,7 +556,7 @@ const ROUTES: Record<string, (c: Context) => Promise<Reply>> = {
   },
 
   async "POST /api/auth/sign-out-everywhere"(c) {
-    await bumpSession(c, signedIn(c));
+    await bumpSession(c);
     return { body: { ok: true }, signOut: true };
   },
 };
@@ -562,10 +576,10 @@ async function readBody(request: Request): Promise<Record<string, unknown>> {
 }
 
 /** The cookie a reply sets: a new session on sign-in, a cleared one on sign-out, or a renewed one for a session older than a day. */
-async function replyCookie(env: Env, reply: Reply, session: Session | null, user: User | null, now: number): Promise<string | null> {
+async function replyCookie(env: Env, sql: SqlStorage, reply: Reply, session: Session | null, now: number): Promise<string | null> {
   if (reply.signOut) return CLEARED_COOKIE;
   if (reply.signIn) return sessionCookie(await signSession(env.SESSION_SECRET, { userId: reply.signIn.user_id, version: reply.signIn.session_version, issuedAt: now }));
-  if (session && user && needsRenewal(session, now)) return sessionCookie(await signSession(env.SESSION_SECRET, { ...session, issuedAt: now }));
+  if (session && needsRenewal(session, now) && currentUser(sql, session)) return sessionCookie(await signSession(env.SESSION_SECRET, { ...session, issuedAt: now }));
   return null;
 }
 
@@ -577,10 +591,8 @@ export async function handleAccountRequest(request: Request, storage: DurableObj
   try {
     const now = Date.now();
     const session = await readSession(env.SESSION_SECRET, request.headers.get("Cookie"), now);
-    const found = session ? userById(storage.sql, session.userId) : undefined;
-    const user = found && found.session_version === session?.version ? found : null;
-    const reply = await route({ storage, sql: storage.sql, env, now, request, body: await readBody(request), user });
-    const cookie = await replyCookie(env, reply, session, user, now);
+    const reply = await route({ storage, sql: storage.sql, env, now, request, body: await readBody(request), session });
+    const cookie = await replyCookie(env, storage.sql, reply, session, now);
     for (const value of [...(cookie ? [cookie] : []), ...(reply.cookies ?? [])]) headers.append("Set-Cookie", value);
     if (reply.googleReturn === undefined) return Response.json(reply.body, { headers });
     headers.set("Location", `${env.APP_ORIGIN ?? ""}/?google=${encodeURIComponent(reply.googleReturn)}`);

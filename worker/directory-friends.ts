@@ -16,14 +16,14 @@ export function createFriendTables(sql: SqlStorage) {
 
 type State = "requested" | "friends" | "blocked";
 type Pair = { state: State; asked_by: string };
-export type Outcome = "requested" | "friends" | "already-friends";
+type Outcome = "requested" | "friends" | "already-friends";
 
 /**
  * One person asking another, by @name, by a code shown in person, or by a link (PLAN.md 9.3):
  * only a link the other person shared is pre-approved, so every other ask waits for them to accept.
  * Two people asking each other are friends. A block is never lifted, and the blocked side is told only "requested".
  */
-export function afterAsk(pair: Pair | undefined, asker: string, preApproved: boolean): { next?: Pair; outcome: Outcome } {
+function afterAsk(pair: Pair | undefined, asker: string, preApproved: boolean): { next?: Pair; outcome: Outcome } {
   if (pair?.state === "blocked") return { outcome: "requested" };
   if (pair?.state === "friends") return { outcome: "already-friends" };
   if (preApproved || (pair && pair.asked_by !== asker)) return { next: { state: "friends", asked_by: pair?.asked_by ?? asker }, outcome: "friends" };

@@ -32,8 +32,15 @@ export const googleReturn = () => new URLSearchParams(window.location.search).ge
 const SIGNED_IN_KEY = "leadSheetsSignedIn";
 
 /** The signed-in account. Only a phone that signed in before asks the server on load, so signed-out use calls no API. */
-export function useAccount(): [Account | null, (account: Account | null) => void] {
+export function useAccount(): { account: Account | null; setAccount: (account: Account | null) => void; checking: boolean } {
   const [account, setAccount] = useState<Account | null>(null);
+  const [checking, setChecking] = useState(() => {
+    try {
+      return localStorage.getItem(SIGNED_IN_KEY) !== null;
+    } catch {
+      return false;
+    }
+  });
   const remember = useCallback((next: Account | null) => {
     setAccount(next);
     try {
@@ -42,17 +49,15 @@ export function useAccount(): [Account | null, (account: Account | null) => void
     } catch {}
   }, []);
   useEffect(() => {
-    try {
-      if (localStorage.getItem(SIGNED_IN_KEY) === null) return;
-    } catch {
-      return;
-    }
-    api<SignedIn>("/api/me").then(
-      (reply) => remember(reply.account),
-      (error) => error instanceof ApiError && error.status === 401 && remember(null),
-    );
-  }, [remember]);
-  return [account, remember];
+    if (!checking) return;
+    api<SignedIn>("/api/me")
+      .then(
+        (reply) => remember(reply.account),
+        (error) => error instanceof ApiError && error.status === 401 && remember(null),
+      )
+      .finally(() => setChecking(false));
+  }, []);
+  return { account, setAccount: remember, checking };
 }
 
 const MESSAGES: Record<string, string> = {

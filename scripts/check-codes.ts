@@ -36,7 +36,11 @@ async function apiChecks() {
     assert.equal((await mike.createAccount("Mike Keys")).status, 200, "Mike signs up");
     const { account } = (await terry.call("/api/me")).body;
 
+    const lasts = (minutes: number, made: { before: number; after: number; expiresAt: number }) =>
+      made.expiresAt - made.before >= minutes * MINUTE_MS && made.expiresAt - made.after <= minutes * MINUTE_MS;
+    const before = Date.now();
     const inPerson = await terry.call("/api/codes", { kind: "friend-now" });
+    const after = Date.now();
     assert.equal(inPerson.status, 200, `Show my code makes a friend code (${JSON.stringify(inPerson.body)})`);
     const { code, link, expiresAt } = inPerson.body;
     assert.equal(link, `${TEST_ORIGIN}/c/${code}`, "the code is a normal link on the app's own origin");
@@ -46,8 +50,7 @@ async function apiChecks() {
     for (const secret of [account.userId, account.handle, account.displayName, "terry", "bass"]) {
       assert.ok(!link.toLowerCase().includes(String(secret).toLowerCase()), `the link carries no name or id of its owner (${secret})`);
     }
-    const minutesLeft = (expiresAt - Date.now()) / MINUTE_MS;
-    assert.ok(minutesLeft > 9 && minutesLeft <= 10, `an in-person code ends after 10 minutes (${minutesLeft.toFixed(2)})`);
+    assert.ok(lasts(10, { before, after, expiresAt }), `an in-person code ends after 10 minutes (${(expiresAt - after) / MINUTE_MS})`);
     pass("a friend code is a signed /c/ link with its kind and end time and no names");
 
     const landed = await land(base, code);
@@ -60,10 +63,12 @@ async function apiChecks() {
     assert.equal(viaPages.headers.get("location"), landed.location, "the Pages site forwards /c/ links to the Worker");
     pass("a link opened in a plain browser lands on the screen for its kind");
 
+    const sharedBefore = Date.now();
     const shared = await terry.call("/api/codes", { kind: "friend-link" });
+    const sharedAfter = Date.now();
     assert.equal(shared.status, 200, "Share link makes a link code");
     assert.equal(shared.body.code.split(".")[0], "friend-link", "a shared link is its own kind");
-    assert.ok((shared.body.expiresAt - Date.now()) / MINUTE_MS > 7 * 24 * 60 - 1, "a shared link lasts 7 days");
+    assert.ok(lasts(7 * 24 * 60, { before: sharedBefore, after: sharedAfter, expiresAt: shared.body.expiresAt }), "a shared link lasts 7 days");
     assert.equal((await terry.call("/api/codes", { kind: "friend-link" })).body.code, shared.body.code, "Share link again hands back the same live link");
     assert.equal((await land(base, shared.body.code)).location, `${TEST_ORIGIN}/?open=friends&code=${shared.body.code}`, "a friend link lands on Friends");
 
@@ -188,8 +193,12 @@ async function scannerChecks() {
     pass("the scanner reads a code from a fake camera feed");
 
     const shared = (await terry.call("/api/codes", { kind: "friend-link" })).body;
+    await site.send("Page.addScriptToEvaluateOnNewDocument", {
+      source: `new MutationObserver(() => { if (document.querySelector(".account-sheet:not(.friends-sheet)")) window.sawSignIn = true; }).observe(document, { childList: true, subtree: true });`,
+    });
     await site.send("Page.navigate", { url: shared.link });
     await view("code");
+    assert.equal(await site.evaluate("window.sawSignIn ?? false"), false, "a signed-in phone opening the link goes straight to Friends, with no sign-in sheet on the way");
     await app.until(`!!document.querySelector(".friends-sheet .codes-words")`, "who the link adds");
     assert.equal(await site.evaluate<string>("location.search"), "", "the landed code leaves the address bar");
     await app.click("Add friend");

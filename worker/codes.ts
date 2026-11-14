@@ -42,7 +42,7 @@ export type CodeRow = {
 
 type Target = { targetId: string; songIds?: string[]; sharedAs?: "private" | "public" };
 
-/** How a signed-in player gets each kind of code. Kinds with no entry here belong to later cooks (bands, gigs, guest passes, band setlists). */
+/** How a signed-in player gets each kind of code. A kind with no entry can't be made yet. */
 interface Minter {
   minutes: number;
   /** Hand back the player's live code of this kind instead of making another, so Stop this code stops the one link they shared. */

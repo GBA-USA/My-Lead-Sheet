@@ -34,7 +34,6 @@ const IN_LINK = /\/c\/([^/?#\s]+)/;
 
 const isKind = (value: string): value is CodeKind => (CODE_KINDS as readonly string[]).includes(value);
 
-/** The text a code's signature covers. */
 export const signedText = (fields: CodeFields) => `${fields.kind}.${fields.codeId}.${fields.expiresAt}.${fields.nonce}`;
 
 /** The fields and signature of a payload, or null when it isn't shaped like one. Only the server can tell whether the signature is real. */

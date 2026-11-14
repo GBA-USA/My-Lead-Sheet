@@ -81,7 +81,7 @@ export function App() {
   const [textIndex, setTextIndex] = useState(() => loadTextScaleIndex());
   const [awake, setAwake] = useState(() => loadAwake());
   const [menu, setMenu] = useState<MenuId>(null);
-  const [account, setAccount] = useAccount();
+  const { account, setAccount, checking } = useAccount();
   const [accountOpen, setAccountOpen] = useState(() => googleReturn() !== null);
   const [friends, setFriends] = useState<{ code?: string } | null>(null);
   const [landed, setLanded] = useState(landedCode);
@@ -91,12 +91,12 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (landed?.screen !== "friends") return;
+    if (landed?.screen !== "friends" || checking) return;
     if (!account) return setAccountOpen(true);
     setAccountOpen(false);
     setFriends({ code: landed.code });
     setLanded(null);
-  }, [landed, account]);
+  }, [landed, account, checking]);
 
   useEffect(() => {
     if (!window.location.hash) {

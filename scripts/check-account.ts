@@ -63,6 +63,13 @@ try {
 
   await site.send("Page.navigate", { url: `${origin}/#/songs` });
   await until(`!!document.querySelector(".shell-header [aria-label=More]")`, "the library", 15000);
+  await settle(500);
+  const early = await site.evaluate<string[]>(`performance.getEntriesByType("resource").map((entry) => entry.name).filter((name) => name.includes("/api/"))`);
+  check(early.length === 0, `signed-out use calls no API until the sheet opens (${early.join(", ")})`);
+  const printed = (selector: string) => site.evaluate<boolean>(`getComputedStyle(document.querySelector(${js(selector)})).visibility === "visible"`);
+  await site.send("Emulation.setEmulatedMedia", { media: "print" });
+  check(await printed(".shell-title"), "printing the app still prints the page");
+  await site.send("Emulation.setEmulatedMedia", { media: "" });
   await openSheet("Sign in");
   await atStep("start");
   check((await sheetButtons()).includes("Sign in with Face ID or fingerprint"), "Sign in offers Face ID or fingerprint");
@@ -86,6 +93,9 @@ try {
     return boxes.every((a, i) => boxes.every((b, j) => i === j || a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top));
   })()`);
   check(apart, "no backup code runs into another");
+  await site.send("Emulation.setEmulatedMedia", { media: "print" });
+  check((await printed(".account-codes li")) && !(await printed(".account-sheet h2")), "Print prints the codes and not the rest of the sheet");
+  await site.send("Emulation.setEmulatedMedia", { media: "" });
   await fitsPhone("codes");
   const { credentials } = await site.send("WebAuthn.getCredentials", { authenticatorId });
   check(credentials.length === 1 && credentials[0].isResidentCredential && credentials[0].rpId === "localhost", "the phone holds one passkey for this site");

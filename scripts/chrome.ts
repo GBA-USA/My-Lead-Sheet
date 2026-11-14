@@ -15,7 +15,6 @@ export interface Site {
   close(): Promise<void>;
 }
 
-/** Sends one request on to the API and copies its reply back, cookies included. */
 async function forward(request: IncomingMessage, response: ServerResponse, apiBase: string) {
   const chunks: Buffer[] = [];
   for await (const chunk of request) chunks.push(chunk as Buffer);

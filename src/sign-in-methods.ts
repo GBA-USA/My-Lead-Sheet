@@ -1,4 +1,3 @@
-/** One way into an account, as `/api/me` lists it. */
 export interface Way {
   kind: string;
   id: string;

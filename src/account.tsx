@@ -12,7 +12,7 @@ type Step =
   | { name: "account" };
 
 const MESSAGES: Record<string, string> = {
-  NotAllowedError: "Face ID or fingerprint was cancelled or timed out. Try again.",
+  NotAllowedError: "Face ID or fingerprint didn't finish. Try again. If it keeps failing, open My Lead Sheet in Safari or Chrome.",
   InvalidStateError: "This phone is already a way into your account.",
   offline: "Can't reach the server. Check your connection and try again.",
   "not-configured": "Sign-in isn't set up on this server yet.",
@@ -20,6 +20,7 @@ const MESSAGES: Record<string, string> = {
   "wrong-code": "That @name and backup code don't match. Check both and try again.",
   "last-way": "This is your only way to sign in. Add another phone first.",
   "challenge-expired": "That took too long. Try again.",
+  "signed-out": "You're signed out. Sign in again.",
   "bad-name": "Type the name your bandmates know you by.",
 };
 
@@ -32,7 +33,6 @@ const methodsThatWork = SIGN_IN_METHODS.filter((method) => method.works());
 
 const added = (ms: number) => new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 
-/** Sign in, Create account, Save your backup codes, and the signed-in account with its Ways to sign in. */
 export function AccountSheet({ account, onAccount, onClose }: { account: Account | null; onAccount: (account: Account | null) => void; onClose: () => void }) {
   const titleId = useId();
   const nameId = useId();

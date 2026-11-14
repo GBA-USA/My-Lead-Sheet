@@ -171,12 +171,12 @@
 }
 
 @media print {
-  body * {
+  body:has(.account-codes) * {
     visibility: hidden;
   }
 
-  .account-codes,
-  .account-codes * {
+  body .account-codes,
+  body .account-codes * {
     visibility: visible;
     color: #000;
   }

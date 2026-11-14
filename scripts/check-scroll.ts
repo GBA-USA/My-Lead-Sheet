@@ -167,6 +167,17 @@ check(chain.officialRuntimeSec === 197 && chain.tempo === 78, "Chain Breaker has
   worst = 0;
   playJittered(20, () => (worst = Math.max(worst, Math.abs(run.sheet.scrollTop - expected()))));
   check(worst < 0.01 && run.stops.length === 0, `when band time moves again the chart is at the band's place on the next frame (worst ${worst.toFixed(4)} px)`);
+  run.sheet.listeners.get("pointerdown")?.();
+}
+
+{
+  const run = scroller(app, app.scrollMotion(chain, null, null, 78, 100), SECTION.start + DISTANCE / 2);
+  play(1);
+  const before = run.clock.current;
+  now += 5000;
+  play(0.01);
+  check(near(run.clock.current - before, 0.05, 1e-6), `solo: a 5 s gap between frames, as from a hidden tab, still moves the clock only 50 ms (moved ${((run.clock.current - before) * 1000).toFixed(1)} ms)`);
+  run.sheet.listeners.get("pointerdown")?.();
 }
 
 {

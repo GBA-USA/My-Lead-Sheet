@@ -494,6 +494,20 @@ if (afterStop.some((frame) => bandAt(frame.at * 1000) >= stopAt && frame.state !
 console.log("band Stop arriving 60 ms before it lands: the queued beat at Stop is silenced, the last click is the beat before, no dot after");
 
 audio.stopMetronome();
+leaderDoes({ kind: "countIn", bpm: 100, beatsPerBar: 4, bars: 1, version: null, rate: 1 });
+const rejoinGrid = gigState.click[gigState.click.length - 1].value ?? fail("second count-in made no grid");
+run((rejoinGrid.startAt + 10_000 - bandNow()) / 1000, moduleDot);
+const rejoinFrom = scheduled.length;
+const rejoinedAt = bandNow();
+audio.followBand(gigState.click, bandAt, SPEAKER_MS, () => failures++);
+await settle();
+run(2, moduleDot);
+const rejoined = heardClicks(rejoinFrom).map(heardBand);
+const onRejoinGrid = (at: number) => Math.abs(((at - rejoinGrid.startAt) * rejoinGrid.bpm) / 60_000 - Math.round(((at - rejoinGrid.startAt) * rejoinGrid.bpm) / 60_000)) * (60_000 / rejoinGrid.bpm) < 0.1;
+if (!rejoined.length || rejoined.some((at) => at < rejoinedAt) || !rejoined.every(onRejoinGrid)) fail("joining a running grid must click only beats still to come, each on the grid");
+console.log(`joining a grid 10 s in: ${rejoined.length} clicks in 2 s, none for beats already past, each on the grid`);
+
+audio.stopMetronome();
 speaker.drift(1);
 const soloFrom = started.length;
 startOrFail(90);

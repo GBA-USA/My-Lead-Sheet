@@ -1,4 +1,4 @@
-import { MAX_VALUE_CHARS, backupKindOf, validBackupKey } from "../src/backup-keys";
+import { MAX_VALUE_CHARS, backupKindOf, songIdOf, validBackupKey } from "../src/backup-keys";
 import { Refused } from "./refused";
 
 /** Each account's own backup lives in one Room. The Worker derives this name from the session, never from the request. */
@@ -42,7 +42,8 @@ async function readRequest(request: Request): Promise<{ since: number; changes: 
 /**
  * One sync round for a self room. A change is stored when its `base` is the key's current rev, or when it matches what
  * is stored already. Otherwise the stored row comes back unchanged, and the phone merges it and sends the result.
- * The reply holds every row newer than `since` and the current row for every key sent.
+ * When a song's row is refused, so are that song's settings in the same request: the phone moves its song to a new id,
+ * and the settings go with it. The reply holds every row newer than `since` and the current row for every key sent.
  */
 export async function handleBackup(request: Request, storage: DurableObjectStorage, roomName: string | undefined, userId: string): Promise<Response> {
   try {
@@ -57,9 +58,12 @@ export async function handleBackup(request: Request, storage: DurableObjectStora
         sql.exec<{ n: number; bytes: number }>(`SELECT count(*) AS n, coalesce(sum(length(CAST(key AS BLOB)) + coalesce(length(CAST(value AS BLOB)), 0)), 0) AS bytes FROM backup_items`).one();
       const before = changes.length > 0 ? size() : null;
       let rev = sql.exec<{ rev: number }>(`SELECT coalesce(max(rev), 0) AS rev FROM backup_items`).one().rev;
+      const stale = (change: Change, row = current(change.key)) => !!row && row.value !== change.value && row.rev !== change.base;
+      const refusedSongs = new Set(changes.filter((change) => change.kind === "song" && stale(change)).map((change) => songIdOf(change.key)));
       for (const change of changes) {
         const row = current(change.key);
-        if (row && (row.value === change.value || row.rev !== change.base)) continue;
+        const song = change.kind === "song" ? undefined : songIdOf(change.key);
+        if (row?.value === change.value || stale(change, row) || (song !== undefined && refusedSongs.has(song))) continue;
         rev += 1;
         sql.exec(
           `INSERT INTO backup_items (key, kind, value, rev) VALUES (?, ?, ?, ?) ON CONFLICT (key) DO UPDATE SET kind = excluded.kind, value = excluded.value, rev = excluded.rev`,
@@ -73,7 +77,7 @@ export async function handleBackup(request: Request, storage: DurableObjectStora
       const grewPastCap = before && after && ((after.n > MAX_BACKUP_ROWS && after.n > before.n) || (after.bytes > MAX_BACKUP_BYTES && after.bytes > before.bytes));
       if (grewPastCap) throw new Refused("backup-full", 413);
       const rows = new Map(sql.exec<Row>(`SELECT key, value, rev FROM backup_items WHERE rev > ? ORDER BY rev`, since).toArray().map((row) => [row.key, row]));
-      for (const change of changes) if (!rows.has(change.key)) rows.set(change.key, current(change.key));
+      for (const change of changes) if (!rows.has(change.key)) rows.set(change.key, current(change.key) ?? { key: change.key, value: null, rev: 0 });
       const counts = Object.fromEntries(
         sql.exec<{ kind: string; n: number }>(`SELECT kind, count(*) AS n FROM backup_items WHERE value IS NOT NULL GROUP BY kind`).toArray().map((row) => [row.kind, row.n]),
       );

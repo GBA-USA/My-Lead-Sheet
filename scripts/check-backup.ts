@@ -396,6 +396,23 @@ try {
       `after a dropped first sync each song keeps only its own timing on the ${name} (${JSON.stringify(pair)})`,
     );
   }
+  for (const [device, title] of [[e, "Night Drive"], [f, "Day Drive"]] as const) {
+    addOwnSong(device, 975, title);
+    device.use();
+    app.saveScrollVersions(ref(975), { versions: [version("Shared", 150)], selected: 0 });
+  }
+  await e.sync();
+  await f.sync();
+  await e.sync();
+  for (const [name, device] of [["iPhone", e], ["Android", f]] as const) {
+    const songs = device.boot().songs;
+    const timed = (song: (typeof songs)[number] | undefined) => song && [song.title, app.loadScrollVersions(song.ref).versions.map((item) => item.name)];
+    const pair = [timed(songs.find((song) => song.id === 975)), timed(songs.find((song) => song.title.startsWith("Day Drive")))];
+    check(
+      JSON.stringify(pair) === JSON.stringify([["Night Drive", ["Shared"]], ["Day Drive · from Android", ["Shared"]]]),
+      `two songs with one id and the same timing both keep it on the ${name} (${JSON.stringify(pair)})`,
+    );
+  }
 
   const rowsOf = async (cookie: string) => (await post(cookie, { since: 0, changes: [] })).body.rows?.length ?? -1;
   const samRows = await rowsOf(c.phone.cookie);

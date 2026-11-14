@@ -1,20 +1,6 @@
-import { BACKUP_KINDS, MAX_VALUE_CHARS, backupKindOf, validBackupKey, type BackupKind } from "./backup-keys";
+import { BACKUP_KINDS, MAX_VALUE_CHARS, SONG_SETTING_KEYS, backupKindOf, songIdOf, validBackupKey, type BackupKind } from "./backup-keys";
 import { ApiError, api } from "./sign-in-methods";
-import {
-  LIBRARY_KEY,
-  NOTATION_KEY,
-  SCROLL_PERCENT_KEY,
-  SCROLL_VERSIONS_KEY,
-  SETLIST_ROW,
-  SONG_DATA_KEY,
-  SONG_ROW,
-  copiedOwnItem,
-  freeOwnId,
-  ownLibraryItems,
-  setlistWithSongMoved,
-  storageChanged,
-  withOwnLibraryItems,
-} from "./storage";
+import { LIBRARY_KEY, SETLIST_ROW, SONG_ROW, copiedOwnItem, freeOwnId, ownLibraryItems, setlistWithSongMoved, storageChanged, withOwnLibraryItems } from "./storage";
 
 /** This phone's sync state for the signed-in account. Present only while signed in, so a signed-out phone never syncs. */
 export const BACKUP_KEY = "leadSheetsBackup";
@@ -68,9 +54,6 @@ const MERGE: Record<BackupKind, Merge> = {
   notation: lastSyncWins,
   settings: lastSyncWins,
 };
-
-/** What a song's own settings are stored under, `<key>.<song id>`. They move with the song when it gets a new id. */
-const PER_SONG_KEYS = [SCROLL_VERSIONS_KEY, SONG_DATA_KEY, SCROLL_PERCENT_KEY, NOTATION_KEY];
 
 interface State {
   account: string;
@@ -177,23 +160,15 @@ function pending(state: State, local: Local) {
   return { changes, held };
 }
 
-/** The song id when `key` is a song's row or one of its settings, `<key>.<song id>`. */
-function songOf(key: string): number | null {
-  for (const prefix of [SONG_ROW, ...PER_SONG_KEYS]) {
-    const id = key.startsWith(`${prefix}.`) ? Number(key.slice(prefix.length + 1)) : NaN;
-    if (Number.isInteger(id)) return id;
-  }
-  return null;
-}
-
 /**
- * The changes for the next request. Each song goes with its own settings, and setlists after every song, so a song
- * that moves to a new id takes its settings and setlists along before any of them is stored under the old id.
+ * The changes for the next request. Each song goes with its own settings, so the room refuses them together when
+ * another phone's song holds the id. Setlists go after every song, so when one request can't hold them all, the songs
+ * settle first.
  */
 function nextBatch(changes: Map<string, Value>): Map<string, Value> {
   const groupOf = (key: string) => {
-    const song = songOf(key);
-    return song !== null ? `0:${String(song).padStart(16, "0")}` : `${key.startsWith(`${SETLIST_ROW}.`) ? 1 : 2}:${key}`;
+    const song = songIdOf(key);
+    return song !== undefined ? `0:${song.padStart(16, "0")}` : `${key.startsWith(`${SETLIST_ROW}.`) ? 1 : 2}:${key}`;
   };
   const groups = new Map<string, [string, Value][]>();
   for (const entry of changes) groups.set(groupOf(entry[0]), [...(groups.get(groupOf(entry[0])) ?? []), entry]);
@@ -266,7 +241,7 @@ function apply(state: State, sent: Map<string, Value>, reply: Reply, changed: Se
     if (mine !== null) write(to, mine);
     const there = rows.get(from);
     if (there) {
-      write(from, sent.has(from) && there.value === sent.get(from) ? null : there.value);
+      write(from, there.value);
       state.synced[from] = [there.rev, print(there.value)];
       settled.add(from);
     } else if (!state.synced[from]) write(from, null);
@@ -277,15 +252,15 @@ function apply(state: State, sent: Map<string, Value>, reply: Reply, changed: Se
     taken[prefix].push(to);
     write(`${prefix}.${to}`, copiedOwnItem(local.get(key)!, to, phoneLabel()));
     if (prefix !== SONG_ROW) return;
-    for (const songKey of PER_SONG_KEYS) moveSetting(`${songKey}.${id}`, `${songKey}.${to}`);
+    for (const songKey of SONG_SETTING_KEYS) moveSetting(`${songKey}.${id}`, `${songKey}.${to}`);
     for (const [other, value] of [...local]) if (other.startsWith(`${SETLIST_ROW}.`) && unsent(other)) write(other, setlistWithSongMoved(value, id, to));
   };
 
   let conflicts = 0;
   for (const prefix of [SONG_ROW, SETLIST_ROW] as const) {
     for (const row of reply.rows) {
-      const mine = local.get(row.key);
-      if (!row.key.startsWith(`${prefix}.`) || !sent.has(row.key) || row.value === null || mine === undefined) continue;
+      const mine = sent.get(row.key);
+      if (!row.key.startsWith(`${prefix}.`) || mine == null || row.value === null || !local.has(row.key)) continue;
       if (itemText(row.value) !== itemText(mine)) {
         keepBoth(prefix, row.key);
         conflicts += 1;

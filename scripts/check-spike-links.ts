@@ -5,7 +5,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createClock, estimate } from "../spike/lan/clock.js";
-import { countCandidates, iceFor, synthesizeAnswer } from "../spike/lan/links.js";
+import { ROUTES, countCandidates, iceFor, synthesizeAnswer } from "../spike/lan/links.js";
 import { startLocalTurn } from "../spike/cell/local-turn.mjs";
 import { readTurnConfig } from "../spike/cell/turn.mjs";
 import { createRelay } from "../spike/lan/relay.mjs";
@@ -13,8 +13,7 @@ import { createRelay } from "../spike/lan/relay.mjs";
 const CHROME = process.env.CHROME ?? "/usr/bin/google-chrome";
 const TURN_USER = "spike-user";
 const SECRET = "spike-check-not-a-real-credential";
-const AUTO_ROUTE_DEADLINE_MS = 10_000;
-const ANSWER_SCAN_DELAY_MS = AUTO_ROUTE_DEADLINE_MS + 2_000;
+const ANSWER_SCAN_DELAY_MS = ROUTES.auto.deadlineMs + 2_000;
 
 function checkClockFilter() {
   const clock = createClock();
@@ -206,7 +205,7 @@ async function runLan(origin: string) {
   await leader.evaluate(`window.spike.accept(${JSON.stringify(answerCode)})`);
   const qr2 = await until(`two-scan link opens with the answer scanned ${ANSWER_SCAN_DELAY_MS} ms late`, () => result(leader), (r) => r.links.some((l: any) => l.intro === "qr2" && l.openMs !== null));
   assert.ok(qr2.links.find((l: any) => l.intro === "qr2").qrChars > 0, "QR size recorded");
-  const followerQr2 = (await result(follower)).links.find((l: any) => l.intro === "qr2");
+  const followerQr2 = (await until("follower's two-scan link settles", () => result(follower), (r) => r.links.some((l: any) => l.intro === "qr2" && (l.openMs !== null || l.closedMs !== null)))).links.find((l: any) => l.intro === "qr2");
   assert.ok(followerQr2.openMs !== null && followerQr2.closedMs === null, `follower keeps the two-scan link while the person scans the answer (closed ${followerQr2.closedMs} ms, ${followerQr2.closeReason})`);
 
   await follower.evaluate(`window.spike.press("Show my link certificate")`);

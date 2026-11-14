@@ -8,9 +8,10 @@ const HIGHEST = 83;
 const CYCLES = 34;
 /**
  * A bar names a chord only when its chroma correlates this well with that chord's template. In the synthetic
- * songs of scripts/check-heard.ts every wrong match scored 0.66 or less and every clean right one 0.74 or more.
+ * songs of scripts/check-heard.ts every wrong match scored 0.69 or less (a bar straddling two chords) and every
+ * clean right one 0.74 or more.
  */
-export const SURE = 0.7;
+export const SURE = 0.72;
 
 /** Semitones above the root, for the qualities the library's charts use. Any other is matched as its triad. */
 const QUALITIES: Record<string, number[]> = {

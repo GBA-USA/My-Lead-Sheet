@@ -10,6 +10,8 @@ export interface Take {
   /** Pink noise's level as a share of the band's, on top of a faint room hiss. */
   noise: number;
   reverb: boolean;
+  /** Beats of drums alone before bar 1, as in a count-off. */
+  pickup: number;
   /** Bars, counted from 0, that hold only silence, only drums, or another chord than the form's. */
   swaps: Record<number, "silence" | "drums" | string>;
 }
@@ -46,26 +48,26 @@ export function blues(sampleRate: number, take: Take): Float32Array {
   };
 
   const truth = truthOf(take);
-  for (let bar = 0; bar < bars; bar++) {
+  for (let k = -take.pickup; k < bars * 4; k++) {
+    const bar = Math.floor(k / 4);
+    const b = k - bar * 4;
     const swap = take.swaps[bar];
     const chord = truth[bar];
     const big = Math.floor(bar / 12) % 2 === 1;
     const loud = big ? 1.2 : 0.6;
-    for (let b = 0; b < 4; b++) {
-      const at = HEAD + (bar * 4 + b) * beat;
-      if (swap === "silence") continue;
-      if (b % 2 === 0) add(at, 0.35, (t) => 0.5 * loud * Math.sin(2 * Math.PI * (50 * t + 0.9 * (1 - Math.exp(-t / 0.013)))) * Math.exp(-t / 0.1));
-      else add(at, 0.2, (t) => 0.25 * loud * random() * Math.exp(-t / 0.06));
-      for (const half of big ? [0, beat / 2] : []) add(at + half, 0.05, (t) => 0.08 * random() * Math.exp(-t / 0.015));
-      if (!chord) continue;
-      const root = ROOTS[chord];
-      const bass = tone(root - 12 + [0, 7, 10, 7][b], 6);
-      add(at, beat * 0.95, (t) => 0.22 * loud * bass(t) * Math.min(1, t / 0.005) * Math.exp(-t / 0.5));
-      if (b % 2 === 0) {
-        for (const step of [0, 4, 7, 10]) {
-          const key = tone(root + 12 + step, 5);
-          add(at, 2 * beat, (t) => 0.05 * loud * key(t) * Math.min(1, t / 0.003) * Math.exp(-t / 0.6));
-        }
+    const at = HEAD + k * beat;
+    if (swap === "silence") continue;
+    if (b % 2 === 0) add(at, 0.35, (t) => 0.5 * loud * Math.sin(2 * Math.PI * (50 * t + 0.9 * (1 - Math.exp(-t / 0.013)))) * Math.exp(-t / 0.1));
+    else add(at, 0.2, (t) => 0.25 * loud * random() * Math.exp(-t / 0.06));
+    for (const half of big ? [0, beat / 2] : []) add(at + half, 0.05, (t) => 0.08 * random() * Math.exp(-t / 0.015));
+    if (!chord) continue;
+    const root = ROOTS[chord];
+    const bass = tone(root - 12 + [0, 7, 10, 7][b], 6);
+    add(at, beat * 0.95, (t) => 0.22 * loud * bass(t) * Math.min(1, t / 0.005) * Math.exp(-t / 0.5));
+    if (b % 2 === 0) {
+      for (const step of [0, 4, 7, 10]) {
+        const key = tone(root + 12 + step, 5);
+        add(at, 2 * beat, (t) => 0.05 * loud * key(t) * Math.min(1, t / 0.003) * Math.exp(-t / 0.6));
       }
     }
   }

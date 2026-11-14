@@ -28,12 +28,15 @@ function check(ok: boolean, message: string) {
 const SAMPLE_RATE = 48_000;
 const CHORDS = ["A7", "D7", "E7"];
 const SIX = 6;
-const TAKES: { name: string; take: Take }[] = [
-  { name: "clean", take: { choruses: SIX, noise: 0, reverb: false, swaps: {} } },
-  { name: "light noise + room reverb", take: { choruses: SIX, noise: 0.25, reverb: true, swaps: {} } },
-  { name: "noise + room reverb", take: { choruses: SIX, noise: 0.5, reverb: true, swaps: {} } },
-  { name: "loud noise + room reverb", take: { choruses: SIX, noise: 1, reverb: true, swaps: {} } },
-  { name: "silent bar, drums-only bar, G7 bar", take: { choruses: SIX, noise: 0, reverb: false, swaps: { 16: "silence", 32: "drums", 49: "G7" } } },
+const quiet = { choruses: SIX, noise: 0, reverb: false, pickup: 0, swaps: {} };
+/** `least` is how many bars of each chorus must come out right. */
+const TAKES: { name: string; take: Take; least?: number }[] = [
+  { name: "clean", take: quiet, least: 11 },
+  { name: "light noise + room reverb", take: { ...quiet, noise: 0.25, reverb: true } },
+  { name: "noise + room reverb", take: { ...quiet, noise: 0.5, reverb: true } },
+  { name: "loud noise + room reverb", take: { ...quiet, noise: 1, reverb: true } },
+  { name: "silent bar, drums-only bar, G7 bar", take: { ...quiet, swaps: { 16: "silence", 32: "drums", 49: "G7" } }, least: 11 },
+  { name: "2-beat drum pickup", take: { ...quiet, pickup: 2 } },
 ];
 
 const spread = (values: number[]) => {
@@ -44,7 +47,7 @@ const spread = (values: number[]) => {
 const text = (bars: (string | null)[]) => bars.map((chord) => chord ?? "?").join(" ");
 
 /** Scores each heard bar against the song's bar it starts in, the first one against bar `firstBar`. */
-function score(name: string, take: Take, heard: { chord: string | null; confidence: number }[], firstBar: number) {
+function score(name: string, take: Take, heard: { chord: string | null; confidence: number }[], firstBar: number, least?: number) {
   const truth = truthOf(take);
   const tally = { right: 0, wrong: 0, unsure: 0 };
   const sure: number[] = [];
@@ -53,7 +56,7 @@ function score(name: string, take: Take, heard: { chord: string | null; confiden
   const perChorus = new Array<number>(take.choruses).fill(0);
   heard.forEach(({ chord, confidence }, k) => {
     const bar = firstBar + k;
-    if (bar >= truth.length) return;
+    if (bar < 0 || bar >= truth.length) return;
     const expected = truth[bar] !== null && CHORDS.includes(truth[bar]!) ? truth[bar] : null;
     if (chord === expected) perChorus[Math.floor(bar / 12)] += 1;
     tally[chord === expected ? "right" : chord === null ? "unsure" : "wrong"] += 1;
@@ -61,20 +64,19 @@ function score(name: string, take: Take, heard: { chord: string | null; confiden
     (expected ? sure : none).push(confidence);
     if (take.swaps[bar]) check(chord === null, `${name}: bar ${bar + 1} (${take.swaps[bar]}) is not sure (${chord ?? "null"}, ${confidence.toFixed(2)})`);
   });
-  if (take.noise === 0) perChorus.forEach((right, chorus) => check(right >= 11, `${name}: chorus ${chorus + 1} has ${right} of 12 bars right`));
+  if (least) perChorus.forEach((right, chorus) => check(right >= least, `${name}: chorus ${chorus + 1} has ${right} of 12 bars right`));
   console.log(`     ${name}: where a chart chord sounds, confidence ${spread(sure)}; where none does, ${spread(none)}; wrong chords at ${spread(misheard)}`);
   return `${tally.right} | ${tally.wrong} | ${tally.unsure} | ${perChorus.map((right) => `${right}/12`).join(", ")}`;
 }
 
 const rows: string[] = [];
-for (const { name, take } of TAKES) {
+for (const { name, take, least } of TAKES) {
   const samples = blues(SAMPLE_RATE, take);
   const listener = new app.SongListener(SAMPLE_RATE);
   const started = performance.now();
   for (let at = 0; at < samples.length; at += 4096) listener.push(samples.subarray(at, at + 4096));
   const listened = performance.now() - started;
   const analysis = listener.analyze(SIX, 4);
-  const truth = truthOf(take);
   if (!analysis) {
     console.log(`     ${name}: Learn hears no steady beat, so there are no bars to hear`);
     rows.push(`| ${name} | no steady beat heard | | | |`);
@@ -82,18 +84,13 @@ for (const { name, take } of TAKES) {
   }
   const beat = 60 / BPM;
   const late = Math.round((analysis.beats[0] - HEAD) / beat);
-  const onGrid = late === 0 && analysis.beats.length === truth.length * 4;
-  console.log(`     ${name}: Learn's grid starts ${late} beat(s) after the song's first downbeat, ${analysis.beats.length} of ${truth.length * 4} beats`);
+  console.log(`     ${name}: Learn's grid starts ${late} beat(s) after the song's first downbeat, ${analysis.beats.length} of ${take.choruses * 48 + take.pickup} beats`);
   const heard = app.heardBars(analysis.chroma, 0, analysis.chroma.length, 4, CHORDS);
   check(heard.every((bar) => bar.chord === null || CHORDS.includes(bar.chord)), `${name}: every bar names a chord from the chart, or none`);
   console.log(`     ${name}: chorus 1 heard ${text(heard.slice(0, 12).map((bar) => bar.chord))}`);
   console.log(`     ${name}: ${(listened / (samples.length / SAMPLE_RATE)).toFixed(1)} ms of listening per second of song`);
-  if (onGrid) {
-    rows.push(`| ${name} | ${score(name, take, heard, 0)} |`);
-    continue;
-  }
-  check(take.noise > 0, `${name}: Learn's beats are the song's beats from its first downbeat`);
-  rows.push(`| ${name}, on Learn's grid from bar ${Math.floor(late / 4) + 1} | ${score(`${name}, on Learn's grid`, take, heard, Math.floor(late / 4))} |`);
+  const grid = late === 0 ? "" : `, on Learn's grid, ${Math.abs(late)} beats ${late > 0 ? "late" : "early"}`;
+  rows.push(`| ${name}${grid} | ${score(`${name}${grid}`, take, heard, Math.floor(late / 4), least)} |`);
   const toDownbeat = (4 - (late % 4)) % 4;
   if (toDownbeat === 0) continue;
   const realigned = app.heardBars(analysis.chroma, toDownbeat, analysis.chroma.length, 4, CHORDS);
@@ -192,7 +189,7 @@ try {
   await click(".teach-btn", "Customize scroll ▾");
   await click("[role=menu] button", "Learn by listen (play the song)");
   await until(`!!window.__mic`, "the mic");
-  await evaluate(`window.__play(${JSON.stringify({ choruses: SIX, noise: 0, reverb: false, swaps: { [OUTSIDE]: "G7" } })})`);
+  await evaluate(`window.__play(${JSON.stringify({ ...quiet, swaps: { [OUTSIDE]: "G7" } })})`);
   await click(".learn-actions button", "Stop");
   await until(`!!document.querySelector(".learn-sections")`, "the Review panel");
 

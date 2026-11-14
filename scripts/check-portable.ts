@@ -12,7 +12,7 @@ const RULES: Rule[] = [
   { name: "cloudflare-account-or-key-id", pattern: /\b[0-9a-f]{32}\b/gi, allowedInVars: true },
   { name: "workers-or-pages-dev-host", pattern: /\b[a-z0-9-]+\.(?:workers|pages)\.dev\b/gi, allowedInVars: true },
   { name: "email", pattern: /[\w.+-]+@[\w-]+(?:\.[\w-]+)*\.[a-z]{2,}\b/gi, allowedInVars: true },
-  { name: "literal-origin", pattern: /\bhttps?:\/\/(?!localhost\b|127\.0\.0\.1\b|www\.w3\.org\/)[^\s"'`<>)]+/gi, allowedInVars: true },
+  { name: "literal-origin", pattern: /\bhttps?:\/\/(?!(?:localhost|127\.0\.0\.1)(?![\w.-])|www\.w3\.org\/)[^\s"'`<>)]+/gi, allowedInVars: true },
   { name: "relying-party-id", pattern: /\brp_?id\b\s*[:=]\s*["'`][^"'`]+/gi, allowedInVars: true },
   { name: "repo-base-path", pattern: /\/My-Lead-Sheet\b/g, allowedInVars: true },
   { name: "terry-or-gba", pattern: /\b(?:terry|gba|guardian\s?bee)/gi, allowedInVars: false },
@@ -85,6 +85,7 @@ function checkPlantedFixtures() {
     "worker/contact.ts": ["email", `const contact = "owner@example.org";`],
     "vite.config.ts": ["literal-origin", `const origin = "https://leadsheets.example.net";`],
     "worker/google.ts": ["literal-origin", `const redirect = "https://app.example.net/api/google/callback";`],
+    "src/lookalike.ts": ["literal-origin", `const api = "https://localhost.example.net/api";`],
     "worker/passkey.ts": ["relying-party-id", `const options = { rpId: "leadsheets.example.net" };`],
     "public/404.html": ["repo-base-path", `<a href="/My-Lead-Sheet/">home</a>`],
     "src/credit.ts": ["terry-or-gba", `const owner = "GBA-USA";`],
@@ -129,13 +130,15 @@ async function checkNotFoundPage() {
   assert.equal(await notFoundRedirect("/x/y", []), null, "no root found leaves the page alone");
 }
 
-function checkProductionConfig() {
-  const config = unstable_readConfig({ config: WRANGLER_CONFIG, env: "production" });
-  const classes = config.durable_objects.bindings.map((binding) => binding.class_name).sort();
-  assert.deepEqual(classes, ["Directory", "Room"], "env.production binds the Directory and Room classes");
-  const migrated = config.migrations.flatMap((migration) => migration.new_sqlite_classes ?? []).sort();
-  assert.deepEqual(migrated, ["Directory", "Room"], "env.production migrations create both classes as SQLite classes");
-  assert.equal(config.account_id, undefined, "no account id in the config");
+function checkDeployConfig() {
+  for (const env of ["test", "production"]) {
+    const config = unstable_readConfig({ config: WRANGLER_CONFIG, env });
+    const bindings = config.durable_objects.bindings.map(({ name, class_name }) => `${name}=${class_name}`).sort();
+    assert.deepEqual(bindings, ["DIRECTORY=Directory", "ROOM=Room"], `env.${env} binds DIRECTORY and ROOM`);
+    const migrated = config.migrations.flatMap((migration) => migration.new_sqlite_classes ?? []).sort();
+    assert.deepEqual(migrated, ["Directory", "Room"], `env.${env} migrations create both classes as SQLite classes`);
+    assert.equal(config.account_id, undefined, `no account id in env.${env}`);
+  }
   const { rawConfig } = experimental_readRawConfig({ config: WRANGLER_CONFIG });
   const names = (env: string) => Object.keys(rawConfig.env?.[env]?.vars ?? {}).sort();
   assert.ok(names("production").length > 0, "env.production declares its vars");
@@ -149,8 +152,8 @@ try {
   assert.equal(findings.length, 0, `${findings.length} hard-coded account, host, email or owner strings`);
   checkPlantedFixtures();
   await checkNotFoundPage();
-  checkProductionConfig();
-  console.log("check:portable passed: planted fixtures caught, 404 page finds its root, production config complete, tree clean");
+  checkDeployConfig();
+  console.log("check:portable passed: planted fixtures caught, 404 page finds its root, deploy config complete, tree clean");
 } catch (error) {
   failed = true;
   console.error(error);

@@ -2,41 +2,42 @@ import { useEffect, useRef, useState } from "react";
 import { clampScrollPercent, type Notation } from "./music";
 import { READING_LINE, runScroll, type Motion, type Section } from "./scroll-timing";
 import { loadNotation, loadScrollPercent, saveNotation, saveScrollPercent } from "./storage";
+import type { SongRef } from "./types";
 
-export function usePerformance(songId: number | null) {
+export function usePerformance(songRef: SongRef | null) {
   const [semitones, setSemitones] = useState(0);
   const [notation, setNotation] = useState<Notation>("notes");
   const [percent, setPercent] = useState(100);
   const [scrolling, setScrolling] = useState(false);
-  const [boundId, setBoundId] = useState<number | null>(null);
+  const [boundRef, setBoundRef] = useState<SongRef | null>(null);
 
-  if (songId !== boundId) {
-    setBoundId(songId);
+  if (songRef !== boundRef) {
+    setBoundRef(songRef);
     setSemitones(0);
     setScrolling(false);
-    if (songId == null) {
+    if (songRef == null) {
       setNotation("notes");
       setPercent(100);
     } else {
-      setNotation(loadNotation(songId));
-      setPercent(loadScrollPercent(songId));
+      setNotation(loadNotation(songRef));
+      setPercent(loadScrollPercent(songRef));
     }
   }
 
   useEffect(() => {
-    if (songId == null) return;
+    if (songRef == null) return;
     document.getElementById("sheet-scroll")?.scrollTo(0, 0);
-  }, [songId]);
+  }, [songRef]);
 
   const changeNotation = (next: Notation) => {
     setNotation(next);
-    if (songId != null) saveNotation(songId, next);
+    if (songRef != null) saveNotation(songRef, next);
   };
 
   const changePercent = (next: number) => {
     const clamped = clampScrollPercent(next);
     setPercent(clamped);
-    if (songId != null) saveScrollPercent(songId, clamped);
+    if (songRef != null) saveScrollPercent(songRef, clamped);
   };
 
   const stopScroll = () => setScrolling(false);

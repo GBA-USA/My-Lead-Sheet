@@ -22,7 +22,11 @@ export interface ChartSection {
   lines: ChartLine[];
 }
 
+/** Which library a song lives in: `local/<id>` for this phone's own songs, `<room_id>/<song_id>` for a band's or a friend's copy. */
+export type SongRef = `${string}/${string}`;
+
 export interface Song {
+  ref: SongRef;
   id: number;
   title: string;
   artist: string;
@@ -50,14 +54,20 @@ export type SongData = Partial<Pick<Song, "officialRuntimeSec" | "tempo" | "time
 export interface Setlist {
   id: number;
   name: string;
-  songIds: number[];
+  songRefs: SongRef[];
 }
 
+export interface Library {
+  songs: Song[];
+  setlists: Setlist[];
+}
+
+/** The export file, and this phone's stored library, which keeps the same shape. Refs are added on load. */
 export interface LibraryFile {
   exportedFrom: string;
   exportedFor: string;
   exportedAt: string;
   songCount: number;
-  songs: Song[];
-  setlists: Setlist[];
+  songs: Omit<Song, "ref">[];
+  setlists: (Omit<Setlist, "songRefs"> & { songIds: number[] })[];
 }

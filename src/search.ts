@@ -12,6 +12,6 @@ export function matchingSongs(songs: Song[], query: string): Song[] {
 
 export function matchingSetlists(setlists: Setlist[], songs: Song[], query: string): Setlist[] {
   const key = fold(query);
-  const hits = new Set(matchingSongs(songs, query).map((song) => song.id));
-  return setlists.filter((setlist) => fold(setlist.name).includes(key) || setlist.songIds.some((id) => hits.has(id)));
+  const hits = new Set(matchingSongs(songs, query).map((song) => song.ref));
+  return setlists.filter((setlist) => fold(setlist.name).includes(key) || setlist.songRefs.some((ref) => hits.has(ref)));
 }

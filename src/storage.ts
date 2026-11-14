@@ -1,14 +1,14 @@
 import seedLibrary from "../data/library.json";
 import { clampScrollPercent, pitchClass, type Notation } from "./music";
 import type { Learned, Mark, ScrollVersion, Span, Tempo } from "./scroll-timing";
-import type { BassNote, ChartLine, ChartSection, LibraryFile, Setlist, Song, SongData } from "./types";
+import type { BassNote, ChartLine, ChartSection, Library, LibraryFile, Song, SongData, SongRef } from "./types";
 
 export const LIBRARY_KEY = "leadSheetsLibrary";
 export const AWAKE_KEY = "leadSheetsKeepAwake";
 export const TEXT_SCALE_KEY = "leadSheetsTextScale";
-/** Per-song scroll percentage, stored under `leadSheetsScrollPercent.<song id>`. */
+/** Per-song scroll percentage, stored under `leadSheetsScrollPercent.<song key>`. */
 export const SCROLL_PERCENT_KEY = "leadSheetsScrollPercent";
-/** Per-song Notes/Nashville choice, stored under `leadSheetsNotation.<song id>`. The spec does not name the key. */
+/** Per-song Notes/Nashville choice, stored under `leadSheetsNotation.<song key>`. The spec does not name the key. */
 export const NOTATION_KEY = "leadSheetsNotation";
 
 /** Sheet body scale. 100% is the default. Steps are a Phase 1 stand-in; the spec doesn't set them. */
@@ -60,7 +60,10 @@ const isNote: Check = (value) => {
 };
 
 /** Every field a screen reads. A stored item that fails is dropped, so the seed copy of it comes back. */
-const isSong = shaped<Song>({
+type StoredSong = LibraryFile["songs"][number];
+type StoredSetlist = LibraryFile["setlists"][number];
+
+const isSong = shaped<StoredSong>({
   id: isId,
   title: isString,
   artist: isString,
@@ -92,7 +95,7 @@ const isSong = shaped<Song>({
     }),
   ),
 });
-const isSetlist = shaped<Setlist>({ id: isId, name: isString, songIds: listOf(isId) });
+const isSetlist = shaped<StoredSetlist>({ id: isId, name: isString, songIds: listOf(isId) });
 
 /** Fingerprint of each seed item as it was stored, by id. An item whose stored copy no longer matches was edited. */
 type SeedPrints = Record<string, string>;
@@ -138,7 +141,18 @@ function parseStored(raw: string | null): Partial<StoredLibrary> | null {
   }
 }
 
-export function loadLibrary(): LibraryFile {
+const LOCAL = "local/";
+
+export function localRef(id: number): SongRef {
+  return `${LOCAL}${id}`;
+}
+
+/** This phone's own songs keep the key they had before refs, `<id>`, so nothing saved earlier has to move. */
+function songKey(ref: SongRef): string {
+  return ref.startsWith(LOCAL) ? ref.slice(LOCAL.length) : ref;
+}
+
+export function loadLibrary(): Library {
   const raw = readRaw(LIBRARY_KEY);
   const stored = parseStored(raw);
   const seed = JSON.parse(JSON.stringify(seedLibrary)) as LibraryFile;
@@ -152,7 +166,10 @@ export function loadLibrary(): LibraryFile {
   };
   const next = JSON.stringify(library);
   if (next !== raw) writeRaw(LIBRARY_KEY, next);
-  return library;
+  return {
+    songs: library.songs.map((song) => ({ ...song, ref: localRef(song.id) })),
+    setlists: library.setlists.map(({ songIds, ...setlist }) => ({ ...setlist, songRefs: songIds.map(localRef) })),
+  };
 }
 
 export function loadAwake(): boolean {
@@ -195,14 +212,14 @@ export function tempoText(tempo: number | null): string {
   return tempo == null ? "—" : `~${tempo} bpm`;
 }
 
-export function songById(songs: Song[], id: number): Song | undefined {
-  return songs.find((song) => song.id === id);
+export function songByRef(songs: Song[], ref: SongRef): Song | undefined {
+  return songs.find((song) => song.ref === ref);
 }
 
 /** One key per song, so a save never rewrites another song's value from a stale copy in another tab. */
-function readSongPref(key: string, songId: number): unknown {
-  const raw = readRaw(`${key}.${songId}`);
-  if (raw === null) return readLegacyMap(key)[String(songId)];
+function readSongPref(key: string, ref: SongRef): unknown {
+  const raw = readRaw(`${key}.${songKey(ref)}`);
+  if (raw === null) return readLegacyMap(key)[songKey(ref)];
   try {
     return JSON.parse(raw);
   } catch {
@@ -210,8 +227,8 @@ function readSongPref(key: string, songId: number): unknown {
   }
 }
 
-function writeSongPref(key: string, songId: number, value: number | Notation): boolean {
-  return writeRaw(`${key}.${songId}`, JSON.stringify(value));
+function writeSongPref(key: string, ref: SongRef, value: number | Notation): boolean {
+  return writeRaw(`${key}.${songKey(ref)}`, JSON.stringify(value));
 }
 
 /** Before per-song keys, each setting was one JSON map of song id to value. Read it so old saves still load. */
@@ -229,26 +246,26 @@ function readLegacyMap(key: string): Record<string, unknown> {
   return {};
 }
 
-export function loadScrollPercent(songId: number): number {
-  const value = readSongPref(SCROLL_PERCENT_KEY, songId);
+export function loadScrollPercent(ref: SongRef): number {
+  const value = readSongPref(SCROLL_PERCENT_KEY, ref);
   return clampScrollPercent(typeof value === "number" && Number.isFinite(value) ? value : 100);
 }
 
-export function saveScrollPercent(songId: number, percent: number): boolean {
-  return writeSongPref(SCROLL_PERCENT_KEY, songId, clampScrollPercent(percent));
+export function saveScrollPercent(ref: SongRef, percent: number): boolean {
+  return writeSongPref(SCROLL_PERCENT_KEY, ref, clampScrollPercent(percent));
 }
 
-export function loadNotation(songId: number): Notation {
-  return readSongPref(NOTATION_KEY, songId) === "nashville" ? "nashville" : "notes";
+export function loadNotation(ref: SongRef): Notation {
+  return readSongPref(NOTATION_KEY, ref) === "nashville" ? "nashville" : "notes";
 }
 
-export function saveNotation(songId: number, notation: Notation): boolean {
-  return writeSongPref(NOTATION_KEY, songId, notation);
+export function saveNotation(ref: SongRef, notation: Notation): boolean {
+  return writeSongPref(NOTATION_KEY, ref, notation);
 }
 
-/** Per-song runtime, BPM and time signature entered in the app, under `leadSheetsSongData.<song id>`. */
+/** Per-song runtime, BPM and time signature entered in the app, under `leadSheetsSongData.<song key>`. */
 export const SONG_DATA_KEY = "leadSheetsSongData";
-/** Per-song taught scroll versions and which one plays, under `leadSheetsScrollVersions.<song id>`. */
+/** Per-song taught scroll versions and which one plays, under `leadSheetsScrollVersions.<song key>`. */
 export const SCROLL_VERSIONS_KEY = "leadSheetsScrollVersions";
 
 function isPositive(value: unknown): boolean {
@@ -270,8 +287,8 @@ const SONG_DATA_FIELDS: Record<keyof SongData, Check> = {
   timeSignature: (value) => isString(value) && (value as string).trim().length > 0,
 };
 
-export function loadSongData(songId: number): SongData {
-  const value = readSongPref(SONG_DATA_KEY, songId);
+export function loadSongData(ref: SongRef): SongData {
+  const value = readSongPref(SONG_DATA_KEY, ref);
   if (!value || typeof value !== "object") return {};
   const data: Record<string, unknown> = {};
   for (const [name, check] of Object.entries<Check>(SONG_DATA_FIELDS)) {
@@ -282,9 +299,9 @@ export function loadSongData(songId: number): SongData {
 }
 
 /** An empty `data` removes the entry, so the song goes back to the library's values. */
-export function saveSongData(songId: number, data: SongData): boolean {
-  if (Object.keys(data).length === 0) return removeRaw(`${SONG_DATA_KEY}.${songId}`);
-  return writeRaw(`${SONG_DATA_KEY}.${songId}`, JSON.stringify(data));
+export function saveSongData(ref: SongRef, data: SongData): boolean {
+  if (Object.keys(data).length === 0) return removeRaw(`${SONG_DATA_KEY}.${songKey(ref)}`);
+  return writeRaw(`${SONG_DATA_KEY}.${songKey(ref)}`, JSON.stringify(data));
 }
 
 export function withSongData(song: Song, data: SongData): Song {
@@ -331,14 +348,14 @@ const isVersion: Check = (value) => {
   );
 };
 
-export function loadScrollVersions(songId: number): ScrollVersions {
-  const value = readSongPref(SCROLL_VERSIONS_KEY, songId) as Partial<ScrollVersions> | undefined;
+export function loadScrollVersions(ref: SongRef): ScrollVersions {
+  const value = readSongPref(SCROLL_VERSIONS_KEY, ref) as Partial<ScrollVersions> | undefined;
   const versions = Array.isArray(value?.versions) ? value.versions.filter(isVersion) : [];
   const selected = value?.selected;
   const valid = typeof selected === "number" && Number.isInteger(selected) && selected >= 0 && selected < versions.length;
   return { versions, selected: valid ? selected : null };
 }
 
-export function saveScrollVersions(songId: number, value: ScrollVersions): boolean {
-  return writeRaw(`${SCROLL_VERSIONS_KEY}.${songId}`, JSON.stringify(value));
+export function saveScrollVersions(ref: SongRef, value: ScrollVersions): boolean {
+  return writeRaw(`${SCROLL_VERSIONS_KEY}.${songKey(ref)}`, JSON.stringify(value));
 }

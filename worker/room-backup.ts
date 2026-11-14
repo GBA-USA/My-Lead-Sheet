@@ -4,7 +4,7 @@ import { Refused } from "./refused";
 /** Each account's own backup lives in one Room. The Worker derives this name from the session, never from the request. */
 export const selfRoomId = (userId: string) => `self:${userId}`;
 
-/** Provisional caps on one account's backup, until the owner sets them (decisions.tsv). A sync that would pass either gets 413. */
+/** The owner's caps on one account's backup. A sync that would pass either gets 413. */
 export const MAX_BACKUP_ROWS = 5_000;
 export const MAX_BACKUP_BYTES = 5_000_000;
 

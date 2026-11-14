@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
-import { AccountSheet } from "./account";
+import { AccountSheet, googleReturn } from "./account";
 import { backupOff, backupOn, syncBackup, type BackupResult } from "./backup";
 import { BackIcon, DotsIcon, Menu, OverflowMenu, ScreenToggle, SongControls } from "./controls";
 import { LearnedCues } from "./cues";
@@ -84,7 +84,7 @@ export function App() {
   const [awake, setAwake] = useStored(loadAwake);
   const [menu, setMenu] = useState<MenuId>(null);
   const [account, setAccount] = useState<Account | null>(null);
-  const [accountOpen, setAccountOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(() => googleReturn() !== null);
   const [backup, setBackup] = useState<BackupResult | null>(null);
 
   const runBackup = useCallback(async (onlyIfChanged = false) => {

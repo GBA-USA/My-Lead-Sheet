@@ -15,6 +15,12 @@ export interface Env {
   RP_NAME?: string;
   SESSION_SECRET?: string;
   CHALLENGE_TTL_SECONDS?: string;
+  GOOGLE_ISSUER?: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  GOOGLE_REDIRECT_URI?: string;
+  PASSWORD_PEPPER?: string;
+  PASSWORD_MINUTE_MS?: string;
 }
 
 const ROOM_PATH = /^\/api\/rooms\/([A-Za-z0-9_-]{1,64})$/;

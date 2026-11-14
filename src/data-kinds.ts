@@ -38,6 +38,21 @@ export const DATA_KINDS: readonly DataKind[] = [
   { key: "open_rooms", place: "server", what: "Which bands and chats you have opened since you last signed out everywhere, so signing out everywhere can close them." },
   { key: "room_closes", place: "server", what: "Rooms still to be told you signed out everywhere, deleted once each one is told." },
   {
+    key: "google_logins",
+    place: "server",
+    what: "If you connect Google: the account number Google uses for you, the email address it gave, and when it was connected and last used.",
+  },
+  {
+    key: "passwords",
+    place: "server",
+    what: "If you make a password: a random salt and a one-way code made from what your phone worked out from your password. Your password itself never leaves your phone.",
+  },
+  {
+    key: "password_misses",
+    place: "server",
+    what: "Each wrong password try, kept as one-way codes of the username typed and of the network address it came from, with the time, so waits can grow. A try stops counting after a day and is cleared out at the next wrong try.",
+  },
+  {
     key: "backup_items",
     place: "server",
     what: "Your backup, in a room only your account can open: the songs and setlists you added or changed, your timing versions, the runtime, tempo and time signature you entered, the scroll speed and Notes or Nashville choice for each song, and your text size and Screen on choice. Your phones sync it when you are signed in.",

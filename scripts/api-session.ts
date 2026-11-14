@@ -6,13 +6,13 @@ export const TEST_SECRET = "check-only-session-secret-0123456789abcdef";
 
 type Json = Record<string, any>;
 
-/** Starts the mls-rooms Worker under Miniflare with test vars and no saved state. */
-export async function startApi(extra: Record<string, string> = {}) {
+/** Starts the mls-rooms Worker under Miniflare with test vars, and no saved state unless `persist` names a folder for it. */
+export async function startApi(extra: Record<string, string> = {}, persist: string | false = false) {
   const vars = { APP_ORIGIN: TEST_ORIGIN, RP_ID: TEST_RP_ID, RP_NAME: "Check", SESSION_SECRET: TEST_SECRET, ...extra };
   const worker = await unstable_startWorker({
     config: "worker/wrangler.jsonc",
     bindings: Object.fromEntries(Object.entries(vars).map(([name, value]) => [name, { type: "plain_text", value }])),
-    dev: { server: { port: 0 }, inspector: false, persist: false, watch: false, logLevel: "error" },
+    dev: { server: { port: 0 }, inspector: false, persist, watch: false, logLevel: "error" },
   } as Parameters<typeof unstable_startWorker>[0]);
   await worker.ready;
   return { worker, base: String(await worker.url) };

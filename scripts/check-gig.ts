@@ -52,13 +52,35 @@ function gig(overrides: Partial<Parameters<Gig["startGig"]>[0]> = {}) {
 }
 const countIn = { kind: "countIn", bpm: 120, beatsPerBar: 4, bars: 1, version: "v-band", rate: 1 } as const;
 
+function onsets(state: GigState, from: number, to: number) {
+  const out: { t: number; bar: number; beat: number; planSec: number | null }[] = [];
+  let prev = JSON.stringify(at(state, from - 10).beat);
+  for (let t = from; t <= to; t += 10) {
+    const p = at(state, t);
+    const key = JSON.stringify(p.beat);
+    if (p.beat && key !== prev) out.push({ t, ...p.beat, planSec: p.scroll?.planSec ?? null });
+    prev = key;
+  }
+  return out;
+}
+const gaps = (values: number[]) => values.slice(1).map((v, i) => Math.round((v - values[i]) * 1e6) / 1e6);
+const shownAt = (state: GigState, t: number) => {
+  const p = at(state, t);
+  return JSON.stringify({ ...p, scroll: p.scroll && { ...p.scroll, planSec: Math.round(p.scroll.planSec * 1e6) / 1e6 } });
+};
+const sameUntil = (a: GigState, b: GigState, from: number, to: number) => {
+  for (let t = from; t < to; t += 10) if (shownAt(a, t) !== shownAt(b, t)) return t;
+  return null;
+};
+
 const drills: [string, () => [boolean, string]][] = [
   [
     "the leader double-taps Next: one change, one at",
     () => {
       const once = ok(act(gig(), "terry", 1000, { kind: "goTo", key: "b" }));
       const twice = act(once, "terry", 1080, { kind: "goTo", key: "b" });
-      return [refused(twice) === "same-target" && once.rev === 1 && once.current.at === 1150, `second tap ${refused(twice)}, at ${once.current.at}`];
+      const lands = at(once, 1149).song.key === "a" && at(once, 1150).song.key === "b";
+      return [refused(twice) === "same-target" && once.rev === 1 && lands, `second tap ${refused(twice)}, b shows from 1150: ${lands}`];
     },
   ],
   [
@@ -153,9 +175,9 @@ const drills: [string, () => [boolean, string]][] = [
       const stopped = ok(act(running, "terry", 5100, { kind: "stop" }));
       const before = at(stopped, 5649);
       const after = at(stopped, 5650);
-      const pass = stopped.click.at === 5650 && at(stopped, 5649).beat !== null && at(stopped, 5649).scroll !== null &&
+      const pass = at(stopped, 5649).beat !== null && at(stopped, 5649).scroll !== null &&
         at(stopped, 5650).beat === null && at(stopped, 5650).scroll === null && after.song.key === before.song.key;
-      return [pass, `stop lands at ${stopped.click.at} (beats every 500 ms from 150)`];
+      return [pass, `at 5649 ${JSON.stringify(before.beat)}, at 5650 ${JSON.stringify(after.beat)} (beats every 500 ms from 150)`];
     },
   ],
   [
@@ -167,6 +189,59 @@ const drills: [string, () => [boolean, string]][] = [
       const turned = ok(act(running, "terry", 3000, { kind: "section", index: 2 }));
       const p = at(turned, 6000);
       return [p.beat !== null && p.scroll === null && scroll === "scroll-off" && p.section === 2, `beat ${JSON.stringify(p.beat)}, scroll ${p.scroll}, scrollStart ${scroll}`];
+    },
+  ],
+  [
+    "two tempo taps in one bar (150 then 100): the click ends at 100 and the scroll keeps 0.5 plan s per beat",
+    () => {
+      const running = ok(act(gig(), "terry", 0, countIn));
+      const s = ok(act(ok(act(running, "terry", 3000, { kind: "tempo", bpm: 150 })), "terry", 3010, { kind: "tempo", bpm: 100 }));
+      const beats = onsets(s, 2150, 10_150);
+      const ms = gaps(beats.map((o) => o.t));
+      const plan = gaps(beats.map((o) => o.planSec ?? NaN));
+      const pass = beats.length > 8 && ms.slice(-4).every((d) => d === 600) && plan.every((d) => d === 0.5) && Math.abs((at(s, 10_150).scroll?.planSec ?? 0) - 7) < 1e-9;
+      return [pass, `beat ms ${ms.join(",")}; plan s per beat ${[...new Set(plan)].join(",")}; plan s at 10150 ${at(s, 10_150).scroll?.planSec}`];
+    },
+  ],
+  [
+    "tempo 150 then straight back to 120 in one bar: the second tap is taken and the band stays at 120",
+    () => {
+      const running = ok(act(gig(), "terry", 0, countIn));
+      const back = act(ok(act(running, "terry", 3000, { kind: "tempo", bpm: 150 })), "terry", 3010, { kind: "tempo", bpm: 120 });
+      if (!back.ok) return [false, `second tap ${back.refused}`];
+      const ms = gaps(onsets(back.state, 2150, 10_150).map((o) => o.t));
+      return [ms.every((d) => d === 500) && sameUntil(back.state, running, 0, 10_150) === null, `beat ms ${[...new Set(ms)].join(",")}`];
+    },
+  ],
+  [
+    "a tempo tap inside the lead window of a pending tempo: bar 1 keeps even beats and nothing before the new change moves",
+    () => {
+      const first = ok(act(ok(act(gig(), "terry", 0, countIn)), "terry", 4000, { kind: "tempo", bpm: 150 }));
+      const second = ok(act(first, "terry", 4050, { kind: "tempo", bpm: 100 }));
+      const bar1 = onsets(second, 4150, 9000).filter((o) => o.bar === 1);
+      const lengths = new Set(gaps([...bar1.map((o) => o.t), onsets(second, 4150, 9000).find((o) => o.bar === 2)!.t]));
+      const moved = sameUntil(second, first, 4050, 5750);
+      return [lengths.size === 1 && [400, 500].includes([...lengths][0]) && moved === null, `bar 1 beat ms ${[...lengths].join(",")}; first difference at ${moved}`];
+    },
+  ],
+  [
+    "Stop, then a count-in inside the Stop's lead window: no click on the stopped beat",
+    () => {
+      const stopped = ok(act(ok(act(gig(), "terry", 0, { ...countIn, bars: 2 })), "terry", 2000, { kind: "stop" }));
+      const again = ok(act(stopped, "terry", 2040, countIn));
+      const quiet = [2150, 2160, 2180].map((t) => at(again, t).beat);
+      return [quiet.every((b) => b === null) && JSON.stringify(at(again, 2190).beat) === '{"bar":-1,"beat":0}', `beats at 2150,2160,2180: ${JSON.stringify(quiet)}; at 2190 ${JSON.stringify(at(again, 2190).beat)}`];
+    },
+  ],
+  [
+    "two tempo taps during a 2-bar count-in: the scroll starts on bar 0 beat 0",
+    () => {
+      const counting = ok(act(gig(), "terry", 0, { ...countIn, bars: 2 }));
+      const s = ok(act(ok(act(counting, "terry", 600, { kind: "tempo", bpm: 150 })), "terry", 640, { kind: "tempo", bpm: 100 }));
+      let start = 0;
+      while (start < 20_000 && !at(s, start).scroll) start += 10;
+      const p = at(s, start);
+      return [JSON.stringify(p.beat) === '{"bar":0,"beat":0}' && p.scroll?.planSec === 0, `scroll starts at ${start} on ${JSON.stringify(p.beat)}, plan s ${p.scroll?.planSec}`];
     },
   ],
   [
@@ -208,7 +283,7 @@ const rules: [string, () => [boolean, string]][] = [
     () => {
       const s = ok(act(ok(act(gig(), "terry", 0, countIn)), "terry", 3000, { kind: "section", index: 1 }));
       const p = at(s, 3650);
-      return [s.section.at === 3650 && at(s, 3649).section === null && p.section === 1 && JSON.stringify(p.beat) === '{"bar":0,"beat":3}', `flip at ${s.section.at} on ${JSON.stringify(p.beat)}`];
+      return [at(s, 3649).section === null && p.section === 1 && JSON.stringify(p.beat) === '{"bar":0,"beat":3}', `flip at 3650 on ${JSON.stringify(p.beat)}`];
     },
   ],
   [
@@ -216,7 +291,7 @@ const rules: [string, () => [boolean, string]][] = [
     () => {
       const s = ok(act(ok(act(gig(), "terry", 0, countIn)), "terry", 3000, { kind: "goTo", key: "b" }));
       const p = at(s, 4150);
-      return [s.current.at === 4150 && at(s, 4149).beat !== null && p.song.key === "b" && p.beat === null && p.scroll === null, `lands at ${s.current.at}`];
+      return [at(s, 4149).song.key === "a" && at(s, 4149).beat !== null && p.song.key === "b" && p.beat === null && p.scroll === null, `at 4149 ${at(s, 4149).song.key}, at 4150 ${p.song.key}`];
     },
   ],
   [

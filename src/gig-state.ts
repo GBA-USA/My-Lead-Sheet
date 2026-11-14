@@ -7,11 +7,13 @@ export type RouteChoice = "auto" | "band_wifi" | "direct_cell" | "server";
 /** Why the leader holds this epoch, fixed when the epoch began. Two take-overs of one epoch go to the admin, then the backup, then anyone else. */
 export type Claim = "admin" | "backup" | "other";
 
-export interface Scheduled<T> {
-  value: T;
+export interface Step<T> {
   at: BandMs;
-  before: T;
+  value: T;
 }
+
+/** Sorted by `at`. A new change replaces only the steps at or after its own `at`, so what phones show before it never moves. */
+export type Timeline<T> = Step<T>[];
 
 /** At `startAt` the chart is `fromSec` plan seconds in, then moves `rate` plan seconds per band second, as scroll-timing's clock counts them. */
 export interface Scroll {
@@ -22,11 +24,11 @@ export interface Scroll {
 }
 
 interface Shown {
-  order: Scheduled<SongKey[]>;
-  current: Scheduled<SongKey>;
-  section: Scheduled<number | null>;
-  click: Scheduled<Grid | null>;
-  scroll: Scheduled<Scroll | null>;
+  order: Timeline<SongKey[]>;
+  current: Timeline<SongKey>;
+  section: Timeline<number | null>;
+  click: Timeline<Grid | null>;
+  scroll: Timeline<Scroll | null>;
 }
 
 export interface GigState extends Shown {
@@ -87,9 +89,20 @@ const HANDOFF_WAIT_MS = 30_000;
 const IDLE_END_MS = 8 * 3_600_000;
 const RECENT_OPS = 64;
 
-const shown = <T>(s: Scheduled<T>, t: BandMs): T => (t >= s.at ? s.value : s.before);
-const still = <T>(value: T, at: BandMs): Scheduled<T> => ({ value, at, before: value });
-const schedule = <T>(s: Scheduled<T>, value: T, at: BandMs, now: BandMs): Scheduled<T> => ({ value, at, before: shown(s, now) });
+function valueAt<T>(steps: Timeline<T>, t: BandMs): T {
+  let value = steps[0].value;
+  for (const step of steps) if (step.at <= t) value = step.value;
+  return value;
+}
+const latest = <T>(steps: Timeline<T>): T => steps[steps.length - 1].value;
+const still = <T>(value: T, at: BandMs): Timeline<T> => [{ at, value }];
+
+/** Steps before `now` that a later step before `now` already replaced are history no phone shows again. */
+function put<T>(steps: Timeline<T>, value: T, at: BandMs, now: BandMs): Timeline<T> {
+  const kept = steps.filter((step) => step.at < at);
+  const shownNow = kept.reduce((found, step, i) => (step.at <= now ? i : found), 0);
+  return [...kept.slice(shownNow), { at, value }];
+}
 
 const CLAIM_ORDER: Record<Claim, number> = { admin: 0, backup: 1, other: 2 };
 const claimOf = (s: { admin: UserId; backup: UserId | null }, by: UserId): Claim => (by === s.admin ? "admin" : by === s.backup ? "backup" : "other");
@@ -125,13 +138,8 @@ export function startGig(plan: {
   };
 }
 
-function runningGrid(state: GigState, t: BandMs): Grid | null {
-  const grid = shown(state.click, t);
-  return grid && t >= grid.startAt ? grid : null;
-}
-
 const runningScroll = (state: GigState, t: BandMs) => {
-  const scroll = shown(state.scroll, t);
+  const scroll = valueAt(state.scroll, t);
   return scroll && t >= scroll.startAt ? scroll : null;
 };
 
@@ -141,32 +149,38 @@ function retime(scroll: Scroll, from: Grid, to: Grid): Scroll {
   return { ...scroll, rate, startAt: to.startAt, fromSec: scroll.fromSec + (scroll.rate * (to.startAt - scroll.startAt)) / 1000 };
 }
 
+/** A grid starts at its step's `at`. A pending count-in or tempo before the candidate re-snaps on its own grid; a pending Stop does not, so the rule keeps counting the grid it stops. */
+function snapOn(click: Timeline<Grid | null>, rule: SnapRule, earliest: BandMs): BandMs {
+  let t = snap(rule, earliest, valueAt(click, earliest));
+  for (const step of click) if (step.at > earliest && step.at <= t && step.value) t = snap(rule, step.at, step.value);
+  return t;
+}
+
 type Change = { at: BandMs; fields: Partial<Shown> } | Refusal;
 
 function move(state: GigState, op: Move, now: BandMs, lead: number): Change {
   const earliest = (now + lead) as BandMs;
-  const grid = runningGrid(state, earliest);
-  const at = (rule: SnapRule) => snap(rule, earliest, grid);
-  const order = shown(state.order, earliest);
+  const at = (rule: SnapRule) => snapOn(state.click, rule, earliest);
+  const order = latest(state.order);
   switch (op.kind) {
     case "goTo": {
       if (!order.includes(op.key)) return "unknown-song";
-      if (state.current.value === op.key) return "same-target";
+      if (latest(state.current) === op.key) return "same-target";
       const t = at("song");
       return {
         at: t,
         fields: {
-          current: schedule(state.current, op.key, t, now),
-          section: schedule(state.section, null, t, now),
-          click: schedule(state.click, null, t, now),
-          scroll: schedule(state.scroll, null, t, now),
+          current: put(state.current, op.key, t, now),
+          section: put(state.section, null, t, now),
+          click: put(state.click, null, t, now),
+          scroll: put(state.scroll, null, t, now),
         },
       };
     }
     case "section": {
-      if (state.section.value === op.index) return "same-target";
+      if (latest(state.section) === op.index) return "same-target";
       const t = at("section");
-      return { at: t, fields: { section: schedule(state.section, op.index, t, now) } };
+      return { at: t, fields: { section: put(state.section, op.index, t, now) } };
     }
     case "countIn": {
       const t = at("countIn");
@@ -174,33 +188,34 @@ function move(state: GigState, op: Move, now: BandMs, lead: number): Change {
       const scroll = state.scrollAlong
         ? { version: op.version, startAt: barTime(click, 0), fromSec: 0, rate: op.rate }
         : null;
-      return { at: t, fields: { click: schedule(state.click, click, t, now), scroll: schedule(state.scroll, scroll, t, now) } };
+      return { at: t, fields: { click: put(state.click, click, t, now), scroll: put(state.scroll, scroll, t, now) } };
     }
     case "tempo": {
+      const grid = latest(state.click);
       if (!grid) return "not-running";
       if (grid.bpm === op.bpm) return "same-target";
       const t = at("tempo");
       const click: Grid = { ...grid, bpm: op.bpm, startAt: t, firstBar: beatAt(grid, t)!.bar };
-      const scroll = shown(state.scroll, t);
+      const scroll = valueAt(state.scroll, t);
       const retimed = scroll && retime(scroll, grid, click);
-      return { at: t, fields: { click: schedule(state.click, click, t, now), scroll: schedule(state.scroll, retimed, t, now) } };
+      return { at: t, fields: { click: put(state.click, click, t, now), scroll: put(state.scroll, retimed, t, now) } };
     }
     case "stop": {
-      if (!grid && !runningScroll(state, earliest)) return "not-running";
+      if (!valueAt(state.click, earliest) && !runningScroll(state, earliest)) return "not-running";
       const t = at("stop");
-      return { at: t, fields: { click: schedule(state.click, null, t, now), scroll: schedule(state.scroll, null, t, now) } };
+      return { at: t, fields: { click: put(state.click, null, t, now), scroll: put(state.scroll, null, t, now) } };
     }
     case "scrollStart": {
       if (!state.scrollAlong) return "scroll-off";
       const t = at("scroll");
       const scroll = { version: op.version, startAt: t, fromSec: op.fromSec, rate: op.rate };
-      return { at: t, fields: { scroll: schedule(state.scroll, scroll, t, now) } };
+      return { at: t, fields: { scroll: put(state.scroll, scroll, t, now) } };
     }
     case "reorder": {
       const same = op.order.length === order.length && new Set(op.order).size === order.length && order.every((key) => op.order.includes(key));
       if (!same) return "changes-songs";
       if (op.order.every((key, i) => key === order[i])) return "same-target";
-      return { at: earliest, fields: { order: schedule(state.order, op.order, earliest, now) } };
+      return { at: earliest, fields: { order: put(state.order, op.order, earliest, now) } };
     }
   }
 }
@@ -328,12 +343,12 @@ export interface Position {
 }
 
 export function position(state: GigState, t: BandMs): Position {
-  const grid = runningGrid(state, t);
+  const grid = valueAt(state.click, t);
   const scroll = runningScroll(state, t);
-  const key = shown(state.current, t);
+  const key = valueAt(state.current, t);
   return {
-    song: { key, index: shown(state.order, t).indexOf(key) },
-    section: shown(state.section, t),
+    song: { key, index: valueAt(state.order, t).indexOf(key) },
+    section: valueAt(state.section, t),
     beat: grid && beatAt(grid, t),
     scroll: scroll && { version: scroll.version, planSec: scroll.fromSec + (scroll.rate * (t - scroll.startAt)) / 1000 },
     ended: state.status === "ended" || t - state.changedAt >= IDLE_END_MS,

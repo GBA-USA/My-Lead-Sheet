@@ -3,12 +3,7 @@ export type LocalMs = number & { readonly __clock: "local" };
 
 export type LinkRoute = "wifi" | "internet" | "relay" | "server";
 
-export const ROUTES: Record<LinkRoute, { pingEveryMs: number; clickMaxMs: number }> = {
-  wifi: { pingEveryMs: 2000, clickMaxMs: 10 },
-  internet: { pingEveryMs: 3000, clickMaxMs: 18 },
-  relay: { pingEveryMs: 3000, clickMaxMs: 18 },
-  server: { pingEveryMs: 5000, clickMaxMs: 20 },
-};
+export const PING_EVERY_MS: Record<LinkRoute, number> = { wifi: 2000, internet: 3000, relay: 3000, server: 5000 };
 export const BURST = { pings: 16, everyMs: 100 };
 
 const KEEP_SAMPLES = 32;
@@ -28,7 +23,6 @@ export interface Line {
   skew: number;
 }
 
-export const leaderLine = (offset = 0): Line => ({ at: 0 as LocalMs, offset, skew: 0 });
 const lineOffset = (line: Line, local: LocalMs) => line.offset + line.skew * (local - line.at);
 export const bandAt = (line: Line, local: LocalMs) => (local + lineOffset(line, local)) as BandMs;
 export const localAt = (line: Line, band: BandMs) =>
@@ -136,12 +130,13 @@ export function addPing(clock: Clock, ping: Ping, grid: Grid | null): Clock {
   const { skew, skewSpan } = fitSkew(marks, fastest, clock);
   const aligned = fastest.map((p) => p.offset + skew * (at - p.at));
   const offset = median(aligned);
-  const spread = aligned.length >= FASTEST ? Math.max(...aligned) - Math.min(...aligned) : Infinity;
+  const full = points.length >= FASTEST;
+  const spread = full ? Math.max(...aligned) - Math.min(...aligned) : Infinity;
   const target: Line = { at, offset, skew };
   const now = ping.t1;
-  const spreadHighSince = spread > SPREAD_OK_MS ? (clock.spreadHighSince ?? now) : null;
+  const spreadHighSince = full && spread > SPREAD_OK_MS ? (clock.spreadHighSince ?? now) : null;
   const next = { ...clock, points, marks, skew, skewSpan, spread, spreadHighSince };
-  if (points.length < FASTEST) return next;
+  if (!full) return next;
 
   const current = servedLine(clock, now);
   if (!current) return { ...next, served: { from: target, to: target, since: now }, step: null };
@@ -184,16 +179,16 @@ export interface Grid {
 }
 
 const EDGE = 1e-9;
-export const beatMs = (grid: Grid) => 60_000 / grid.bpm;
+const beatMs = (grid: Grid) => 60_000 / grid.bpm;
 const barMs = (grid: Grid) => beatMs(grid) * grid.beatsPerBar;
 export const beatTime = (grid: Grid, beat: number) => (grid.startAt + beat * beatMs(grid)) as BandMs;
 export const barTime = (grid: Grid, bar: number) => (grid.startAt + (bar - grid.firstBar) * barMs(grid)) as BandMs;
 
-export function nextBeat(grid: Grid, t: BandMs): BandMs {
+function nextBeat(grid: Grid, t: BandMs): BandMs {
   return beatTime(grid, Math.max(0, Math.ceil((t - grid.startAt) / beatMs(grid) - EDGE)));
 }
 
-export function nextBarLine(grid: Grid, t: BandMs): BandMs {
+function nextBarLine(grid: Grid, t: BandMs): BandMs {
   const bars = Math.max(0, Math.ceil((t - grid.startAt) / barMs(grid) - EDGE));
   return barTime(grid, grid.firstBar + bars);
 }

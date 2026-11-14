@@ -10,17 +10,17 @@ export interface Scheduled<T> {
   before: T;
 }
 
-/** `rate` is plan seconds per band second, as in scroll-timing's clock. */
+/** At `startAt` the chart is `fromSec` plan seconds in, then moves `rate` plan seconds per band second, as scroll-timing's clock counts them. */
 export interface Scroll {
   version: string | null;
   startAt: BandMs;
-  fromProgress: number;
+  fromSec: number;
   rate: number;
 }
 
 interface Shown {
   order: Scheduled<SongKey[]>;
-  current: Scheduled<{ key: SongKey; index: number }>;
+  current: Scheduled<SongKey>;
   section: Scheduled<number | null>;
   click: Scheduled<Grid | null>;
   scroll: Scheduled<Scroll | null>;
@@ -49,7 +49,7 @@ type Move =
   | { kind: "countIn"; bpm: number; beatsPerBar: number; bars: number; version: string | null; rate: number }
   | { kind: "tempo"; bpm: number }
   | { kind: "stop" }
-  | { kind: "scrollStart"; version: string | null; rate: number; fromProgress: number }
+  | { kind: "scrollStart"; version: string | null; rate: number; fromSec: number }
   | { kind: "reorder"; order: SongKey[] };
 
 type Control =
@@ -79,11 +79,11 @@ export type Refusal =
 
 export type Outcome = { ok: true; state: GigState } | { ok: false; refused: Refusal };
 
-export const HANDOFF_WAIT_MS = 30_000;
-export const IDLE_END_MS = 8 * 3_600_000;
+const HANDOFF_WAIT_MS = 30_000;
+const IDLE_END_MS = 8 * 3_600_000;
 const RECENT_OPS = 64;
 
-export const shown = <T>(s: Scheduled<T>, t: BandMs): T => (t >= s.at ? s.value : s.before);
+const shown = <T>(s: Scheduled<T>, t: BandMs): T => (t >= s.at ? s.value : s.before);
 const still = <T>(value: T, at: BandMs): Scheduled<T> => ({ value, at, before: value });
 const schedule = <T>(s: Scheduled<T>, value: T, at: BandMs, now: BandMs): Scheduled<T> => ({ value, at, before: shown(s, now) });
 
@@ -105,7 +105,7 @@ export function startGig(plan: {
     epoch: 0,
     status: "live",
     order: still(order, now),
-    current: still({ key: order[0], index: 0 }, now),
+    current: still(order[0], now),
     section: still(null, now),
     click: still(null, now),
     scroll: still(null, now),
@@ -126,6 +126,12 @@ const runningScroll = (state: GigState, t: BandMs) => {
   return scroll && t >= scroll.startAt ? scroll : null;
 };
 
+function retime(scroll: Scroll, from: Grid, to: Grid): Scroll {
+  const rate = (scroll.rate * to.bpm) / from.bpm;
+  if (scroll.startAt > to.startAt) return { ...scroll, rate, startAt: barTime(to, beatAt(from, scroll.startAt)!.bar) };
+  return { ...scroll, rate, startAt: to.startAt, fromSec: scroll.fromSec + (scroll.rate * (to.startAt - scroll.startAt)) / 1000 };
+}
+
 type Change = { at: BandMs; fields: Partial<Shown> } | Refusal;
 
 function move(state: GigState, op: Move, now: BandMs, lead: number): Change {
@@ -135,14 +141,13 @@ function move(state: GigState, op: Move, now: BandMs, lead: number): Change {
   const order = shown(state.order, earliest);
   switch (op.kind) {
     case "goTo": {
-      const index = order.indexOf(op.key);
-      if (index < 0) return "unknown-song";
-      if (state.current.value.key === op.key) return "same-target";
+      if (!order.includes(op.key)) return "unknown-song";
+      if (state.current.value === op.key) return "same-target";
       const t = at("song");
       return {
         at: t,
         fields: {
-          current: schedule(state.current, { key: op.key, index }, t, now),
+          current: schedule(state.current, op.key, t, now),
           section: schedule(state.section, null, t, now),
           click: schedule(state.click, null, t, now),
           scroll: schedule(state.scroll, null, t, now),
@@ -158,7 +163,7 @@ function move(state: GigState, op: Move, now: BandMs, lead: number): Change {
       const t = at("countIn");
       const click: Grid = { bpm: op.bpm, beatsPerBar: op.beatsPerBar, startAt: t, firstBar: -op.bars };
       const scroll = state.scrollAlong
-        ? { version: op.version, startAt: barTime(click, 0), fromProgress: 0, rate: op.rate }
+        ? { version: op.version, startAt: barTime(click, 0), fromSec: 0, rate: op.rate }
         : null;
       return { at: t, fields: { click: schedule(state.click, click, t, now), scroll: schedule(state.scroll, scroll, t, now) } };
     }
@@ -167,7 +172,9 @@ function move(state: GigState, op: Move, now: BandMs, lead: number): Change {
       if (grid.bpm === op.bpm) return "same-target";
       const t = at("tempo");
       const click: Grid = { ...grid, bpm: op.bpm, startAt: t, firstBar: beatAt(grid, t)!.bar };
-      return { at: t, fields: { click: schedule(state.click, click, t, now) } };
+      const scroll = shown(state.scroll, t);
+      const retimed = scroll && retime(scroll, grid, click);
+      return { at: t, fields: { click: schedule(state.click, click, t, now), scroll: schedule(state.scroll, retimed, t, now) } };
     }
     case "stop": {
       if (!grid && !runningScroll(state, earliest)) return "not-running";
@@ -177,21 +184,14 @@ function move(state: GigState, op: Move, now: BandMs, lead: number): Change {
     case "scrollStart": {
       if (!state.scrollAlong) return "scroll-off";
       const t = at("scroll");
-      const scroll = { version: op.version, startAt: t, fromProgress: op.fromProgress, rate: op.rate };
+      const scroll = { version: op.version, startAt: t, fromSec: op.fromSec, rate: op.rate };
       return { at: t, fields: { scroll: schedule(state.scroll, scroll, t, now) } };
     }
     case "reorder": {
       const same = op.order.length === order.length && new Set(op.order).size === order.length && order.every((key) => op.order.includes(key));
       if (!same) return "changes-songs";
       if (op.order.every((key, i) => key === order[i])) return "same-target";
-      const reindex = (c: { key: SongKey; index: number }) => ({ key: c.key, index: op.order.indexOf(c.key) });
-      return {
-        at: earliest,
-        fields: {
-          order: schedule(state.order, op.order, earliest, now),
-          current: { ...state.current, value: reindex(state.current.value), before: reindex(state.current.before) },
-        },
-      };
+      return { at: earliest, fields: { order: schedule(state.order, op.order, earliest, now) } };
     }
   }
 }
@@ -245,8 +245,8 @@ function control(state: GigState, op: Control, by: UserId, now: BandMs): Partial
   }
 }
 
-const isMove = (op: Op): op is Op & Move =>
-  ["goTo", "section", "countIn", "tempo", "stop", "scrollStart", "reorder"].includes(op.kind);
+const MOVES: Record<Move["kind"], true> = { goTo: true, section: true, countIn: true, tempo: true, stop: true, scrollStart: true, reorder: true };
+const isMove = (op: Op): op is Op & Move => op.kind in MOVES;
 
 const opKey = ({ opId: _id, epoch: _epoch, ...rest }: Op) => JSON.stringify(rest);
 
@@ -291,7 +291,7 @@ function outranks(a: GigState, b: GigState) {
 }
 
 /** Ordered by (epoch, rev), so a take-over wins even when the cut-off old leader counted more revs. */
-export function receive(local: GigState | null, incoming: GigState): { state: GigState | null; result: Received } {
+export function receive(local: GigState | null, incoming: GigState): { state: GigState; result: Received } {
   if (!local) return { state: incoming, result: "applied" };
   if (incoming.gigId !== local.gigId) return { state: local, result: "other-gig" };
   if (incoming.epoch < local.epoch) return { state: local, result: "old-epoch" };
@@ -308,22 +308,19 @@ export interface Position {
   song: { key: SongKey; index: number };
   section: number | null;
   beat: { bar: number; beat: number } | null;
-  scroll: { version: string | null; fromProgress: number; planSec: number } | null;
+  scroll: { version: string | null; planSec: number } | null;
   ended: boolean;
 }
 
 export function position(state: GigState, t: BandMs): Position {
   const grid = runningGrid(state, t);
   const scroll = runningScroll(state, t);
+  const key = shown(state.current, t);
   return {
-    song: shown(state.current, t),
+    song: { key, index: shown(state.order, t).indexOf(key) },
     section: shown(state.section, t),
     beat: grid && beatAt(grid, t),
-    scroll: scroll && {
-      version: scroll.version,
-      fromProgress: scroll.fromProgress,
-      planSec: (scroll.rate * (t - scroll.startAt)) / 1000,
-    },
+    scroll: scroll && { version: scroll.version, planSec: scroll.fromSec + (scroll.rate * (t - scroll.startAt)) / 1000 },
     ended: state.status === "ended" || t - state.changedAt >= IDLE_END_MS,
   };
 }

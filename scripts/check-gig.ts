@@ -86,10 +86,10 @@ const drills: [string, () => [boolean, string]][] = [
       const onAnn = G.receive(ann, mike);
       const joeAnnFirst = G.receive(G.receive(base, ann).state, mike);
       const joeMikeFirst = G.receive(G.receive(base, mike).state, ann);
-      const mikeTaps = refused(act(onMike.state!, "mike", 41_000, { kind: "goTo", key: "c" }));
+      const mikeTaps = refused(act(onMike.state, "mike", 41_000, { kind: "goTo", key: "c" }));
       const pass =
-        ann.epoch === 1 && mike.epoch === 1 && onMike.result === "applied" && onMike.state!.leader === "ann" &&
-        onAnn.result === "lost-tie" && joeAnnFirst.state!.leader === "ann" && joeMikeFirst.state!.leader === "ann" && mikeTaps === "not-allowed";
+        ann.epoch === 1 && mike.epoch === 1 && onMike.result === "applied" && onMike.state.leader === "ann" &&
+        onAnn.result === "lost-tie" && joeAnnFirst.state.leader === "ann" && joeMikeFirst.state.leader === "ann" && mikeTaps === "not-allowed";
       return [pass, `mike's phone ${onMike.result}, ann's phone ${onAnn.result}, mike then taps: ${mikeTaps}`];
     },
   ],
@@ -102,7 +102,7 @@ const drills: [string, () => [boolean, string]][] = [
       const mike = ok(act(base, "mike", 40_000, { kind: "takeOver" }));
       const follower = G.receive(mike, terry);
       const terrysPhone = G.receive(terry, mike);
-      const terryTaps = refused(act(terrysPhone.state!, "terry", 41_000, { kind: "goTo", key: "c" }));
+      const terryTaps = refused(act(terrysPhone.state, "terry", 41_000, { kind: "goTo", key: "c" }));
       const oldOpAtMike = refused(act(mike, "mike", 41_000, { kind: "goTo", key: "c" }, 0));
       const pass = terry.rev > mike.rev && follower.result === "old-epoch" && terrysPhone.result === "applied" && terryTaps === "not-allowed" && oldOpAtMike === "stale-epoch";
       return [pass, `follower ${follower.result}, terry's phone ${terrysPhone.result}, terry taps ${terryTaps}, epoch-0 op ${oldOpAtMike}`];
@@ -147,7 +147,7 @@ const drills: [string, () => [boolean, string]][] = [
     () => {
       const off = gig({ scrollAlong: false });
       const running = ok(act(off, "terry", 0, countIn));
-      const scroll = refused(act(running, "terry", 3000, { kind: "scrollStart", version: "v-band", rate: 1, fromProgress: 0 }));
+      const scroll = refused(act(running, "terry", 3000, { kind: "scrollStart", version: "v-band", rate: 1, fromSec: 0 }));
       const turned = ok(act(running, "terry", 3000, { kind: "section", index: 2 }));
       const p = at(turned, 6000);
       return [p.beat !== null && p.scroll === null && scroll === "scroll-off" && p.section === 2, `beat ${JSON.stringify(p.beat)}, scroll ${p.scroll}, scrollStart ${scroll}`];
@@ -183,7 +183,8 @@ const rules: [string, () => [boolean, string]][] = [
       const dropped = refused(act(s, "terry", 1000, { kind: "reorder", order: ["c", "a", "d"] }));
       const swapped = refused(act(s, "terry", 1000, { kind: "reorder", order: ["c", "a", "d", "d"] }));
       const p = at(moved, 2000);
-      return [p.song.key === "c" && p.song.index === 0 && added === "changes-songs" && dropped === "changes-songs" && swapped === "changes-songs", `${JSON.stringify(p.song)}, ${added}, ${dropped}, ${swapped}`];
+      const waiting = at(moved, 1100).song;
+      return [p.song.key === "c" && p.song.index === 0 && waiting.index === 2 && added === "changes-songs" && dropped === "changes-songs" && swapped === "changes-songs", `${JSON.stringify(waiting)} then ${JSON.stringify(p.song)}, ${added}, ${dropped}, ${swapped}`];
     },
   ],
   [
@@ -211,7 +212,7 @@ const rules: [string, () => [boolean, string]][] = [
       const downbeat = at(s, 2150);
       const later = at(s, 3150);
       const pass = quiet.beat === null && quiet.scroll === null && JSON.stringify(counting.beat) === '{"bar":-1,"beat":0}' &&
-        counting.scroll === null && downbeat.scroll?.planSec === 0 && JSON.stringify(downbeat.beat) === '{"bar":0,"beat":0}' && later.scroll?.planSec === 1;
+        counting.scroll === null && downbeat.scroll?.planSec === 0 && downbeat.scroll.version === "v-band" && JSON.stringify(downbeat.beat) === '{"bar":0,"beat":0}' && later.scroll?.planSec === 1;
       return [pass, `count-in ${JSON.stringify(counting.beat)}, scroll ${JSON.stringify(later.scroll)}`];
     },
   ],
@@ -221,6 +222,18 @@ const rules: [string, () => [boolean, string]][] = [
       const s = ok(act(ok(act(gig(), "terry", 0, countIn)), "terry", 3000, { kind: "tempo", bpm: 100 }));
       const notRunning = refused(act(gig(), "terry", 0, { kind: "tempo", bpm: 100 }));
       return [JSON.stringify(at(s, 4150 + 600).beat) === '{"bar":1,"beat":1}' && notRunning === "not-running", `${JSON.stringify(at(s, 4750).beat)}, ${notRunning}`];
+    },
+  ],
+  [
+    "a tempo change keeps the scroll with the music",
+    () => {
+      const s = ok(act(ok(act(gig(), "terry", 0, countIn)), "terry", 3000, { kind: "tempo", bpm: 150 }));
+      const atChange = at(s, 4150).scroll?.planSec;
+      const second = at(s, 5150).scroll?.planSec;
+      const twoBars = ok(act(ok(act(gig(), "terry", 0, { ...countIn, bars: 2 })), "terry", 500, { kind: "tempo", bpm: 150 }));
+      const early = [at(twoBars, 3749).scroll, at(twoBars, 3750).scroll?.planSec, at(twoBars, 4750).scroll?.planSec];
+      const pass = atChange === 2 && second === 3.25 && early[0] === null && early[1] === 0 && early[2] === 1.25;
+      return [pass, `plan seconds ${atChange} at the change, ${second} one second later; during the count-in the scroll moves to the new bar 0 (${JSON.stringify(early)})`];
     },
   ],
   [
@@ -245,6 +258,15 @@ const rules: [string, () => [boolean, string]][] = [
       const once = ok(G.reduce(s, op, { by: "terry", now: band(1000), lead: LEAD }));
       const again = G.reduce(once, { ...op, kind: "goTo", key: "c" }, { by: "terry", now: band(1000), lead: LEAD });
       return [joe === "not-allowed" && refused(again) === "repeat", `joe ${joe}, repeat ${refused(again)}`];
+    },
+  ],
+  [
+    "a state from another gig never replaces tonight's, whatever its epoch",
+    () => {
+      const tonight = gig();
+      const lastWeek = ok(act(gig({ gigId: "elks-last-week" }), "ann", 40_000, { kind: "takeOver" }));
+      const heard = G.receive(tonight, lastWeek);
+      return [heard.result === "other-gig" && heard.state === tonight, heard.result];
     },
   ],
   [

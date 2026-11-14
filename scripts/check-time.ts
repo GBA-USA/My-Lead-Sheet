@@ -75,7 +75,7 @@ function track(phone: Phone, from: number, to: number, leader: (tau: number) => 
       const down = oneWay(phone.route, -1, phone.bias);
       const arrives = send + up + down;
       inFlight.push({ arrives, ping: { t0: localOf(phone, send), band: leader(send + up), t1: localOf(phone, arrives) } });
-      send += burst-- > 0 ? T.BURST.everyMs : T.ROUTES[phone.route].pingEveryMs;
+      send += burst-- > 0 ? T.BURST.everyMs : T.PING_EVERY_MS[phone.route];
     }
     inFlight.sort((a, b) => a.arrives - b.arrives);
     while (inFlight.length && inFlight[0].arrives <= tau) phone.clock = T.addPing(phone.clock, inFlight.shift()!.ping, null);
@@ -122,7 +122,7 @@ for (const route of ROUTE_NAMES) {
     const phone = newPhone(route);
     const end = 5 * MIN + rand() * 5 * MIN;
     track(phone, 0, end, truth, undefined, 1000);
-    errors.push(errorAt(phone, end + rand() * T.ROUTES[route].pingEveryMs));
+    errors.push(errorAt(phone, end + rand() * T.PING_EVERY_MS[route]));
   }
   const limit = MODEL[route].clockP95 * 1.1;
   check(p95(errors) <= limit, `${route}: estimate error p95 ${p95(errors).toFixed(2)} ms within modeled ${MODEL[route].clockP95} ms (+10%), max ${maxAbs(errors).toFixed(1)} ms`);
@@ -229,6 +229,13 @@ for (const route of ROUTE_NAMES) {
   }
   check(states.slice(0, 11).every((s) => s === "synced"), `a spread over 8 ms for under 10 s keeps it Synced (${states.slice(0, 11).join(",")})`);
   check(states.slice(11).every((s) => s === "out-of-sync"), `a spread over 8 ms from 2.8 s to 12.8 s says Out of sync (${states.slice(11).join(",")})`);
+  let slow = T.newClock();
+  const seen: string[] = [];
+  for (let i = 0; i < 11; i += 1) {
+    slow = T.addPing(slow, ping(i * 5000, 4, i % 2 ? 6 : -6), null);
+    seen.push(T.confidence(slow, local(i * 5000 + 10)));
+  }
+  check(seen.slice(7, 9).join(",") === "synced,synced" && seen[9] === "out-of-sync", `the 10 s count starts at the first full window of 8, not the first ping (${seen.slice(7).join(",")})`);
 }
 
 {

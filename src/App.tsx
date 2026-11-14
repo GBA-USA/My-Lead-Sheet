@@ -8,6 +8,7 @@ import { useMetronome } from "./metronome-view";
 import { displayKeyLabel } from "./music";
 import { READING_LINE, changeTempo, evenPlan, nextVersionName, scrollMotion, startTake, toggleHold, type ScrollVersion, type Take } from "./scroll-timing";
 import { LeadSheet } from "./sheet";
+import { PRIVACY_HREF } from "./data-kinds";
 import { SongDataEditor } from "./song-data-editor";
 import {
   TEXT_SCALES,
@@ -457,6 +458,9 @@ function SongList({ songs }: { songs: Song[] }) {
           ))}
         </ul>
       )}
+      <a className="privacy-link" href={PRIVACY_HREF}>
+        Privacy
+      </a>
     </>
   );
 }

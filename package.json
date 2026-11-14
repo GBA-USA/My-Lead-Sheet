@@ -24,6 +24,8 @@
     "check:metronome": "node --experimental-strip-types scripts/check-metronome.ts",
     "check:bar": "node --experimental-strip-types scripts/check-bar.ts",
     "check:heard": "node --experimental-strip-types scripts/check-heard.ts",
+    "check:offline": "node --experimental-strip-types scripts/check-offline.ts",
+    "check:privacy": "node --experimental-strip-types scripts/check-privacy.ts",
     "check:api": "tsc -p worker && node --experimental-strip-types scripts/check-api.ts",
     "check:portable": "node --experimental-strip-types scripts/check-portable.ts",
     "check:share-rule": "node --experimental-strip-types scripts/check-share-rule.ts",

@@ -130,7 +130,11 @@ try {
   assert.deepEqual((await counting.signIn({ counter: 3 })).body.error, "counter-went-back", "a counter that goes back (a cloned key) is refused");
 
   const [userId, version, issuedAt, signature] = phone.cookie.slice("mls_session=".length).split(".");
-  const flip = (text: string) => text.slice(0, -1) + (text.at(-1) === "A" ? "B" : "A");
+  // Middle character carries 6 full bits; last char has padding bits that can decode the same.
+  const flip = (text: string) => {
+    const mid = Math.floor(text.length / 2);
+    return text.slice(0, mid) + (text.at(mid) === "A" ? "B" : "A") + text.slice(mid + 1);
+  };
   const tampered = [
     ["another user id", `${flip(userId)}.${version}.${issuedAt}.${signature}`],
     ["a raised session version", `${userId}.${Number(version) + 1}.${issuedAt}.${signature}`],

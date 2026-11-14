@@ -1,6 +1,6 @@
 import seedLibrary from "../data/library.json";
 import { clampScrollPercent, pitchClass, type Notation } from "./music";
-import type { Learned, Mark, ScrollVersion, Span } from "./scroll-timing";
+import type { Learned, Mark, ScrollVersion, Span, Tempo } from "./scroll-timing";
 import type { BassNote, ChartLine, ChartSection, LibraryFile, Setlist, Song, SongData } from "./types";
 
 export const LIBRARY_KEY = "leadSheetsLibrary";
@@ -314,8 +314,15 @@ const isLearned = shaped<Learned>({
   vocals: listOf(shaped<Span>({ start: isTime, end: isTime })),
 });
 
+/** Starts at 0, each change later than the one before. */
+const isTempoMap: Check = (value) => {
+  if (!listOf(shaped<Tempo>({ at: isTime, bpm: isPositive }))(value)) return false;
+  const tempo = value as Tempo[];
+  return tempo[0]?.at === 0 && tempo.every((change, i) => i === 0 || change.at > tempo[i - 1].at);
+};
+
 const isVersion: Check = (value) => {
-  const fields = { name: isString, bpm: isPositive, marks: listOf(isMark), learned: optional(isLearned) };
+  const fields = { name: isString, bpm: isPositive, marks: listOf(isMark), learned: optional(isLearned), tempo: optional(isTempoMap) };
   if (!shaped<ScrollVersion>(fields)(value)) return false;
   const marks = (value as ScrollVersion).marks;
   return (

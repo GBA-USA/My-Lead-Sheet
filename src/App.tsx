@@ -6,7 +6,7 @@ import { LearnSong } from "./learn-song";
 import { initialMetronomeBpm } from "./metronome";
 import { useMetronome } from "./metronome-view";
 import { displayKeyLabel } from "./music";
-import { READING_LINE, evenPlan, nextVersionName, scrollMotion, startTake, toggleHold, type ScrollVersion, type Take } from "./scroll-timing";
+import { READING_LINE, changeTempo, evenPlan, nextVersionName, scrollMotion, startTake, toggleHold, type ScrollVersion, type Take } from "./scroll-timing";
 import { LeadSheet } from "./sheet";
 import { SongDataEditor } from "./song-data-editor";
 import {
@@ -22,7 +22,7 @@ import {
   tempoText,
   withSongData,
 } from "./storage";
-import { SaveTake, TeachBar, taughtPlan, useScrollVersions, type BarMenu } from "./teach";
+import { SaveTake, TeachBar, taughtPlan, useFollowTempo, useScrollVersions, type BarMenu } from "./teach";
 import type { LibraryFile, Setlist, Song, SongData } from "./types";
 import { SearchBox } from "./search-box";
 import { matchingSetlists, matchingSongs } from "./search";
@@ -121,6 +121,13 @@ export function App() {
     (reason) => (take ? (reason === "end" ? finishTake(take) : stopTake(take)) : performance.stopScroll()),
   );
   useWakeLock(awake);
+  useFollowTempo(performance.scrolling && !take ? version?.tempo : undefined, clock, metronome.setBpm);
+
+  useEffect(() => {
+    if (!take || metronome.bpm == null) return;
+    const next = changeTempo(take, clock.current, metronome.bpm);
+    if (next !== take) setTeaching({ take: next });
+  }, [metronome.bpm]);
 
   useEffect(() => {
     document.getElementById("sheet-scroll")?.scrollTo(0, 0);
@@ -272,15 +279,18 @@ export function App() {
           canTeach={even != null}
           teaching={take != null}
           holding={take?.holding ?? false}
+          bpm={metronome.bpm}
           menu={menu}
           onToggleMenu={toggleMenu}
           onCloseMenu={closeMenu}
           onSelect={versions.select}
           onRename={versions.rename}
+          onRetime={versions.retime}
           onDelete={versions.remove}
           onTeach={teach}
           onListen={route.name === "song" ? () => setTeaching({ learning: true }) : undefined}
           onHold={() => take && setTeaching({ take: toggleHold(take, clock.current) })}
+          onBpm={metronome.setBpm}
           onDone={() => take && finishTake(take)}
           onDiscard={discardTake}
         />

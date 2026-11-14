@@ -87,8 +87,8 @@ export function App() {
   const [accountOpen, setAccountOpen] = useState(false);
   const [backup, setBackup] = useState<BackupResult | null>(null);
 
-  const runBackup = useCallback(async () => {
-    const result = await syncBackup();
+  const runBackup = useCallback(async (onlyIfChanged = false) => {
+    const result = await syncBackup({ onlyIfChanged });
     if (result.signedOut) setAccount(null);
     if (result.changed.length > 0) {
       const next = loadLibrary();
@@ -102,7 +102,7 @@ export function App() {
 
   useEffect(() => {
     runBackup();
-    const timer = setInterval(runBackup, BACKUP_EVERY_MS);
+    const timer = setInterval(() => runBackup(true), BACKUP_EVERY_MS);
     const onShow = () => document.visibilityState === "visible" && runBackup();
     document.addEventListener("visibilitychange", onShow);
     return () => {

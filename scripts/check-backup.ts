@@ -48,6 +48,8 @@ const { worker, base } = await startApi();
 class Device {
   readonly store = new FakeStorage();
   calls = 0;
+  /** Runs once, after the next reply arrives and before the app reads it: an edit made while a sync is on its way. */
+  duringFetch: (() => void) | null = null;
   readonly phone: Phone;
   readonly agent: string;
   constructor(phone: Phone, agent: string) {
@@ -61,7 +63,11 @@ class Device {
     globalThis.fetch = async (path, init) => {
       this.calls += 1;
       const headers = { ...(init?.headers as Record<string, string>), origin: TEST_ORIGIN, ...(this.phone.cookie ? { cookie: this.phone.cookie } : {}) };
-      return realFetch(new URL(String(path), base), { ...init, headers });
+      const response = await realFetch(new URL(String(path), base), { ...init, headers });
+      const edit = this.duringFetch;
+      this.duringFetch = null;
+      edit?.();
+      return response;
     };
   }
 
@@ -174,6 +180,12 @@ try {
   const rowsAfter = (await post(a.phone.cookie, { since: 0, changes: [] })).body.rows?.length;
   check(againA.changed.length === 0 && againB.changed.length === 0 && rowsNow === rowsAfter && !!rowsNow, `a second run adds no rows and changes nothing (${rowsNow} then ${rowsAfter})`);
   check(b.boot().songs.length === aLibrary.songs.length, "a second run adds no duplicate songs");
+  const idleCalls = b.calls;
+  check((await app.syncBackup({ onlyIfChanged: true })).ok && b.calls === idleCalls, "an open phone with nothing new makes no request on the timer");
+  app.saveScrollPercent(ref(first.songs[7].id), 100);
+  await app.syncBackup({ onlyIfChanged: true });
+  check(b.calls > idleCalls, "a change on the phone goes out on the timer");
+  await a.sync();
 
   a.use();
   app.saveScrollPercent(ref(first.songs[3].id), 140);
@@ -214,6 +226,26 @@ try {
   check(!!libB.songs.find((song) => song.id === 950 && song.title === "Song from A") && !!copy, "a song both phones changed is kept twice, the second named · from Android");
   check(JSON.stringify(libB.setlists.find((set) => set.name === "Saturday")?.songRefs[0]) === JSON.stringify(copy?.ref), "phone B's setlist follows its song to the new id");
   check(JSON.stringify(libA) === JSON.stringify(libB) && libA.songs.length === aLibrary.songs.length + 2, "both phones end with the same library and nothing dropped");
+
+  a.use();
+  app.saveScrollPercent(ref(first.songs[7].id), 130);
+  await a.sync();
+  b.duringFetch = () => app.saveScrollPercent(ref(first.songs[7].id), 115);
+  await b.sync();
+  b.use();
+  app.saveScrollPercent(ref(first.songs[7].id), 100);
+  await b.sync();
+  await a.sync();
+  const raced = `${app.SCROLL_PERCENT_KEY}.${first.songs[7].id}`;
+  check(a.store.getItem(raced) === b.store.getItem(raced), `an edit made and undone while a sync was on its way still ends the same on both phones (${a.store.getItem(raced)}, ${b.store.getItem(raced)})`);
+
+  b.use();
+  const flight = app.syncBackup();
+  app.backupOff();
+  await flight;
+  check(b.store.getItem(app.BACKUP_KEY) === null, "signing out while a sync is on its way leaves backup off");
+  app.backupOn(userId);
+  await b.sync();
 
   check((await post("", { since: 0, changes: [] })).status === 401, "no session cookie gets 401");
   const tampered = a.phone.cookie.slice(0, -2) + (a.phone.cookie.endsWith("AA") ? "BB" : "AA");

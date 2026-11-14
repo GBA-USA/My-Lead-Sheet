@@ -161,7 +161,10 @@ function batches(changes: Map<string, Value>): Map<string, Value>[] {
 
 function counts(): Record<string, number> {
   const out: Record<string, number> = {};
-  for (const key of localKeys()) if (readValue(key) !== null) out[kindOf(key)!.name] = (out[kindOf(key)!.name] ?? 0) + 1;
+  for (const key of localKeys()) {
+    const name = kindOf(key)?.name;
+    if (name && readValue(key) !== null) out[name] = (out[name] ?? 0) + 1;
+  }
   return out;
 }
 
@@ -172,6 +175,9 @@ function phoneLabel(): string {
   const agent = typeof navigator === "undefined" ? "" : navigator.userAgent;
   return ["iPhone", "iPad", "Android", "Mac", "Windows"].find((name) => agent.includes(name)) ?? "another phone";
 }
+
+/** A print no value has, so the key counts as changed here and goes out next round, where the server's row meets it. */
+const UNSETTLED = "?";
 
 /**
  * Applies one reply. A key this phone sent comes back either as sent (stored) or as the server's newer value, which
@@ -184,9 +190,12 @@ function apply(state: State, sent: Map<string, Value>, reply: Reply, changed: Se
     const kind = kindOf(row.key);
     if (!kind) continue;
     const local = readValue(row.key);
-    const mine = sent.has(row.key);
-    if (!mine && print(local) !== syncedPrint(state, row.key)) continue;
-    const next = mine && row.value !== sent.get(row.key) ? kind.merge(row.value, local, phoneLabel()) : mine ? local : row.value;
+    let next = row.value;
+    if (sent.has(row.key)) next = row.value === sent.get(row.key) ? local : kind.merge(row.value, local, phoneLabel());
+    else if (print(local) !== syncedPrint(state, row.key)) {
+      state.synced[row.key] = [state.synced[row.key]?.[0] ?? 0, UNSETTLED];
+      continue;
+    }
     if (next !== local) {
       writeValue(row.key, next);
       changed.add(row.key);
@@ -196,6 +205,13 @@ function apply(state: State, sent: Map<string, Value>, reply: Reply, changed: Se
   }
   state.pulled = Math.max(state.pulled, reply.rev);
   return conflicts;
+}
+
+/** False once this phone signed out, or signed in to another account, while a sync was on its way. */
+const stillOn = (state: State) => readState()?.account === state.account;
+
+function save(state: State) {
+  if (stillOn(state)) writeState(state);
 }
 
 async function syncOnce(state: State): Promise<BackupResult> {
@@ -208,12 +224,12 @@ async function syncOnce(state: State): Promise<BackupResult> {
       const reply = await api<Reply>("/api/backup", { since: state.pulled, changes });
       conflicts += apply(state, batch, reply, changed);
       serverCounts = reply.counts;
-      writeState(state);
+      save(state);
     }
     if (conflicts === 0) break;
   }
   if (pending(state).size === 0 && sameCounts(serverCounts, counts())) state.at = Date.now();
-  writeState(state);
+  save(state);
   return { changed: [...changed], at: state.at, ok: true };
 }
 
@@ -221,14 +237,16 @@ let running: Promise<BackupResult> | null = null;
 
 /**
  * Sends this phone's changes to the account's backup and pulls the other phones'. Signed out it returns at once
- * without calling the server. The first sync uploads everything and changes nothing on this phone.
+ * without calling the server. The first sync uploads everything and changes nothing on this phone. With
+ * `onlyIfChanged`, a phone with nothing new to send skips the call, so an idle open app costs no requests.
  */
-export function syncBackup(): Promise<BackupResult> {
+export function syncBackup({ onlyIfChanged = false } = {}): Promise<BackupResult> {
   const state = readState();
-  if (!state) return Promise.resolve({ changed: [], at: null, ok: true });
-  running ??= syncOnce(state)
+  if (!state || running) return running ?? Promise.resolve({ changed: [], at: null, ok: true });
+  if (onlyIfChanged && pending(state).size === 0) return Promise.resolve({ changed: [], at: state.at, ok: true });
+  running = syncOnce(state)
     .catch((error): BackupResult => {
-      if (error instanceof ApiError && error.status === 401) {
+      if (error instanceof ApiError && error.status === 401 && stillOn(state)) {
         backupOff();
         return { changed: [], at: null, ok: false, signedOut: true };
       }

@@ -45,7 +45,7 @@ const play = (learned: Learned | null) => {
 
 /** The learned version scrolling now, while LearnedCues is mounted; otherwise null. */
 export function usePlayingLearned(): Learned | null {
-  return useSyncExternalStore(subscribe, () => playing);
+  return useSyncExternalStore(subscribe, () => playing, () => null);
 }
 
 function chartSections(): HTMLElement[] {

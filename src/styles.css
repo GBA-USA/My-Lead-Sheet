@@ -1028,3 +1028,10 @@ a:focus-visible {
 .beat-dot[data-beat="off"] {
   visibility: hidden;
 }
+
+.privacy-link {
+  display: block;
+  padding: 8px 16px calc(24px + env(safe-area-inset-bottom));
+  color: var(--text-dim);
+  font-size: 0.875rem;
+}

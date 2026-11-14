@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { unstable_startWorker } from "wrangler";
 import { onRequest } from "../functions/api/[[path]].ts";
+import { Phone, TEST_ORIGIN, startApi } from "./api-session.ts";
 
 type Message = Record<string, unknown> & { kind: string };
 
@@ -9,8 +9,8 @@ class Peer {
   private readonly inbox: Message[] = [];
   private waiting: ((m: Message) => void) | null = null;
 
-  constructor(url: string) {
-    this.ws = new WebSocket(url);
+  constructor(url: string, headers: Record<string, string>) {
+    this.ws = new WebSocket(url, { headers } as unknown as string[]);
     this.ws.addEventListener("message", (event) => {
       const message = JSON.parse(String(event.data)) as Message;
       if (this.waiting) this.waiting(message);
@@ -36,18 +36,15 @@ class Peer {
   }
 }
 
-const worker = await unstable_startWorker({
-  config: "worker/wrangler.jsonc",
-  dev: { server: { port: 0 }, inspector: false, persist: false, watch: false },
-});
+const { worker, base } = await startApi();
 let failed = false;
 const sockets: WebSocket[] = [];
 try {
-  await worker.ready;
-  const base = await worker.url;
-  const http = (path: string) => fetch(new URL(path, base));
+  const player = new Phone(base);
+  assert.equal((await player.createAccount("Room Tester")).status, 200, "a test account signs in");
+  const http = (path: string) => fetch(new URL(path, base), { headers: { cookie: player.cookie } });
   const join = async (room: string) => {
-    const peer = new Peer(new URL(`/api/rooms/${room}`, base).href.replace(/^http/, "ws"));
+    const peer = new Peer(new URL(`/api/rooms/${room}`, base).href.replace(/^http/, "ws"), { cookie: player.cookie, origin: TEST_ORIGIN });
     sockets.push(peer.ws);
     const hello = await peer.next(`hello in ${room}`);
     assert.equal(hello.kind, "hello", "a socket is greeted first");

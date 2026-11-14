@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import type { Env } from "./index";
 
 const RELAYED = ["intro", "ping", "pong"] as const;
 type RelayKind = (typeof RELAYED)[number];
@@ -28,24 +29,55 @@ function send(ws: WebSocket, message: Outbound) {
   ws.send(JSON.stringify(message));
 }
 
-export class Room extends DurableObject {
+export const USER_HEADER = "X-MLS-User";
+export const SESSION_HEADER = "X-MLS-Session";
+export const SIGNED_OUT_CLOSE = 4401;
+
+const userTag = (userId: string) => `user:${userId}`;
+
+export class Room extends DurableObject<Env> {
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+    ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS session_floors (user_id TEXT PRIMARY KEY, version INTEGER NOT NULL)`);
+  }
+
+  private floor(userId: string): number {
+    return this.ctx.storage.sql.exec<{ version: number }>(`SELECT version FROM session_floors WHERE user_id = ?`, userId).toArray()[0]?.version ?? 0;
+  }
+
   async fetch(request: Request): Promise<Response> {
+    const userId = request.headers.get(USER_HEADER);
+    const version = Number(request.headers.get(SESSION_HEADER));
+    if (!userId || !(version >= this.floor(userId))) return Response.json({ error: "signed-out" }, { status: 401 });
     if (request.headers.get("Upgrade") !== "websocket") {
       return Response.json({ room: this.ctx.id.name, peers: this.ctx.getWebSockets().length });
     }
     const peers = this.ctx.getWebSockets().map((ws) => this.ctx.getTags(ws)[0]);
     const you = crypto.randomUUID();
     const [client, server] = Object.values(new WebSocketPair());
-    this.ctx.acceptWebSocket(server, [you]);
+    this.ctx.acceptWebSocket(server, [you, userTag(userId)]);
+    server.serializeAttachment({ version });
     send(server, { kind: "hello", you, peers });
     return new Response(null, { status: 101, webSocket: client });
+  }
+
+  /** Sign out everywhere: close this user's sockets from older sessions, and refuse any that arrive late. */
+  closeUser(userId: string, version: number) {
+    this.ctx.storage.sql.exec(
+      `INSERT INTO session_floors (user_id, version) VALUES (?, ?) ON CONFLICT (user_id) DO UPDATE SET version = max(version, excluded.version)`,
+      userId,
+      version,
+    );
+    for (const ws of this.ctx.getWebSockets(userTag(userId))) {
+      if ((ws.deserializeAttachment() as { version: number }).version < version) ws.close(SIGNED_OUT_CLOSE, "signed-out");
+    }
   }
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
     const rx = Date.now();
     const inbound = parseInbound(message);
     if (!inbound) return send(ws, { kind: "error", error: "bad-message" });
-    const target = this.ctx.getWebSockets(inbound.to)[0];
+    const target = this.ctx.getWebSockets(inbound.to).find((ws) => this.ctx.getTags(ws)[0] === inbound.to);
     if (!target) return send(ws, { kind: "error", error: "no-peer", to: inbound.to });
     const from = this.ctx.getTags(ws)[0];
     send(target, { kind: inbound.kind, from, body: inbound.body, rx, tx: Date.now() });

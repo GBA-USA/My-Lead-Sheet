@@ -1,0 +1,51 @@
+{
+  "url": "http://127.0.0.1:8799",
+  "room": "drill-mwgazle1",
+  "params": {
+    "followers": 4,
+    "changes": 200,
+    "everyMs": 500,
+    "killS": 60,
+    "pingMs": 1000,
+    "killAtRev": 50
+  },
+  "tapToFollowerMs": {
+    "n": 680,
+    "p50": 3.33,
+    "p95": 6.42,
+    "p99": 10.68,
+    "max": 16.39
+  },
+  "relayedPingMs": {
+    "samples": 387,
+    "rttP50": 3.53,
+    "rttP95": 7.74,
+    "spreadP95": 2.23,
+    "offsetErrorP95": 0.38
+  },
+  "rejoin": {
+    "killedForS": 60,
+    "snapshotRev": 169,
+    "leaderRevAtRejoin": 169,
+    "ms": 48.52
+  },
+  "roomCounts": {
+    "upgrades": 6,
+    "leaderMessages": 622,
+    "followerMessages": 422,
+    "awakeS": 102.98
+  },
+  "costThisDrill": {
+    "doRequests": 58.2,
+    "gbS": 12.87
+  },
+  "costPerGig": {
+    "assumes": "3 h, 190 changes, 4 server followers pinging every 5 s, 2 inbound messages per ping, 20 messages per billed request, room never idle 5 s",
+    "doRequests": 885,
+    "requestsPctOfFreeDay": 0.88,
+    "gbS": 1350,
+    "gbSPctOfFreeDay": 10.38
+  },
+  "failures": []
+}
+PASS

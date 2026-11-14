@@ -234,6 +234,49 @@ const drills: [string, () => [boolean, string]][] = [
     },
   ],
   [
+    "Start scroll tapped between a Stop and the count-in after it waits for the downbeat after the count-in",
+    () => {
+      const restarting = ok(act(ok(act(ok(act(gig(), "terry", 0, countIn)), "terry", 600, { kind: "stop" })), "terry", 640, countIn));
+      const s = ok(act(restarting, "terry", 1240, { kind: "scrollStart", version: "v-band", rate: 1, fromSec: 0 }));
+      const early = [1390, 2150, 3150, 4149].filter((t) => at(s, t).scroll !== null);
+      const down = at(s, 4150);
+      const pass = early.length === 0 && down.scroll?.planSec === 0 && JSON.stringify(down.beat) === '{"bar":0,"beat":0}';
+      return [pass, `scroll moving at ${early.join(",") || "none"} before 4150; at 4150 plan s ${down.scroll?.planSec} on ${JSON.stringify(down.beat)}`];
+    },
+  ],
+  [
+    "Next tapped between a Stop and the count-in after it turns the song at now + lead and the count-in never sounds",
+    () => {
+      const restarting = ok(act(ok(act(ok(act(gig(), "terry", 0, countIn)), "terry", 600, { kind: "stop" })), "terry", 640, countIn));
+      const s = ok(act(restarting, "terry", 1240, { kind: "goTo", key: "b" }));
+      const sounding = [];
+      for (let t = 1150; t <= 8150; t += 10) if (at(s, t).beat || at(s, t).scroll) sounding.push(t);
+      const turns = at(s, 1389).song.key === "a" && at(s, 1390).song.key === "b";
+      return [turns && sounding.length === 0, `song at 1389 ${at(s, 1389).song.key}, at 1390 ${at(s, 1390).song.key}; click or scroll at ${sounding.slice(0, 3).join(",") || "none"}`];
+    },
+  ],
+  [
+    "a page turn tapped between a Stop and the count-in after it lands at now + lead and the count-in still starts on its bar line",
+    () => {
+      const restarting = ok(act(ok(act(ok(act(gig(), "terry", 0, countIn)), "terry", 600, { kind: "stop" })), "terry", 640, countIn));
+      const s = ok(act(restarting, "terry", 1240, { kind: "section", index: 2 }));
+      const turns = at(s, 1389).section === null && at(s, 1390).section === 2;
+      const pass = turns && at(s, 2140).beat === null && JSON.stringify(at(s, 2150).beat) === '{"bar":-1,"beat":0}' && at(s, 4150).scroll?.planSec === 0;
+      return [pass, `section at 1389 ${at(s, 1389).section}, at 1390 ${at(s, 1390).section}; count-in at 2150 ${JSON.stringify(at(s, 2150).beat)}; plan s at 4150 ${at(s, 4150).scroll?.planSec}`];
+    },
+  ],
+  [
+    "a count-in at 100 tapped between a Stop and the count-in after it starts at now + lead and replaces the waiting one",
+    () => {
+      const restarting = ok(act(ok(act(ok(act(gig(), "terry", 0, countIn)), "terry", 600, { kind: "stop" })), "terry", 640, countIn));
+      const s = ok(act(restarting, "terry", 1240, { ...countIn, bpm: 100 }));
+      const times = onsets(s, 1150, 3790).map((o) => o.t);
+      const down = at(s, 3790);
+      const pass = times.join(",") === "1390,1990,2590,3190,3790" && at(s, 3780).scroll === null && JSON.stringify(down.beat) === '{"bar":0,"beat":0}' && down.scroll?.planSec === 0;
+      return [pass, `beats at ${times.join(",")}; at 3790 ${JSON.stringify(down.beat)} plan s ${down.scroll?.planSec}`];
+    },
+  ],
+  [
     "Stop tapped between a Stop and the count-in after it cancels the count-in",
     () => {
       const restarting = ok(act(ok(act(ok(act(gig(), "terry", 0, countIn)), "terry", 600, { kind: "stop" })), "terry", 640, countIn));

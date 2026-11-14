@@ -129,6 +129,13 @@ async function openChrome() {
   return { tab, close };
 }
 
+const browsers: Awaited<ReturnType<typeof openChrome>>[] = [];
+async function phone(url: string) {
+  const browser = await openChrome();
+  browsers.push(browser);
+  return browser.tab(url);
+}
+
 async function until<T>(what: string, read: () => Promise<T>, ok: (value: T) => boolean, timeoutMs = 20_000): Promise<T> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
@@ -160,9 +167,9 @@ function assertWellFormed(json: any, spike: string, role: string) {
   assert.ok(!JSON.stringify(json).includes(SECRET), "TURN credential never appears in the export");
 }
 
-async function runLan(origin: string, chrome: Awaited<ReturnType<typeof openChrome>>) {
-  const leader = await chrome.tab(`${origin}/lan/?role=leader&room=lan&plan=auto`);
-  const follower = await chrome.tab(`${origin}/lan/?role=follower&room=lan`);
+async function runLan(origin: string) {
+  const leader = await phone(`${origin}/lan/?role=leader&room=lan&plan=auto`);
+  const follower = await phone(`${origin}/lan/?role=follower&room=lan`);
 
   const opened = await until("Wi-Fi link opens and the clock fills", () => result(follower), (r) => r.links[0]?.openMs !== null && r.links[0]?.clock?.samples >= 16);
   const link = opened.links[0];
@@ -210,9 +217,9 @@ async function runLan(origin: string, chrome: Awaited<ReturnType<typeof openChro
   return { link, oneScan };
 }
 
-async function runIsolation(origin: string, chrome: Awaited<ReturnType<typeof openChrome>>) {
-  const leader = await chrome.tab(`${origin}/lan/?role=leader&room=iso&simulate=isolation`);
-  const follower = await chrome.tab(`${origin}/lan/?role=follower&room=iso`);
+async function runIsolation(origin: string) {
+  const leader = await phone(`${origin}/lan/?role=leader&room=iso&simulate=isolation`);
+  const follower = await phone(`${origin}/lan/?role=follower&room=iso`);
   const fell = await until("fallback after simulated isolation", () => result(leader), (r) => r.links.length === 2 && r.links[1].openMs !== null, 30_000);
   const [wifi, fallback] = fell.links;
   assert.equal(wifi.route, "wifi");
@@ -226,9 +233,9 @@ async function runIsolation(origin: string, chrome: Awaited<ReturnType<typeof op
   return { noticeMs: wifi.noticeMs, settleMs: fell.sessions[0].settleMs };
 }
 
-async function runCell(origin: string, chrome: Awaited<ReturnType<typeof openChrome>>) {
-  const leader = await chrome.tab(`${origin}/cell/?role=leader&room=cell&secs=3`);
-  const follower = await chrome.tab(`${origin}/cell/?role=follower&room=cell`);
+async function runCell(origin: string) {
+  const leader = await phone(`${origin}/cell/?role=leader&room=cell&secs=3`);
+  const follower = await phone(`${origin}/cell/?role=follower&room=cell`);
   const done = await until("cell plan runs every route", () => result(leader), (r) => r.links.length === 4 && r.links[2].closedMs !== null, 40_000);
   const [direct, udp, tcp, tls] = done.links;
   assert.equal(direct.route, "direct");
@@ -278,16 +285,15 @@ assert.deepEqual(served.turn.urls, [turnUrl]);
 assert.equal((await fetch(`${origin}/cell/turn.mjs`)).status, 404, "server-side files are not served");
 assert.equal((await fetch(`${origin}/lan/relay.mjs`)).status, 404, "server-side files are not served");
 
-const chrome = await openChrome();
 try {
-  const [lan, isolation, cell] = await Promise.all([runLan(origin, chrome), runIsolation(await startRelay(), chrome), runCell(await startRelay(), chrome)]);
+  const [lan, isolation, cell] = await Promise.all([runLan(origin), runIsolation(await startRelay()), runCell(await startRelay())]);
   console.log(`Auto over loopback: ${lan.link.path} in ${lan.link.openMs} ms, spread p95 ${lan.link.clock.spreadP95Ms} ms, .local names sent ${lan.link.localNames.sent}`);
   console.log(`local relay dropped ${turn.stats.droppedNoPermission} packets from peers it had no permission for`);
   console.log(`simulated isolation: noticed at ${isolation.noticeMs} ms, settled over the internet at ${isolation.settleMs} ms`);
   console.log(`cell plan loopback: direct ${cell.direct ? "linked" : "gave up at 8 s"}, relay over TCP spread p95 ${cell.spreadP95Ms} ms, ${cell.mbPerHour} MB/hour, ${turn.stats.relayedBytes} bytes through the local relay`);
   console.log("check:spike-links ok");
 } finally {
-  await chrome.close();
+  await Promise.all(browsers.map((browser) => browser.close()));
   await turn.close();
   for (const relay of relays) {
     relay.closeAllConnections();

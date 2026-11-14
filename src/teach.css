@@ -12,7 +12,8 @@
 
 /* A 32px pill inside a 44px touch target. */
 .teach-btn,
-.teach-name {
+.teach-name,
+.teach-tempo input {
   height: 44px;
   border: 6px solid transparent;
   border-radius: 999px;
@@ -156,8 +157,73 @@
   }
 
   .teach-btn,
-  .teach-name {
+  .teach-name,
+  .teach-tempo input {
     height: 48px;
     font-size: 14px;
   }
+}
+
+.teach-status ~ .teach-btn {
+  padding: 0 8px;
+  border-width: 6px 3px;
+}
+
+.teach-tempo {
+  position: relative;
+  flex: none;
+}
+
+.teach-tempo span {
+  position: absolute;
+  top: 8px;
+  left: 0;
+  right: 0;
+  font-size: 9px;
+  line-height: 1;
+  text-align: center;
+  pointer-events: none;
+}
+
+.teach-tempo input {
+  width: 3em;
+  padding: 9px 0 0;
+  border-width: 6px 3px;
+  font-size: 16px;
+  line-height: 1;
+  text-align: center;
+}
+
+.teach-tempo-rows {
+  display: grid;
+  gap: 8px;
+}
+
+.teach-tempo-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 6.5em;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.teach-tempo-start {
+  padding: 0 12px;
+  font-size: 16px;
+}
+
+.teach-sheet > button,
+.teach-tempo-row button {
+  height: 40px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--bg-2);
+  color: var(--text);
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.teach-sheet input[aria-invalid="true"] {
+  outline: 2px solid var(--danger);
 }

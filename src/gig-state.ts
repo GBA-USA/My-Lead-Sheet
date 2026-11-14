@@ -149,9 +149,13 @@ function retime(scroll: Scroll, from: Grid, to: Grid): Scroll {
   return { ...scroll, rate, startAt: to.startAt, fromSec: scroll.fromSec + (scroll.rate * (to.startAt - scroll.startAt)) / 1000 };
 }
 
+/** The grid sounding at `t`, or, in the silence after a Stop, the count-in waiting to start. */
+const nextSounding = (click: Timeline<Grid | null>, t: BandMs): Grid | null =>
+  valueAt(click, t) ?? click.find((step) => step.at > t && step.value)?.value ?? null;
+
 /** A grid starts at its step's `at`. A pending count-in or tempo before the candidate re-snaps on its own grid; a pending Stop does not, so the rule keeps counting the grid it stops. */
 function snapOn(click: Timeline<Grid | null>, rule: SnapRule, earliest: BandMs): BandMs {
-  let t = snap(rule, earliest, valueAt(click, earliest));
+  let t = snap(rule, earliest, nextSounding(click, earliest));
   for (const step of click) if (step.at > earliest && step.at <= t && step.value) t = snap(rule, step.at, step.value);
   return t;
 }
@@ -192,7 +196,7 @@ function move(state: GigState, op: Move, now: BandMs, lead: number): Change {
     }
     case "tempo": {
       const grid = latest(state.click);
-      if (!grid || !valueAt(state.click, earliest)) return "not-running";
+      if (!grid) return "not-running";
       if (grid.bpm === op.bpm) return "same-target";
       const t = at("tempo");
       const click: Grid = { ...grid, bpm: op.bpm, startAt: t, firstBar: beatAt(grid, t)!.bar };

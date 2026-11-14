@@ -234,12 +234,16 @@ const drills: [string, () => [boolean, string]][] = [
     },
   ],
   [
-    "a tempo tap between a Stop and the count-in after it is refused, and the count-in still starts on its bar line",
+    "tempo 150 tapped between a Stop and the count-in after it: the count-in starts on its bar line at 150 and the scroll on its downbeat",
     () => {
       const restarting = ok(act(ok(act(ok(act(gig(), "terry", 0, countIn)), "terry", 600, { kind: "stop" })), "terry", 640, countIn));
-      const tempo = refused(act(restarting, "terry", 1240, { kind: "tempo", bpm: 150 }));
-      const quiet = at(restarting, 1150).beat === null && at(restarting, 2140).beat === null;
-      return [tempo === "not-running" && quiet && JSON.stringify(at(restarting, 2150).beat) === '{"bar":-1,"beat":0}', `tempo ${tempo}; count-in at 2150 ${JSON.stringify(at(restarting, 2150).beat)}`];
+      const s = ok(act(restarting, "terry", 1240, { kind: "tempo", bpm: 150 }));
+      const quiet = [1390, 2140].every((t) => at(s, t).beat === null && at(s, t).scroll === null);
+      const ms = gaps(onsets(s, 2150, 6150).map((o) => o.t));
+      const down = at(s, 3750);
+      const pass = quiet && JSON.stringify(at(s, 2150).beat) === '{"bar":-1,"beat":0}' && ms.every((d) => d === 400) && at(s, 3740).scroll === null &&
+        JSON.stringify(down.beat) === '{"bar":0,"beat":0}' && down.scroll?.planSec === 0;
+      return [pass, `count-in at 2150 ${JSON.stringify(at(s, 2150).beat)}; beat ms ${[...new Set(ms)].join(",")}; at 3750 ${JSON.stringify(down.beat)} plan s ${down.scroll?.planSec}`];
     },
   ],
   [

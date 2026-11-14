@@ -300,6 +300,21 @@ const drills: [string, () => [boolean, string]][] = [
     },
   ],
   [
+    "Start scroll from 30 s, then tempo 150, both before the downbeat: the scroll starts at 30 s on the downbeat, mid count-in or in the gap after a Stop",
+    () => {
+      const from30 = { kind: "scrollStart", version: "v-band", rate: 1, fromSec: 30 } as const;
+      const counting = ok(act(ok(act(gig(), "terry", 0, { ...countIn, bars: 2 })), "terry", 1000, from30));
+      const restarting = ok(act(ok(act(ok(act(ok(act(gig(), "terry", 0, countIn)), "terry", 600, { kind: "stop" })), "terry", 640, countIn)), "terry", 1240, from30));
+      const starts = [ok(act(counting, "terry", 1100, { kind: "tempo", bpm: 150 })), ok(act(restarting, "terry", 1300, { kind: "tempo", bpm: 150 }))].map((s) => {
+        let t = 0;
+        while (t < 20_000 && !at(s, t).scroll) t += 10;
+        return { t, beat: JSON.stringify(at(s, t).beat), planSec: at(s, t).scroll?.planSec };
+      });
+      const pass = starts.every((p) => p.t === 3750 && p.beat === '{"bar":0,"beat":0}' && p.planSec === 30);
+      return [pass, starts.map((p) => `starts at ${p.t} on ${p.beat}, plan s ${p.planSec}`).join("; ")];
+    },
+  ],
+  [
     "two tempo taps during a 2-bar count-in: the scroll starts on bar 0 beat 0",
     () => {
       const counting = ok(act(gig(), "terry", 0, { ...countIn, bars: 2 }));

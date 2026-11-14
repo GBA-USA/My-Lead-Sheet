@@ -200,7 +200,7 @@ function move(state: GigState, op: Move, now: BandMs, lead: number): Change {
       if (grid.bpm === op.bpm) return "same-target";
       const t = at("tempo");
       const click: Grid = { ...grid, bpm: op.bpm, startAt: t, firstBar: beatAt(grid, t)!.bar };
-      const scroll = valueAt(state.scroll, t);
+      const scroll = latest(state.scroll);
       const retimed = scroll && retime(scroll, grid, click);
       return { at: t, fields: { click: put(state.click, click, t, now), scroll: put(state.scroll, retimed, t, now) } };
     }

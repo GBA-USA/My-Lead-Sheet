@@ -234,6 +234,15 @@ const drills: [string, () => [boolean, string]][] = [
     },
   ],
   [
+    "a tempo tap between a Stop and the count-in after it is refused, and the count-in still starts on its bar line",
+    () => {
+      const restarting = ok(act(ok(act(ok(act(gig(), "terry", 0, countIn)), "terry", 600, { kind: "stop" })), "terry", 640, countIn));
+      const tempo = refused(act(restarting, "terry", 1240, { kind: "tempo", bpm: 150 }));
+      const quiet = at(restarting, 1150).beat === null && at(restarting, 2140).beat === null;
+      return [tempo === "not-running" && quiet && JSON.stringify(at(restarting, 2150).beat) === '{"bar":-1,"beat":0}', `tempo ${tempo}; count-in at 2150 ${JSON.stringify(at(restarting, 2150).beat)}`];
+    },
+  ],
+  [
     "two tempo taps during a 2-bar count-in: the scroll starts on bar 0 beat 0",
     () => {
       const counting = ok(act(gig(), "terry", 0, { ...countIn, bars: 2 }));

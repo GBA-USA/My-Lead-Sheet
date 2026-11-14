@@ -97,7 +97,7 @@ function valueAt<T>(steps: Timeline<T>, t: BandMs): T {
 const latest = <T>(steps: Timeline<T>): T => steps[steps.length - 1].value;
 const still = <T>(value: T, at: BandMs): Timeline<T> => [{ at, value }];
 
-/** Steps before `now` that a later step before `now` already replaced are history no phone shows again. */
+/** Keeps the step shown at `now` and everything after it; older steps are history. */
 function put<T>(steps: Timeline<T>, value: T, at: BandMs, now: BandMs): Timeline<T> {
   const kept = steps.filter((step) => step.at < at);
   const shownNow = kept.reduce((found, step, i) => (step.at <= now ? i : found), 0);
@@ -192,7 +192,7 @@ function move(state: GigState, op: Move, now: BandMs, lead: number): Change {
     }
     case "tempo": {
       const grid = latest(state.click);
-      if (!grid) return "not-running";
+      if (!grid || !valueAt(state.click, earliest)) return "not-running";
       if (grid.bpm === op.bpm) return "same-target";
       const t = at("tempo");
       const click: Grid = { ...grid, bpm: op.bpm, startAt: t, firstBar: beatAt(grid, t)!.bar };

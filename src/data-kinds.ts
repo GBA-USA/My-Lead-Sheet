@@ -1,7 +1,7 @@
 export type DataPlace = "phone" | "server";
 
 export interface DataKind {
-  /** The localStorage key (per-song keys add `.<song id>`), table name, or Durable Object storage key. */
+  /** The localStorage key (per-song keys add `.<song id>`), IndexedDB database, table name, or Durable Object storage key. */
   readonly key: string;
   readonly place: DataPlace;
   readonly what: string;

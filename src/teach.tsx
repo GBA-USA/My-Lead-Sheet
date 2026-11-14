@@ -379,7 +379,12 @@ function DraftInput({
   onDraft: (text: string) => string;
   onCommit: (text: string) => void;
 }) {
-  const [draft, setDraft] = useState<string | null>(null);
+  const [draft, setDraftState] = useState<string | null>(null);
+  const pending = useRef<string | null>(null);
+  const setDraft = (next: string | null) => {
+    pending.current = next;
+    setDraftState(next);
+  };
 
   return (
     <input
@@ -395,7 +400,7 @@ function DraftInput({
       }}
       onChange={(event) => setDraft(onDraft(event.target.value))}
       onBlur={() => {
-        if (draft != null) onCommit(draft);
+        if (pending.current != null) onCommit(pending.current);
         setDraft(null);
       }}
       onKeyDown={(event) => {

@@ -314,7 +314,6 @@ const isLearned = shaped<Learned>({
   vocals: listOf(shaped<Span>({ start: isTime, end: isTime })),
 });
 
-/** Starts at 0, each change later than the one before. */
 const isTempoMap: Check = (value) => {
   if (!listOf(shaped<Tempo>({ at: isTime, bpm: isPositive }))(value)) return false;
   const tempo = value as Tempo[];

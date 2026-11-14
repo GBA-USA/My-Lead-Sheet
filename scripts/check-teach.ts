@@ -367,6 +367,8 @@ await scenario("A saved tempo map plays back", async () => {
   await tap(button("Scroll: Off"), "Scroll: Off");
   await play(29);
   check(metronomeBpm() === 78, `the metronome opens at 78 (${metronomeBpm()})`);
+  const want = 1000 + 2200 * (29 / RUNTIME);
+  check(Math.abs(sheet.scrollTop - want) < 3, `the chart is on the clock with no 2 s opening hold, so a change lands on its taught spot (${sheet.scrollTop.toFixed(1)}px, want ${want.toFixed(1)}px)`);
   await play(2);
   check(metronomeBpm() === 117, `at 0:30 it moves to 117 (${metronomeBpm()})`);
   await play(30);

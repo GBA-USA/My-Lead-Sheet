@@ -68,6 +68,8 @@ export type Motion =
       progressAt: (clock: number) => number;
       startAt: (progress: number, slack: number) => number;
       rate: number;
+      /** False when the clock itself is meaningful, as with a live take or a tempo map, so `runScroll` never re-times it. */
+      holdOpening: boolean;
     }
   | {
       /** Each heading reaches the reading line as its section starts, and the chart's end as the song ends. */
@@ -177,7 +179,7 @@ export function clockAt(tempo: Tempo[], planBpm: number, heard: number): number 
 export function scrollMotion(song: Song, version: ScrollVersion | null, take: Take | null, bpm: number | null, percent: number): Motion {
   if (take) {
     const rate = clockRate(take.bpm, bpm ?? take.bpm, percent);
-    return { kind: "timed", rate, progressAt: (at) => takeProgress(take, at), startAt: () => 0 };
+    return { kind: "timed", rate, progressAt: (at) => takeProgress(take, at), startAt: () => 0, holdOpening: false };
   }
   const plan = version ?? evenPlan(song);
   if (!plan) return { kind: "pace", pxPerSec: scrollPixelsPerSecond(song.tempo, percent) };
@@ -186,7 +188,13 @@ export function scrollMotion(song: Song, version: ScrollVersion | null, take: Ta
     const end = plan.marks[plan.marks.length - 1].at;
     return { kind: "learned", rate, arrivals: [...version.learned.sections.map((section) => section.at), end] };
   }
-  return { kind: "timed", rate, progressAt: (at) => progressAt(plan.marks, at), startAt: (progress, slack) => timeAt(plan.marks, progress, slack) };
+  return {
+    kind: "timed",
+    rate,
+    progressAt: (at) => progressAt(plan.marks, at),
+    startAt: (progress, slack) => timeAt(plan.marks, progress, slack),
+    holdOpening: !plan.tempo,
+  };
 }
 
 /** V1, V2, V3 … skipping a name already taken by a rename. */
@@ -274,7 +282,7 @@ export function runScroll(
   }
   const length = first ? first.startAt(1, 0) : 0;
   const even =
-    initial.kind === "timed" && length > 2 && [0.25, 0.5, 0.75].every((f) => Math.abs(initial.progressAt(length * f) - f) < 1e-6);
+    initial.kind === "timed" && initial.holdOpening && length > 2 && [0.25, 0.5, 0.75].every((f) => Math.abs(initial.progressAt(length * f) - f) < 1e-6);
   const hold = even && clock.current === 0 ? 2 : 0;
   const planTime = (at: number) => (hold ? (Math.max(0, at - hold) * length) / (length - hold) : at);
   let expected = position;

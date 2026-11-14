@@ -308,7 +308,9 @@ const isLearned = shaped<Learned>({
   beatsPerBar: (value) => Number.isInteger(value) && (value as number) > 0,
   downbeat: isPositive,
   beats: listOf(isTime),
-  sections: listOf(shaped<Learned["sections"][number]>({ heading: isString, at: isTime })),
+  sections: listOf(
+    shaped<Learned["sections"][number]>({ heading: isString, at: isTime, heard: optional(listOf((value) => value === null || isString(value))) }),
+  ),
   vocals: listOf(shaped<Span>({ start: isTime, end: isTime })),
 });
 

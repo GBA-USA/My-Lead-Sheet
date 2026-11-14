@@ -98,6 +98,37 @@
   opacity: 0.35;
 }
 
+.learn-chords {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 2px 8px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.learn-chords label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  color: var(--text);
+}
+
+.learn-bars {
+  font-family: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.learn-bars span span {
+  white-space: pre;
+}
+
+.learn-chords label + .learn-bars {
+  color: var(--text);
+}
+
 .learn-vocals {
   display: grid;
   gap: 6px;

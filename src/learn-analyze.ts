@@ -1,4 +1,5 @@
 import { TempoDetector, smoothed, tempoOf } from "./bpm-detect";
+import { Chroma } from "./learn-chords";
 import type { Learned, ScrollVersion, Span } from "./scroll-timing";
 
 const FRAMES_PER_SECOND = 20;
@@ -66,15 +67,19 @@ export interface Analysis {
   boundaries: number[];
   /** Where the voice band stands out. Only suggestions. */
   vocals: Span[];
+  /** Per beat, the strength of each pitch class from C to B. */
+  chroma: number[][];
 }
 
 /**
- * Hears a whole song a chunk at a time. Keeps D's onset envelope and the energy of a few bands
- * every 50 ms; raw samples are never stored.
+ * Hears a whole song a chunk at a time. Keeps D's onset envelope, and the energy of a few bands and the
+ * chroma every 50 ms. Raw samples are not stored: the chroma overwrites its last fraction of a second.
  */
 export class SongListener {
   private readonly detector: TempoDetector;
   private readonly frames: Bands[] = [];
+  private readonly chroma: Chroma;
+  private readonly chromaFrames: number[][] = [];
   private readonly frameSize: number;
   private readonly frameRate: number;
   private readonly low: Biquad;
@@ -92,6 +97,7 @@ export class SongListener {
     this.voiceLow = new Biquad("high", 300, sampleRate);
     this.voiceHigh = new Biquad("low", 3400, sampleRate);
     this.high = new Biquad("high", 5000, sampleRate);
+    this.chroma = new Chroma(sampleRate);
   }
 
   get seconds(): number {
@@ -108,8 +114,10 @@ export class SongListener {
       this.sum.low += low * low;
       this.sum.voice += voice * voice;
       this.sum.high += high * high;
+      this.chroma.push(x);
       if (++this.filled < this.frameSize) continue;
       this.frames.push(this.sum);
+      this.chromaFrames.push(this.chroma.now());
       this.sum = { total: 0, low: 0, voice: 0, high: 0 };
       this.filled = 0;
     }
@@ -123,13 +131,14 @@ export class SongListener {
     const rate = this.detector.hopsPerSecond;
     const beats = trackBeats(envelope, rate, sound);
     if (beats.length < headingCount * 2 * beatsPerBar) return null;
-    const features = beatFeatures(beats, sound.end, this.frames, this.frameRate, envelope, rate);
+    const features = beatFeatures(beats, sound.end, this.frames, this.chromaFrames, this.frameRate, envelope, rate);
     return {
       sound,
       beats,
       tempos: tempoChanges(beats, beatsPerBar),
       boundaries: sectionBoundaries(novelty(features.map((beat) => beat.texture), 2 * beatsPerBar), headingCount, 2 * beatsPerBar),
       vocals: vocalSpans(features.map((beat) => beat.voiceShare), beats, sound.end, beatsPerBar),
+      chroma: features.map((beat) => beat.chroma),
     };
   }
 }
@@ -244,12 +253,14 @@ interface BeatFeatures {
   /** Loudness, brightness, low and voice shares, and onset strength, before scaling. */
   texture: number[];
   voiceShare: number;
+  chroma: number[];
 }
 
 function beatFeatures(
   beats: number[],
   end: number,
   frames: Bands[],
+  chroma: number[][],
   frameRate: number,
   envelope: readonly number[],
   rate: number,
@@ -263,6 +274,7 @@ function beatFeatures(
     const from = Math.floor(beat * frameRate);
     const to = Math.ceil(next * frameRate);
     const part = frames.slice(from, Math.max(from + 1, to));
+    const tones = chroma.slice(from, Math.max(from + 1, to));
     const band = (name: keyof Bands) => part.reduce((sum, frame) => sum + frame[name], 0) / part.length + 1e-12;
     const total = band("total");
     return {
@@ -274,6 +286,7 @@ function beatFeatures(
         Math.log(1e-6 + mean(envelope, Math.floor(beat * rate), Math.floor(next * rate))),
       ],
       voiceShare: band("voice") / total,
+      chroma: Array.from({ length: 12 }, (_, pc) => tones.reduce((sum, frame) => sum + frame[pc], 0)),
     };
   });
 }
@@ -366,6 +379,7 @@ export function shortHeading(heading: string): string {
 interface LearnChoice {
   boundaries: number[];
   vocals: Span[];
+  heard: ((string | null)[] | undefined)[];
 }
 
 /**
@@ -378,6 +392,7 @@ export function learnedVersion(analysis: Analysis, choice: LearnChoice, headings
   const sections = headings.map((heading, i) => ({
     heading,
     at: clock(i === 0 ? analysis.sound.start : analysis.beats[choice.boundaries[i - 1]]),
+    ...(choice.heard[i] ? { heard: choice.heard[i] } : {}),
   }));
   const learned: Learned = {
     beatsPerBar: bar,

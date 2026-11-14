@@ -26,8 +26,8 @@ export interface Learned {
   beatsPerBar: number;
   downbeat: number;
   beats: number[];
-  /** One per chart section, in order. The first starts at the first note. */
-  sections: { heading: string; at: number }[];
+  /** One per chart section, in order. The first starts at the first note. `heard` is the bars the player kept. */
+  sections: { heading: string; at: number; heard?: (string | null)[] }[];
   /** Vocal regions the player kept from the suggestions. */
   vocals: Span[];
 }

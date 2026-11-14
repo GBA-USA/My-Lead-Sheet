@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { RAW_MIC } from "./bpm-finder";
 import { SongListener, beatsPerBar, learnedVersion, shortHeading, type Analysis } from "./learn-analyze";
+import { chartChords, chartForm, heardBars, type HeardBar } from "./learn-chords";
 import type { ScrollVersion, Span } from "./scroll-timing";
 import { formatRuntime, songDataFromForm } from "./song-data-editor";
 import type { Song, SongData } from "./types";
@@ -55,7 +56,7 @@ export function listenToSong(on: { heard: (seconds: number) => void; noMic: () =
 type Step =
   | { kind: "listening"; heard: number }
   | { kind: "note"; text: string }
-  | { kind: "review"; analysis: Analysis; boundaries: number[]; vocals: boolean[]; useForSong: boolean };
+  | { kind: "review"; analysis: Analysis; boundaries: number[]; vocals: boolean[]; keepHeard: boolean[]; useForSong: boolean };
 
 const clockText = (seconds: number) => formatRuntime(Math.max(0, Math.floor(seconds)));
 
@@ -64,9 +65,25 @@ function barText(beat: number, bar: number): string {
   return inBar === 0 ? `bar ${beat / bar + 1}` : `bar ${Math.floor(beat / bar) + 1}, beat ${inBar + 1}`;
 }
 
+/** Each section's bars as heard, from its first beat to the next section's. None when the chart names no chords. */
+function heardSections(song: Song, analysis: Analysis, boundaries: number[], bar: number): HeardBar[][] {
+  const chords = chartChords(song.body);
+  if (chords.length === 0) return [];
+  return song.body.map((_, i) => heardBars(analysis.chroma, i === 0 ? 0 : boundaries[i - 1], boundaries[i] ?? analysis.beats.length, bar, chords));
+}
+
+const anySure = (bars: HeardBar[]) => bars.some((bar) => bar.chord !== null);
+
+/** Four bars to a group, each cell padded to `width` so a chart row and a heard row line up. */
+function barGroups(cells: string[], width: number): string[] {
+  const groups: string[] = [];
+  for (let i = 0; i < cells.length; i += 4) groups.push(cells.slice(i, i + 4).map((cell) => cell.padEnd(width)).join(" ").trimEnd());
+  return groups;
+}
+
 /**
  * The Learn this song sheet: listen to the whole song while it is open, then review the length, tempo,
- * sections and suggested vocals, and save them as a new timing version.
+ * sections, heard chords and suggested vocals, and save them as a new timing version.
  */
 export function LearnSong({
   song,
@@ -106,7 +123,14 @@ export function LearnSong({
     const analysis = stopListening.current()?.analyze(headings.length, bar);
     setStep(
       analysis
-        ? { kind: "review", analysis, boundaries: analysis.boundaries, vocals: analysis.vocals.map(() => true), useForSong: false }
+        ? {
+            kind: "review",
+            analysis,
+            boundaries: analysis.boundaries,
+            vocals: analysis.vocals.map(() => true),
+            keepHeard: headings.map(() => false),
+            useForSong: false,
+          }
         : { kind: "note", text: NOT_HEARD },
     );
   };
@@ -143,12 +167,15 @@ export function LearnSong({
               const { analysis, boundaries, useForSong } = step;
               const tempo = Math.round(analysis.tempos[0].bpm);
               const vocals = analysis.vocals.filter((_, i) => step.vocals[i]);
+              const heard = heardSections(song, analysis, boundaries, bar).map((bars, i) =>
+                step.keepHeard[i] && anySure(bars) ? bars.map((each) => each.chord) : undefined,
+              );
               const runtime = formatRuntime(Math.round(analysis.sound.end - analysis.sound.start));
               const data = useForSong
                 ? songDataFromForm(original, { runtime, bpm: String(tempo), timeSignature: song.timeSignature })
                 : null;
               const bpm = useForSong ? tempo : (metronomeBpm ?? tempo);
-              onSave(learnedVersion(analysis, { boundaries, vocals }, headings, bar, bpm), data);
+              onSave(learnedVersion(analysis, { boundaries, vocals, heard }, headings, bar, bpm), data);
             }}
           />
         ) : null}
@@ -218,6 +245,7 @@ function Review({
     const next = boundaries.map((beat, i) => (i === index ? Math.min(latest, Math.max(earliest, beat + by)) : beat));
     onChange({ ...step, boundaries: next });
   };
+  const heard = heardSections(song, analysis, boundaries, bar);
 
   return (
     <>
@@ -244,6 +272,15 @@ function Review({
                     +
                   </button>
                 </span>
+              ) : null}
+              {heard[i] ? (
+                <HeardChords
+                  name={name}
+                  form={chartForm(song.body[i])}
+                  heard={heard[i]}
+                  kept={step.keepHeard[i]}
+                  onKeep={() => onChange({ ...step, keepHeard: step.keepHeard.map((kept, k) => (k === i ? !kept : kept)) })}
+                />
               ) : null}
             </li>
           );
@@ -279,5 +316,37 @@ function Review({
         </button>
       </div>
     </>
+  );
+}
+
+/** The chart's bars over the bars as heard, `?` where not sure, with a box to keep the heard ones. */
+function HeardChords({ name, form, heard, kept, onKeep }: { name: string; form: string[]; heard: HeardBar[]; kept: boolean; onKeep: () => void }) {
+  const cells = heard.map((each) => each.chord ?? "?");
+  const sure = anySure(heard);
+  const width = Math.max(...form.map((cell) => cell.length), ...cells.map((cell) => cell.length));
+  const row = (groups: string[]) => (
+    <span className="learn-bars">
+      {groups.map((group, k) => (
+        <span key={k}>
+          {k > 0 ? " | " : ""}
+          <span>{group}</span>
+        </span>
+      ))}
+    </span>
+  );
+  return (
+    <div className="learn-chords">
+      {form.length > 0 ? (
+        <>
+          <span>Chart</span>
+          {row(barGroups(form, width))}
+        </>
+      ) : null}
+      <label>
+        <input type="checkbox" aria-label={`Keep ${name} heard chords`} checked={kept && sure} disabled={!sure} onChange={onKeep} />
+        Heard
+      </label>
+      {row(barGroups(cells, width))}
+    </div>
   );
 }

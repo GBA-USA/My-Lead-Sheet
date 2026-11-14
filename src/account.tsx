@@ -191,11 +191,11 @@ export function AccountSheet({ account, onAccount, onClose }: { account: Account
         body: (
           <>
             <p className="account-note">If you lose this phone, each code signs you in once. Keep them somewhere safe. We can't show them again.</p>
-            <ol className="account-codes">
+            <ul className="account-codes">
               {codes.map((item) => (
                 <li key={item}>{item}</li>
               ))}
-            </ol>
+            </ul>
             <div className="account-row">
               <button type="button" className="account-secondary" onClick={() => navigator.clipboard?.writeText(codes.join("\n"))}>
                 Copy

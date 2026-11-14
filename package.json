@@ -30,6 +30,8 @@
     "check:privacy": "node --experimental-strip-types scripts/check-privacy.ts",
     "check:api": "tsc -p worker && node --experimental-strip-types scripts/check-api.ts",
     "check:portable": "node --experimental-strip-types scripts/check-portable.ts",
+    "check:auth": "tsc -p worker && node --experimental-strip-types scripts/check-auth.ts",
+    "check:account": "node --experimental-strip-types scripts/check-account.ts",
     "check:share-rule": "node --experimental-strip-types scripts/check-share-rule.ts",
     "check:friends": "node --experimental-strip-types scripts/check-friends.ts",
     "check:bands": "node --experimental-strip-types scripts/check-bands.ts",
@@ -43,7 +45,9 @@
     "check:sync-rating": "node --experimental-strip-types scripts/check-sync-rating.ts",
     "check:chat": "node --experimental-strip-types scripts/check-chat.ts",
     "check:band-status": "node --experimental-strip-types scripts/check-band-status.ts",
-    "check:look-ahead": "node --experimental-strip-types scripts/check-look-ahead.ts"
+    "check:look-ahead": "node --experimental-strip-types scripts/check-look-ahead.ts",
+    "check:spike-server": "node spike/server/check.mjs",
+    "check:spike-links": "node --experimental-strip-types scripts/check-spike-links.ts"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.5",

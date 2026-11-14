@@ -143,7 +143,7 @@ check(chain.officialRuntimeSec === 197 && chain.tempo === 78, "Chain Breaker has
   run.motion.current = app.scrollMotion(chain, null, null, 78, 50);
   play(1);
   check(near(run.sheet.scrollTop - mid, speed * 0.5), "Scroll 50% halves the pace");
-  check(chain.tempo === 78 && app.loadSongData(10).tempo === undefined, "the percent trim leaves the song's BPM alone");
+  check(chain.tempo === 78 && app.loadSongData("local/10").tempo === undefined, "the percent trim leaves the song's BPM alone");
 }
 
 {
@@ -251,18 +251,18 @@ let saved: ReturnType<App["finishTake"]>;
   const v1 = { name: "V1", ...saved };
   check(app.nextVersionName([v1]) === "V2", "the next is V2");
   check(app.nextVersionName([v1, { ...v1, name: "V3" }]) === "V4", "a rename to V3 is skipped");
-  app.saveScrollVersions(10, { versions: [v1, { ...v1, name: "V2" }], selected: 1 });
-  const loaded = app.loadScrollVersions(10);
+  app.saveScrollVersions("local/10", { versions: [v1, { ...v1, name: "V2" }], selected: 1 });
+  const loaded = app.loadScrollVersions("local/10");
   check(loaded.versions.length === 2 && loaded.selected === 1, "versions and the chosen one survive a reload");
-  app.saveScrollVersions(10, { versions: loaded.versions.map((v, i) => (i === 0 ? { ...v, name: "Slow intro" } : v)), selected: 0 });
-  check(app.loadScrollVersions(10).versions[0].name === "Slow intro", "a version can be renamed");
-  app.saveScrollVersions(10, { ...app.loadScrollVersions(10), selected: null });
-  const reset = app.loadScrollVersions(10);
+  app.saveScrollVersions("local/10", { versions: loaded.versions.map((v, i) => (i === 0 ? { ...v, name: "Slow intro" } : v)), selected: 0 });
+  check(app.loadScrollVersions("local/10").versions[0].name === "Slow intro", "a version can be renamed");
+  app.saveScrollVersions("local/10", { ...app.loadScrollVersions("local/10"), selected: null });
+  const reset = app.loadScrollVersions("local/10");
   check(reset.selected === null && reset.versions.length === 2, "reset goes back to the even pace and keeps the versions");
   check(app.scrollMotion(chain, null, null, 78, 100).startAt(0.5) === 197 / 2, "after reset the song plays the even pace");
-  check(app.loadScrollVersions(11).versions.length === 0, "versions are per song");
+  check(app.loadScrollVersions("local/11").versions.length === 0, "versions are per song");
   store.set("leadSheetsScrollVersions.10", JSON.stringify({ versions: [{ name: "bad", bpm: 78, marks: [{ at: 0, progress: 0 }] }, v1], selected: 7 }));
-  const repaired = app.loadScrollVersions(10);
+  const repaired = app.loadScrollVersions("local/10");
   check(repaired.versions.length === 1 && repaired.selected === null, "a broken saved version is dropped instead of breaking the song");
 }
 
@@ -275,23 +275,23 @@ let saved: ReturnType<App["finishTake"]>;
   check(app.songDataFromForm(half, { runtime: "3:5", bpm: "", timeSignature: "" }) === null, "an unreadable length can't be saved");
   check(app.songDataFromForm(half, { runtime: "", bpm: "999", timeSignature: "" }) === null, "a BPM outside the metronome range can't be saved");
 
-  app.saveSongData(13, data!);
-  app.saveSongData(10, { officialRuntimeSec: 200, timeSignature: "6/8" });
+  app.saveSongData("local/13", data!);
+  app.saveSongData("local/10", { officialRuntimeSec: 200, timeSignature: "6/8" });
   const updatedSeed = JSON.parse(JSON.stringify(seed)) as LibraryFile;
   const seedChain = updatedSeed.songs.find((item) => item.id === 10)!;
   seedChain.officialRuntimeSec = 190;
   seedChain.feel = "Updated feel";
   const reloaded = await loadApp(updatedSeed);
   const library = reloaded.loadLibrary();
-  const edited = (id: number) => reloaded.withSongData(library.songs.find((item) => item.id === id)!, reloaded.loadSongData(id));
+  const edited = (id: number) => reloaded.withSongData(library.songs.find((item) => item.id === id)!, reloaded.loadSongData(`local/${id}`));
   check(edited(13).tempo === 96, "an entered BPM survives a reload");
   check(edited(10).officialRuntimeSec === 200 && edited(10).timeSignature === "6/8", "entered values beat a seed update");
   check(edited(10).feel === "Updated feel" && edited(10).tempo === 78, "fields not entered still follow the seed");
   check(reloaded.scrollMotion(edited(13), null, null, null, 100).kind === "timed", "No Half Steppin' scrolls timed once its BPM is entered");
   check(reloaded.evenPlan(edited(13))!.bpm === 96, "the entered BPM is the scroll's base BPM");
-  reloaded.saveSongData(10, {});
+  reloaded.saveSongData("local/10", {});
   check(store.get("leadSheetsSongData.10") === undefined, "Use original removes the entry");
-  check(reloaded.withSongData(library.songs.find((item) => item.id === 10)!, reloaded.loadSongData(10)).officialRuntimeSec === 190, "Use original goes back to the seed value");
+  check(reloaded.withSongData(library.songs.find((item) => item.id === 10)!, reloaded.loadSongData("local/10")).officialRuntimeSec === 190, "Use original goes back to the seed value");
 }
 
 {

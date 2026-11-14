@@ -16,23 +16,24 @@ import {
 } from "./scroll-timing";
 import { formatRuntime, parseBpm, parseRuntime } from "./song-data-editor";
 import { loadScrollVersions, saveScrollVersions, type ScrollVersions } from "./storage";
+import type { SongRef } from "./types";
 import "./teach.css";
 
 const NONE: ScrollVersions = { versions: [], selected: null };
 
 /** The current song's taught versions, saved on every change. */
-export function useScrollVersions(songId: number | null) {
+export function useScrollVersions(songRef: SongRef | null) {
   const [state, setState] = useState<ScrollVersions>(NONE);
-  const [boundId, setBoundId] = useState<number | null>(null);
+  const [boundRef, setBoundRef] = useState<SongRef | null>(null);
 
-  if (songId !== boundId) {
-    setBoundId(songId);
-    setState(songId == null ? NONE : loadScrollVersions(songId));
+  if (songRef !== boundRef) {
+    setBoundRef(songRef);
+    setState(songRef == null ? NONE : loadScrollVersions(songRef));
   }
 
   const update = (next: ScrollVersions) => {
     setState(next);
-    if (songId != null) saveScrollVersions(songId, next);
+    if (songRef != null) saveScrollVersions(songRef, next);
   };
   const edit = (index: number, change: (version: ScrollVersion) => ScrollVersion) =>
     update({ ...state, versions: state.versions.map((version, i) => (i === index ? change(version) : version)) });

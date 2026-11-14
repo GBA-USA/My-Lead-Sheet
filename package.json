@@ -25,7 +25,8 @@
     "check:bar": "node --experimental-strip-types scripts/check-bar.ts",
     "check:heard": "node --experimental-strip-types scripts/check-heard.ts",
     "check:api": "tsc -p worker && node --experimental-strip-types scripts/check-api.ts",
-    "check:portable": "node --experimental-strip-types scripts/check-portable.ts"
+    "check:portable": "node --experimental-strip-types scripts/check-portable.ts",
+    "check:auth": "tsc -p worker && node --experimental-strip-types scripts/check-auth.ts"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.5",

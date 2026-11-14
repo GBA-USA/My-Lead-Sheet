@@ -149,14 +149,20 @@ function retime(scroll: Scroll, from: Grid, to: Grid): Scroll {
   return { ...scroll, rate, startAt: to.startAt, fromSec: scroll.fromSec + (scroll.rate * (to.startAt - scroll.startAt)) / 1000 };
 }
 
-/** The grid sounding at `t`, or, in the silence after a Stop, the count-in waiting to start. */
-const nextSounding = (click: Timeline<Grid | null>, t: BandMs): Grid | null =>
-  valueAt(click, t) ?? click.find((step) => step.at > t && step.value)?.value ?? null;
+/** The band's latest grid when it starts after `t`: a count-in waiting in a Stop's silence, or behind the grid running at `t` once the lead has shrunk. */
+function waitingAfter(click: Timeline<Grid | null>, t: BandMs): BandMs | null {
+  const last = click[click.length - 1];
+  return last.value && last.at > t ? last.at : null;
+}
+
+/** Start scroll waits for the downbeat after the count-in, and tempo changes the grid the band ends on, so both count from a grid still waiting to start. */
+const FOLLOWS_WAITING: Record<SnapRule, boolean> = { song: false, section: false, countIn: false, stop: false, scroll: true, tempo: true };
 
 /** A grid starts at its step's `at`. A pending count-in or tempo before the candidate re-snaps on its own grid; a pending Stop does not, so the rule keeps counting the grid it stops. */
 function snapOn(click: Timeline<Grid | null>, rule: SnapRule, earliest: BandMs): BandMs {
-  let t = snap(rule, earliest, nextSounding(click, earliest));
-  for (const step of click) if (step.at > earliest && step.at <= t && step.value) t = snap(rule, step.at, step.value);
+  const from = (FOLLOWS_WAITING[rule] ? waitingAfter(click, earliest) : null) ?? earliest;
+  let t = snap(rule, from, valueAt(click, from));
+  for (const step of click) if (step.at > from && step.at <= t && step.value) t = snap(rule, step.at, step.value);
   return t;
 }
 
@@ -205,7 +211,7 @@ function move(state: GigState, op: Move, now: BandMs, lead: number): Change {
       return { at: t, fields: { click: put(state.click, click, t, now), scroll: put(state.scroll, retimed, t, now) } };
     }
     case "stop": {
-      if (!nextSounding(state.click, earliest) && !runningScroll(state, earliest)) return "not-running";
+      if (!valueAt(state.click, earliest) && !waitingAfter(state.click, earliest) && !runningScroll(state, earliest)) return "not-running";
       const t = at("stop");
       return { at: t, fields: { click: put(state.click, null, t, now), scroll: put(state.scroll, null, t, now) } };
     }

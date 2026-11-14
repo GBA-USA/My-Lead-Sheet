@@ -25,9 +25,9 @@ const LEAD = 150;
 type Body = Op extends infer O ? (O extends Op ? Omit<O, "opId" | "epoch"> : never) : never;
 
 let opCount = 0;
-function act(state: GigState, by: string, now: number, body: Body, epoch = state.epoch): Outcome {
+function act(state: GigState, by: string, now: number, body: Body, epoch = state.epoch, lead = LEAD): Outcome {
   opCount += 1;
-  return G.reduce(state, { ...body, opId: `op${opCount}`, epoch } as Op, { by, now: band(now), lead: LEAD });
+  return G.reduce(state, { ...body, opId: `op${opCount}`, epoch } as Op, { by, now: band(now), lead });
 }
 function ok(outcome: Outcome): GigState {
   if (!outcome.ok) throw new Error(`refused: ${outcome.refused}`);
@@ -53,6 +53,8 @@ function gig(overrides: Partial<Parameters<Gig["startGig"]>[0]> = {}) {
 const countIn = { kind: "countIn", bpm: 120, beatsPerBar: 4, bars: 1, version: "v-band", rate: 1 } as const;
 /** Count in at 0, Stop at 600, count in at 640: silent from 1150, the count-in from 2150, its downbeat at 4150. */
 const silentBeforeCountIn = () => ok(act(ok(act(ok(act(gig(), "terry", 0, countIn)), "terry", 600, { kind: "stop" })), "terry", 640, countIn));
+/** Count in at 0, then a recount at 5000 on a 2 s lead: the song plays on, the recount waits for 8150, its downbeat at 10150. The next tap has the 150 ms lead. */
+const recountBehindSong = () => ok(act(ok(act(gig(), "terry", 0, countIn)), "terry", 5000, countIn, undefined, 2000));
 
 function onsets(state: GigState, from: number, to: number) {
   const out: { t: number; bar: number; beat: number; planSec: number | null }[] = [];
@@ -272,6 +274,28 @@ const drills: [string, () => [boolean, string]][] = [
       const down = at(s, 3790);
       const pass = times.join(",") === "1390,1990,2590,3190,3790" && at(s, 3780).scroll === null && JSON.stringify(down.beat) === '{"bar":0,"beat":0}' && down.scroll?.planSec === 0;
       return [pass, `beats at ${times.join(",")}; at 3790 ${JSON.stringify(down.beat)} plan s ${down.scroll?.planSec}`];
+    },
+  ],
+  [
+    "Start scroll while a recount waits behind the song (the lead shrank): the scroll waits for the recount's downbeat",
+    () => {
+      const s = ok(act(recountBehindSong(), "terry", 5100, { kind: "scrollStart", version: "v-band", rate: 1, fromSec: 0 }));
+      const early = [8150, 9150, 10_140].filter((t) => at(s, t).scroll !== null);
+      const down = at(s, 10_150);
+      const pass = at(s, 6150).scroll?.planSec === 4 && early.length === 0 && down.scroll?.planSec === 0 && JSON.stringify(down.beat) === '{"bar":0,"beat":0}';
+      return [pass, `plan s at 6150 ${at(s, 6150).scroll?.planSec}; scroll moving at ${early.join(",") || "none"} in the recount; at 10150 plan s ${down.scroll?.planSec} on ${JSON.stringify(down.beat)}`];
+    },
+  ],
+  [
+    "tempo 150 while a recount waits behind the song (the lead shrank): the song keeps 120 and the recount starts on its bar line at 150",
+    () => {
+      const s = ok(act(recountBehindSong(), "terry", 5100, { kind: "tempo", bpm: 150 }));
+      const song = gaps(onsets(s, 2150, 8140).map((o) => o.t));
+      const recount = gaps(onsets(s, 8150, 12_150).map((o) => o.t));
+      const down = at(s, 9750);
+      const pass = song.every((d) => d === 500) && JSON.stringify(at(s, 8150).beat) === '{"bar":-1,"beat":0}' && recount.every((d) => d === 400) &&
+        JSON.stringify(down.beat) === '{"bar":0,"beat":0}' && down.scroll?.planSec === 0;
+      return [pass, `song beat ms ${[...new Set(song)].join(",")}; recount beat ms ${[...new Set(recount)].join(",")}; at 9750 ${JSON.stringify(down.beat)} plan s ${down.scroll?.planSec}`];
     },
   ],
   [

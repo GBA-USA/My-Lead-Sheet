@@ -201,18 +201,15 @@ export function beatAt(grid: Grid, t: BandMs): { bar: number; beat: number } | n
 
 export type SnapRule = "song" | "section" | "countIn" | "tempo" | "scroll" | "stop";
 
-/** `grid` sounds at `earliest` or is a count-in still waiting to start; until it starts, the click is stopped (PLAN 7.8). */
 export function snap(rule: SnapRule, earliest: BandMs, grid: Grid | null): BandMs {
   if (!grid) return earliest;
-  const stopped = earliest < grid.startAt;
   switch (rule) {
     case "song":
     case "countIn":
-      return stopped ? earliest : nextBarLine(grid, earliest);
-    case "section":
-      return stopped ? earliest : ((nextBarLine(grid, (earliest + beatMs(grid)) as BandMs) - beatMs(grid)) as BandMs);
     case "tempo":
       return nextBarLine(grid, earliest);
+    case "section":
+      return (nextBarLine(grid, (earliest + beatMs(grid)) as BandMs) - beatMs(grid)) as BandMs;
     case "scroll":
       return Math.max(barTime(grid, 0), nextBarLine(grid, earliest)) as BandMs;
     case "stop":

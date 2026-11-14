@@ -12,7 +12,8 @@
 
 /* A 32px pill inside a 44px touch target. */
 .teach-btn,
-.teach-name {
+.teach-name,
+.teach-tempo input {
   height: 44px;
   border: 6px solid transparent;
   border-radius: 999px;
@@ -156,28 +157,40 @@
   }
 
   .teach-btn,
-  .teach-name {
+  .teach-name,
+  .teach-tempo input {
     height: 48px;
     font-size: 14px;
   }
 }
 
+.teach-status ~ .teach-btn {
+  padding: 0 8px;
+  border-width: 6px 3px;
+}
+
 .teach-tempo {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 13px;
+  position: relative;
+  flex: none;
+}
+
+.teach-tempo span {
+  position: absolute;
+  top: 8px;
+  left: 0;
+  right: 0;
+  font-size: 9px;
+  line-height: 1;
+  text-align: center;
+  pointer-events: none;
 }
 
 .teach-tempo input {
-  width: 4.5em;
-  height: 44px;
-  border: 6px solid transparent;
-  border-radius: 999px;
-  background: var(--bg-2) padding-box;
-  color: var(--text);
-  font-weight: 700;
+  width: 3em;
+  padding: 9px 0 0;
+  border-width: 6px 3px;
   font-size: 16px;
+  line-height: 1;
   text-align: center;
 }
 

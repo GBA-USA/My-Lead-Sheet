@@ -27,14 +27,15 @@ async function forward(request: IncomingMessage, response: ServerResponse, apiBa
 
 /**
  * Builds the app, serves it on a free port, and opens one tab of headless Chrome on DevTools.
- * With `apiBase`, requests under /api/ go on to the API it returns, so the page talks to a real Worker.
+ * With `apiBase`, requests under /api/ and code links under /c/ go on to the API it returns, so the page talks to a real Worker.
+ * `flags` go on Chrome's command line, for example a fake camera.
  */
-export async function openSite(root: string, name: string, apiBase?: () => string): Promise<Site> {
+export async function openSite(root: string, name: string, apiBase?: () => string, flags: string[] = []): Promise<Site> {
   const out = mkdtempSync(join(tmpdir(), `${name}-`));
   await build({ root, logLevel: "silent", build: { outDir: out, emptyOutDir: true } });
   const server = createServer((request, response) => {
     const path = new URL(request.url ?? "/", "http://localhost").pathname;
-    if (apiBase && path.startsWith("/api/")) {
+    if (apiBase && (path.startsWith("/api/") || path.startsWith("/c/"))) {
       forward(request, response, apiBase()).catch(() => {
         response.writeHead(502);
         response.end();
@@ -56,7 +57,7 @@ export async function openSite(root: string, name: string, apiBase?: () => strin
   const origin = `http://127.0.0.1:${typeof address === "object" && address ? address.port : 0}`;
 
   const profile = mkdtempSync(join(tmpdir(), `${name}-chrome-`));
-  const chrome = spawn(CHROME, ["--headless=new", "--remote-debugging-port=0", `--user-data-dir=${profile}`, "--no-first-run", "--no-default-browser-check", "--hide-scrollbars", "about:blank"], {
+  const chrome = spawn(CHROME, ["--headless=new", "--remote-debugging-port=0", `--user-data-dir=${profile}`, "--no-first-run", "--no-default-browser-check", "--hide-scrollbars", ...flags, "about:blank"], {
     stdio: ["ignore", "ignore", "pipe"],
   });
   const endpoint = await new Promise<string>((resolve, reject) => {

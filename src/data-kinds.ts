@@ -22,6 +22,7 @@ export const DATA_KINDS: readonly DataKind[] = [
     place: "phone",
     what: "The scroll timings you taught or learned for each song: tap times, beat times, section times and chord names heard. No sound is kept.",
   },
+  { key: "leadSheetsSignedIn", place: "phone", what: "That this phone signed in before, so the app checks your account when it opens. Signing out removes it." },
   { key: "users", place: "server", what: "Your account: the name bandmates see, your handle (the name others find you by), when you joined, and a number that goes up when you sign out everywhere." },
   {
     key: "passkeys",
@@ -46,6 +47,16 @@ export const DATA_KINDS: readonly DataKind[] = [
     key: "password_misses",
     place: "server",
     what: "Each wrong password try, kept as one-way codes of the username typed and of the network address it came from, with the time, so waits can grow. A try stops counting after a day and is cleared out at the next wrong try.",
+  },
+  {
+    key: "codes",
+    place: "server",
+    what: "Each code or share link you make: its kind, who it adds or what it opens, when it ends, whether you stopped it, and for a setlist the songs you ticked. Ended codes are cleared out when the next code is made.",
+  },
+  {
+    key: "friendships",
+    place: "server",
+    what: "For each person you asked, who asked you, or you blocked: whether it is a request, a friendship or a block, who asked or blocked, and when it last changed.",
   },
   { key: "session_floors", place: "server", what: "In each band or chat room, the oldest sign-in it still lets in for each person, after they signed out everywhere." },
 ];

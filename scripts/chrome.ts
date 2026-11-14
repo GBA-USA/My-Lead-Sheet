@@ -19,8 +19,9 @@ async function forward(request: IncomingMessage, response: ServerResponse, apiBa
   const chunks: Buffer[] = [];
   for await (const chunk of request) chunks.push(chunk as Buffer);
   const headers = Object.fromEntries(Object.entries(request.headers).filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[0] !== "host"));
-  const reply = await fetch(new URL(request.url ?? "/", apiBase), { method: request.method, headers, body: chunks.length ? Buffer.concat(chunks) : undefined });
-  response.writeHead(reply.status, { "content-type": reply.headers.get("content-type") ?? "application/json", "set-cookie": reply.headers.getSetCookie() });
+  const reply = await fetch(new URL(request.url ?? "/", apiBase), { method: request.method, headers, body: chunks.length ? Buffer.concat(chunks) : undefined, redirect: "manual" });
+  const location = reply.headers.get("location");
+  response.writeHead(reply.status, { "content-type": reply.headers.get("content-type") ?? "application/json", "set-cookie": reply.headers.getSetCookie(), ...(location ? { location } : {}) });
   response.end(Buffer.from(await reply.arrayBuffer()));
 }
 

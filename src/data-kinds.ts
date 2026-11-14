@@ -32,5 +32,20 @@ export const DATA_KINDS: readonly DataKind[] = [
   { key: "challenges", place: "server", what: "A random value for a sign-in in progress, with the name you typed, deleted when you finish or after 5 minutes." },
   { key: "open_rooms", place: "server", what: "Which bands and chats you have opened since you last signed out everywhere, so signing out everywhere can close them." },
   { key: "room_closes", place: "server", what: "Rooms still to be told you signed out everywhere, deleted once each one is told." },
+  {
+    key: "google_logins",
+    place: "server",
+    what: "If you connect Google: the account number Google uses for you, the email address it gave, and when it was connected and last used.",
+  },
+  {
+    key: "passwords",
+    place: "server",
+    what: "If you make a password: a random salt and a one-way code made from what your phone worked out from your password. Your password itself never leaves your phone.",
+  },
+  {
+    key: "password_misses",
+    place: "server",
+    what: "Each wrong password try, kept as one-way codes of the username typed and of the network address it came from, with the time, so waits can grow. A try stops counting after a day and is cleared out at the next wrong try.",
+  },
   { key: "session_floors", place: "server", what: "In each band or chat room, the oldest sign-in it still lets in for each person, after they signed out everywhere." },
 ];

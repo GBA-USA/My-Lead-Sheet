@@ -31,7 +31,8 @@ A message the room can't read gets `{"kind":"error","error":"bad-message"}`. One
 |---|---|
 | `APP_ORIGIN` | The site's origin |
 | `RP_ID`, `RP_NAME` | Passkey relying-party id (the site's domain) and name |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_REDIRECT_URI` | Google sign-in client and its callback address |
+| `GOOGLE_ISSUER` | Where Google sign-in is found by OIDC discovery, `https://accounts.google.com` in both envs. Checks and local dev point it at the mock issuer. |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_REDIRECT_URI` | Google sign-in client and its callback address, `<APP_ORIGIN>/api/auth/google/callback`. While `GOOGLE_CLIENT_ID` is empty the app hides Continue with Google. |
 | `PRIVACY_CONTACT` | Contact address on the privacy page |
 | `CF_ACCOUNT_ID` | Account whose relay usage the spend guard reads |
 | `TURN_KEY_ID` | Cloudflare Realtime TURN key id |
@@ -40,6 +41,27 @@ A message the room can't read gets `{"kind":"error","error":"bad-message"}`. One
 Secrets go in with `wrangler secret put NAME --env production`, never in a file: `SESSION_SECRET`, `PASSWORD_PEPPER`, `CODE_SIGNING_KEY`, `GOOGLE_CLIENT_SECRET`, `TURN_API_TOKEN`, `CF_ANALYTICS_TOKEN`.
 
 `npm run check:portable` fails on a hard-coded account id, `workers.dev` or `pages.dev` host, email, literal origin, relying-party id, `/My-Lead-Sheet/` path, or Terry or GBA string in `src`, `worker`, `functions`, `public`, the workflows or the root config files. Markdown files are skipped. Real values are allowed only in the `env.*.vars` slots of `wrangler.jsonc`, and a Terry or GBA string is refused even there.
+
+## Sign-in routes
+
+The Directory answers every `/api/auth/*` and `/api/me*` route. Besides the passkey routes (C8):
+
+| Route | Answer |
+|---|---|
+| `GET /api/auth/config` | `{"google":bool}`, whether this server has a Google client |
+| `POST /api/auth/google/start` `{intent:"sign-in"\|"link", name?}` | `{url}` to send the phone to Google, and a 10-minute `mls_google` cookie that ties the flow to this browser |
+| `GET /api/auth/google/callback` | Trades the code (with the PKCE verifier) for an ID token, checks signature, issuer, audience, expiry and nonce, then redirects to `<APP_ORIGIN>/?google=new\|in\|linked` or `?google=<refusal>` |
+| `POST /api/auth/password/salt` `{handle}` | `{salt}`. An @name with no password gets a made-up salt of the same shape. |
+| `POST /api/auth/password/create` `{name, handle, salt, key}` | A new account with that @name, and its 8 backup codes |
+| `POST /api/auth/password/sign-in` `{handle, key}` | Signs in. A wrong try is `401 wrong-password`, and a wait is `429 wait` with `waitMs`. |
+| `POST /api/me/password` `{salt, key}` | Sets or changes the password and signs out every other phone |
+| `POST /api/me/remove-google`, `POST /api/me/remove-password` | Removes that way, refused while it is the last one |
+
+`key` is the phone's PBKDF2-SHA256 result (600,000 rounds, 32 bytes). The Directory stores only `HMAC-SHA256(PASSWORD_PEPPER, key)`. After 5 wrong tries on one @name the next try waits 1, then 5, 15 and at most 60 minutes, and a right password resets it. 30 wrong tries from one address in 10 minutes make that address wait 15 minutes. `PASSWORD_MINUTE_MS` shortens a minute for checks only.
+
+### Google without Brian's client
+
+`scripts/mock-google.ts` is a local stand-in for Google with its own signing key. It never talks to Google. `npm run check:google` starts it for each run. For local dev, run `node --experimental-strip-types scripts/mock-google.ts`, then start the Worker with the `--var` flags it prints.
 
 ## Run it locally
 

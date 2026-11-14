@@ -1,3 +1,5 @@
+import { authorizeUrl, googleClient, identityFromCode, type GoogleClient } from "./auth-google";
+import { counterKey, KEY_BYTES, keyMac, madeUpSalt, passwordSecrets, SALT_BYTES, sameText, type PasswordSecrets, type WaitRule } from "./auth-password";
 import { clientChallenge, creationOptions, relyingParty, requestOptions, verifyAssertion, verifyRegistration, type Ceremony } from "./auth-passkey";
 import { fromBase64Url, randomBytes, sha256, toBase64Url, utf8 } from "./bytes";
 import type { Env } from "./index";
@@ -45,18 +47,43 @@ const SCHEMA = [
     version INTEGER NOT NULL,
     PRIMARY KEY (user_id, room_id)
   )`,
+  `CREATE TABLE IF NOT EXISTS google_logins (
+    sub TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users (user_id),
+    email TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    last_used_at INTEGER
+  )`,
+  `CREATE INDEX IF NOT EXISTS google_logins_by_user ON google_logins (user_id)`,
+  `CREATE TABLE IF NOT EXISTS passwords (
+    user_id TEXT PRIMARY KEY REFERENCES users (user_id),
+    salt TEXT NOT NULL,
+    key_mac TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS password_misses (
+    counter TEXT NOT NULL,
+    at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS password_misses_by_counter ON password_misses (counter, at)`,
+  `CREATE INDEX IF NOT EXISTS password_misses_by_time ON password_misses (at)`,
 ];
 
 type User = { user_id: string; handle: string; display_name: string; session_version: number };
 type PasskeyRow = { credential_id: string; user_id: string; public_key: ArrayBuffer; sign_count: number; created_at: number; last_used_at: number | null };
 type ChallengeRow = { purpose: Purpose; user_id: string; display_name: string; expires_at: number };
-type Purpose = "create" | "add" | "sign-in";
+type Purpose = "create" | "add" | "sign-in" | "google" | "google-link";
+type WayKind = "passkey" | "google" | "password";
+type Way = { kind: WayKind; id: string; detail?: string; createdAt: number; lastUsedAt: number | null };
 
 const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 const BACKUP_CODE_COUNT = 8;
 const BACKUP_CODE_LENGTH = 12;
 const MAX_BODY_BYTES = 16 * 1024;
 const ROOM_CLOSE_RETRY_MS = 30 * 1000;
+const GOOGLE_COOKIE = "mls_google";
+const GOOGLE_COOKIE_ATTRIBUTES = "Path=/api/auth/google; HttpOnly; Secure; SameSite=Lax";
+const PASSWORD_WAY_ID = "password";
 
 const crockford = (bytes: Uint8Array) => Array.from(bytes, (byte) => CROCKFORD[byte & 31]).join("");
 
@@ -108,11 +135,44 @@ function storeBackupCodes(sql: SqlStorage, userId: string, hashes: string[]) {
   for (const hash of hashes) sql.exec(`INSERT INTO backup_codes (user_id, code_hash) VALUES (?, ?)`, userId, hash);
 }
 
-function ways(sql: SqlStorage, userId: string) {
-  return sql
+const normalizeHandle = (value: unknown) => (typeof value === "string" ? value.trim().replace(/^@/, "").toLowerCase() : "");
+
+/** A username someone picks with a password: their public @name, 3 to 20 of a-z and 0-9. */
+function pickedHandle(value: unknown): string {
+  const handle = normalizeHandle(value);
+  if (!/^[a-z0-9]{3,20}$/.test(handle)) throw new Refused("bad-handle");
+  return handle;
+}
+
+function ways(sql: SqlStorage, userId: string): Way[] {
+  const passkeys = sql
     .exec<PasskeyRow>(`SELECT * FROM passkeys WHERE user_id = ? ORDER BY created_at`, userId)
     .toArray()
-    .map((row) => ({ kind: "passkey", id: row.credential_id, createdAt: row.created_at, lastUsedAt: row.last_used_at }));
+    .map((row): Way => ({ kind: "passkey", id: row.credential_id, createdAt: row.created_at, lastUsedAt: row.last_used_at }));
+  const google = sql
+    .exec<{ sub: string; email: string; created_at: number; last_used_at: number | null }>(`SELECT * FROM google_logins WHERE user_id = ? ORDER BY created_at`, userId)
+    .toArray()
+    .map((row): Way => ({ kind: "google", id: row.sub, detail: row.email, createdAt: row.created_at, lastUsedAt: row.last_used_at }));
+  const password = sql
+    .exec<{ created_at: number }>(`SELECT created_at FROM passwords WHERE user_id = ?`, userId)
+    .toArray()
+    .map((row): Way => ({ kind: "password", id: PASSWORD_WAY_ID, createdAt: row.created_at, lastUsedAt: null }));
+  return [...passkeys, ...google, ...password];
+}
+
+const REMOVE_WAY: Record<WayKind, (sql: SqlStorage, userId: string, id: string) => void> = {
+  passkey: (sql, userId, id) => sql.exec(`DELETE FROM passkeys WHERE credential_id = ? AND user_id = ?`, id, userId),
+  google: (sql, userId, id) => sql.exec(`DELETE FROM google_logins WHERE sub = ? AND user_id = ?`, id, userId),
+  password: (sql, userId) => sql.exec(`DELETE FROM passwords WHERE user_id = ?`, userId),
+};
+
+function removeWay(c: Context, kind: WayKind): Reply {
+  const user = signedIn(c);
+  const list = ways(c.sql, user.user_id);
+  if (!list.some((way) => way.kind === kind && way.id === c.body.id)) throw new Refused("not-found", 404);
+  if (list.length <= 1) throw new Refused("last-way", 409);
+  REMOVE_WAY[kind](c.sql, user.user_id, c.body.id as string);
+  return { body: { account: accountView(c.sql, user) } };
 }
 
 function accountView(sql: SqlStorage, user: User) {
@@ -121,6 +181,28 @@ function accountView(sql: SqlStorage, user: User) {
 }
 
 const userById = (sql: SqlStorage, userId: string) => sql.exec<User>(`SELECT * FROM users WHERE user_id = ?`, userId).toArray()[0];
+
+function insertUser(c: Context, userId: string, name: string, handle = freeHandle(c.sql, name)): User {
+  c.sql.exec(`INSERT INTO users (user_id, handle, display_name, created_at, session_version) VALUES (?, ?, ?, ?, 1)`, userId, handle, name, c.now);
+  return userById(c.sql, userId);
+}
+
+/** Signs out every phone on the account (`session_version` goes up) and closes its room sockets. Returns the user under the new version. */
+async function bumpSession(c: Context, user: User): Promise<User> {
+  c.storage.transactionSync(() => {
+    const version = user.session_version + 1;
+    c.sql.exec(`UPDATE users SET session_version = ? WHERE user_id = ?`, version, user.user_id);
+    c.sql.exec(
+      `INSERT INTO room_closes (user_id, room_id, version) SELECT user_id, room_id, ? FROM open_rooms WHERE user_id = ?
+       ON CONFLICT (user_id, room_id) DO UPDATE SET version = excluded.version`,
+      version,
+      user.user_id,
+    );
+    c.sql.exec(`DELETE FROM open_rooms WHERE user_id = ?`, user.user_id);
+  });
+  await closeRooms(c.storage, c.env);
+  return userById(c.sql, user.user_id);
+}
 
 function newChallenge(sql: SqlStorage, env: Env, now: number, purpose: Purpose, userId: string, name: string) {
   const ttlMs = (Number(env.CHALLENGE_TTL_SECONDS) || 300) * 1000;
@@ -139,11 +221,99 @@ function takeChallenge(sql: SqlStorage, clientDataJSON: Uint8Array, ceremony: Ce
   return row;
 }
 
-function bytesField(source: unknown, name: string): Uint8Array {
+function bytesField(source: unknown, name: string, length?: number): Uint8Array {
   const value = typeof source === "object" && source !== null ? (source as Record<string, unknown>)[name] : undefined;
   const bytes = typeof value === "string" ? fromBase64Url(value) : null;
-  if (!bytes) throw new Refused("bad-request");
+  if (!bytes || (length !== undefined && bytes.length !== length)) throw new Refused("bad-request");
   return bytes;
+}
+
+/** The phone's password result as sent: `salt` (16 bytes it picked) and `key` (its 32-byte PBKDF2 output). */
+async function passwordFields(c: Context, secrets: PasswordSecrets) {
+  const salt = toBase64Url(bytesField(c.body, "salt", SALT_BYTES));
+  return { salt, mac: await keyMac(secrets, bytesField(c.body, "key", KEY_BYTES)) };
+}
+
+function storePassword(c: Context, userId: string, password: { salt: string; mac: string }) {
+  c.sql.exec(
+    `INSERT INTO passwords (user_id, salt, key_mac, created_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT (user_id) DO UPDATE SET salt = excluded.salt, key_mac = excluded.key_mac`,
+    userId,
+    password.salt,
+    password.mac,
+    c.now,
+  );
+}
+
+/** How long a counter must still wait, from its latest wrong try and how many came in the rule's window before it. */
+function waitLeft(sql: SqlStorage, counter: string, rule: WaitRule, now: number): number {
+  const { latest, misses } = sql
+    .exec<{ latest: number | null; misses: number }>(
+      `SELECT latest, (SELECT count(*) FROM password_misses WHERE counter = ?1 AND at > latest - ?2) AS misses
+       FROM (SELECT max(at) AS latest FROM password_misses WHERE counter = ?1)`,
+      counter,
+      rule.windowMs,
+    )
+    .one();
+  return latest === null ? 0 : Math.max(0, latest + rule.waitMs(misses) - now);
+}
+
+const googleCookie = (state: string) => `${GOOGLE_COOKIE}=${state}; ${GOOGLE_COOKIE_ATTRIBUTES}; Max-Age=600`;
+const CLEARED_GOOGLE_COOKIE = `${GOOGLE_COOKIE}=; ${GOOGLE_COOKIE_ATTRIBUTES}; Max-Age=0`;
+
+function cookieValue(header: string | null, name: string): string {
+  return (
+    header
+      ?.split(";")
+      .map((part) => part.trim())
+      .find((part) => part.startsWith(`${name}=`))
+      ?.slice(name.length + 1) ?? ""
+  );
+}
+
+function requireGoogle(env: Env): GoogleClient {
+  const client = googleClient(env);
+  if (!client || !env.SESSION_SECRET) throw new Refused("not-configured", 503);
+  return client;
+}
+
+async function finishGoogle(c: Context, flow: ChallengeRow, client: GoogleClient, state: string, code: string): Promise<Reply> {
+  const identity = await identityFromCode(client, c.env.SESSION_SECRET!, state, code, c.now);
+  const linked = c.sql.exec<{ user_id: string }>(`SELECT user_id FROM google_logins WHERE sub = ?`, identity.sub).toArray()[0];
+  const touch = (userId: string) =>
+    c.sql.exec(
+      `INSERT INTO google_logins (sub, user_id, email, created_at, last_used_at) VALUES (?1, ?2, ?3, ?4, ?4)
+       ON CONFLICT (sub) DO UPDATE SET email = excluded.email, last_used_at = excluded.last_used_at`,
+      identity.sub,
+      userId,
+      identity.email,
+      c.now,
+    );
+  if (flow.purpose === "google-link") {
+    const user = signedIn(c);
+    if (user.user_id !== flow.user_id) throw new Refused("wrong-state");
+    if (linked && linked.user_id !== user.user_id) throw new Refused("google-taken", 409);
+    touch(user.user_id);
+    return { googleReturn: "linked" };
+  }
+  if (linked) {
+    touch(linked.user_id);
+    return { googleReturn: "in", signIn: userById(c.sql, linked.user_id) };
+  }
+  const name = flow.display_name || identity.name.trim().replace(/\s+/g, " ").slice(0, 40) || "Player";
+  const user = c.storage.transactionSync(() => {
+    const made = insertUser(c, ulid(c.now), name);
+    touch(made.user_id);
+    return made;
+  });
+  return { googleReturn: "new", signIn: user };
+}
+
+/** Records a wrong password try on both counters and drops tries older than the longest window. Returns the wait it starts. */
+function recordMiss(c: Context, secrets: PasswordSecrets, counters: { name: string; address: string }): number {
+  c.sql.exec(`DELETE FROM password_misses WHERE at <= ?`, c.now - secrets.forName.windowMs);
+  c.sql.exec(`INSERT INTO password_misses (counter, at) VALUES (?, ?), (?, ?)`, counters.name, c.now, counters.address, c.now);
+  return Math.max(waitLeft(c.sql, counters.name, secrets.forName, c.now), waitLeft(c.sql, counters.address, secrets.forAddress, c.now));
 }
 
 function credentialId(body: Record<string, unknown>): string {
@@ -170,15 +340,13 @@ interface Context {
   sql: SqlStorage;
   env: Env;
   now: number;
+  request: Request;
   body: Record<string, unknown>;
   user: User | null;
 }
 
-interface Reply {
-  body: unknown;
-  signIn?: User;
-  signOut?: true;
-}
+/** A JSON `body`, or for a browser coming back from Google, `googleReturn`: the word the app shows once it is sent back there. */
+type Reply = ({ body: unknown; googleReturn?: undefined } | { googleReturn: string; body?: undefined }) & { signIn?: User; signOut?: true; cookies?: string[] };
 
 function signedIn(c: Context): User {
   if (!c.user) throw new Refused("signed-out", 401);
@@ -198,11 +366,10 @@ const ROUTES: Record<string, (c: Context) => Promise<Reply>> = {
     const { challenge, passkey } = await registeredPasskey(c, "create");
     const codes = await makeBackupCodes(challenge.user_id);
     const user = c.storage.transactionSync(() => {
-      const handle = freeHandle(c.sql, challenge.display_name);
-      c.sql.exec(`INSERT INTO users (user_id, handle, display_name, created_at, session_version) VALUES (?, ?, ?, ?, 1)`, challenge.user_id, handle, challenge.display_name, c.now);
+      const made = insertUser(c, challenge.user_id, challenge.display_name);
       insertPasskey(c.sql, challenge.user_id, passkey, c.now);
       storeBackupCodes(c.sql, challenge.user_id, codes.hashes);
-      return userById(c.sql, challenge.user_id);
+      return made;
     });
     return { body: { account: accountView(c.sql, user), backupCodes: codes.shown }, signIn: user };
   },
@@ -210,7 +377,9 @@ const ROUTES: Record<string, (c: Context) => Promise<Reply>> = {
   async "POST /api/auth/passkey/add/options"(c) {
     const user = signedIn(c);
     const { challenge, ttlMs } = newChallenge(c.sql, c.env, c.now, "add", user.user_id, user.display_name);
-    const exclude = ways(c.sql, user.user_id).map((way) => way.id);
+    const exclude = ways(c.sql, user.user_id)
+      .filter((way) => way.kind === "passkey")
+      .map((way) => way.id);
     const options = creationOptions(relyingParty(c.env), challenge, { id: user.user_id, handle: user.handle, displayName: user.display_name }, exclude, ttlMs);
     return { body: { options } };
   },
@@ -243,8 +412,7 @@ const ROUTES: Record<string, (c: Context) => Promise<Reply>> = {
   },
 
   async "POST /api/auth/backup-code"(c) {
-    const handle = typeof c.body.handle === "string" ? c.body.handle.trim().replace(/^@/, "").toLowerCase() : "";
-    const user = c.sql.exec<User>(`SELECT * FROM users WHERE handle = ?`, handle).toArray()[0];
+    const user = c.sql.exec<User>(`SELECT * FROM users WHERE handle = ?`, normalizeHandle(c.body.handle)).toArray()[0];
     const hash = user ? await hashCode(user.user_id, normalizeCode(c.body.code)) : "";
     const used = user ? c.sql.exec(`UPDATE backup_codes SET used_at = ? WHERE user_id = ? AND code_hash = ? AND used_at IS NULL`, c.now, user.user_id, hash).rowsWritten : 0;
     if (!user || used !== 1) throw new Refused("wrong-code", 401);
@@ -263,12 +431,95 @@ const ROUTES: Record<string, (c: Context) => Promise<Reply>> = {
   },
 
   async "POST /api/me/remove-passkey"(c) {
+    return removeWay(c, "passkey");
+  },
+
+  async "POST /api/me/remove-google"(c) {
+    return removeWay(c, "google");
+  },
+
+  async "POST /api/me/remove-password"(c) {
+    return removeWay(c, "password");
+  },
+
+  async "GET /api/auth/config"(c) {
+    return { body: { google: googleClient(c.env) !== null } };
+  },
+
+  async "POST /api/auth/google/start"(c) {
+    const client = requireGoogle(c.env);
+    const link = c.body.intent === "link";
+    const user = link ? signedIn(c) : null;
+    const name = !link && c.body.name !== undefined ? displayName(c.body.name) : "";
+    const { challenge: state } = newChallenge(c.sql, c.env, c.now, link ? "google-link" : "google", user?.user_id ?? "", name);
+    return { body: { url: await authorizeUrl(client, c.env.SESSION_SECRET!, state) }, cookies: [googleCookie(state)] };
+  },
+
+  async "GET /api/auth/google/callback"(c) {
+    const params = new URL(c.request.url).searchParams;
+    const state = params.get("state") ?? "";
+    try {
+      const client = requireGoogle(c.env);
+      if (!state || !sameText(state, cookieValue(c.request.headers.get("Cookie"), GOOGLE_COOKIE))) throw new Refused("wrong-state");
+      const flow = c.sql.exec<ChallengeRow>(`DELETE FROM challenges WHERE challenge = ? RETURNING purpose, user_id, display_name, expires_at`, state).toArray()[0];
+      if (!flow || (flow.purpose !== "google" && flow.purpose !== "google-link")) throw new Refused("wrong-state");
+      if (flow.expires_at <= c.now) throw new Refused("challenge-expired");
+      if (params.has("error")) throw new Refused("google-cancelled");
+      return { ...(await finishGoogle(c, flow, client, state, params.get("code") ?? "")), cookies: [CLEARED_GOOGLE_COOKIE] };
+    } catch (error) {
+      if (error instanceof Refused) return { googleReturn: error.reason, cookies: [CLEARED_GOOGLE_COOKIE] };
+      throw error;
+    }
+  },
+
+  async "POST /api/auth/password/salt"(c) {
+    const secrets = await passwordSecrets(c.env);
+    const handle = normalizeHandle(c.body.handle);
+    const madeUp = await madeUpSalt(secrets, handle);
+    const stored = c.sql.exec<{ salt: string }>(`SELECT p.salt FROM passwords p JOIN users u ON u.user_id = p.user_id WHERE u.handle = ?`, handle).toArray()[0];
+    return { body: { salt: stored?.salt ?? madeUp } };
+  },
+
+  async "POST /api/auth/password/create"(c) {
+    const secrets = await passwordSecrets(c.env);
+    const name = displayName(c.body.name);
+    const handle = pickedHandle(c.body.handle);
+    const password = await passwordFields(c, secrets);
+    const userId = ulid(c.now);
+    const codes = await makeBackupCodes(userId);
+    const user = c.storage.transactionSync(() => {
+      if (c.sql.exec(`SELECT 1 FROM users WHERE handle = ?`, handle).toArray().length) throw new Refused("handle-taken", 409);
+      const made = insertUser(c, userId, name, handle);
+      storePassword(c, userId, password);
+      storeBackupCodes(c.sql, userId, codes.hashes);
+      return made;
+    });
+    return { body: { account: accountView(c.sql, user), backupCodes: codes.shown }, signIn: user };
+  },
+
+  async "POST /api/auth/password/sign-in"(c) {
+    const secrets = await passwordSecrets(c.env);
+    const handle = normalizeHandle(c.body.handle);
+    const mac = await keyMac(secrets, bytesField(c.body, "key", KEY_BYTES));
+    const counters = { name: await counterKey(secrets, "name", handle), address: await counterKey(secrets, "address", c.request.headers.get("CF-Connecting-IP") ?? "") };
+    const wait = Math.max(waitLeft(c.sql, counters.name, secrets.forName, c.now), waitLeft(c.sql, counters.address, secrets.forAddress, c.now));
+    if (wait > 0) throw new Refused("wait", 429, { waitMs: wait });
+    const found = c.sql.exec<User & { key_mac: string }>(`SELECT u.*, p.key_mac FROM users u JOIN passwords p ON p.user_id = u.user_id WHERE u.handle = ?`, handle).toArray()[0];
+    if (!found || !sameText(found.key_mac, mac)) {
+      const started = recordMiss(c, secrets, counters);
+      throw new Refused("wrong-password", 401, started > 0 ? { waitMs: started } : {});
+    }
+    c.sql.exec(`DELETE FROM password_misses WHERE counter = ?`, counters.name);
+    const { key_mac: _, ...user } = found;
+    return { body: { account: accountView(c.sql, user) }, signIn: user };
+  },
+
+  async "POST /api/me/password"(c) {
     const user = signedIn(c);
-    const list = ways(c.sql, user.user_id);
-    if (!list.some((way) => way.id === c.body.id)) throw new Refused("not-found", 404);
-    if (list.length <= 1) throw new Refused("last-way", 409);
-    c.sql.exec(`DELETE FROM passkeys WHERE credential_id = ? AND user_id = ?`, c.body.id, user.user_id);
-    return { body: { account: accountView(c.sql, user) } };
+    const password = await passwordFields(c, await passwordSecrets(c.env));
+    storePassword(c, user.user_id, password);
+    const fresh = await bumpSession(c, user);
+    return { body: { account: accountView(c.sql, fresh) }, signIn: fresh };
   },
 
   async "POST /api/auth/sign-out"() {
@@ -276,19 +527,7 @@ const ROUTES: Record<string, (c: Context) => Promise<Reply>> = {
   },
 
   async "POST /api/auth/sign-out-everywhere"(c) {
-    const user = signedIn(c);
-    c.storage.transactionSync(() => {
-      const version = user.session_version + 1;
-      c.sql.exec(`UPDATE users SET session_version = ? WHERE user_id = ?`, version, user.user_id);
-      c.sql.exec(
-        `INSERT INTO room_closes (user_id, room_id, version) SELECT user_id, room_id, ? FROM open_rooms WHERE user_id = ?
-         ON CONFLICT (user_id, room_id) DO UPDATE SET version = excluded.version`,
-        version,
-        user.user_id,
-      );
-      c.sql.exec(`DELETE FROM open_rooms WHERE user_id = ?`, user.user_id);
-    });
-    await closeRooms(c.storage, c.env);
+    await bumpSession(c, signedIn(c));
     return { body: { ok: true }, signOut: true };
   },
 };
@@ -325,12 +564,14 @@ export async function handleAccountRequest(request: Request, storage: DurableObj
     const session = await readSession(env.SESSION_SECRET, request.headers.get("Cookie"), now);
     const found = session ? userById(storage.sql, session.userId) : undefined;
     const user = found && found.session_version === session?.version ? found : null;
-    const reply = await route({ storage, sql: storage.sql, env, now, body: await readBody(request), user });
+    const reply = await route({ storage, sql: storage.sql, env, now, request, body: await readBody(request), user });
     const cookie = await replyCookie(env, reply, session, user, now);
-    if (cookie) headers.set("Set-Cookie", cookie);
-    return Response.json(reply.body, { headers });
+    for (const value of [...(cookie ? [cookie] : []), ...(reply.cookies ?? [])]) headers.append("Set-Cookie", value);
+    if (reply.googleReturn === undefined) return Response.json(reply.body, { headers });
+    headers.set("Location", `${env.APP_ORIGIN ?? ""}/?google=${encodeURIComponent(reply.googleReturn)}`);
+    return new Response(null, { status: 302, headers });
   } catch (error) {
-    if (error instanceof Refused) return Response.json({ error: error.reason }, { status: error.status, headers });
+    if (error instanceof Refused) return Response.json({ error: error.reason, ...error.detail }, { status: error.status, headers });
     throw error;
   }
 }

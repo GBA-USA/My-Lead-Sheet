@@ -35,7 +35,8 @@
     "check:personal-settings": "node --experimental-strip-types scripts/check-personal-settings.ts",
     "check:band-library": "node --experimental-strip-types scripts/check-band-library.ts",
     "check:setlist-code": "node --experimental-strip-types scripts/check-setlist-code.ts",
-    "check:codes": "node --experimental-strip-types scripts/check-codes.ts"
+    "check:codes": "node --experimental-strip-types scripts/check-codes.ts",
+    "check:spike-links": "node --experimental-strip-types scripts/check-spike-links.ts"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.5",

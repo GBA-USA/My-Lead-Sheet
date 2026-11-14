@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spike C2 · Over the internet</title>
+<link rel="stylesheet" href="/lan/drill.css">
+<script src="/vendor/qrcode.js"></script>
+</head>
+<body>
+<script type="module">
+import { startDrill } from "/lan/links.js";
+startDrill({
+  spike: "cell",
+  title: "Spike C2 · Over the internet",
+  plans: ["each", "auto"],
+  spreadTargetMs: 6,
+  setups: ["verizon-att", "verizon-tmobile", "att-tmobile", "same-carrier", "venue-isolated-to-cell", "other"],
+});
+</script>
+</body>
+</html>

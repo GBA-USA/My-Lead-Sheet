@@ -27,7 +27,7 @@ type Step =
   | { name: "set-password"; reset?: true };
 
 /** The word the Worker put in `?google=` when it sent the phone back from Google, or null. */
-export const googleReturn = () => new URLSearchParams(location.search).get("google");
+export const googleReturn = () => new URLSearchParams(window.location.search).get("google");
 
 const MESSAGES: Record<string, string> = {
   NotAllowedError: "Face ID or fingerprint didn't finish. Try again. If it keeps failing, open My Lead Sheet in Safari or Chrome.",
@@ -89,7 +89,7 @@ export function AccountSheet({ account, onAccount, onClose }: { account: Account
 
   useEffect(() => {
     if (returned === null) return;
-    const url = new URL(location.href);
+    const url = new URL(window.location.href);
     url.searchParams.delete("google");
     history.replaceState(history.state, "", url);
   }, [returned]);

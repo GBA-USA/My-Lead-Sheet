@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { extname, join } from "node:path";
 import { build } from "vite";
@@ -15,12 +15,31 @@ export interface Site {
   close(): Promise<void>;
 }
 
-/** Builds the app, serves it on a free port, and opens one tab of headless Chrome on DevTools. */
-export async function openSite(root: string, name: string): Promise<Site> {
+async function forward(request: IncomingMessage, response: ServerResponse, apiBase: string) {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) chunks.push(chunk as Buffer);
+  const headers = Object.fromEntries(Object.entries(request.headers).filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[0] !== "host"));
+  const reply = await fetch(new URL(request.url ?? "/", apiBase), { method: request.method, headers, body: chunks.length ? Buffer.concat(chunks) : undefined });
+  response.writeHead(reply.status, { "content-type": reply.headers.get("content-type") ?? "application/json", "set-cookie": reply.headers.getSetCookie() });
+  response.end(Buffer.from(await reply.arrayBuffer()));
+}
+
+/**
+ * Builds the app, serves it on a free port, and opens one tab of headless Chrome on DevTools.
+ * With `apiBase`, requests under /api/ go on to the API it returns, so the page talks to a real Worker.
+ */
+export async function openSite(root: string, name: string, apiBase?: () => string): Promise<Site> {
   const out = mkdtempSync(join(tmpdir(), `${name}-`));
   await build({ root, logLevel: "silent", build: { outDir: out, emptyOutDir: true } });
   const server = createServer((request, response) => {
     const path = new URL(request.url ?? "/", "http://localhost").pathname;
+    if (apiBase && path.startsWith("/api/")) {
+      forward(request, response, apiBase()).catch(() => {
+        response.writeHead(502);
+        response.end();
+      });
+      return;
+    }
     const file = join(out, path === "/" ? "index.html" : path);
     try {
       const body = readFileSync(file);
@@ -83,7 +102,7 @@ export async function openSite(root: string, name: string): Promise<Site> {
     chrome.kill();
     server.close();
     await new Promise((resolve) => (chrome.exitCode === null ? chrome.once("exit", resolve) : resolve(null)));
-    rmSync(profile, { recursive: true, force: true });
+    rmSync(profile, { recursive: true, force: true, maxRetries: 10 });
     rmSync(out, { recursive: true, force: true });
   };
   return { origin, send, evaluate, close };

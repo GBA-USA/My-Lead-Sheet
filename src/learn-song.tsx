@@ -72,6 +72,8 @@ function heardSections(song: Song, analysis: Analysis, boundaries: number[], bar
   return song.body.map((_, i) => heardBars(analysis.chroma, i === 0 ? 0 : boundaries[i - 1], boundaries[i] ?? analysis.beats.length, bar, chords));
 }
 
+const anySure = (bars: HeardBar[]) => bars.some((bar) => bar.chord !== null);
+
 /** Four bars to a group, each cell padded to `width` so a chart row and a heard row line up. */
 function barGroups(cells: string[], width: number): string[] {
   const groups: string[] = [];
@@ -165,7 +167,9 @@ export function LearnSong({
               const { analysis, boundaries, useForSong } = step;
               const tempo = Math.round(analysis.tempos[0].bpm);
               const vocals = analysis.vocals.filter((_, i) => step.vocals[i]);
-              const heard = heardSections(song, analysis, boundaries, bar).map((bars, i) => (step.keepHeard[i] ? bars.map((each) => each.chord) : undefined));
+              const heard = heardSections(song, analysis, boundaries, bar).map((bars, i) =>
+                step.keepHeard[i] && anySure(bars) ? bars.map((each) => each.chord) : undefined,
+              );
               const runtime = formatRuntime(Math.round(analysis.sound.end - analysis.sound.start));
               const data = useForSong
                 ? songDataFromForm(original, { runtime, bpm: String(tempo), timeSignature: song.timeSignature })
@@ -318,6 +322,7 @@ function Review({
 /** The chart's bars over the bars as heard, `?` where not sure, with a box to keep the heard ones. */
 function HeardChords({ name, form, heard, kept, onKeep }: { name: string; form: string[]; heard: HeardBar[]; kept: boolean; onKeep: () => void }) {
   const cells = heard.map((each) => each.chord ?? "?");
+  const sure = anySure(heard);
   const width = Math.max(...form.map((cell) => cell.length), ...cells.map((cell) => cell.length));
   const row = (groups: string[]) => (
     <span className="learn-bars">
@@ -338,7 +343,7 @@ function HeardChords({ name, form, heard, kept, onKeep }: { name: string; form: 
         </>
       ) : null}
       <label>
-        <input type="checkbox" aria-label={`Keep ${name} heard chords`} checked={kept} disabled={!heard.some((each) => each.chord)} onChange={onKeep} />
+        <input type="checkbox" aria-label={`Keep ${name} heard chords`} checked={kept && sure} disabled={!sure} onChange={onKeep} />
         Heard
       </label>
       {row(barGroups(cells, width))}

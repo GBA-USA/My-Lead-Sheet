@@ -30,6 +30,7 @@ const CHORDS = ["A7", "D7", "E7"];
 const SIX = 6;
 const TAKES: { name: string; take: Take }[] = [
   { name: "clean", take: { choruses: SIX, noise: 0, reverb: false, swaps: {} } },
+  { name: "light noise + room reverb", take: { choruses: SIX, noise: 0.25, reverb: true, swaps: {} } },
   { name: "noise + room reverb", take: { choruses: SIX, noise: 0.5, reverb: true, swaps: {} } },
   { name: "loud noise + room reverb", take: { choruses: SIX, noise: 1, reverb: true, swaps: {} } },
   { name: "silent bar, drums-only bar, G7 bar", take: { choruses: SIX, noise: 0, reverb: false, swaps: { 16: "silence", 32: "drums", 49: "G7" } } },
@@ -42,8 +43,8 @@ const spread = (values: number[]) => {
 };
 const text = (bars: (string | null)[]) => bars.map((chord) => chord ?? "?").join(" ");
 
-/** Scores each heard bar against the song's bar it covers, the first one against bar `firstBar`. */
-function score(name: string, take: Take, heard: { chord: string | null; confidence: number }[], firstBar: number, gate: boolean) {
+/** Scores each heard bar against the song's bar it starts in, the first one against bar `firstBar`. */
+function score(name: string, take: Take, heard: { chord: string | null; confidence: number }[], firstBar: number) {
   const truth = truthOf(take);
   const tally = { right: 0, wrong: 0, unsure: 0 };
   const sure: number[] = [];
@@ -58,9 +59,9 @@ function score(name: string, take: Take, heard: { chord: string | null; confiden
     tally[chord === expected ? "right" : chord === null ? "unsure" : "wrong"] += 1;
     if (chord !== expected && chord !== null) misheard.push(confidence);
     (expected ? sure : none).push(confidence);
-    if (gate && take.swaps[bar]) check(chord === null, `${name}: bar ${bar + 1} (${take.swaps[bar]}) is not sure (${chord ?? "null"}, ${confidence.toFixed(2)})`);
+    if (take.swaps[bar]) check(chord === null, `${name}: bar ${bar + 1} (${take.swaps[bar]}) is not sure (${chord ?? "null"}, ${confidence.toFixed(2)})`);
   });
-  if (gate && take.noise === 0) perChorus.forEach((right, chorus) => check(right >= 11, `${name}: chorus ${chorus + 1} has ${right} of 12 bars right`));
+  if (take.noise === 0) perChorus.forEach((right, chorus) => check(right >= 11, `${name}: chorus ${chorus + 1} has ${right} of 12 bars right`));
   console.log(`     ${name}: where a chart chord sounds, confidence ${spread(sure)}; where none does, ${spread(none)}; wrong chords at ${spread(misheard)}`);
   return `${tally.right} | ${tally.wrong} | ${tally.unsure} | ${perChorus.map((right) => `${right}/12`).join(", ")}`;
 }
@@ -88,14 +89,15 @@ for (const { name, take } of TAKES) {
   console.log(`     ${name}: chorus 1 heard ${text(heard.slice(0, 12).map((bar) => bar.chord))}`);
   console.log(`     ${name}: ${(listened / (samples.length / SAMPLE_RATE)).toFixed(1)} ms of listening per second of song`);
   if (onGrid) {
-    rows.push(`| ${name} | ${score(name, take, heard, 0, true)} |`);
+    rows.push(`| ${name} | ${score(name, take, heard, 0)} |`);
     continue;
   }
   check(take.noise > 0, `${name}: Learn's beats are the song's beats from its first downbeat`);
-  rows.push(`| ${name}, on Learn's grid | ${score(`${name}, on Learn's grid`, take, heard, 0, false)} |`);
+  rows.push(`| ${name}, on Learn's grid from bar ${Math.floor(late / 4) + 1} | ${score(`${name}, on Learn's grid`, take, heard, Math.floor(late / 4))} |`);
   const toDownbeat = (4 - (late % 4)) % 4;
+  if (toDownbeat === 0) continue;
   const realigned = app.heardBars(analysis.chroma, toDownbeat, analysis.chroma.length, 4, CHORDS);
-  rows.push(`| ${name}, on the song's own bars | ${score(`${name}, on the song's own bars`, take, realigned, (late + toDownbeat) / 4, false)} |`);
+  rows.push(`| ${name}, on the song's own bars | ${score(`${name}, on the song's own bars`, take, realigned, (late + toDownbeat) / 4)} |`);
 }
 
 console.log(`\nSURE = ${app.SURE}\n`);

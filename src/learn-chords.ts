@@ -12,25 +12,18 @@ const CYCLES = 34;
  */
 export const SURE = 0.7;
 
-/** Semitones above the root. A quality not listed here is matched as its triad. */
+/** Semitones above the root, for the qualities the library's charts use. Any other is matched as its triad. */
 const QUALITIES: Record<string, number[]> = {
   "": [0, 4, 7],
   m: [0, 3, 7],
-  min: [0, 3, 7],
-  "6": [0, 4, 7, 9],
-  m6: [0, 3, 7, 9],
   "7": [0, 4, 7, 10],
   m7: [0, 3, 7, 10],
-  min7: [0, 3, 7, 10],
   maj7: [0, 4, 7, 11],
-  "9": [0, 2, 4, 7, 10],
-  add9: [0, 2, 4, 7],
-  dim: [0, 3, 6],
-  dim7: [0, 3, 6, 9],
-  aug: [0, 4, 8],
-  sus: [0, 5, 7],
+  "2": [0, 2, 7],
   sus2: [0, 2, 7],
+  sus: [0, 5, 7],
   sus4: [0, 5, 7],
+  "5": [0, 7],
 };
 
 interface Pitch {

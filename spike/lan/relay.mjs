@@ -12,7 +12,7 @@ const SIGNAL = /^\/signal\/([\w-]{1,64})\/([\w-]{1,64})$/;
 const MAX_BODY = 32 * 1024;
 const MAX_QUEUE = 200;
 const POLL_MS = 20_000;
-export const HEALTH = { service: "mls-spike-links" };
+const HEALTH = { service: "mls-spike-links" };
 
 export function createRelay({ env = process.env } = {}) {
   const boxes = new Map();
@@ -54,7 +54,7 @@ export function createRelay({ env = process.env } = {}) {
     json(response, 200, { seq });
   };
 
-  const poll = (url, request, response, mailbox) => {
+  const poll = (url, response, mailbox) => {
     if (!url.searchParams.has("after")) return json(response, 200, { messages: [], cursor: mailbox.next - 1 });
     const after = Number(url.searchParams.get("after"));
     const pending = () => mailbox.messages.filter((m) => m.seq > after);
@@ -66,7 +66,7 @@ export function createRelay({ env = process.env } = {}) {
     };
     const timer = setTimeout(done, POLL_MS);
     mailbox.waiters.add(done);
-    request.on("close", done);
+    response.on("close", done);
   };
 
   const serveFile = async (response, path) => {
@@ -84,7 +84,7 @@ export function createRelay({ env = process.env } = {}) {
     const url = new URL(request.url ?? "/", "http://relay");
     const signal = url.pathname.match(SIGNAL);
     if (signal && request.method === "POST") return post(request, response, box(signal[1], signal[2]));
-    if (signal && request.method === "GET") return poll(url, request, response, box(signal[1], signal[2]));
+    if (signal && request.method === "GET") return poll(url, response, box(signal[1], signal[2]));
     if (url.pathname === "/health") return json(response, 200, HEALTH);
     if (url.pathname === "/turn") return json(response, 200, readTurnConfig(env));
     if (url.pathname === "/vendor/qrcode.js") return serveFile(response, QRCODE);

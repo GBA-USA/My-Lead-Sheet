@@ -392,8 +392,8 @@ export async function startDrill(config) {
   const room = `${config.spike}-${params.get("room") ?? "band"}`;
   const planName = PLANS[params.get("plan")] ? params.get("plan") : config.plans[0];
   const plan = PLANS[planName];
-  const holdMs = Number(params.get("secs") ?? 120) * 1000;
-  const linkCount = Math.max(1, Math.min(8, Number(params.get("links") ?? 1)));
+  const holdMs = (Number(params.get("secs")) || 120) * 1000;
+  const linkCount = Math.max(1, Math.min(8, Number(params.get("links")) || 1));
   const simulateIsolation = params.get("simulate") === "isolation";
   const ui = buildUi(config, role);
   const pageStart = now();
@@ -410,8 +410,9 @@ export async function startDrill(config) {
   let nextId = 0;
 
   const record = (fields) => {
+    const id = `${role[0]}${++nextId}`;
     const rec = {
-      id: `${role[0]}${++nextId}`, attempt: null, session: null, peer: null, intro: null, route: null, servers: [],
+      id, attempt: id, session: null, peer: null, intro: null, route: null, servers: [],
       atMs: since(pageStart), gatherMs: null, openMs: null, noticeMs: null, closedMs: null, closeReason: null, error: null,
       local: null, remote: null, selected: null, path: null, clock: null, bytes: null, maxSilenceMs: 0, qrChars: null, events: [],
       ...fields,
@@ -433,7 +434,7 @@ export async function startDrill(config) {
     return link;
   };
 
-  const power = { cores: navigator.hardwareConcurrency ?? null, memoryGb: navigator.deviceMemory ?? null, battery: null, lag: [], longTasks: null, samples: [] };
+  const power = { cores: navigator.hardwareConcurrency ?? null, memoryGb: navigator.deviceMemory ?? null, lag: [], longTasks: null, samples: [] };
   let battery = null;
   let batteryStart = null;
   navigator.getBattery?.().then((b) => {
@@ -557,8 +558,6 @@ export async function startDrill(config) {
     a.click();
   });
   ui.button("Copy results", async () => {
-    await refreshAll();
-    latest = snapshot();
     await navigator.clipboard.writeText(JSON.stringify(latest, null, 2));
     ui.say("Results copied");
   });
@@ -659,7 +658,6 @@ export async function startDrill(config) {
         if (generations.get(peer) !== generation) return;
         const { servers, urls, usable } = iceFor(route, ice);
         const rec = record({ session, peer, intro: "room", route, servers: urls });
-        rec.attempt = rec.id;
         if (!usable) {
           rec.error = "skipped: no TURN addresses for this route";
           continue;
@@ -691,7 +689,6 @@ export async function startDrill(config) {
     });
     ui.button("QR join (two scans)", async () => {
       const rec = record({ session: `qr2-${nextId + 1}`, peer: "qr", intro: "qr2", route: QR_ROUTE });
-      rec.attempt = rec.id;
       const link = newLink(rec, iceFor(QR_ROUTE, ice).servers);
       const sdp = await link.offer();
       waiting.set(rec.id, link);
@@ -702,7 +699,6 @@ export async function startDrill(config) {
       const fingerprint = certs.at(-1);
       if (!fingerprint) return ui.say("Scan the follower's link certificate first");
       const rec = record({ session: `qr1-${nextId + 1}`, peer: "qr", intro: "qr1", route: QR_ROUTE });
-      rec.attempt = rec.id;
       const link = newLink(rec, iceFor(QR_ROUTE, ice).servers);
       const sdp = await link.offer();
       const u = hex(4);

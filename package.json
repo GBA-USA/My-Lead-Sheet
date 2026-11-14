@@ -22,7 +22,9 @@
     "check:search": "node --experimental-strip-types scripts/check-search.ts",
     "check:metronome": "node --experimental-strip-types scripts/check-metronome.ts",
     "check:bar": "node --experimental-strip-types scripts/check-bar.ts",
-    "check:heard": "node --experimental-strip-types scripts/check-heard.ts"
+    "check:heard": "node --experimental-strip-types scripts/check-heard.ts",
+    "check:offline": "node --experimental-strip-types scripts/check-offline.ts",
+    "check:privacy": "node --experimental-strip-types scripts/check-privacy.ts"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.5",

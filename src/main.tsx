@@ -36,6 +36,10 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean
   }
 }
 
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`, { updateViaCache: "none" });
+}
+
 const root = document.getElementById("root");
 if (!root) throw new Error("Missing #root");
 

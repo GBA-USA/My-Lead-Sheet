@@ -323,7 +323,7 @@ const near = (a: number | undefined, b: number, slack = 0.1) => a != null && Mat
 /** 78 BPM, then 117 from 0:30 on the clock, then 78 again from 1:15 (30 s at 117 runs 45 s of the clock). */
 const TEMPO = [{ at: 0, bpm: 78 }, { at: 30, bpm: 117 }, { at: 75, bpm: 78 }];
 const WALL_END = 30 + 30 + (RUNTIME - 75);
-let taught: ScrollVersions = { versions: [], selected: null };
+const MAPPED = { versions: [V1, { name: "V2", bpm: 78, marks: marks([0, 0], [RUNTIME, 1]), tempo: TEMPO }], selected: 1 };
 
 await scenario("BPM changes while teaching", async () => {
   await open({ versions: [V1], selected: null });
@@ -341,13 +341,15 @@ await scenario("BPM changes while teaching", async () => {
   await play(2);
   check(!scrollOn() && !!dialog(), "the 117 section scrolled faster, so the take ends early");
   await tap(button("Save", dialog), "Save");
-  taught = saved();
+  const taught = saved();
   const tempo = taught.versions[1]?.tempo ?? [];
   check(
     tempo.length === 3 && tempo.every((change, i) => change.bpm === TEMPO[i].bpm && near(change.at, TEMPO[i].at)),
     `the saved version keeps each change's clock and BPM (${JSON.stringify(tempo)})`,
   );
   check(same({ versions: [taught.versions[0]], selected: null }, { versions: [V1], selected: null }), "the other version is untouched");
+  await open(taught);
+  check(same(saved(), taught), "the map survives a reload");
 
   await open({ versions: [V1], selected: null });
   await teach();
@@ -361,8 +363,7 @@ await scenario("BPM changes while teaching", async () => {
 });
 
 await scenario("A saved tempo map plays back", async () => {
-  await open(taught);
-  check(JSON.stringify(saved().versions[1].tempo) === JSON.stringify(taught.versions[1].tempo), "the map survives a reload");
+  await open(MAPPED);
   await tap(button("Scroll: Off"), "Scroll: Off");
   await play(29);
   check(metronomeBpm() === 78, `the metronome opens at 78 (${metronomeBpm()})`);
@@ -377,7 +378,7 @@ await scenario("A saved tempo map plays back", async () => {
 });
 
 await scenario("Editing the tempo map later", async () => {
-  await open(taught);
+  await open(MAPPED);
   await choose("Timing:", "Edit tempo…");
   check(!!dialog() && field("BPM of change 1")?.value === "117", `Edit tempo lists the changes (${dialog()?.textContent})`);
   check(field("Start of change 1")?.value === "0:30" && field("Start of change 2")?.value === "1:00", "each start shows as heard: 0:30, and 1:00 after 30 s at 117");

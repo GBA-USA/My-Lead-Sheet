@@ -1,8 +1,8 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { build, preview, type PreviewServer } from "vite";
+import { build, preview, type Plugin, type PreviewServer } from "vite";
 import type { LibraryFile } from "../src/types.ts";
 import { openSite } from "./chrome.ts";
 
@@ -36,8 +36,30 @@ async function freePort(): Promise<number> {
   return typeof address === "object" && address ? address.port : 0;
 }
 
+/** Answers a path with no file behind it the way GitHub Pages does, with 404.html and status 404, instead of vite's index.html fallback. */
+const pagesNotFound = (outDir: string, base: string): Plugin => ({
+  name: "pages-not-found",
+  configurePreviewServer(server) {
+    server.middlewares.use((req, res, next) => {
+      const path = decodeURIComponent(new URL(req.url ?? "/", "http://preview").pathname);
+      const file = join(outDir, path.slice(base.length), path.endsWith("/") ? "index.html" : "");
+      if (!path.startsWith(base) || (existsSync(file) && statSync(file).isFile())) return next();
+      res.statusCode = 404;
+      res.setHeader("content-type", "text/html");
+      res.end(readFileSync(join(outDir, "404.html")));
+    });
+  },
+});
+
 const serve = (outDir: string, base: string, port: number): Promise<PreviewServer> =>
-  preview({ root, base, logLevel: "silent", build: { outDir }, preview: { host: "127.0.0.1", port, strictPort: true } });
+  preview({
+    root,
+    base,
+    logLevel: "silent",
+    build: { outDir },
+    preview: { host: "127.0.0.1", port, strictPort: true },
+    plugins: [pagesNotFound(outDir, base)],
+  });
 
 const releases = [await buildRelease("first"), await buildRelease("second")];
 // openSite's own server cannot be stopped mid-test, so this check serves its builds with vite preview and borrows only the Chrome tab.
@@ -91,6 +113,19 @@ try {
     await chrome.evaluate("fetch('api/ping')");
     check(firstCaches.length === 1, `${base}: one app cache after install (saw ${firstCaches.join(" | ")})`);
 
+    for (const deep of ["foo/bar", "songs/"]) {
+      await chrome.send("Page.navigate", { url: `http://127.0.0.1:${port}${base}${deep}` });
+      const opened = await until<{ path: string; rows: number }>(
+        "({ path: location.pathname, rows: document.querySelectorAll('.song-list .song-row').length })",
+        (page) => page.rows === seed.songs.length,
+        `${base}${deep} to reach the song list`,
+      );
+      check(
+        opened?.path === base && opened.rows === seed.songs.length,
+        `${base}: online with the worker in control, ${base}${deep} ends at ${base} with all ${seed.songs.length} songs (saw ${JSON.stringify(opened)})`,
+      );
+    }
+
     await server.close();
     await offline(true);
     await reloadAt(url);
@@ -127,4 +162,4 @@ if (failures > 0) {
   console.error(`check:offline failed (${failures})`);
   process.exit(1);
 }
-console.log("check:offline passed: at / and /sub/, the app opens offline with songs and a sheet, and a new deploy replaces the old cache");
+console.log("check:offline passed: at / and /sub/, the app opens offline with songs and a sheet, a deep path online still reaches the app through 404.html, and a new deploy replaces the old cache");

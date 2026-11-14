@@ -74,6 +74,8 @@ try {
   await atStep("start");
   check((await sheetButtons()).includes("Sign in with Face ID or fingerprint"), "Sign in offers Face ID or fingerprint");
   await fitsPhone("sign-in");
+  const privacy = await site.evaluate<string>(`fetch(document.querySelector(".account-sheet a.account-privacy").href).then((r) => r.status + " " + r.headers.get("content-type"))`);
+  check(/^200 text\/html/.test(privacy), `the sheet's privacy link opens the privacy page (${privacy})`);
 
   check(await click("New here? Create an account"), "Create an account opens");
   await atStep("create");

@@ -22,11 +22,11 @@ export const DATA_KINDS: readonly DataKind[] = [
     place: "phone",
     what: "The scroll timings you taught or learned for each song: tap times, beat times, section times and chord names heard. No sound is kept.",
   },
-  { key: "users", place: "server", what: "Your account: the name bandmates see, your @handle, when you joined, and a number that goes up when you sign out everywhere." },
+  { key: "users", place: "server", what: "Your account: the name bandmates see, your handle (the name others find you by), when you joined, and a number that goes up when you sign out everywhere." },
   {
     key: "passkeys",
     place: "server",
-    what: "One row per phone you sign in with Face ID or fingerprint: the passkey's id and public key, a use counter, and when it was added and last used. Your face and fingerprint never leave your phone.",
+    what: "One row per phone you sign in with Face ID or fingerprint: the passkey id and public key, a use counter, and when it was added and last used. Your face and fingerprint never leave your phone.",
   },
   { key: "backup_codes", place: "server", what: "Your 8 backup codes, kept only as one-way hashes, and when each was used." },
   { key: "challenges", place: "server", what: "A random value for a sign-in in progress, with the name you typed, deleted when you finish or after 5 minutes." },

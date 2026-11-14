@@ -10,7 +10,7 @@ const WARM_UP = 200;
 
 async function loadDirectory() {
   const result = await build({
-    stdin: { contents: `export { handleAccountRequest, createAccountTables } from "./worker/directory-account.ts";`, resolveDir: new URL("..", import.meta.url).pathname, loader: "ts" },
+    stdin: { contents: `export { ACCOUNT_ROUTES, handleDirectoryRequest, createAccountTables } from "./worker/directory-account.ts";`, resolveDir: new URL("..", import.meta.url).pathname, loader: "ts" },
     bundle: true,
     write: false,
     format: "esm",
@@ -68,10 +68,11 @@ export async function signInCpuMs(pepper: string): Promise<Record<string, number
   const salt = Buffer.alloc(16, 5).toString("base64url");
   const key = Buffer.alloc(32, 6).toString("base64url");
   const post = (path: string, body: object, headers: Record<string, string> = {}) =>
-    directory.handleAccountRequest(
+    directory.handleDirectoryRequest(
       new Request(`https://app.example.test${path}`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) }),
       storage,
       env,
+      directory.ACCOUNT_ROUTES,
     ) as Promise<Response>;
 
   if ((await post("/api/auth/password/create", { name: "Cpu", handle: "cpucheck", salt, key })).status !== 200) throw new Error("sign-in-cpu: making the account failed");

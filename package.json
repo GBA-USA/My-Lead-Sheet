@@ -35,7 +35,7 @@
     "check:google": "tsc -p worker && node --experimental-strip-types scripts/check-google.ts",
     "check:password": "tsc -p worker && node --experimental-strip-types scripts/check-password.ts",
     "check:share-rule": "node --experimental-strip-types scripts/check-share-rule.ts",
-    "check:friends": "node --experimental-strip-types scripts/check-friends.ts",
+    "check:friends": "tsc -p worker && node --experimental-strip-types scripts/check-friends.ts",
     "check:bands": "node --experimental-strip-types scripts/check-bands.ts",
     "check:band-settings": "node --experimental-strip-types scripts/check-band-settings.ts",
     "check:send-song": "node --experimental-strip-types scripts/check-send-song.ts",
@@ -43,7 +43,7 @@
     "check:personal-settings": "node --experimental-strip-types scripts/check-personal-settings.ts",
     "check:band-library": "node --experimental-strip-types scripts/check-band-library.ts",
     "check:setlist-code": "node --experimental-strip-types scripts/check-setlist-code.ts",
-    "check:codes": "node --experimental-strip-types scripts/check-codes.ts",
+    "check:codes": "tsc -p worker && node --experimental-strip-types scripts/check-codes.ts",
     "check:sync-rating": "node --experimental-strip-types scripts/check-sync-rating.ts",
     "check:chat": "node --experimental-strip-types scripts/check-chat.ts",
     "check:band-status": "node --experimental-strip-types scripts/check-band-status.ts",
@@ -56,6 +56,7 @@
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.5",
     "@fontsource/inter": "^5.2.5",
+    "jsqr": "^1.4.0",
     "qrcode-generator": "^1.5.2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"

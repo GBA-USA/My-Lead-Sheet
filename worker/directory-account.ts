@@ -69,7 +69,7 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS password_misses_by_time ON password_misses (at)`,
 ];
 
-type User = { user_id: string; handle: string; display_name: string; session_version: number };
+export type User = { user_id: string; handle: string; display_name: string; session_version: number };
 type PasskeyRow = { credential_id: string; user_id: string; public_key: ArrayBuffer; sign_count: number; created_at: number; last_used_at: number | null };
 type ChallengeRow = { purpose: Purpose; user_id: string; display_name: string; expires_at: number };
 type Purpose = "create" | "add" | "sign-in" | "google" | "google-link";
@@ -135,7 +135,7 @@ function storeBackupCodes(sql: SqlStorage, userId: string, hashes: string[]) {
   for (const hash of hashes) sql.exec(`INSERT INTO backup_codes (user_id, code_hash) VALUES (?, ?)`, userId, hash);
 }
 
-const normalizeHandle = (value: unknown) => (typeof value === "string" ? value.trim().replace(/^@/, "").toLowerCase() : "");
+export const normalizeHandle = (value: unknown) => (typeof value === "string" ? value.trim().replace(/^@/, "").toLowerCase() : "");
 
 /** A username someone picks with a password: their public @name, 3 to 20 of a-z and 0-9. */
 function pickedHandle(value: unknown): string {
@@ -180,7 +180,7 @@ function accountView(sql: SqlStorage, user: User) {
   return { userId: user.user_id, handle: user.handle, displayName: user.display_name, ways: ways(sql, user.user_id), backupCodesLeft: left };
 }
 
-const userById = (sql: SqlStorage, userId: string) => sql.exec<User>(`SELECT * FROM users WHERE user_id = ?`, userId).toArray()[0];
+export const userById = (sql: SqlStorage, userId: string) => sql.exec<User>(`SELECT * FROM users WHERE user_id = ?`, userId).toArray()[0];
 
 function insertUser(c: Context, userId: string, name: string, handle = freeHandle(c.sql, name)): User {
   c.sql.exec(`INSERT INTO users (user_id, handle, display_name, created_at, session_version) VALUES (?, ?, ?, ?, 1)`, userId, handle, name, c.now);
@@ -352,7 +352,7 @@ function insertPasskey(sql: SqlStorage, userId: string, passkey: { credentialId:
   sql.exec(`INSERT INTO passkeys (credential_id, user_id, public_key, sign_count, created_at) VALUES (?, ?, ?, ?, ?)`, passkey.credentialId, userId, key, passkey.signCount, now);
 }
 
-interface Context {
+export interface Context {
   storage: DurableObjectStorage;
   sql: SqlStorage;
   env: Env;
@@ -363,7 +363,7 @@ interface Context {
 }
 
 /** A JSON `body`, or for a browser coming back from Google, `googleReturn`: the word the app shows once it is sent back there. */
-type Reply = ({ body: unknown; googleReturn?: undefined } | { googleReturn: string; body?: undefined }) & { signIn?: User; signOut?: true; cookies?: string[] };
+export type Reply = ({ body: unknown; googleReturn?: undefined } | { googleReturn: string; body?: undefined }) & { signIn?: User; signOut?: true; cookies?: string[] };
 
 /** The caller's users row as it is now, or null once another request has moved its `session_version` on. */
 function currentUser(sql: SqlStorage, session: Session | null): User | null {
@@ -375,13 +375,15 @@ function currentUser(sql: SqlStorage, session: Session | null): User | null {
  * The signed-in caller, read fresh on every call. Other requests run while this one awaits,
  * so a route calls this again in the same synchronous segment as its write.
  */
-function signedIn(c: Context): User {
+export function signedIn(c: Context): User {
   const user = currentUser(c.sql, c.session);
   if (!user) throw new Refused("signed-out", 401);
   return user;
 }
 
-const ROUTES: Record<string, (c: Context) => Promise<Reply>> = {
+export type Route = (c: Context) => Promise<Reply>;
+
+export const ACCOUNT_ROUTES: Record<string, Route> = {
   async "POST /api/auth/passkey/create/options"(c) {
     const name = displayName(c.body.name);
     const userId = ulid(c.now);
@@ -583,9 +585,9 @@ async function replyCookie(env: Env, sql: SqlStorage, reply: Reply, session: Ses
   return null;
 }
 
-/** Serves every account route the Directory owns. Unknown paths are 404, refusals are `{error}` with their status. */
-export async function handleAccountRequest(request: Request, storage: DurableObjectStorage, env: Env): Promise<Response> {
-  const route = ROUTES[`${request.method} ${new URL(request.url).pathname}`];
+/** Serves the Directory's API routes. Unknown paths are 404, refusals are `{error}` with their status. */
+export async function handleDirectoryRequest(request: Request, storage: DurableObjectStorage, env: Env, routes: Record<string, Route>): Promise<Response> {
+  const route = routes[`${request.method} ${new URL(request.url).pathname}`];
   if (!route) return Response.json({ error: "not-found" }, { status: 404 });
   const headers = new Headers({ "Cache-Control": "no-store" });
   try {

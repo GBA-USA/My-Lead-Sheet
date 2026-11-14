@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 import { PRIVACY_HREF } from "./data-kinds";
 import { commonPasswords, MIN_PASSWORD_LENGTH, passwordProblem } from "./password";
 import {
@@ -28,6 +28,37 @@ type Step =
 
 /** The word the Worker put in `?google=` when it sent the phone back from Google, or null. */
 export const googleReturn = () => new URLSearchParams(window.location.search).get("google");
+
+const SIGNED_IN_KEY = "leadSheetsSignedIn";
+
+/** The signed-in account. Only a phone that signed in before asks the server on load, so signed-out use calls no API. */
+export function useAccount(): { account: Account | null; setAccount: (account: Account | null) => void; checking: boolean } {
+  const [account, setAccount] = useState<Account | null>(null);
+  const [checking, setChecking] = useState(() => {
+    try {
+      return localStorage.getItem(SIGNED_IN_KEY) !== null;
+    } catch {
+      return false;
+    }
+  });
+  const remember = useCallback((next: Account | null) => {
+    setAccount(next);
+    try {
+      if (next) localStorage.setItem(SIGNED_IN_KEY, "1");
+      else localStorage.removeItem(SIGNED_IN_KEY);
+    } catch {}
+  }, []);
+  useEffect(() => {
+    if (!checking) return;
+    api<SignedIn>("/api/me")
+      .then(
+        (reply) => remember(reply.account),
+        (error) => error instanceof ApiError && error.status === 401 && remember(null),
+      )
+      .finally(() => setChecking(false));
+  }, []);
+  return { account, setAccount: remember, checking };
+}
 
 const MESSAGES: Record<string, string> = {
   NotAllowedError: "Face ID or fingerprint didn't finish. Try again. If it keeps failing, open My Lead Sheet in Safari or Chrome.",

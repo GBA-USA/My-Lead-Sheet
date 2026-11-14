@@ -5,9 +5,9 @@ import {
   NOTATION_KEY,
   SCROLL_PERCENT_KEY,
   SCROLL_VERSIONS_KEY,
-  SETLIST_KEY,
+  SETLIST_ROW,
   SONG_DATA_KEY,
-  SONG_KEY,
+  SONG_ROW,
   copiedOwnItem,
   freeOwnId,
   ownLibraryItems,
@@ -144,7 +144,7 @@ function readLocal(): Local {
   return local;
 }
 
-const isLibraryItem = (key: string) => key.startsWith(`${SONG_KEY}.`) || key.startsWith(`${SETLIST_KEY}.`);
+const isLibraryItem = (key: string) => key.startsWith(`${SONG_ROW}.`) || key.startsWith(`${SETLIST_ROW}.`);
 
 /** Writes one reply's changes, the songs and setlists as one library write, then tells every screen to read again. */
 function writeLocal(writes: Map<string, Value>) {
@@ -179,7 +179,7 @@ function pending(state: State, local: Local) {
 
 /** The song id when `key` is a song's row or one of its settings, `<key>.<song id>`. */
 function songOf(key: string): number | null {
-  for (const prefix of [SONG_KEY, ...PER_SONG_KEYS]) {
+  for (const prefix of [SONG_ROW, ...PER_SONG_KEYS]) {
     const id = key.startsWith(`${prefix}.`) ? Number(key.slice(prefix.length + 1)) : NaN;
     if (Number.isInteger(id)) return id;
   }
@@ -193,7 +193,7 @@ function songOf(key: string): number | null {
 function nextBatch(changes: Map<string, Value>): Map<string, Value> {
   const groupOf = (key: string) => {
     const song = songOf(key);
-    return song !== null ? `0:${String(song).padStart(16, "0")}` : `${key.startsWith(`${SETLIST_KEY}.`) ? 1 : 2}:${key}`;
+    return song !== null ? `0:${String(song).padStart(16, "0")}` : `${key.startsWith(`${SETLIST_ROW}.`) ? 1 : 2}:${key}`;
   };
   const groups = new Map<string, [string, Value][]>();
   for (const entry of changes) groups.set(groupOf(entry[0]), [...(groups.get(groupOf(entry[0])) ?? []), entry]);
@@ -259,7 +259,7 @@ function apply(state: State, sent: Map<string, Value>, reply: Reply, changed: Se
   const settled = new Set<string>();
   const unsent = (key: string) => print(local.get(key) ?? null) !== syncedPrint(state, key);
   const idsIn = (prefix: string) => reply.rows.filter((row) => row.key.startsWith(`${prefix}.`)).map((row) => Number(row.key.slice(prefix.length + 1))).filter(Number.isInteger);
-  const taken = { [SONG_KEY]: idsIn(SONG_KEY), [SETLIST_KEY]: idsIn(SETLIST_KEY) };
+  const taken = { [SONG_ROW]: idsIn(SONG_ROW), [SETLIST_ROW]: idsIn(SETLIST_ROW) };
 
   const moveSetting = (from: string, to: string) => {
     const mine = local.get(from) ?? null;
@@ -271,18 +271,18 @@ function apply(state: State, sent: Map<string, Value>, reply: Reply, changed: Se
       settled.add(from);
     } else if (!state.synced[from]) write(from, null);
   };
-  const keepBoth = (prefix: typeof SONG_KEY | typeof SETLIST_KEY, key: string) => {
+  const keepBoth = (prefix: typeof SONG_ROW | typeof SETLIST_ROW, key: string) => {
     const id = Number(key.slice(prefix.length + 1));
     const to = freeOwnId(localStorage.getItem(LIBRARY_KEY), prefix, taken[prefix]);
     taken[prefix].push(to);
     write(`${prefix}.${to}`, copiedOwnItem(local.get(key)!, to, phoneLabel()));
-    if (prefix !== SONG_KEY) return;
+    if (prefix !== SONG_ROW) return;
     for (const songKey of PER_SONG_KEYS) moveSetting(`${songKey}.${id}`, `${songKey}.${to}`);
-    for (const [other, value] of [...local]) if (other.startsWith(`${SETLIST_KEY}.`) && unsent(other)) write(other, setlistWithSongMoved(value, id, to));
+    for (const [other, value] of [...local]) if (other.startsWith(`${SETLIST_ROW}.`) && unsent(other)) write(other, setlistWithSongMoved(value, id, to));
   };
 
   let conflicts = 0;
-  for (const prefix of [SONG_KEY, SETLIST_KEY] as const) {
+  for (const prefix of [SONG_ROW, SETLIST_ROW] as const) {
     for (const row of reply.rows) {
       const mine = local.get(row.key);
       if (!row.key.startsWith(`${prefix}.`) || !sent.has(row.key) || row.value === null || mine === undefined) continue;

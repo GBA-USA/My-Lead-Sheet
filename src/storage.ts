@@ -189,9 +189,9 @@ export function loadLibrary(): Library {
   };
 }
 
-/** Each own song and setlist is backed up as its own entry, `leadSheetsSong.<id>` or `leadSheetsSetlist.<id>`. */
-export const SONG_KEY = "leadSheetsSong";
-export const SETLIST_KEY = "leadSheetsSetlist";
+/** Backup row names, not localStorage keys: each own song and setlist is backed up as its own row, `leadSheetsSong.<id>` or `leadSheetsSetlist.<id>`. */
+export const SONG_ROW = "leadSheetsSong";
+export const SETLIST_ROW = "leadSheetsSetlist";
 
 type OwnEntry<T> = { item: T; print?: string };
 
@@ -204,8 +204,8 @@ const ownEntry = <T extends { id: number }>(item: T, prints: SeedPrints | undefi
  */
 export function ownLibraryItems(raw: string | null): Map<string, string> {
   const stored = parseStored(raw);
-  const songs = ownItems(stored?.songs ?? [], stored?.seedPrints?.songs).map((song) => [`${SONG_KEY}.${song.id}`, ownEntry(song, stored?.seedPrints?.songs)] as const);
-  const setlists = ownItems(stored?.setlists ?? [], stored?.seedPrints?.setlists).map((setlist) => [`${SETLIST_KEY}.${setlist.id}`, ownEntry(setlist, stored?.seedPrints?.setlists)] as const);
+  const songs = ownItems(stored?.songs ?? [], stored?.seedPrints?.songs).map((song) => [`${SONG_ROW}.${song.id}`, ownEntry(song, stored?.seedPrints?.songs)] as const);
+  const setlists = ownItems(stored?.setlists ?? [], stored?.seedPrints?.setlists).map((setlist) => [`${SETLIST_ROW}.${setlist.id}`, ownEntry(setlist, stored?.seedPrints?.setlists)] as const);
   return new Map([...songs, ...setlists]);
 }
 
@@ -244,10 +244,10 @@ export function withOwnLibraryItems(raw: string | null, changes: Map<string, str
   for (const [key, value] of changes) {
     const id = Number(key.slice(key.indexOf(".") + 1));
     if (!Number.isInteger(id)) continue;
-    if (key.startsWith(`${SONG_KEY}.`)) {
+    if (key.startsWith(`${SONG_ROW}.`)) {
       const entry = value === null ? null : parseEntry<StoredSong>(value, isSong);
       if (value === null || entry?.item.id === id) setOwn(library.songs, library.seedPrints.songs, seed.songs, id, entry);
-    } else if (key.startsWith(`${SETLIST_KEY}.`)) {
+    } else if (key.startsWith(`${SETLIST_ROW}.`)) {
       const entry = value === null ? null : parseEntry<StoredSetlist>(value, isSetlist);
       if (value === null || entry?.item.id === id) setOwn(library.setlists, library.seedPrints.setlists, seed.setlists, id, entry);
     }
@@ -256,9 +256,9 @@ export function withOwnLibraryItems(raw: string | null, changes: Map<string, str
 }
 
 /** The first song or setlist id that neither the stored library nor `taken` uses. */
-export function freeOwnId(raw: string | null, key: typeof SONG_KEY | typeof SETLIST_KEY, taken: number[]): number {
+export function freeOwnId(raw: string | null, key: typeof SONG_ROW | typeof SETLIST_ROW, taken: number[]): number {
   const library = storedLibrary(parseStored(raw));
-  const items: { id: number }[] = key === SONG_KEY ? library.songs : library.setlists;
+  const items: { id: number }[] = key === SONG_ROW ? library.songs : library.setlists;
   return Math.max(0, ...items.map((item) => item.id), ...taken) + 1;
 }
 

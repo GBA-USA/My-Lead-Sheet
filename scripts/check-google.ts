@@ -252,6 +252,7 @@ async function screenChecks() {
 
     await site.send("Emulation.setUserAgentOverride", { userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Instagram 350.0" });
     assert.ok(await click("Sign out"));
+    await atStep("start");
     await site.send("Page.reload");
     await openSheet();
     await until(`!!document.querySelector(".account-sheet [role=note]")`, "the in-app browser note");

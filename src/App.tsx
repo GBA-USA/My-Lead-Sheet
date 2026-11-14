@@ -16,15 +16,16 @@ import {
   loadLibrary,
   loadSongData,
   loadTextScaleIndex,
+  localRef,
   saveAwake,
   saveSongData,
   saveTextScaleIndex,
-  songById,
+  songByRef,
   tempoText,
   withSongData,
 } from "./storage";
 import { SaveTake, TeachBar, taughtPlan, useFollowTempo, useScrollVersions, type BarMenu } from "./teach";
-import type { LibraryFile, Setlist, Song, SongData } from "./types";
+import type { Library, Setlist, Song, SongData, SongRef } from "./types";
 import { SearchBox } from "./search-box";
 import { matchingSetlists, matchingSongs } from "./search";
 
@@ -38,7 +39,7 @@ type Route =
 
 type MenuId = "shell" | "song" | BarMenu | null;
 
-type SongDataById = Record<number, SongData>;
+type SongDataByRef = Record<SongRef, SongData>;
 
 /** Teach mode: the take while it plays or Learn this song while it listens, then what either taught, until Save or Discard. */
 type Teaching = { take: Take } | { learning: true } | { taught: Omit<ScrollVersion, "name">; data?: SongData | null };
@@ -63,12 +64,12 @@ function songHref(id: number, from: TabName): string {
 }
 
 export function App() {
-  const [stored] = useState<LibraryFile>(() => loadLibrary());
-  const [songData, setSongData] = useState<SongDataById>(() =>
-    Object.fromEntries(stored.songs.map((song) => [song.id, loadSongData(song.id)])),
+  const [stored] = useState<Library>(() => loadLibrary());
+  const [songData, setSongData] = useState<SongDataByRef>(() =>
+    Object.fromEntries(stored.songs.map((song) => [song.ref, loadSongData(song.ref)])),
   );
-  const library = useMemo<LibraryFile>(
-    () => ({ ...stored, songs: stored.songs.map((song) => withSongData(song, songData[song.id] ?? {})) }),
+  const library = useMemo<Library>(
+    () => ({ ...stored, songs: stored.songs.map((song) => withSongData(song, songData[song.ref] ?? {})) }),
     [stored, songData],
   );
   const [editing, setEditing] = useState(false);
@@ -97,16 +98,16 @@ export function App() {
   const liveSetlist = route.name === "live" ? library.setlists.find((set) => set.id === route.setlistId) : undefined;
   const liveIndex =
     route.name === "live" && liveSetlist
-      ? Math.min(Math.max(route.index, 0), Math.max(liveSetlist.songIds.length - 1, 0))
+      ? Math.min(Math.max(route.index, 0), Math.max(liveSetlist.songRefs.length - 1, 0))
       : 0;
   const liveSong =
-    route.name === "live" && liveSetlist ? songById(library.songs, liveSetlist.songIds[liveIndex] ?? -1) : undefined;
+    route.name === "live" && liveSetlist ? songByRef(library.songs, liveSetlist.songRefs[liveIndex]) : undefined;
   const activeSong =
-    route.name === "song" ? songById(library.songs, route.id) : route.name === "live" ? liveSong : undefined;
+    route.name === "song" ? songByRef(library.songs, localRef(route.id)) : route.name === "live" ? liveSong : undefined;
 
-  const performance = usePerformance(activeSong?.id ?? null);
+  const performance = usePerformance(activeSong?.ref ?? null);
   const metronome = useMetronome(activeSong?.id ?? null, activeSong ? activeSong.tempo : null);
-  const versions = useScrollVersions(activeSong?.id ?? null);
+  const versions = useScrollVersions(activeSong?.ref ?? null);
   const take = teaching && "take" in teaching ? teaching.take : null;
   const version = versions.selected == null ? null : versions.versions[versions.selected];
   const learned = take ? undefined : version?.learned;
@@ -193,9 +194,9 @@ export function App() {
   const stopTake = (current: Take) => (current.marks.length > 1 ? finishTake(current) : discardTake());
 
   const saveData = (song: Song, data: SongData) => {
-    saveSongData(song.id, data);
-    setSongData((current) => ({ ...current, [song.id]: data }));
-    const tempo = data.tempo ?? songById(stored.songs, song.id)?.tempo ?? null;
+    saveSongData(song.ref, data);
+    setSongData((current) => ({ ...current, [song.ref]: data }));
+    const tempo = data.tempo ?? songByRef(stored.songs, song.ref)?.tempo ?? null;
     if (tempo !== song.tempo) metronome.setBpm(initialMetronomeBpm(tempo));
     setEditing(false);
   };
@@ -274,7 +275,7 @@ export function App() {
 
       {activeSong && (even || versions.versions.length > 0 || route.name === "song") ? (
         <TeachBar
-          key={activeSong.id}
+          key={activeSong.ref}
           versions={versions.versions}
           selected={versions.selected}
           canTeach={even != null}
@@ -300,7 +301,7 @@ export function App() {
       {activeSong && teaching && "learning" in teaching ? (
         <LearnSong
           song={activeSong}
-          original={withSongData(songById(stored.songs, activeSong.id)!, {})}
+          original={withSongData(songByRef(stored.songs, activeSong.ref)!, {})}
           metronomeBpm={metronome.bpm}
           onSave={(taught, data) => setTeaching({ taught, data })}
           onClose={() => setTeaching(null)}
@@ -322,24 +323,24 @@ export function App() {
       {activeSong && editing ? (
         <SongDataEditor
           song={activeSong}
-          original={withSongData(songById(stored.songs, activeSong.id)!, {})}
+          original={withSongData(songByRef(stored.songs, activeSong.ref)!, {})}
           onSave={(data) => saveData(activeSong, data)}
           onClose={() => setEditing(false)}
         />
       ) : null}
 
-      {liveSetlist && liveSetlist.songIds.length > 0 ? (
+      {liveSetlist && liveSetlist.songRefs.length > 0 ? (
         <div className="live-nav">
           <button type="button" aria-label="Previous song" disabled={liveIndex <= 0} onClick={() => goLive(liveIndex - 1)}>
             Prev
           </button>
           <span className="live-count">
-            {liveSetlist.name} · {liveIndex + 1}/{liveSetlist.songIds.length}
+            {liveSetlist.name} · {liveIndex + 1}/{liveSetlist.songRefs.length}
           </span>
           <button
             type="button"
             aria-label="Next song"
-            disabled={liveIndex >= liveSetlist.songIds.length - 1}
+            disabled={liveIndex >= liveSetlist.songRefs.length - 1}
             onClick={() => goLive(liveIndex + 1)}
           >
             Next
@@ -361,7 +362,7 @@ export function App() {
         {route.name === "song" ? (
           <SongBody
             library={library}
-            id={route.id}
+            songRef={localRef(route.id)}
             scale={TEXT_SCALES[textIndex]}
             semitones={performance.semitones}
             notation={performance.notation}
@@ -379,7 +380,7 @@ export function App() {
             />
           ) : (
             <div className="missing">
-              <p>{liveSetlist?.songIds.length === 0 ? "This setlist is empty." : "That setlist isn't in this library."}</p>
+              <p>{liveSetlist?.songRefs.length === 0 ? "This setlist is empty." : "That setlist isn't in this library."}</p>
               <a href="#/setlists">Back to Setlists</a>
             </div>
           )
@@ -409,20 +410,20 @@ function Tab({ name, selected, children }: { name: TabName; selected: boolean; c
 
 function SongBody({
   library,
-  id,
+  songRef,
   scale,
   semitones,
   notation,
   metronome,
 }: {
-  library: LibraryFile;
-  id: number;
+  library: Library;
+  songRef: SongRef;
   scale: number;
   semitones: number;
   notation: "notes" | "nashville";
   metronome: ReturnType<typeof useMetronome>;
 }) {
-  const song = songById(library.songs, id);
+  const song = songByRef(library.songs, songRef);
   if (!song) {
     return (
       <div className="missing">
@@ -445,7 +446,7 @@ function SongList({ songs }: { songs: Song[] }) {
       ) : (
         <ul className="song-list">
           {shown.map((song) => (
-            <li key={song.id}>
+            <li key={song.ref}>
               <a className="song-row" href={songHref(song.id, "songs")}>
                 <span className="song-title">{song.title}</span>
                 <span className="song-artist">{song.artist}</span>
@@ -483,14 +484,14 @@ function SetlistList({ setlists, songs }: { setlists: Setlist[]; songs: Song[] }
                   Live
                 </a>
               </div>
-              {setlist.songIds.length === 0 ? (
+              {setlist.songRefs.length === 0 ? (
                 <p className="setlist-empty">This setlist is empty.</p>
               ) : (
                 <ol>
-                  {setlist.songIds.map((id, index) => {
-                    const song = songById(songs, id);
+                  {setlist.songRefs.map((ref, index) => {
+                    const song = songByRef(songs, ref);
                     return (
-                      <li key={`${setlist.id}-${id}-${index}`}>
+                      <li key={`${setlist.id}-${ref}-${index}`}>
                         {song ? (
                           <a className="song-row setlist-row" href={songHref(song.id, "setlists")}>
                             <span className="setlist-num">{index + 1}</span>

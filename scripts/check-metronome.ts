@@ -437,7 +437,6 @@ if (parsed.indicator !== false || parsed.sound !== true || parsed.syncMode !== "
 console.log(`persist: +50 ms and the switches reload; bad fields fall back alone; offset ${model.SYNC_OFFSET_MIN_MS}..+${model.SYNC_OFFSET_MAX_MS} ms in ${model.SYNC_OFFSET_STEP_MS} ms steps`);
 root.unmount();
 
-if (typeof audio.followBand !== "function") fail("no band click: metronome-audio has no followBand");
 audio.stopMetronome();
 const speaker = FakeAudioContext.last;
 speaker.outputLatency = 0.012;
@@ -506,6 +505,17 @@ const rejoined = heardClicks(rejoinFrom).map(heardBand);
 const onRejoinGrid = (at: number) => Math.abs(((at - rejoinGrid.startAt) * rejoinGrid.bpm) / 60_000 - Math.round(((at - rejoinGrid.startAt) * rejoinGrid.bpm) / 60_000)) * (60_000 / rejoinGrid.bpm) < 0.1;
 if (!rejoined.length || rejoined.some((at) => at < rejoinedAt) || !rejoined.every(onRejoinGrid)) fail("joining a running grid must click only beats still to come, each on the grid");
 console.log(`joining a grid 10 s in: ${rejoined.length} clicks in 2 s, none for beats already past, each on the grid`);
+
+audio.stopMetronome();
+const badFrom = scheduled.length;
+for (const bpm of [-120, 0, 1e7]) {
+  const startAt = bandNow() + 100;
+  audio.followBand([{ at: startAt, value: { bpm, beatsPerBar: 4, startAt, firstBar: 0 } }] as never, bandAt, SPEAKER_MS, () => failures++);
+  await settle();
+  run(0.5, moduleDot);
+}
+if (scheduled.length !== badFrom) fail(`a band grid at an impossible bpm scheduled ${scheduled.length - badFrom} clicks`);
+console.log("band grid at -120, 0 or 10,000,000 bpm: no clicks");
 
 audio.stopMetronome();
 speaker.drift(1);

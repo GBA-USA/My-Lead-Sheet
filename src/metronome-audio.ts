@@ -1,10 +1,10 @@
 import { beatTime, type Grid } from "./band-time";
 import type { Timeline } from "./gig-state";
-import { clampMetronomeBpm, isHighLatencyOutput, metronomeBeatSeconds } from "./metronome";
+import { METRONOME_MAX, METRONOME_MIN, clampMetronomeBpm, isHighLatencyOutput, metronomeBeatSeconds } from "./metronome";
 import type { TimeSource } from "./scroll-timing";
 
 /** Solo beats are milliseconds on the audio clock. Band beats are band milliseconds, heard `speakerDelayMs` after the output presents them. */
-type Clock = { kind: "solo" } | { kind: "band"; bandAt: TimeSource; speakerDelayMs: number };
+type Timebase = { kind: "solo" } | { kind: "band"; bandAt: TimeSource; speakerDelayMs: number };
 
 /** The beat at `at` on the clock sounds at audio time `ctx + (at - band) / 1000`. */
 interface Anchor {
@@ -18,8 +18,10 @@ interface Click {
   gain: GainNode | null;
 }
 
-const SOLO: Clock = { kind: "solo" };
+const SOLO: Timebase = { kind: "solo" };
 const SAME_BEAT_MS = 0.01;
+/** Longer than any output, speaker and dot delay, so the click the dot is showing is never dropped. */
+const HEARD_WITHIN_S = 2;
 
 let audio: AudioContext | null = null;
 let timer = 0;
@@ -28,7 +30,7 @@ let armed = false;
 let bpm = 0;
 let sound = true;
 let listening = false;
-let clock: Clock = SOLO;
+let timebase: Timebase = SOLO;
 let beats: Timeline<Grid | null> = [];
 let last = -Infinity;
 let clicks: Click[] = [];
@@ -67,7 +69,6 @@ function resume(ctx: AudioContext, then: () => void) {
 }
 
 function scheduleClick(ctx: AudioContext, at: number, time: number) {
-  last = at;
   if (!sound) {
     clicks.push({ at, time, gain: null });
     return;
@@ -95,7 +96,7 @@ function scheduleClick(ctx: AudioContext, at: number, time: number) {
 function* beatsBetween(from: number, to: number) {
   for (let i = 0; i < beats.length; i += 1) {
     const grid = beats[i].value;
-    if (!grid) continue;
+    if (!grid || !(grid.bpm >= METRONOME_MIN && grid.bpm <= METRONOME_MAX)) continue;
     const end = Math.min(to, (beats[i + 1]?.at ?? Infinity) - SAME_BEAT_MS);
     const first = Math.max(from + SAME_BEAT_MS, beats[i].at - SAME_BEAT_MS);
     for (let n = Math.max(0, Math.ceil(((first - grid.startAt) * grid.bpm) / 60_000)); beatTime(grid, n) < end; n += 1) {
@@ -112,10 +113,10 @@ function soloGrid(time: number) {
 
 /** Read afresh every tick, so the band's clicks follow the output however the audio clock drifts. Null until the output is presenting audio. */
 function anchor(ctx: AudioContext): Anchor | null {
-  if (clock.kind === "solo") return { band: 0, ctx: 0 };
+  if (timebase.kind === "solo") return { band: 0, ctx: 0 };
   const stamp = ctx.getOutputTimestamp?.();
   if (!stamp?.performanceTime || stamp.contextTime == null) return null;
-  return { band: clock.bandAt(stamp.performanceTime) + clock.speakerDelayMs, ctx: stamp.contextTime };
+  return { band: timebase.bandAt(stamp.performanceTime) + timebase.speakerDelayMs, ctx: stamp.contextTime };
 }
 
 function queue() {
@@ -131,12 +132,16 @@ function tick() {
     const now = audio.currentTime;
     const timeOf = (at: number) => map.ctx + (at - map.band) / 1000;
     const atOf = (time: number) => map.band + (time - map.ctx) * 1000;
-    if (clock.kind === "solo") {
+    if (timebase.kind === "solo") {
       const next = beatsBetween(last, Infinity).next().value;
       if (next != null && timeOf(next) < now - 0.05) soloGrid(now + 0.02);
     }
-    const from = clock.kind === "band" ? Math.max(last, atOf(now)) : last;
-    for (const at of beatsBetween(from, atOf(now + 0.12))) scheduleClick(audio, at, timeOf(at));
+    while (clicks.length > 1 && clicks[1].time < now - HEARD_WITHIN_S) clicks.shift();
+    const from = timebase.kind === "band" ? Math.max(last, atOf(now)) : last;
+    for (const at of beatsBetween(from, atOf(now + 0.12))) {
+      scheduleClick(audio, at, timeOf(at));
+      last = at;
+    }
   }
   queue();
 }
@@ -169,7 +174,7 @@ function begin(fail: () => void, kick: (ctx: AudioContext) => void) {
  */
 export function startMetronome(nextBpm: number, fail: () => void) {
   if (!(nextBpm > 0)) return;
-  if (clock.kind === "band") stopMetronome();
+  if (timebase.kind === "band") stopMetronome();
   bpm = nextBpm;
   begin(fail, (ctx) => {
     if (!armed) arm(ctx);
@@ -182,8 +187,8 @@ export function startMetronome(nextBpm: number, fail: () => void) {
  * Call again with each new timeline. A queued click the new one no longer has, as after a late Stop or tempo change, is silenced.
  */
 export function followBand(click: Timeline<Grid | null>, bandAt: TimeSource, speakerDelayMs: number, fail: () => void) {
-  if (clock.kind === "solo") stopMetronome();
-  clock = { kind: "band", bandAt, speakerDelayMs };
+  if (timebase.kind === "solo") stopMetronome();
+  timebase = { kind: "band", bandAt, speakerDelayMs };
   beats = click;
   const now = audio?.currentTime ?? 0;
   const stays = (each: Click) => each.time <= now || !beatsBetween(each.at - 2 * SAME_BEAT_MS, each.at + 2 * SAME_BEAT_MS).next().done;
@@ -196,7 +201,7 @@ export function followBand(click: Timeline<Grid | null>, bandAt: TimeSource, spe
 export function setMetronomeBpm(nextBpm: number) {
   if (!(nextBpm > 0)) return;
   bpm = nextBpm;
-  if (!running || !audio || !armed || clock.kind !== "solo") return;
+  if (!running || !audio || !armed || timebase.kind !== "solo") return;
   const beat = metronomeBeatSeconds(bpm);
   const latest = audio.currentTime + beat;
   const next = (beatsBetween(last, Infinity).next().value ?? latest * 1000) / 1000;
@@ -206,7 +211,7 @@ export function setMetronomeBpm(nextBpm: number) {
 export function stopMetronome() {
   running = false;
   armed = false;
-  clock = SOLO;
+  timebase = SOLO;
   beats = [];
   last = -Infinity;
   clicks = [];
@@ -233,7 +238,7 @@ function outputLatency(ctx: AudioContext): number {
  */
 export function secondsSinceHeardClick(offsetSeconds: number): number | null {
   if (!audio) return null;
-  const speaker = clock.kind === "band" ? clock.speakerDelayMs / 1000 : 0;
+  const speaker = timebase.kind === "band" ? timebase.speakerDelayMs / 1000 : 0;
   const heard = audio.currentTime - outputLatency(audio) - speaker - offsetSeconds;
   while (clicks.length > 1 && clicks[1].time <= heard) clicks.shift();
   return clicks.length > 0 && clicks[0].time <= heard ? heard - clicks[0].time : null;

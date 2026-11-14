@@ -13,6 +13,8 @@ import { createRelay } from "../spike/lan/relay.mjs";
 const CHROME = process.env.CHROME ?? "/usr/bin/google-chrome";
 const TURN_USER = "spike-user";
 const SECRET = "spike-check-not-a-real-credential";
+const AUTO_ROUTE_DEADLINE_MS = 10_000;
+const ANSWER_SCAN_DELAY_MS = AUTO_ROUTE_DEADLINE_MS + 2_000;
 
 function checkClockFilter() {
   const clock = createClock();
@@ -200,9 +202,12 @@ async function runLan(origin: string) {
   await follower.evaluate(`window.spike.accept(${JSON.stringify(offerCode)})`);
   const answerCode = await until("follower QR answer", () => follower.evaluate<string>("window.spike.lastCode()"), (code) => typeof code === "string");
   assert.match(answerCode, /\?role=handback#qr=/);
+  await new Promise((resolve) => setTimeout(resolve, ANSWER_SCAN_DELAY_MS));
   await leader.evaluate(`window.spike.accept(${JSON.stringify(answerCode)})`);
-  const qr2 = await until("two-scan link opens", () => result(leader), (r) => r.links.some((l: any) => l.intro === "qr2" && l.openMs !== null));
+  const qr2 = await until(`two-scan link opens with the answer scanned ${ANSWER_SCAN_DELAY_MS} ms late`, () => result(leader), (r) => r.links.some((l: any) => l.intro === "qr2" && l.openMs !== null));
   assert.ok(qr2.links.find((l: any) => l.intro === "qr2").qrChars > 0, "QR size recorded");
+  const followerQr2 = (await result(follower)).links.find((l: any) => l.intro === "qr2");
+  assert.ok(followerQr2.openMs !== null && followerQr2.closedMs === null, `follower keeps the two-scan link while the person scans the answer (closed ${followerQr2.closedMs} ms, ${followerQr2.closeReason})`);
 
   await follower.evaluate(`window.spike.press("Show my link certificate")`);
   const certCode = await until("certificate code", () => follower.evaluate<string>("window.spike.lastCode()"), (code) => code !== answerCode);

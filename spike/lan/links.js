@@ -630,7 +630,7 @@ export async function startDrill(config) {
         return ui.say(rec.error);
       }
       ui.say(intro === "qr2" ? "Show this code to the leader" : "Linking with one scan");
-      finishOpen(link, "The QR link didn't connect");
+      finishOpen(link, "The QR link didn't connect", intro === "qr2" ? { ms: SCAN_WAIT_MS } : {});
       return;
     }
     ui.say(`This page can't use a "${message.m}" code`);

@@ -147,6 +147,11 @@ Each results file has a `bars` block that checks itself against the numbers belo
 | C2 | Relay MB per hour, against the budget of about 2.7 MB per relayed follower per 3-hour gig | `links[].bytes.mbPerHour` on the relay routes, both phones | 7.16 |
 | C2 | The relay over TLS on 443 links on every carrier | `links[]` with `route: "relay-tls443"` | 7.2 |
 
+Two cautions when you read these numbers:
+
+- `noticeMs` on the Wi-Fi attempt is usually the 5 s timer firing, not the moment the phone found out. It is only lower when the network reports a failure first. Judge the 5 s bar by `bars.settleMs` on the `plan=auto` run.
+- Codes carry every address at once, so each link first waits for its addresses (up to 4 s, in `links[].gatherMs`). `settleMs` includes that wait. The link time is `settleMs - gatherMs`. A slow or dead relay address can push Auto past 5 s even when the link itself is fast.
+
 What a no-go means (PLAN.md section 11, Gates):
 
 - C1 no-go makes Auto skip the Wi-Fi link, and the plan is revisited.
@@ -164,6 +169,8 @@ Answer these on the test account and send them with the results. C7b's spend gua
 | 4 | Can a credential be revoked before it expires? | The TURN key's API (a revoke call), or deleting the key | Whether a revoked credential stops a live relayed link, and how fast. Test it on a `plan=each` run while `relay-tcp` is held. |
 
 Also set up the usage-based billing notification (Notifications, then usage-based billing, lowest threshold) and note that it exists (7.16, step 5).
+
+Fact 3 picks the spend-guard mode (PLAN.md section 11, Gates). If the usage numbers can't be read, C7b ships the credential-minute budget, and most relayed phones use the server instead.
 
 ## 8. What the local check covers, and what it doesn't
 

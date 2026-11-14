@@ -11,7 +11,7 @@ type Merge = (server: Value, phone: Value, phoneLabel: string) => Value;
 interface Kind {
   name: string;
   key: string;
-  /** False when `key.<song ref>` entries belong to this kind too. */
+  /** Only `key` itself. Without it, every `key.<song ref>` entry belongs to the kind too. */
   exact?: true;
   /** What this phone backs up for the key, from the raw localStorage text. */
   read?: (raw: Value) => Value;
@@ -119,7 +119,8 @@ const writeState = (state: State) => localStorage.setItem(BACKUP_KEY, JSON.strin
 
 function readValue(key: string): Value {
   const raw = localStorage.getItem(key);
-  return kindOf(key)?.read?.(raw) ?? raw;
+  const read = kindOf(key)?.read;
+  return read ? read(raw) : raw;
 }
 
 function writeValue(key: string, value: Value) {

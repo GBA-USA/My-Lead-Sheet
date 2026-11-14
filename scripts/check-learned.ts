@@ -128,7 +128,8 @@ async function openSong(id: number, scale: number, setup = "") {
 
 async function learnOnce() {
   await evaluate(`window.__mic = null`);
-  await click(".teach-btn", "Learn this song");
+  await click(".teach-btn", "Customize scroll ▾");
+  await click("[role=menu] button", "Learn by listen (play the song)");
   await until(`!!window.__mic`, "the mic");
   await evaluate(`window.__playSong(document.querySelectorAll(".chart-heading").length)`);
   await pause(50);

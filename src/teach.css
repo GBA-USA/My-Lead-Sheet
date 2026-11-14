@@ -4,19 +4,19 @@
   flex: none;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 6px;
   min-width: 0;
-  padding: 0 10px 8px;
+  padding: 0 10px 2px;
 }
 
+/* A 32px pill inside a 44px touch target. */
 .teach-btn,
-.teach-select,
 .teach-name {
-  height: 32px;
-  border: 0;
+  height: 44px;
+  border: 6px solid transparent;
   border-radius: 999px;
-  background: var(--bg-2);
+  background: var(--bg-2) padding-box;
   color: var(--text);
   font-weight: 700;
   font-size: 13px;
@@ -24,7 +24,41 @@
 }
 
 .teach-btn {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   padding: 0 12px;
+}
+
+.teach-dim {
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.teach-bar .menu-anchor:first-child {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.teach-bar .menu-anchor:first-child .menu {
+  left: 0;
+  right: auto;
+}
+
+.teach-bar .menu {
+  width: max-content;
+  max-width: calc(100vw - 20px);
+}
+
+.teach-bar .menu button {
+  height: auto;
+  min-height: 44px;
+}
+
+.menu-divider {
+  height: 1px;
+  margin: 6px;
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .teach-btn.is-on {
@@ -34,12 +68,6 @@
 
 .teach-btn:disabled {
   opacity: 0.35;
-}
-
-.teach-select {
-  min-width: 0;
-  max-width: 40%;
-  padding: 0 10px;
 }
 
 .teach-name {
@@ -124,13 +152,12 @@
 
 @media (min-width: 768px) {
   .teach-bar {
-    padding: 0 20px 12px;
+    padding: 0 20px 6px;
   }
 
   .teach-btn,
-  .teach-select,
   .teach-name {
-    height: 36px;
+    height: 48px;
     font-size: 14px;
   }
 }

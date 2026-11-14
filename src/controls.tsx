@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, type ReactNode } from "react";
 import { SCROLL_MAX, SCROLL_MIN, SCROLL_STEP, type Notation } from "./music";
 
 /** The song header keeps the Phase 1 phone and tablet arrangement. */
@@ -137,23 +137,25 @@ export function TransposeStrip({
   );
 }
 
-export function OverflowMenu({
+/** A button that opens a menu below it. Escape or a tap outside closes it. */
+export function Menu({
+  button,
   label,
-  size = "compact",
+  className,
   open,
   onToggle,
   onClose,
-  onSongData,
+  children,
 }: {
-  label: string;
-  size?: "compact" | "shell";
+  button: ReactNode;
+  label?: string;
+  className: string;
   open: boolean;
   onToggle: () => void;
   onClose: () => void;
-  onSongData?: () => void;
+  children: ReactNode;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
-  const noteId = useId();
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
@@ -177,7 +179,7 @@ export function OverflowMenu({
     <div className="menu-anchor" ref={rootRef}>
       <button
         type="button"
-        className={size === "shell" ? "icon-btn" : "more-btn"}
+        className={className}
         aria-label={label}
         aria-haspopup="menu"
         aria-expanded={open}
@@ -186,34 +188,65 @@ export function OverflowMenu({
           onToggle();
         }}
       >
-        <DotsIcon />
+        {button}
       </button>
       {open ? (
         <div className="menu" role="menu">
-          {onSongData ? (
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                onClose();
-                onSongData();
-              }}
-            >
-              Song timing
-            </button>
-          ) : null}
-          <button type="button" role="menuitem" disabled aria-describedby={noteId}>
-            Edit
-          </button>
-          <button type="button" role="menuitem" disabled aria-describedby={noteId}>
-            Delete
-          </button>
-          <p className="menu-note" id={noteId}>
-            Coming in a later version
-          </p>
+          {children}
         </div>
       ) : null}
     </div>
+  );
+}
+
+export function OverflowMenu({
+  label,
+  size = "compact",
+  open,
+  onToggle,
+  onClose,
+  onSongData,
+}: {
+  label: string;
+  size?: "compact" | "shell";
+  open: boolean;
+  onToggle: () => void;
+  onClose: () => void;
+  onSongData?: () => void;
+}) {
+  const noteId = useId();
+
+  return (
+    <Menu
+      button={<DotsIcon />}
+      label={label}
+      className={size === "shell" ? "icon-btn" : "more-btn"}
+      open={open}
+      onToggle={onToggle}
+      onClose={onClose}
+    >
+      {onSongData ? (
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => {
+            onClose();
+            onSongData();
+          }}
+        >
+          Song timing
+        </button>
+      ) : null}
+      <button type="button" role="menuitem" disabled aria-describedby={noteId}>
+        Edit
+      </button>
+      <button type="button" role="menuitem" disabled aria-describedby={noteId}>
+        Delete
+      </button>
+      <p className="menu-note" id={noteId}>
+        Coming in a later version
+      </p>
+    </Menu>
   );
 }
 

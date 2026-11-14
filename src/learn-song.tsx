@@ -65,7 +65,7 @@ function barText(beat: number, bar: number): string {
 }
 
 /**
- * The Learn this song button and its sheet: listen to the whole song, then review the length, tempo,
+ * The Learn this song sheet: listen to the whole song while it is open, then review the length, tempo,
  * sections and suggested vocals, and save them as a new timing version.
  */
 export function LearnSong({
@@ -73,18 +73,19 @@ export function LearnSong({
   original,
   metronomeBpm,
   onSave,
+  onClose,
 }: {
   song: Song;
   original: Song;
   metronomeBpm: number | null;
   onSave: (version: Omit<ScrollVersion, "name">, data: SongData | null) => void;
+  onClose: () => void;
 }) {
-  const [step, setStep] = useState<Step | null>(null);
+  const [step, setStep] = useState<Step>({ kind: "listening", heard: 0 });
   const stopListening = useRef<() => SongListener | null>(() => null);
   const titleId = useId();
   const headings = song.body.map((section) => section.heading);
   const bar = beatsPerBar(song.timeSignature);
-  useEffect(() => () => void stopListening.current(), []);
 
   const listen = () => {
     setStep({ kind: "listening", heard: 0 });
@@ -93,9 +94,13 @@ export function LearnSong({
       noMic: () => setStep({ kind: "note", text: NO_MIC }),
     });
   };
+  useEffect(() => {
+    listen();
+    return () => void stopListening.current();
+  }, []);
   const cancel = () => {
     stopListening.current();
-    setStep(null);
+    onClose();
   };
   const finish = () => {
     const analysis = stopListening.current()?.analyze(headings.length, bar);
@@ -106,60 +111,50 @@ export function LearnSong({
     );
   };
 
-  return (
-    <>
-      <button type="button" className="teach-btn" onClick={listen}>
-        Learn this song
-      </button>
-      {step
-        ? createPortal(
-            <div className="learn-backdrop">
-              <div className="learn" role="dialog" aria-modal="true" aria-labelledby={titleId}>
-                <h2 id={titleId}>Learn this song</h2>
-                {step.kind === "listening" ? (
-                  <Listening heard={step.heard} runtime={song.officialRuntimeSec} onStop={finish} onCancel={cancel} />
-                ) : null}
-                {step.kind === "note" ? (
-                  <>
-                    <p role="status">{step.text}</p>
-                    <div className="learn-actions">
-                      <button type="button" onClick={cancel}>
-                        Cancel
-                      </button>
-                      <button type="button" className="is-primary" onClick={listen}>
-                        Try again
-                      </button>
-                    </div>
-                  </>
-                ) : null}
-                {step.kind === "review" ? (
-                  <Review
-                    step={step}
-                    headings={headings}
-                    bar={bar}
-                    song={song}
-                    onChange={setStep}
-                    onCancel={cancel}
-                    onSave={() => {
-                      const { analysis, boundaries, useForSong } = step;
-                      const tempo = Math.round(analysis.tempos[0].bpm);
-                      const vocals = analysis.vocals.filter((_, i) => step.vocals[i]);
-                      const runtime = formatRuntime(Math.round(analysis.sound.end - analysis.sound.start));
-                      const data = useForSong
-                        ? songDataFromForm(original, { runtime, bpm: String(tempo), timeSignature: song.timeSignature })
-                        : null;
-                      const bpm = useForSong ? tempo : (metronomeBpm ?? tempo);
-                      onSave(learnedVersion(analysis, { boundaries, vocals }, headings, bar, bpm), data);
-                      setStep(null);
-                    }}
-                  />
-                ) : null}
-              </div>
-            </div>,
-            document.body,
-          )
-        : null}
-    </>
+  return createPortal(
+    <div className="learn-backdrop">
+      <div className="learn" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+        <h2 id={titleId}>Learn this song</h2>
+        {step.kind === "listening" ? (
+          <Listening heard={step.heard} runtime={song.officialRuntimeSec} onStop={finish} onCancel={cancel} />
+        ) : null}
+        {step.kind === "note" ? (
+          <>
+            <p role="status">{step.text}</p>
+            <div className="learn-actions">
+              <button type="button" onClick={cancel}>
+                Cancel
+              </button>
+              <button type="button" className="is-primary" onClick={listen}>
+                Try again
+              </button>
+            </div>
+          </>
+        ) : null}
+        {step.kind === "review" ? (
+          <Review
+            step={step}
+            headings={headings}
+            bar={bar}
+            song={song}
+            onChange={setStep}
+            onCancel={cancel}
+            onSave={() => {
+              const { analysis, boundaries, useForSong } = step;
+              const tempo = Math.round(analysis.tempos[0].bpm);
+              const vocals = analysis.vocals.filter((_, i) => step.vocals[i]);
+              const runtime = formatRuntime(Math.round(analysis.sound.end - analysis.sound.start));
+              const data = useForSong
+                ? songDataFromForm(original, { runtime, bpm: String(tempo), timeSignature: song.timeSignature })
+                : null;
+              const bpm = useForSong ? tempo : (metronomeBpm ?? tempo);
+              onSave(learnedVersion(analysis, { boundaries, vocals }, headings, bar, bpm), data);
+            }}
+          />
+        ) : null}
+      </div>
+    </div>,
+    document.body,
   );
 }
 

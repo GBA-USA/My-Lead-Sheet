@@ -296,6 +296,22 @@ if (pad().getAttribute("aria-pressed") !== "false" || afterOff.some((frame) => f
 }
 console.log("on/off: one tap starts, the next single tap stops; no double tap involved");
 
+const offWithNoDot = () => pad().getAttribute("aria-pressed") === "false" && pad().textContent.endsWith("Off") && run(2, sheetDot).every((frame) => frame.state === "none");
+FakeAudioContext.last.state = "suspended";
+resumeRejects = true;
+await tap(pad());
+if (!offWithNoDot()) fail("a refused resume on tap must leave the pad Off with no dot");
+resumeRejects = false;
+await tap(pad());
+if (pad().getAttribute("aria-pressed") !== "true" || run(1, sheetDot).every((frame) => frame.state !== "on")) fail("once audio starts, the pad says On and the dot lights");
+FakeAudioContext.last.state = "suspended";
+resumeRejects = true;
+dom.document.listeners.filter((listener) => listener.type === "visibilitychange").forEach((listener) => listener.run({}));
+await settle();
+if (!offWithNoDot()) fail("a refused resume on return to the page must turn the pad Off and remove the dot");
+resumeRejects = false;
+console.log("sheet: a refused resume, on tap or on return to the page, leaves the pad Off and no dot; a working start shows On and lights the dot");
+
 await tap(pad());
 await tap(buttonIn(byClass("metronome"), "Settings"));
 if (!byClass("metro-panel")) fail("Settings must open the metronome settings panel");

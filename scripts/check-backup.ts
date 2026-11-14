@@ -51,7 +51,6 @@ class Device {
   calls = 0;
   /** Runs once, after the next reply arrives and before the app reads it: an edit made while a sync is on its way. */
   duringFetch: (() => void) | null = null;
-  /** How many more requests reach the server before the network drops. */
   requestsLeft = Infinity;
   readonly phone: Phone;
   readonly agent: string;

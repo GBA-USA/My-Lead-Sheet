@@ -22,7 +22,8 @@
     "check:search": "node --experimental-strip-types scripts/check-search.ts",
     "check:metronome": "node --experimental-strip-types scripts/check-metronome.ts",
     "check:bar": "node --experimental-strip-types scripts/check-bar.ts",
-    "check:heard": "node --experimental-strip-types scripts/check-heard.ts"
+    "check:heard": "node --experimental-strip-types scripts/check-heard.ts",
+    "check:api": "tsc -p worker && node --experimental-strip-types scripts/check-api.ts"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.5",
@@ -31,10 +32,12 @@
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261114.1",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.4.1",
     "typescript": "^5.8.3",
-    "vite": "^6.3.5"
+    "vite": "^6.3.5",
+    "wrangler": "^4.162.0"
   }
 }

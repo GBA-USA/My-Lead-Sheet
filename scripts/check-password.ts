@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { pbkdf2Sync } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { Phone, startApi } from "./api-session.ts";
 import { openSite } from "./chrome.ts";
 import { newSalt, parseCommonPasswords, passwordKey, passwordProblem, PBKDF2_ROUNDS } from "../src/password.ts";
@@ -10,6 +13,16 @@ const PEPPER = "check-only-password-pepper-0123456789abcdef";
 const root = new URL("..", import.meta.url).pathname;
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
 const randomKey = () => Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url");
+
+const PASSWORDS = new Set<string>();
+const SENT_KEYS = new Set<string>();
+/** The phone's key, remembered so the check can prove the Directory never stores it or the password. */
+async function phoneKey(password: string, salt: string) {
+  const key = await passwordKey(password, salt);
+  PASSWORDS.add(password);
+  SENT_KEYS.add(key);
+  return key;
+}
 
 let address = 0;
 /** A phone on its own network address, so the per-address limit of one part of the check stays out of the others. */
@@ -24,12 +37,12 @@ const phoneOnNewAddress = (base: string) => {
 
 async function signInWithPassword(phone: Phone, handle: string, password: string) {
   const { salt } = (await phone.call("/api/auth/password/salt", { handle })).body;
-  return phone.call("/api/auth/password/sign-in", { handle, key: await passwordKey(password, salt) });
+  return phone.call("/api/auth/password/sign-in", { handle, key: await phoneKey(password, salt) });
 }
 
 async function createWithPassword(phone: Phone, name: string, handle: string, password: string) {
   const salt = newSalt();
-  return phone.call("/api/auth/password/create", { name, handle, salt, key: await passwordKey(password, salt) });
+  return phone.call("/api/auth/password/create", { name, handle, salt, key: await phoneKey(password, salt) });
 }
 
 function assertWait(waitMs: unknown, minutes: number, label: string) {
@@ -40,7 +53,7 @@ function assertWait(waitMs: unknown, minutes: number, label: string) {
 async function apiChecks() {
   const salt = newSalt();
   assert.equal(
-    await passwordKey("correct horse battery", salt),
+    await phoneKey("correct horse battery", salt),
     pbkdf2Sync("correct horse battery", Buffer.from(salt, "base64url"), 600_000, 32, "sha256").toString("base64url"),
     "the phone's key is PBKDF2-SHA256 at 600,000 rounds, 32 bytes",
   );
@@ -53,8 +66,10 @@ async function apiChecks() {
   assert.match(passwordProblem("short", list) ?? "", /at least 10/, "a short password is refused");
   assert.equal(passwordProblem("violet tram 42 lantern", list), null, "an uncommon long password is fine");
 
-  const { worker, base } = await startApi({ PASSWORD_PEPPER: PEPPER, PASSWORD_MINUTE_MS: String(MINUTE_MS) });
+  const state = mkdtempSync(join(tmpdir(), "check-password-state-"));
+  const { worker, base } = await startApi({ PASSWORD_PEPPER: PEPPER, PASSWORD_MINUTE_MS: String(MINUTE_MS) }, state);
   try {
+    assert.equal((await fetch(new URL("/api/auth/config", base)).then((r) => r.json())).password, true, "with a pepper the server offers passwords");
     const pat = phoneOnNewAddress(base);
     const made = await createWithPassword(pat, "Pat Password", "@PatBass", "violet tram 42 lantern");
     assert.equal(made.status, 200, `Make a password creates the account (${JSON.stringify(made.body)})`);
@@ -94,19 +109,21 @@ async function apiChecks() {
 
     const tries = phoneOnNewAddress(base);
     const miss = () => tries.call("/api/auth/password/sign-in", { handle: "patbass", key: randomKey() });
+    const patKey = await phoneKey("violet tram 42 lantern", real.salt);
     for (let n = 2; n <= 4; n += 1) assert.deepEqual((await miss()).body, { error: "wrong-password" }, `wrong try ${n} starts no wait`);
     const fifth = await miss();
     assertWait(fifth.body.waitMs, 1, "the fifth wrong try in a row");
-    const waiting = await signInWithPassword(tries, "patbass", "violet tram 42 lantern");
+    let lastWait: number = fifth.body.waitMs;
+    const waiting = await tries.call("/api/auth/password/sign-in", { handle: "patbass", key: patKey });
     assert.deepEqual([waiting.status, waiting.body.error], [429, "wait"], "during the wait even the right password is turned away");
     assert.ok(waiting.body.waitMs <= MINUTE_MS, "the wait answer says how long is left");
     for (const minutes of [5, 15, 60, 60]) {
-      await sleep(Math.max(fifth.body.waitMs, MINUTE_MS) + 20);
+      await sleep(Math.max(lastWait, MINUTE_MS) + 20);
       const next = await miss();
       assertWait(next.body.waitMs, minutes, "the next wrong try after the wait");
-      fifth.body.waitMs = next.body.waitMs;
+      lastWait = next.body.waitMs;
     }
-    await sleep(fifth.body.waitMs + 20);
+    await sleep(lastWait + 20);
     assert.equal((await signInWithPassword(tries, "patbass", "violet tram 42 lantern")).status, 200, "after the longest wait the right password works: no permanent lockout");
     assert.deepEqual((await miss()).body, { error: "wrong-password" }, "a right password resets the count, so the next wrong try starts no wait");
 
@@ -118,7 +135,7 @@ async function apiChecks() {
     const kimLaptop = new Phone(base, passkeyOnly.authenticator);
     assert.equal((await kimLaptop.signIn()).status, 200, "Kim is signed in on a second phone");
     const kimSalt = newSalt();
-    assert.equal((await passkeyOnly.call("/api/me/password", { salt: kimSalt, key: await passwordKey("kim's long passphrase", kimSalt) })).status, 200, "a passkey account adds a password");
+    assert.equal((await passkeyOnly.call("/api/me/password", { salt: kimSalt, key: await phoneKey("kim's long passphrase", kimSalt) })).status, 200, "a passkey account adds a password");
     assert.equal((await passkeyOnly.call("/api/me")).status, 200, "the phone that added it stays signed in");
     assert.equal((await kimLaptop.call("/api/me")).status, 401, "setting a password signs the other phone out");
     const kimTries = phoneOnNewAddress(base);
@@ -142,7 +159,7 @@ async function apiChecks() {
     assert.deepEqual([used.status, used.body.account.backupCodesLeft], [200, 7], "Forgot password: a backup code signs in and 7 are left");
     assert.equal((await phoneOnNewAddress(base).call("/api/auth/backup-code", { handle: "patbass", code: codes[0] })).status, 401, "the same code is refused the second time");
     const resetSalt = newSalt();
-    const reset = await recover.call("/api/me/password", { salt: resetSalt, key: await passwordKey("a brand new passphrase", resetSalt) });
+    const reset = await recover.call("/api/me/password", { salt: resetSalt, key: await phoneKey("a brand new passphrase", resetSalt) });
     assert.equal(reset.status, 200, "then sets a new password");
     assert.equal((await signInWithPassword(phoneOnNewAddress(base), "patbass", "violet tram 42 lantern")).status, 401, "the old password no longer works");
     assert.equal((await signInWithPassword(phoneOnNewAddress(base), "patbass", "a brand new passphrase")).status, 200, "the new one does");
@@ -153,7 +170,7 @@ async function apiChecks() {
     await signInWithPassword(other, "patbass", "a brand new passphrase");
     const before = Number(keeper.cookie.split(".")[1]);
     const changeSalt = newSalt();
-    const changed = await keeper.call("/api/me/password", { salt: changeSalt, key: await passwordKey("changed on the keeper", changeSalt) });
+    const changed = await keeper.call("/api/me/password", { salt: changeSalt, key: await phoneKey("changed on the keeper", changeSalt) });
     assert.equal(changed.status, 200, "Change password works");
     assert.equal(Number(keeper.cookie.split(".")[1]), before + 1, "Change password bumps session_version");
     assert.equal((await keeper.call("/api/me")).status, 200, "the phone that changed it stays signed in");
@@ -166,6 +183,27 @@ async function apiChecks() {
     assert.deepEqual(kimRemoved.body.account?.ways.map((way: { kind: string }) => way.kind), ["passkey"], "Remove takes the password off while Face ID is left");
   } finally {
     await worker.dispose();
+  }
+  try {
+    const files = (readdirSync(state, { recursive: true }) as string[]).filter((file) => file.endsWith(".sqlite")).map((file) => join(state, file));
+    const values: string[] = [];
+    let passwordRows = 0;
+    for (const file of files) {
+      const db = new DatabaseSync(file, { readOnly: true });
+      const tables = db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table'`).all() as { name: string }[];
+      for (const { name } of tables) {
+        const rows = db.prepare(`SELECT * FROM "${name}"`).all() as Record<string, unknown>[];
+        if (name === "passwords") passwordRows += rows.length;
+        for (const row of rows) for (const value of Object.values(row)) values.push(value instanceof Uint8Array ? Buffer.from(value).toString("base64url") : String(value));
+      }
+      db.close();
+    }
+    assert.ok(passwordRows >= 1, `the Directory's saved SQLite holds the passwords table (${files.length} files, ${passwordRows} rows)`);
+    assert.ok(SENT_KEYS.size >= 5 && PASSWORDS.size >= 3, "the check sent several phone keys");
+    const leaked = values.filter((value) => [...SENT_KEYS, ...PASSWORDS].some((secret) => value.includes(secret)));
+    assert.deepEqual(leaked, [], "no stored value holds a password or the phone's PBKDF2 result");
+  } finally {
+    rmSync(state, { recursive: true, force: true });
   }
 }
 

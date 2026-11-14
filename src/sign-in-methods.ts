@@ -53,9 +53,10 @@ export async function api<T>(path: string, body?: object): Promise<T> {
   return reply as T;
 }
 
-/** What this server offers, from `GET /api/auth/config`. Google stays hidden until the Worker has a Google client. */
+/** What this server offers, from `GET /api/auth/config`. Google stays hidden until the Worker has a Google client, and passwords until it has a pepper. */
 export interface AuthConfig {
   google: boolean;
+  password: boolean;
 }
 
 /** A sheet screen a way opens when it needs typing first, instead of finishing in one tap. */
@@ -164,7 +165,7 @@ const password: SignInMethod = {
   label: "Sign in with a password",
   createLabel: "Make a password",
   wayLabel: "Password",
-  offered: () => true,
+  offered: (config) => config.password,
   works: () => !!globalThis.crypto?.subtle,
   signIn: "password",
   create: "make-password",

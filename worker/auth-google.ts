@@ -31,13 +31,18 @@ interface Discovery {
 
 const CLOCK_SLACK_SECONDS = 60;
 
+const reach = (url: string, init?: RequestInit) =>
+  fetch(url, init).catch(() => {
+    throw new Refused("google-unreachable", 502);
+  });
+
 export function googleClient(env: GoogleEnv): GoogleClient | null {
   const { GOOGLE_ISSUER: issuer, GOOGLE_CLIENT_ID: clientId, GOOGLE_CLIENT_SECRET: clientSecret, GOOGLE_REDIRECT_URI: redirectUri } = env;
   return issuer && clientId && clientSecret && redirectUri ? { issuer, clientId, clientSecret, redirectUri } : null;
 }
 
 async function discover(issuer: string): Promise<Discovery> {
-  const reply = await fetch(`${issuer}/.well-known/openid-configuration`);
+  const reply = await reach(`${issuer}/.well-known/openid-configuration`);
   const doc = (await reply.json().catch(() => null)) as Record<string, unknown> | null;
   const ok = reply.ok && doc?.issuer === issuer && [doc.authorization_endpoint, doc.token_endpoint, doc.jwks_uri].every((value) => typeof value === "string");
   if (!ok) throw new Refused("google-unreachable", 502);
@@ -83,7 +88,7 @@ async function verifiedClaims(idToken: unknown, jwksUri: string): Promise<Record
   const [head, body, signature] = parts;
   const header = jsonPart(head);
   if (header.alg !== "RS256") throw new Refused("bad-token");
-  const reply = await fetch(jwksUri);
+  const reply = await reach(jwksUri);
   const keys = reply.ok ? ((await reply.json().catch(() => ({}))) as { keys?: (JsonWebKey & { kid?: string })[] }).keys : undefined;
   const jwk = Array.isArray(keys) ? keys.find((key) => key.kid === header.kid && key.kty === "RSA") : undefined;
   if (!jwk) throw new Refused("bad-token");
@@ -97,7 +102,7 @@ async function verifiedClaims(idToken: unknown, jwksUri: string): Promise<Record
 export async function identityFromCode(client: GoogleClient, sessionSecret: string, state: string, code: string, now: number): Promise<GoogleIdentity> {
   const doc = await discover(client.issuer);
   const { verifier, nonce } = await flowSecrets(sessionSecret, state);
-  const reply = await fetch(doc.token_endpoint, {
+  const reply = await reach(doc.token_endpoint, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ grant_type: "authorization_code", code, redirect_uri: client.redirectUri, client_id: client.clientId, client_secret: client.clientSecret, code_verifier: verifier }),

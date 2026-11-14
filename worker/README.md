@@ -48,7 +48,7 @@ The Directory answers every `/api/auth/*` and `/api/me*` route. Besides the pass
 
 | Route | Answer |
 |---|---|
-| `GET /api/auth/config` | `{"google":bool}`, whether this server has a Google client |
+| `GET /api/auth/config` | `{"google":bool,"password":bool}`: whether this server has a Google client, and a `PASSWORD_PEPPER`. The app hides a way the server can't do. |
 | `POST /api/auth/google/start` `{intent:"sign-in"\|"link", name?}` | `{url}` to send the phone to Google, and a 10-minute `mls_google` cookie that ties the flow to this browser |
 | `GET /api/auth/google/callback` | Trades the code (with the PKCE verifier) for an ID token, checks signature, issuer, audience, expiry and nonce, then redirects to `<APP_ORIGIN>/?google=new\|in\|linked` or `?google=<refusal>` |
 | `POST /api/auth/password/salt` `{handle}` | `{salt}`. An @name with no password gets a made-up salt of the same shape. |

@@ -85,7 +85,7 @@ async function apiChecks() {
   const { worker, base } = await startApi(googleVars(TEST_ORIGIN));
   try {
     const config = await fetch(new URL("/api/auth/config", base)).then((r) => r.json());
-    assert.deepEqual(config, { google: true }, "with a Google client the server offers Google");
+    assert.equal(config.google, true, "with a Google client the server offers Google");
 
     const gail = googleUser("Gail Google");
     const first = new Browser(base);
@@ -176,11 +176,20 @@ async function apiChecks() {
 
   const off = await startApi({ GOOGLE_ISSUER: mock.issuer, GOOGLE_CLIENT_ID: "", GOOGLE_CLIENT_SECRET: CLIENT.clientSecret, GOOGLE_REDIRECT_URI: `${TEST_ORIGIN}${CALLBACK_PATH}` });
   try {
-    assert.deepEqual(await fetch(new URL("/api/auth/config", off.base)).then((r) => r.json()), { google: false }, "with an empty GOOGLE_CLIENT_ID the server offers no Google");
+    assert.equal((await fetch(new URL("/api/auth/config", off.base)).then((r) => r.json())).google, false, "with an empty GOOGLE_CLIENT_ID the server offers no Google");
     const started = await new Browser(off.base).post("/api/auth/google/start", { intent: "sign-in" });
     assert.deepEqual([started.status, started.body.error], [503, "not-configured"], "and refuses to start a Google flow");
+    assert.equal((await fetch(new URL("/api/auth/config", off.base)).then((r) => r.json())).password, false, "with no pepper the server offers no passwords");
   } finally {
     await off.worker.dispose();
+  }
+
+  const dead = await startApi({ ...googleVars(TEST_ORIGIN), GOOGLE_ISSUER: "http://127.0.0.1:9" });
+  try {
+    const started = await new Browser(dead.base).post("/api/auth/google/start", { intent: "sign-in" });
+    assert.deepEqual([started.status, started.body.error], [502, "google-unreachable"], "an issuer that can't be reached is a refusal, not a crash");
+  } finally {
+    await dead.worker.dispose();
   }
 }
 
@@ -189,7 +198,7 @@ async function screenChecks() {
   let apiBase = "";
   const site = await openSite(root, "check-google", () => apiBase);
   const origin = site.origin.replace("127.0.0.1", "localhost");
-  const { worker, base } = await startApi({ APP_ORIGIN: origin, RP_ID: "localhost", ...googleVars(origin) });
+  const { worker, base } = await startApi({ APP_ORIGIN: origin, RP_ID: "localhost", PASSWORD_PEPPER: "check-only-password-pepper-0123456789abcdef", ...googleVars(origin) });
   apiBase = base;
   const js = JSON.stringify;
   const until = async (expression: string, what: string) => {

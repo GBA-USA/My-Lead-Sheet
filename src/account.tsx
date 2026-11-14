@@ -84,7 +84,7 @@ export function AccountSheet({ account, onAccount, onClose }: { account: Account
   const [handle, setHandle] = useState("");
   const [code, setCode] = useState("");
   const [secret, setSecret] = useState("");
-  const [config, setConfig] = useState<AuthConfig>({ google: false });
+  const [config, setConfig] = useState<AuthConfig>({ google: false, password: false });
   const [returned] = useState(googleReturn);
 
   useEffect(() => {

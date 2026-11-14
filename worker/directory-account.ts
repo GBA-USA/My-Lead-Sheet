@@ -1,5 +1,5 @@
 import { authorizeUrl, googleClient, identityFromCode, type GoogleClient } from "./auth-google";
-import { counterKey, KEY_BYTES, keyMac, madeUpSalt, passwordSecrets, SALT_BYTES, sameText, type PasswordSecrets, type WaitRule } from "./auth-password";
+import { counterKey, hasPepper, KEY_BYTES, keyMac, madeUpSalt, passwordSecrets, SALT_BYTES, sameText, type PasswordSecrets, type WaitRule } from "./auth-password";
 import { clientChallenge, creationOptions, relyingParty, requestOptions, verifyAssertion, verifyRegistration, type Ceremony } from "./auth-passkey";
 import { fromBase64Url, randomBytes, sha256, toBase64Url, utf8 } from "./bytes";
 import type { Env } from "./index";
@@ -258,7 +258,7 @@ function waitLeft(sql: SqlStorage, counter: string, rule: WaitRule, now: number)
   return latest === null ? 0 : Math.max(0, latest + rule.waitMs(misses) - now);
 }
 
-const googleCookie = (state: string) => `${GOOGLE_COOKIE}=${state}; ${GOOGLE_COOKIE_ATTRIBUTES}; Max-Age=600`;
+const googleCookie = (state: string, ttlMs: number) => `${GOOGLE_COOKIE}=${state}; ${GOOGLE_COOKIE_ATTRIBUTES}; Max-Age=${Math.ceil(ttlMs / 1000)}`;
 const CLEARED_GOOGLE_COOKIE = `${GOOGLE_COOKIE}=; ${GOOGLE_COOKIE_ATTRIBUTES}; Max-Age=0`;
 
 function cookieValue(header: string | null, name: string): string {
@@ -271,14 +271,15 @@ function cookieValue(header: string | null, name: string): string {
   );
 }
 
-function requireGoogle(env: Env): GoogleClient {
+function requireGoogle(env: Env): { client: GoogleClient; secret: string } {
   const client = googleClient(env);
   if (!client || !env.SESSION_SECRET) throw new Refused("not-configured", 503);
-  return client;
+  return { client, secret: env.SESSION_SECRET };
 }
 
-async function finishGoogle(c: Context, flow: ChallengeRow, client: GoogleClient, state: string, code: string): Promise<Reply> {
-  const identity = await identityFromCode(client, c.env.SESSION_SECRET!, state, code, c.now);
+async function finishGoogle(c: Context, flow: ChallengeRow, state: string, code: string): Promise<Reply> {
+  const { client, secret } = requireGoogle(c.env);
+  const identity = await identityFromCode(client, secret, state, code, c.now);
   const linked = c.sql.exec<{ user_id: string }>(`SELECT user_id FROM google_logins WHERE sub = ?`, identity.sub).toArray()[0];
   const touch = (userId: string) =>
     c.sql.exec(
@@ -309,11 +310,25 @@ async function finishGoogle(c: Context, flow: ChallengeRow, client: GoogleClient
   return { googleReturn: "new", signIn: user };
 }
 
-/** Records a wrong password try on both counters and drops tries older than the longest window. Returns the wait it starts. */
-function recordMiss(c: Context, secrets: PasswordSecrets, counters: { name: string; address: string }): number {
+type Counter = { key: string; rule: WaitRule };
+
+/**
+ * The wait counters for one try: the typed @name, and the network address when Cloudflare gives one.
+ * Without an address there is no address counter, so one caller can never hold up everyone.
+ */
+async function passwordCounters(c: Context, secrets: PasswordSecrets, handle: string): Promise<{ name: Counter; all: Counter[] }> {
+  const name = { key: await counterKey(secrets, "name", handle), rule: secrets.forName };
+  const address = c.request.headers.get("CF-Connecting-IP");
+  return { name, all: address ? [name, { key: await counterKey(secrets, "address", address), rule: secrets.forAddress }] : [name] };
+}
+
+const longestWait = (c: Context, counters: Counter[]) => Math.max(0, ...counters.map(({ key, rule }) => waitLeft(c.sql, key, rule, c.now)));
+
+/** Records a wrong password try on each counter and drops tries older than the longest window. Returns the wait it starts. */
+function recordMiss(c: Context, secrets: PasswordSecrets, counters: Counter[]): number {
   c.sql.exec(`DELETE FROM password_misses WHERE at <= ?`, c.now - secrets.forName.windowMs);
-  c.sql.exec(`INSERT INTO password_misses (counter, at) VALUES (?, ?), (?, ?)`, counters.name, c.now, counters.address, c.now);
-  return Math.max(waitLeft(c.sql, counters.name, secrets.forName, c.now), waitLeft(c.sql, counters.address, secrets.forAddress, c.now));
+  for (const { key } of counters) c.sql.exec(`INSERT INTO password_misses (counter, at) VALUES (?, ?)`, key, c.now);
+  return longestWait(c, counters);
 }
 
 function credentialId(body: Record<string, unknown>): string {
@@ -443,29 +458,29 @@ const ROUTES: Record<string, (c: Context) => Promise<Reply>> = {
   },
 
   async "GET /api/auth/config"(c) {
-    return { body: { google: googleClient(c.env) !== null } };
+    return { body: { google: googleClient(c.env) !== null, password: hasPepper(c.env) } };
   },
 
   async "POST /api/auth/google/start"(c) {
-    const client = requireGoogle(c.env);
+    const { client, secret } = requireGoogle(c.env);
     const link = c.body.intent === "link";
     const user = link ? signedIn(c) : null;
     const name = !link && c.body.name !== undefined ? displayName(c.body.name) : "";
-    const { challenge: state } = newChallenge(c.sql, c.env, c.now, link ? "google-link" : "google", user?.user_id ?? "", name);
-    return { body: { url: await authorizeUrl(client, c.env.SESSION_SECRET!, state) }, cookies: [googleCookie(state)] };
+    const { challenge: state, ttlMs } = newChallenge(c.sql, c.env, c.now, link ? "google-link" : "google", user?.user_id ?? "", name);
+    return { body: { url: await authorizeUrl(client, secret, state) }, cookies: [googleCookie(state, ttlMs)] };
   },
 
   async "GET /api/auth/google/callback"(c) {
     const params = new URL(c.request.url).searchParams;
     const state = params.get("state") ?? "";
     try {
-      const client = requireGoogle(c.env);
+      requireGoogle(c.env);
       if (!state || !sameText(state, cookieValue(c.request.headers.get("Cookie"), GOOGLE_COOKIE))) throw new Refused("wrong-state");
       const flow = c.sql.exec<ChallengeRow>(`DELETE FROM challenges WHERE challenge = ? RETURNING purpose, user_id, display_name, expires_at`, state).toArray()[0];
       if (!flow || (flow.purpose !== "google" && flow.purpose !== "google-link")) throw new Refused("wrong-state");
       if (flow.expires_at <= c.now) throw new Refused("challenge-expired");
       if (params.has("error")) throw new Refused("google-cancelled");
-      return { ...(await finishGoogle(c, flow, client, state, params.get("code") ?? "")), cookies: [CLEARED_GOOGLE_COOKIE] };
+      return { ...(await finishGoogle(c, flow, state, params.get("code") ?? "")), cookies: [CLEARED_GOOGLE_COOKIE] };
     } catch (error) {
       if (error instanceof Refused) return { googleReturn: error.reason, cookies: [CLEARED_GOOGLE_COOKIE] };
       throw error;
@@ -501,15 +516,15 @@ const ROUTES: Record<string, (c: Context) => Promise<Reply>> = {
     const secrets = await passwordSecrets(c.env);
     const handle = normalizeHandle(c.body.handle);
     const mac = await keyMac(secrets, bytesField(c.body, "key", KEY_BYTES));
-    const counters = { name: await counterKey(secrets, "name", handle), address: await counterKey(secrets, "address", c.request.headers.get("CF-Connecting-IP") ?? "") };
-    const wait = Math.max(waitLeft(c.sql, counters.name, secrets.forName, c.now), waitLeft(c.sql, counters.address, secrets.forAddress, c.now));
+    const counters = await passwordCounters(c, secrets, handle);
+    const wait = longestWait(c, counters.all);
     if (wait > 0) throw new Refused("wait", 429, { waitMs: wait });
     const found = c.sql.exec<User & { key_mac: string }>(`SELECT u.*, p.key_mac FROM users u JOIN passwords p ON p.user_id = u.user_id WHERE u.handle = ?`, handle).toArray()[0];
     if (!found || !sameText(found.key_mac, mac)) {
-      const started = recordMiss(c, secrets, counters);
+      const started = recordMiss(c, secrets, counters.all);
       throw new Refused("wrong-password", 401, started > 0 ? { waitMs: started } : {});
     }
-    c.sql.exec(`DELETE FROM password_misses WHERE counter = ?`, counters.name);
+    c.sql.exec(`DELETE FROM password_misses WHERE counter = ?`, counters.name.key);
     const { key_mac: _, ...user } = found;
     return { body: { account: accountView(c.sql, user) }, signIn: user };
   },

@@ -25,11 +25,18 @@ export interface PasswordSecrets {
   forAddress: WaitRule;
 }
 
-export async function passwordSecrets(env: { PASSWORD_PEPPER?: string; PASSWORD_MINUTE_MS?: string }): Promise<PasswordSecrets> {
-  if (!env.PASSWORD_PEPPER || env.PASSWORD_PEPPER.length < 32) throw new Refused("not-configured", 503);
+type PasswordEnv = { PASSWORD_PEPPER?: string; PASSWORD_MINUTE_MS?: string };
+
+const pepperOf = (env: PasswordEnv) => (env.PASSWORD_PEPPER && env.PASSWORD_PEPPER.length >= 32 ? env.PASSWORD_PEPPER : null);
+
+export const hasPepper = (env: PasswordEnv) => pepperOf(env) !== null;
+
+export async function passwordSecrets(env: PasswordEnv): Promise<PasswordSecrets> {
+  const pepper = pepperOf(env);
+  if (!pepper) throw new Refused("not-configured", 503);
   const minute = Number(env.PASSWORD_MINUTE_MS) || MINUTE_MS;
   return {
-    pepper: await crypto.subtle.importKey("raw", utf8(env.PASSWORD_PEPPER), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]),
+    pepper: await crypto.subtle.importKey("raw", utf8(pepper), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]),
     forName: { windowMs: DAY_MS, waitMs: (misses) => (misses < FREE_MISSES ? 0 : WAIT_MINUTES[Math.min(misses - FREE_MISSES, WAIT_MINUTES.length - 1)] * minute) },
     forAddress: { windowMs: ADDRESS_WINDOW_MINUTES * minute, waitMs: (misses) => (misses < ADDRESS_MISSES ? 0 : ADDRESS_WAIT_MINUTES * minute) },
   };

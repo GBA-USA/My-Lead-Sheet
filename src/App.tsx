@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
-import { AccountSheet } from "./account";
+import { AccountSheet, googleReturn } from "./account";
 import { BackIcon, DotsIcon, Menu, OverflowMenu, ScreenToggle, SongControls } from "./controls";
 import { LearnedCues } from "./cues";
 import { useAutoScroll, usePerformance, useWakeLock } from "./hooks";
@@ -81,7 +81,7 @@ export function App() {
   const [awake, setAwake] = useState(() => loadAwake());
   const [menu, setMenu] = useState<MenuId>(null);
   const [account, setAccount] = useState<Account | null>(null);
-  const [accountOpen, setAccountOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(() => googleReturn() !== null);
 
   useEffect(() => {
     if (!window.location.hash) {

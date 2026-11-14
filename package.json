@@ -31,7 +31,8 @@
     "check:bands": "node --experimental-strip-types scripts/check-bands.ts",
     "check:band-settings": "node --experimental-strip-types scripts/check-band-settings.ts",
     "check:send-song": "node --experimental-strip-types scripts/check-send-song.ts",
-    "check:gig-plan": "node --experimental-strip-types scripts/check-gig-plan.ts"
+    "check:gig-plan": "node --experimental-strip-types scripts/check-gig-plan.ts",
+    "check:personal-settings": "node --experimental-strip-types scripts/check-personal-settings.ts"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.5",

@@ -59,4 +59,11 @@ export const DATA_KINDS: readonly DataKind[] = [
     what: "For each person you asked, who asked you, or you blocked: whether it is a request, a friendship or a block, who asked or blocked, and when it last changed.",
   },
   { key: "session_floors", place: "server", what: "In each band or chat room, the oldest sign-in it still lets in for each person, after they signed out everywhere." },
+  { key: "meta", place: "server", what: "For each band: its name, who made it and when, and whether Scroll with the leader is on." },
+  {
+    key: "members",
+    place: "server",
+    what: "For each band: everyone who joined, with the name bandmates see, whether they are an admin, whether they are still in the band, left or were removed, and when that last changed.",
+  },
+  { key: "band_rooms", place: "server", what: "Which bands you are in, so your Bands list can find them. A band you left or were removed from is dropped the next time the list loads." },
 ];

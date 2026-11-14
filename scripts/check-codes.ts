@@ -80,7 +80,7 @@ async function apiChecks() {
     assert.equal((await land(base, ownSetlist.body.code)).location, `${TEST_ORIGIN}/?open=setlists&code=${ownSetlist.body.code}`, "a setlist code lands on Setlists");
     pass("each kind this server makes lands on its screen, and a Private copy gets no code");
 
-    assert.deepEqual((await terry.call("/api/codes", { kind: "band" })).body.error, "bad-kind", "kinds whose screens are not built yet are not made");
+    for (const kind of ["gig", "guest", "band-setlist"]) assert.deepEqual((await terry.call("/api/codes", { kind })).body.error, "bad-kind", `${kind} codes, whose screens are not built yet, are not made`);
     assert.equal((await new Phone(base).call("/api/codes", { kind: "friend-now" })).status, 401, "a signed-out phone gets no code");
     assert.equal((await terry.call("/api/codes", { kind: "friend-now" }, { origin: "https://evil.test" })).status, 403, "another site can't ask for a code");
 

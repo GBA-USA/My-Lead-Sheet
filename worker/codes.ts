@@ -4,6 +4,7 @@ import { fromBase64Url, randomBytes, toBase64Url, utf8 } from "./bytes";
 import { signedIn, type Context, type Route, type User } from "./directory-account";
 import type { Env } from "./index";
 import { Refused } from "./refused";
+import { bandInviteTarget } from "./room-members";
 import { hmacKey } from "./session";
 
 const MINUTE_MS = 60 * 1000;
@@ -38,6 +39,7 @@ export type CodeRow = {
   stopped_at: number | null;
   song_ids: string | null;
   shared_as: string | null;
+  created_at: number;
 };
 
 type Target = { targetId: string; songIds?: string[]; sharedAs?: "private" | "public" };
@@ -47,7 +49,7 @@ interface Minter {
   minutes: number;
   /** Hand back the player's live code of this kind instead of making another, so Stop this code stops the one link they shared. */
   reuse?: true;
-  target(c: Context, user: User): Target;
+  target(c: Context, user: User): Target | Promise<Target>;
 }
 
 function setlistCopy(body: Record<string, unknown>): Target {
@@ -63,6 +65,7 @@ const MINTERS: Partial<Record<CodeKind, Minter>> = {
   "friend-now": { minutes: 10, target: (_, user) => ({ targetId: user.user_id }) },
   "friend-link": { minutes: 7 * DAY_MINUTES, reuse: true, target: (_, user) => ({ targetId: user.user_id }) },
   "my-setlist": { minutes: 7 * DAY_MINUTES, target: (c) => setlistCopy(c.body) },
+  band: { minutes: 7 * DAY_MINUTES, reuse: true, target: bandInviteTarget },
 };
 
 const fieldsOf = (row: CodeRow): CodeFields => ({ kind: row.kind, codeId: row.code_id, expiresAt: row.expires_at, nonce: row.nonce });
@@ -100,10 +103,10 @@ export const CODE_ROUTES: Record<string, Route> = {
     const minter = typeof kind === "string" && (CODE_KINDS as readonly string[]).includes(kind) ? MINTERS[kind as CodeKind] : undefined;
     if (!minter) throw new Refused("bad-kind");
     const user = signedIn(c);
-    const target = minter.target(c, user);
+    const target = await minter.target(c, user);
     const reused = minter.reuse
       ? c.sql
-          .exec<CodeRow>(`SELECT * FROM codes WHERE created_by = ? AND kind = ? AND stopped_at IS NULL AND expires_at > ? ORDER BY expires_at DESC LIMIT 1`, user.user_id, kind, c.now)
+          .exec<CodeRow>(`SELECT * FROM codes WHERE created_by = ? AND kind = ? AND target_id = ? AND stopped_at IS NULL AND expires_at > ? ORDER BY expires_at DESC LIMIT 1`, user.user_id, kind, target.targetId, c.now)
           .toArray()[0]
       : undefined;
     if (reused) return { body: await codeView(c.env, reused) };
@@ -117,6 +120,7 @@ export const CODE_ROUTES: Record<string, Route> = {
       stopped_at: null,
       song_ids: target.songIds ? JSON.stringify(target.songIds) : null,
       shared_as: target.sharedAs ?? null,
+      created_at: c.now,
     };
     c.sql.exec(`DELETE FROM codes WHERE expires_at <= ?`, c.now);
     c.sql.exec(

@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
-import jsQR from "jsqr";
 import { Phone, startApi } from "./api-session.ts";
-import { appPage, PASSWORD_PEPPER, passwordPlayer, settle, WIDTH } from "./app-page.ts";
+import { appPage, PASSWORD_PEPPER, passwordPlayer, readQr, settle, WIDTH } from "./app-page.ts";
 import { openSite } from "./chrome.ts";
 
 const MINUTE_MS = 100;
@@ -119,20 +118,6 @@ async function apiChecks() {
   }
 }
 
-/** Reads the QR code on screen the way another phone's camera would: from the drawn squares, not from the app's state. */
-function readQr(svg: string): string {
-  const size = Number(/width="(\d+)"/.exec(svg)![1]);
-  const pixels = new Uint8ClampedArray(size * size * 4).fill(255);
-  for (const [, x, y, side] of svg.matchAll(/<rect x="(\d+)" y="(\d+)" width="(\d+)" height="\d+" fill="black"/g)) {
-    for (let row = Number(y); row < Number(y) + Number(side); row += 1) {
-      for (let col = Number(x); col < Number(x) + Number(side); col += 1) pixels.fill(0, (row * size + col) * 4, (row * size + col) * 4 + 3);
-    }
-  }
-  const found = jsQR(pixels, size, size);
-  assert.ok(found, "the QR code on screen decodes");
-  return found.data;
-}
-
 async function appChecks() {
   let apiBase = "";
   const site = await openSite(root, "check-friends", () => apiBase);
@@ -174,7 +159,7 @@ async function appChecks() {
     pass("signed out, there is no Friends item and the app is unchanged");
 
     await app.signUp("Sam Rivera");
-    assert.deepEqual(await app.openMenu(), ["Account", "Friends"], "signed in, Friends sits next to Account");
+    assert.deepEqual(await app.openMenu(), ["Account", "Friends", "Bands"], "signed in, Friends sits next to Account");
     await app.shot(shots && `${shots}/menu-signed-in.png`);
     await app.closeMenu();
     await site.send("Page.reload");

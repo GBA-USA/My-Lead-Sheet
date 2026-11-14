@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
+import jsQR from "jsqr";
 import { newSalt, passwordKey } from "../src/password.ts";
 import { Phone } from "./api-session.ts";
 import type { Site } from "./chrome.ts";
@@ -87,4 +88,18 @@ export async function passwordPlayer(base: string, origin: string, name: string,
   const made = await phone.call("/api/auth/password/create", { name, handle, salt, key: await passwordKey("violet tram 42 lantern", salt) });
   assert.equal(made.status, 200, `${name} signs up (${JSON.stringify(made.body)})`);
   return Object.assign(phone, { name, handle, userId: made.body.account.userId as string });
+}
+
+/** Reads the QR code on screen the way another phone's camera would: from the drawn squares, not from the app's state. */
+export function readQr(svg: string): string {
+  const size = Number(/width="(\d+)"/.exec(svg)![1]);
+  const pixels = new Uint8ClampedArray(size * size * 4).fill(255);
+  for (const [, x, y, side] of svg.matchAll(/<rect x="(\d+)" y="(\d+)" width="(\d+)" height="\d+" fill="black"/g)) {
+    for (let row = Number(y); row < Number(y) + Number(side); row += 1) {
+      for (let col = Number(x); col < Number(x) + Number(side); col += 1) pixels.fill(0, (row * size + col) * 4, (row * size + col) * 4 + 3);
+    }
+  }
+  const found = jsQR(pixels, size, size);
+  assert.ok(found, "the QR code on screen decodes");
+  return found.data;
 }

@@ -97,7 +97,7 @@ export function createAccountTables(sql: SqlStorage) {
   for (const statement of SCHEMA) sql.exec(statement);
 }
 
-function displayName(value: unknown): string {
+export function displayName(value: unknown): string {
   const name = typeof value === "string" ? value.trim().replace(/\s+/g, " ") : "";
   if (name.length < 1 || name.length > 40) throw new Refused("bad-name");
   return name;

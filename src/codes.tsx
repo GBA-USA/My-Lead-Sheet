@@ -37,7 +37,7 @@ const endTime = (ms: number) =>
  * Show my code: a big black-on-white QR code with the plain words under it and its end time.
  * `request` is the body for `POST /api/codes`. A code that ends is swapped for a fresh one while the screen is open.
  */
-export function ShowCode({ request, words, share, onStopped, onError }: { request: { kind: CodeKind }; words: string; share?: true; onStopped: () => void; onError: (error: unknown) => void }) {
+export function ShowCode({ request, words, share, onStopped, onError }: { request: { kind: CodeKind; bandId?: string }; words: string; share?: true; onStopped: () => void; onError: (error: unknown) => void }) {
   const [shown, setShown] = useState<ShownCode | null>(null);
   const [copied, setCopied] = useState(false);
 

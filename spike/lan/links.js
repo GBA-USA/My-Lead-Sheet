@@ -389,7 +389,7 @@ export async function startDrill(config) {
   if (role === "handback") return handback(config);
   if (role !== "leader" && role !== "follower") return chooseRole(config);
 
-  const room = params.get("room") ?? "band";
+  const room = `${config.spike}-${params.get("room") ?? "band"}`;
   const planName = PLANS[params.get("plan")] ? params.get("plan") : config.plans[0];
   const plan = PLANS[planName];
   const holdMs = Number(params.get("secs") ?? 120) * 1000;
@@ -546,6 +546,7 @@ export async function startDrill(config) {
     };
   };
   let latest = snapshot();
+  showNumbers();
   setInterval(() => refreshAll().then(() => (latest = snapshot())), 5000);
 
   const exportName = () => `mls-spike-${config.spike}-${role}-${ui.setup.value}-${new Date().toISOString().slice(0, 16).replace(":", "")}.json`;

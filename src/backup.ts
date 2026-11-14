@@ -177,20 +177,36 @@ function pending(state: State, local: Local) {
   return { changes, held };
 }
 
-function batches(changes: Map<string, Value>): Map<string, Value>[] {
-  const out: Map<string, Value>[] = [new Map()];
+/** The song id when `key` is a song's row or one of its settings, `<key>.<song id>`. */
+function songOf(key: string): number | null {
+  for (const prefix of [SONG_KEY, ...PER_SONG_KEYS]) {
+    const id = key.startsWith(`${prefix}.`) ? Number(key.slice(prefix.length + 1)) : NaN;
+    if (Number.isInteger(id)) return id;
+  }
+  return null;
+}
+
+/**
+ * The changes for the next request. Each song goes with its own settings, and setlists after every song, so a song
+ * that moves to a new id takes its settings and setlists along before any of them is stored under the old id.
+ */
+function nextBatch(changes: Map<string, Value>): Map<string, Value> {
+  const groupOf = (key: string) => {
+    const song = songOf(key);
+    return song !== null ? `0:${String(song).padStart(16, "0")}` : `${key.startsWith(`${SETLIST_KEY}.`) ? 1 : 2}:${key}`;
+  };
+  const groups = new Map<string, [string, Value][]>();
+  for (const entry of changes) groups.set(groupOf(entry[0]), [...(groups.get(groupOf(entry[0])) ?? []), entry]);
+  const batch = new Map<string, Value>();
   let size = 0;
-  for (const [key, value] of changes) {
-    const length = (value?.length ?? 0) + key.length;
-    const last = out[out.length - 1];
-    if (last.size > 0 && (size + length > BATCH_CHARS || last.size >= BATCH_ITEMS)) {
-      out.push(new Map());
-      size = 0;
-    }
-    out[out.length - 1].set(key, value);
+  for (const name of [...groups.keys()].sort()) {
+    const group = groups.get(name)!;
+    const length = group.reduce((sum, [key, value]) => sum + key.length + (value?.length ?? 0), 0);
+    if (batch.size > 0 && (size + length > BATCH_CHARS || batch.size + group.length > BATCH_ITEMS)) break;
+    for (const [key, value] of group) batch.set(key, value);
     size += length;
   }
-  return out;
+  return batch;
 }
 
 /** How many values of each kind the server should hold for this phone. A held-back key counts only if the server has an older value of it. */
@@ -307,12 +323,17 @@ async function syncOnce(state: State): Promise<BackupResult> {
   let serverCounts: Record<string, number> = {};
   for (let round = 0; round < ROUNDS; round += 1) {
     let conflicts = 0;
-    for (const batch of batches(pending(state, readLocal()).changes)) {
+    const sentThisRound = new Set<string>();
+    for (;;) {
+      const left = new Map([...pending(state, readLocal()).changes].filter(([key]) => !sentThisRound.has(key)));
+      const batch = nextBatch(left);
       const changes = [...batch].map(([key, value]) => ({ key, kind: backupKindOf(key), value, base: state.synced[key]?.[0] ?? 0 }));
       const reply = await api<Reply>("/api/backup", { since: state.pulled, changes });
       conflicts += apply(state, batch, reply, changed);
       serverCounts = reply.counts;
       save(state);
+      for (const key of batch.keys()) sentThisRound.add(key);
+      if (batch.size === left.size) break;
     }
     if (conflicts === 0) break;
   }

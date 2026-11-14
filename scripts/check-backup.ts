@@ -331,6 +331,26 @@ try {
     `an edit on one phone makes no duplicate when the other adds a song (${inSync} songs, then ${titlesD.length}: ${titlesD.filter((title) => /^9\d\d /.test(title)).join(", ")})`,
   );
 
+  const ipad = new Device(new Phone(base, c.phone.authenticator), "Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X)");
+  ipad.boot();
+  addOwnSong(ipad, 980, "Chain Breaker live");
+  ipad.use();
+  app.saveSongData(ref(980), { tempo: 77, timeSignature: "2/4" });
+  for (let i = 0; i < 600; i += 1) ipad.store.setItem(`${app.SCROLL_PERCENT_KEY}.r${i}`, "90");
+  await ipad.phone.signIn();
+  ipad.use();
+  app.backupOn(samId);
+  await ipad.sync();
+  await c.sync();
+  c.use();
+  const chainData = app.loadSongData(ref(980));
+  const live = ipad.boot().songs.find((song) => song.title === "Chain Breaker live · from iPad");
+  ipad.use();
+  check(
+    JSON.stringify(chainData) === JSON.stringify({ tempo: 100, timeSignature: "4/4" }) && JSON.stringify(live && app.loadSongData(live.ref)) === JSON.stringify({ tempo: 77, timeSignature: "2/4" }),
+    `a first sync too big for one request still keeps each song's settings with its song (Chain Breaker ${JSON.stringify(chainData)}, the iPad's copy ${JSON.stringify(live && app.loadSongData(live.ref))})`,
+  );
+
   const rowsOf = async (cookie: string) => (await post(cookie, { since: 0, changes: [] })).body.rows?.length ?? -1;
   const samRows = await rowsOf(c.phone.cookie);
   const unknownKey = await post(c.phone.cookie, { since: 0, changes: [{ key: "leadSheetsJunk.1", kind: "timing", value: "x", base: 0 }] });
@@ -345,7 +365,7 @@ try {
   d.store.setItem(`${app.SCROLL_VERSIONS_KEY}.3`, JSON.stringify({ versions: [version("x".repeat(1_000_001), 100)], selected: null }));
   d.store.setItem(`${app.NOTATION_KEY}.not a ref`, JSON.stringify("nashville"));
   app.saveScrollPercent(ref(4), 70);
-  const heldBack = (await d.sync()) as Awaited<ReturnType<typeof d.sync>> & { heldBack?: number };
+  const heldBack = await d.sync();
   await c.sync();
   c.use();
   check(
@@ -380,7 +400,7 @@ try {
   app.backupOn(bigId);
   await big.sync();
   big.store.setItem(`${app.SCROLL_PERCENT_KEY}.2`, "9".repeat(10_000));
-  const refused = (await big.sync()) as Awaited<ReturnType<typeof big.sync>> & { problem?: string };
+  const refused = await big.sync();
   check(!refused.ok && refused.problem === "full", `a phone whose backup is full says so instead of "can't reach the server" (ok ${refused.ok}, problem ${refused.problem})`);
 } finally {
   globalThis.fetch = realFetch;

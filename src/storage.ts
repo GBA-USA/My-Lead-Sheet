@@ -6,9 +6,9 @@ import type { BassNote, ChartLine, ChartSection, Library, LibraryFile, Song, Son
 export const LIBRARY_KEY = "leadSheetsLibrary";
 export const AWAKE_KEY = "leadSheetsKeepAwake";
 export const TEXT_SCALE_KEY = "leadSheetsTextScale";
-/** Per-song scroll percentage, stored under `leadSheetsScrollPercent.<song key>`. */
+/** Per-song scroll percentage, stored under `leadSheetsScrollPercent.<ref key>`. */
 export const SCROLL_PERCENT_KEY = "leadSheetsScrollPercent";
-/** Per-song Notes/Nashville choice, stored under `leadSheetsNotation.<song key>`. The spec does not name the key. */
+/** Per-song Notes/Nashville choice, stored under `leadSheetsNotation.<ref key>`. The spec does not name the key. */
 export const NOTATION_KEY = "leadSheetsNotation";
 
 /** Sheet body scale. 100% is the default. Steps are a Phase 1 stand-in; the spec doesn't set them. */
@@ -147,8 +147,8 @@ export function localRef(id: number): SongRef {
   return `${LOCAL}${id}`;
 }
 
-/** This phone's own songs keep the key they had before refs, `<id>`, so nothing saved earlier has to move. */
-function songKey(ref: SongRef): string {
+/** The storage key suffix for a ref. This phone's own songs keep the suffix they had before refs, `<id>`, so nothing saved earlier has to move. */
+function refKey(ref: SongRef): string {
   return ref.startsWith(LOCAL) ? ref.slice(LOCAL.length) : ref;
 }
 
@@ -218,8 +218,8 @@ export function songByRef(songs: Song[], ref: SongRef): Song | undefined {
 
 /** One key per song, so a save never rewrites another song's value from a stale copy in another tab. */
 function readSongPref(key: string, ref: SongRef): unknown {
-  const raw = readRaw(`${key}.${songKey(ref)}`);
-  if (raw === null) return readLegacyMap(key)[songKey(ref)];
+  const raw = readRaw(`${key}.${refKey(ref)}`);
+  if (raw === null) return readLegacyMap(key)[refKey(ref)];
   try {
     return JSON.parse(raw);
   } catch {
@@ -228,7 +228,7 @@ function readSongPref(key: string, ref: SongRef): unknown {
 }
 
 function writeSongPref(key: string, ref: SongRef, value: number | Notation): boolean {
-  return writeRaw(`${key}.${songKey(ref)}`, JSON.stringify(value));
+  return writeRaw(`${key}.${refKey(ref)}`, JSON.stringify(value));
 }
 
 /** Before per-song keys, each setting was one JSON map of song id to value. Read it so old saves still load. */
@@ -263,9 +263,9 @@ export function saveNotation(ref: SongRef, notation: Notation): boolean {
   return writeSongPref(NOTATION_KEY, ref, notation);
 }
 
-/** Per-song runtime, BPM and time signature entered in the app, under `leadSheetsSongData.<song key>`. */
+/** Per-song runtime, BPM and time signature entered in the app, under `leadSheetsSongData.<ref key>`. */
 export const SONG_DATA_KEY = "leadSheetsSongData";
-/** Per-song taught scroll versions and which one plays, under `leadSheetsScrollVersions.<song key>`. */
+/** Per-song taught scroll versions and which one plays, under `leadSheetsScrollVersions.<ref key>`. */
 export const SCROLL_VERSIONS_KEY = "leadSheetsScrollVersions";
 
 function isPositive(value: unknown): boolean {
@@ -300,8 +300,8 @@ export function loadSongData(ref: SongRef): SongData {
 
 /** An empty `data` removes the entry, so the song goes back to the library's values. */
 export function saveSongData(ref: SongRef, data: SongData): boolean {
-  if (Object.keys(data).length === 0) return removeRaw(`${SONG_DATA_KEY}.${songKey(ref)}`);
-  return writeRaw(`${SONG_DATA_KEY}.${songKey(ref)}`, JSON.stringify(data));
+  if (Object.keys(data).length === 0) return removeRaw(`${SONG_DATA_KEY}.${refKey(ref)}`);
+  return writeRaw(`${SONG_DATA_KEY}.${refKey(ref)}`, JSON.stringify(data));
 }
 
 export function withSongData(song: Song, data: SongData): Song {
@@ -357,5 +357,5 @@ export function loadScrollVersions(ref: SongRef): ScrollVersions {
 }
 
 export function saveScrollVersions(ref: SongRef, value: ScrollVersions): boolean {
-  return writeRaw(`${SCROLL_VERSIONS_KEY}.${songKey(ref)}`, JSON.stringify(value));
+  return writeRaw(`${SCROLL_VERSIONS_KEY}.${refKey(ref)}`, JSON.stringify(value));
 }

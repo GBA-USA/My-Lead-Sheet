@@ -220,6 +220,7 @@ function move(state: GigState, op: Move, now: BandMs, lead: number): Change {
   }
 }
 
+/** `reduce` runs on the leader's phone, the admin's setBackup included; only takeOver and accept run on the taker's. So each (epoch, leader) has one writer. */
 const MAY: Record<Op["kind"], (state: GigState, by: UserId) => boolean> = {
   goTo: (s, by) => by === s.leader,
   section: (s, by) => by === s.leader,

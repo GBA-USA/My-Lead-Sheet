@@ -49,7 +49,8 @@
     "check:band-status": "node --experimental-strip-types scripts/check-band-status.ts",
     "check:look-ahead": "node --experimental-strip-types scripts/check-look-ahead.ts",
     "check:spike-server": "node spike/server/check.mjs",
-    "check:spike-links": "node --experimental-strip-types scripts/check-spike-links.ts"
+    "check:spike-links": "node --experimental-strip-types scripts/check-spike-links.ts",
+    "check:share-guard": "node --experimental-strip-types scripts/check-share-guard.ts"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.5",

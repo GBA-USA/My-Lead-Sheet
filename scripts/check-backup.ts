@@ -51,6 +51,8 @@ class Device {
   calls = 0;
   /** Runs once, after the next reply arrives and before the app reads it: an edit made while a sync is on its way. */
   duringFetch: (() => void) | null = null;
+  /** How many more requests reach the server before the network drops. */
+  requestsLeft = Infinity;
   readonly phone: Phone;
   readonly agent: string;
   readonly origin: string;
@@ -65,6 +67,7 @@ class Device {
     Object.defineProperty(globalThis, "navigator", { value: { userAgent: this.agent }, configurable: true });
     globalThis.fetch = async (path, init) => {
       this.calls += 1;
+      if (this.requestsLeft-- <= 0) throw new TypeError("Failed to fetch");
       const headers = { ...(init?.headers as Record<string, string>), origin: this.origin, ...(this.phone.cookie ? { cookie: this.phone.cookie } : {}) };
       const response = await realFetch(new URL(String(path), this.phone.base), { ...init, headers });
       const edit = this.duringFetch;
@@ -228,6 +231,11 @@ try {
   const copy = libB.songs.find((song) => song.title === "Song from B · from Android");
   check(!!libB.songs.find((song) => song.id === 950 && song.title === "Song from A") && !!copy, "a song both phones changed is kept twice, the second named · from Android");
   check(JSON.stringify(libB.setlists.find((set) => set.name === "Saturday")?.songRefs[0]) === JSON.stringify(copy?.ref), "phone B's setlist follows its song to the new id");
+  const saturdays = (library: typeof libA) => library.setlists.filter((set) => set.name.startsWith("Saturday")).map((set) => set.name);
+  check(
+    JSON.stringify(saturdays(libA)) === JSON.stringify(["Saturday"]) && JSON.stringify(saturdays(libB)) === JSON.stringify(["Saturday"]),
+    `phone B's setlist moves with its song and stays one setlist on both phones (A ${JSON.stringify(saturdays(libA))}, B ${JSON.stringify(saturdays(libB))})`,
+  );
   check(JSON.stringify(libA) === JSON.stringify(libB) && libA.songs.length === aLibrary.songs.length + 2, "both phones end with the same library and nothing dropped");
 
   a.use();
@@ -350,6 +358,44 @@ try {
     JSON.stringify(chainData) === JSON.stringify({ tempo: 100, timeSignature: "4/4" }) && JSON.stringify(live && app.loadSongData(live.ref)) === JSON.stringify({ tempo: 77, timeSignature: "2/4" }),
     `a first sync too big for one request still keeps each song's settings with its song (Chain Breaker ${JSON.stringify(chainData)}, the iPad's copy ${JSON.stringify(live && app.loadSongData(live.ref))})`,
   );
+
+  const e = new Device(new Phone(base), iphone);
+  e.boot();
+  addOwnSong(e, 960, "Chain Breaker");
+  const patId: string = (await e.phone.createAccount("Pat Keys")).body.account.userId;
+  e.use();
+  app.backupOn(patId);
+  await e.sync();
+  const f = new Device(new Phone(base, e.phone.authenticator), android);
+  f.boot();
+  addOwnSong(f, 960, "Wagon Wheel");
+  f.use();
+  app.saveScrollVersions(ref(960), { versions: [version("Wagon timing", 180)], selected: 0 });
+  await f.phone.signIn();
+  f.use();
+  app.backupOn(patId);
+  f.requestsLeft = 1;
+  const dropped = await f.sync();
+  f.requestsLeft = Infinity;
+  await e.sync();
+  e.use();
+  const pulledOnChain = app.loadScrollVersions(ref(960)).versions.map((item) => item.name);
+  check(!dropped.ok && dropped.problem === "offline" && pulledOnChain.length === 0, `a phone that loses the network after its first request leaves no timing on the other phone's song with the same id (${dropped.problem}, ${JSON.stringify(pulledOnChain)})`);
+  app.updateScrollVersions(ref(960), (current) => ({ versions: [...current.versions, version("Chain new", 220)], selected: current.versions.length }));
+  await e.sync();
+  for (let i = 0; i < 2; i += 1) {
+    await f.sync();
+    await e.sync();
+  }
+  for (const [name, device] of [["iPhone", e], ["Android", f]] as const) {
+    const songs = device.boot().songs;
+    const timed = (song: (typeof songs)[number] | undefined) => song && [song.title, app.loadScrollVersions(song.ref).versions.map((item) => item.name)];
+    const pair = [timed(songs.find((song) => song.id === 960)), timed(songs.find((song) => song.title.startsWith("Wagon Wheel")))];
+    check(
+      JSON.stringify(pair) === JSON.stringify([["Chain Breaker", ["Chain new"]], ["Wagon Wheel · from Android", ["Wagon timing"]]]),
+      `after a dropped first sync each song keeps only its own timing on the ${name} (${JSON.stringify(pair)})`,
+    );
+  }
 
   const rowsOf = async (cookie: string) => (await post(cookie, { since: 0, changes: [] })).body.rows?.length ?? -1;
   const samRows = await rowsOf(c.phone.cookie);

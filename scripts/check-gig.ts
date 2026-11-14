@@ -234,6 +234,16 @@ const drills: [string, () => [boolean, string]][] = [
     },
   ],
   [
+    "Stop tapped between a Stop and the count-in after it cancels the count-in",
+    () => {
+      const restarting = ok(act(ok(act(ok(act(gig(), "terry", 0, countIn)), "terry", 600, { kind: "stop" })), "terry", 640, countIn));
+      const s = ok(act(restarting, "terry", 1240, { kind: "stop" }));
+      const sounding = [];
+      for (let t = 1150; t <= 8150; t += 10) if (at(s, t).beat || at(s, t).scroll) sounding.push(t);
+      return [sounding.length === 0, `click or scroll at ${sounding.slice(0, 3).join(",") || "none"} after 1150`];
+    },
+  ],
+  [
     "tempo 150 tapped between a Stop and the count-in after it: the count-in starts on its bar line at 150 and the scroll on its downbeat",
     () => {
       const restarting = ok(act(ok(act(ok(act(gig(), "terry", 0, countIn)), "terry", 600, { kind: "stop" })), "terry", 640, countIn));

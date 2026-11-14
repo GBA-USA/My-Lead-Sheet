@@ -205,7 +205,7 @@ function move(state: GigState, op: Move, now: BandMs, lead: number): Change {
       return { at: t, fields: { click: put(state.click, click, t, now), scroll: put(state.scroll, retimed, t, now) } };
     }
     case "stop": {
-      if (!valueAt(state.click, earliest) && !runningScroll(state, earliest)) return "not-running";
+      if (!nextSounding(state.click, earliest) && !runningScroll(state, earliest)) return "not-running";
       const t = at("stop");
       return { at: t, fields: { click: put(state.click, null, t, now), scroll: put(state.scroll, null, t, now) } };
     }

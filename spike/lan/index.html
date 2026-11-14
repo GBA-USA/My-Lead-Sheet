@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spike C1 · Wi-Fi link</title>
+<link rel="stylesheet" href="/lan/drill.css">
+<script src="/vendor/qrcode.js"></script>
+</head>
+<body>
+<script type="module">
+import { startDrill } from "/lan/links.js";
+startDrill({
+  spike: "lan",
+  title: "Spike C1 · Wi-Fi link",
+  plans: ["fallback", "auto"],
+  spreadTargetMs: 1,
+  setups: ["own-router", "venue-open", "venue-isolated", "sign-in-page", "udp-blocked", "iphone-hotspot", "android-hotspot", "wifi-no-internet", "other"],
+});
+</script>
+</body>
+</html>

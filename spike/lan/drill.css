@@ -1,0 +1,11 @@
+body { font: 17px/1.4 system-ui, sans-serif; margin: 16px; max-width: 640px; }
+h1 { font-size: 20px; }
+.status { font-size: 20px; font-weight: 600; min-height: 2.8em; }
+.numbers { font-variant-numeric: tabular-nums; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+button, select, input { font: inherit; min-height: 44px; }
+input, textarea { width: 100%; box-sizing: border-box; margin-top: 8px; }
+.qr svg { width: min(90vw, 420px); height: auto; background: #fff; }
+.code-text { font-size: 11px; height: 4em; }
+video { width: 100%; }
+.log { font-size: 13px; padding-left: 20px; }

@@ -1,5 +1,5 @@
 export const MIN_PASSWORD_LENGTH = 10;
-export const PBKDF2_ROUNDS = 600_000;
+const PBKDF2_ROUNDS = 600_000;
 const SALT_BYTES = 16;
 const KEY_BITS = 256;
 

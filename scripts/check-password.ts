@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { Phone, startApi } from "./api-session.ts";
 import { openSite } from "./chrome.ts";
-import { newSalt, parseCommonPasswords, passwordKey, passwordProblem, PBKDF2_ROUNDS } from "../src/password.ts";
+import { newSalt, parseCommonPasswords, passwordKey, passwordProblem } from "../src/password.ts";
 
 const MINUTE_MS = 100;
 const PEPPER = "check-only-password-pepper-0123456789abcdef";
@@ -57,7 +57,6 @@ async function apiChecks() {
     pbkdf2Sync("correct horse battery", Buffer.from(salt, "base64url"), 600_000, 32, "sha256").toString("base64url"),
     "the phone's key is PBKDF2-SHA256 at 600,000 rounds, 32 bytes",
   );
-  assert.equal(PBKDF2_ROUNDS, 600_000);
 
   const list = parseCommonPasswords(readFileSync(new URL("../public/common-passwords.txt", import.meta.url), "utf8"));
   assert.equal(list.size, 5000, "the common-password list has 5,000 entries");

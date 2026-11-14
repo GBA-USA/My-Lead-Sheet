@@ -105,6 +105,11 @@ function* beatsBetween(from: number, to: number) {
   }
 }
 
+/** Audio seconds of the solo click's next unscheduled beat. */
+function nextBeat() {
+  return (beatsBetween(last, Infinity).next().value ?? Infinity) / 1000;
+}
+
 function soloGrid(time: number) {
   const at = (time * 1000) as Grid["startAt"];
   beats = [{ at, value: { bpm: clampMetronomeBpm(bpm), beatsPerBar: 1, startAt: at, firstBar: 0 } }];
@@ -125,17 +130,13 @@ function queue() {
 }
 
 function tick() {
-  timer = 0;
   if (!running || !audio) return;
   const map = anchor(audio);
   if (map) {
     const now = audio.currentTime;
     const timeOf = (at: number) => map.ctx + (at - map.band) / 1000;
     const atOf = (time: number) => map.band + (time - map.ctx) * 1000;
-    if (timebase.kind === "solo") {
-      const next = beatsBetween(last, Infinity).next().value;
-      if (next != null && timeOf(next) < now - 0.05) soloGrid(now + 0.02);
-    }
+    if (timebase.kind === "solo" && nextBeat() < now - 0.05) soloGrid(now + 0.02);
     while (clicks.length > 1 && clicks[1].time < now - HEARD_WITHIN_S) clicks.shift();
     const from = timebase.kind === "band" ? Math.max(last, atOf(now)) : last;
     for (const at of beatsBetween(from, atOf(now + 0.12))) {
@@ -178,13 +179,14 @@ export function startMetronome(nextBpm: number, fail: () => void) {
   bpm = nextBpm;
   begin(fail, (ctx) => {
     if (!armed) arm(ctx);
-    else if (!timer) queue();
+    else soloGrid(nextBeat());
   });
 }
 
 /**
  * Click the band's grid: each beat is heard when `bandAt` reads its band time, `speakerDelayMs` after the output presents it.
  * Call again with each new timeline. A queued click the new one no longer has, as after a late Stop or tempo change, is silenced.
+ * A queued click within 20 µs of a new beat stays and stands for that beat.
  */
 export function followBand(click: Timeline<Grid | null>, bandAt: TimeSource, speakerDelayMs: number, fail: () => void) {
   if (timebase.kind === "solo") stopMetronome();
@@ -194,7 +196,7 @@ export function followBand(click: Timeline<Grid | null>, bandAt: TimeSource, spe
   const stays = (each: Click) => each.time <= now || !beatsBetween(each.at - 2 * SAME_BEAT_MS, each.at + 2 * SAME_BEAT_MS).next().done;
   for (const each of clicks) if (!stays(each)) each.gain?.disconnect();
   clicks = clicks.filter(stays);
-  last = clicks.length > 0 ? clicks[clicks.length - 1].at : -Infinity;
+  last = clicks.length > 0 ? clicks[clicks.length - 1].at + SAME_BEAT_MS : -Infinity;
   begin(fail, tick);
 }
 
@@ -202,9 +204,8 @@ export function setMetronomeBpm(nextBpm: number) {
   if (!(nextBpm > 0)) return;
   bpm = nextBpm;
   if (!running || !audio || !armed || timebase.kind !== "solo") return;
-  const beat = metronomeBeatSeconds(bpm);
-  const latest = audio.currentTime + beat;
-  const next = (beatsBetween(last, Infinity).next().value ?? latest * 1000) / 1000;
+  const latest = audio.currentTime + metronomeBeatSeconds(bpm);
+  const next = nextBeat();
   soloGrid(next > latest ? Math.max(audio.currentTime + 0.05, latest) : next);
 }
 

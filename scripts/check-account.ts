@@ -112,6 +112,7 @@ try {
   check(view.title === "Sam Rivera" && view.handle === "@samrivera", `the account shows the name and @handle the server made (${view.title}, ${view.handle})`);
   check(view.removeDisabled, "Remove is off while Face ID or fingerprint is the only way");
   check(view.left.includes("8 left"), `Backup codes shows 8 left (${view.left})`);
+  check(await until(`document.querySelector(".account-sheet [role=status]")?.textContent.startsWith("Backed up · ")`, "the Backed up line"), "after sign-in the account sheet says Backed up");
   await fitsPhone("account");
 
   check(await click("Sign out"), "Sign out");

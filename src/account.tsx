@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
+import type { BackupResult } from "./backup";
 import { PRIVACY_HREF } from "./data-kinds";
 import { commonPasswords, MIN_PASSWORD_LENGTH, passwordProblem } from "./password";
 import {
@@ -69,9 +70,31 @@ const suggestedHandle = (name: string) =>
     .replace(/[^a-z0-9]/g, "")
     .slice(0, 20);
 
+const BACKUP_PROBLEM = { offline: "can't reach the server", full: "your backup is full", failed: "the backup didn't go through" } as const;
+
+const backupLine = (backup: BackupResult | null) => {
+  if (backup?.ok && backup.at) {
+    const when = new Date(backup.at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    const held = backup.heldBack === 0 ? "" : ` · ${backup.heldBack} ${backup.heldBack === 1 ? "item" : "items"} not backed up`;
+    return `Backed up · ${when}${held}`;
+  }
+  if (backup && !backup.ok) return `Not backed up · ${BACKUP_PROBLEM[backup.problem ?? "failed"]}`;
+  return "Backing up this phone…";
+};
+
 const added = (ms: number) => new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 
-export function AccountSheet({ account, onAccount, onClose }: { account: Account | null; onAccount: (account: Account | null) => void; onClose: () => void }) {
+export function AccountSheet({
+  account,
+  backup,
+  onAccount,
+  onClose,
+}: {
+  account: Account | null;
+  backup: BackupResult | null;
+  onAccount: (account: Account | null) => void;
+  onClose: () => void;
+}) {
   const titleId = useId();
   const nameId = useId();
   const handleId = useId();
@@ -395,6 +418,9 @@ export function AccountSheet({ account, onAccount, onClose }: { account: Account
         body: (
           <>
             <p className="account-handle">@{account.handle}</p>
+            <p className="account-note" role="status">
+              {backupLine(backup)}
+            </p>
             <h3 className="account-section">Ways to sign in</h3>
             <ul className="account-ways">
               {account.ways.map((way) => {

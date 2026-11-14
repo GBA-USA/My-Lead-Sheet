@@ -32,6 +32,22 @@ function writeRaw(key: string, value: string): boolean {
   }
 }
 
+let generation = 0;
+const listeners = new Set<() => void>();
+
+/** Goes up each time a sync rewrites stored values, so every screen holding a copy of one reads it again. */
+export const storageGeneration = () => generation;
+
+export function onStorageChange(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+export function storageChanged() {
+  generation += 1;
+  for (const listener of listeners) listener();
+}
+
 type Check = (value: unknown) => boolean;
 
 const isString: Check = (value) => typeof value === "string";
@@ -110,14 +126,15 @@ function fingerprint(item: unknown): string {
   return (hash >>> 0).toString(36);
 }
 
+const ownItems = <T extends { id: number }>(stored: T[], prints: SeedPrints | undefined) =>
+  stored.filter((item) => prints && prints[item.id] !== fingerprint(item));
+
 /**
  * Seed items win unless the stored copy is the user's: added (no print) or edited (print differs).
  * A library stored before prints existed holds only seed copies, so `prints` is undefined there.
  */
 function mergeSeed<T extends { id: number }>(seed: T[], stored: T[], prints: SeedPrints | undefined) {
-  const own = new Map(
-    stored.filter((item) => prints && prints[item.id] !== fingerprint(item)).map((item) => [item.id, item]),
-  );
+  const own = new Map(ownItems(stored, prints).map((item) => [item.id, item]));
   const seedIds = new Set(seed.map((item) => item.id));
   const items = [...seed.map((item) => own.get(item.id) ?? item), ...[...own.values()].filter((item) => !seedIds.has(item.id))];
   const nextPrints: SeedPrints = {};
@@ -152,24 +169,111 @@ function refKey(ref: SongRef): string {
   return ref.startsWith(LOCAL) ? ref.slice(LOCAL.length) : ref;
 }
 
-export function loadLibrary(): Library {
-  const raw = readRaw(LIBRARY_KEY);
-  const stored = parseStored(raw);
-  const seed = JSON.parse(JSON.stringify(seedLibrary)) as LibraryFile;
+const seedCopy = () => JSON.parse(JSON.stringify(seedLibrary)) as LibraryFile;
+
+function storedLibrary(stored: Partial<StoredLibrary> | null): StoredLibrary {
+  const seed = seedCopy();
   const songs = mergeSeed(seed.songs, stored?.songs ?? [], stored?.seedPrints?.songs);
   const setlists = mergeSeed(seed.setlists, stored?.setlists ?? [], stored?.seedPrints?.setlists);
-  const library: StoredLibrary = {
-    ...seed,
-    songs: songs.items,
-    setlists: setlists.items,
-    seedPrints: { songs: songs.prints, setlists: setlists.prints },
-  };
+  return { ...seed, songs: songs.items, setlists: setlists.items, seedPrints: { songs: songs.prints, setlists: setlists.prints } };
+}
+
+export function loadLibrary(): Library {
+  const raw = readRaw(LIBRARY_KEY);
+  const library = storedLibrary(parseStored(raw));
   const next = JSON.stringify(library);
   if (next !== raw) writeRaw(LIBRARY_KEY, next);
   return {
     songs: library.songs.map((song) => ({ ...song, ref: localRef(song.id) })),
     setlists: library.setlists.map(({ songIds, ...setlist }) => ({ ...setlist, songRefs: songIds.map(localRef) })),
   };
+}
+
+/** Backup row names, not localStorage keys: each own song and setlist is backed up as its own row, `leadSheetsSong.<id>` or `leadSheetsSetlist.<id>`. */
+export const SONG_ROW = "leadSheetsSong";
+export const SETLIST_ROW = "leadSheetsSetlist";
+
+type OwnEntry<T> = { item: T; print?: string };
+
+const ownEntry = <T extends { id: number }>(item: T, prints: SeedPrints | undefined) =>
+  JSON.stringify(prints?.[item.id] === undefined ? { item } : { item, print: prints[item.id] });
+
+/**
+ * The songs and setlists this phone added or edited, from stored library text, one entry each. The value holds the
+ * item and, for an edited seed item, the seed print it was edited from. Seed copies are left out: every phone has them.
+ */
+export function ownLibraryItems(raw: string | null): Map<string, string> {
+  const stored = parseStored(raw);
+  const songs = ownItems(stored?.songs ?? [], stored?.seedPrints?.songs).map((song) => [`${SONG_ROW}.${song.id}`, ownEntry(song, stored?.seedPrints?.songs)] as const);
+  const setlists = ownItems(stored?.setlists ?? [], stored?.seedPrints?.setlists).map((setlist) => [`${SETLIST_ROW}.${setlist.id}`, ownEntry(setlist, stored?.seedPrints?.setlists)] as const);
+  return new Map([...songs, ...setlists]);
+}
+
+function parseEntry<T>(value: string, check: Check): OwnEntry<T> | null {
+  try {
+    const entry = JSON.parse(value) as OwnEntry<T>;
+    return check(entry?.item) && (entry.print === undefined || isString(entry.print)) ? entry : null;
+  } catch {
+    return null;
+  }
+}
+
+function setOwn<T extends { id: number }>(items: T[], prints: SeedPrints, seed: T[], id: number, entry: OwnEntry<T> | null) {
+  const at = items.findIndex((item) => item.id === id);
+  const seedItem = seed.find((item) => item.id === id);
+  const next = entry?.item ?? seedItem;
+  if (entry?.print !== undefined) prints[id] = entry.print;
+  else if (entry || !seedItem) delete prints[id];
+  else prints[id] = fingerprint(seedItem);
+  if (at >= 0 && next) items[at] = next;
+  else if (at >= 0) items.splice(at, 1);
+  else if (next) {
+    const seedIds = new Set(seed.map((item) => item.id));
+    const after = items.findIndex((item) => !seedIds.has(item.id) && item.id > id);
+    items.splice(after < 0 ? items.length : after, 0, next);
+  }
+}
+
+/**
+ * Stored library text with own songs and setlists set (an `ownLibraryItems` value) or removed (null). A removed seed
+ * item goes back to its seed copy. A new item goes in id order after the seed, so every phone stores the same text.
+ */
+export function withOwnLibraryItems(raw: string | null, changes: Map<string, string | null>): string {
+  const library = storedLibrary(parseStored(raw));
+  const seed = seedCopy();
+  for (const [key, value] of changes) {
+    const id = Number(key.slice(key.indexOf(".") + 1));
+    if (!Number.isInteger(id)) continue;
+    if (key.startsWith(`${SONG_ROW}.`)) {
+      const entry = value === null ? null : parseEntry<StoredSong>(value, isSong);
+      if (value === null || entry?.item.id === id) setOwn(library.songs, library.seedPrints.songs, seed.songs, id, entry);
+    } else if (key.startsWith(`${SETLIST_ROW}.`)) {
+      const entry = value === null ? null : parseEntry<StoredSetlist>(value, isSetlist);
+      if (value === null || entry?.item.id === id) setOwn(library.setlists, library.seedPrints.setlists, seed.setlists, id, entry);
+    }
+  }
+  return JSON.stringify(storedLibrary(library));
+}
+
+/** The first song or setlist id that neither the stored library nor `taken` uses. */
+export function freeOwnId(raw: string | null, key: typeof SONG_ROW | typeof SETLIST_ROW, taken: number[]): number {
+  const library = storedLibrary(parseStored(raw));
+  const items: { id: number }[] = key === SONG_ROW ? library.songs : library.setlists;
+  return Math.max(0, ...items.map((item) => item.id), ...taken) + 1;
+}
+
+/** An own song or setlist entry copied to a new id, named "<name> · from <phone>". It is an added item, so it has no seed print. */
+export function copiedOwnItem(value: string, id: number, phone: string): string {
+  const { item } = JSON.parse(value) as OwnEntry<{ title?: string; name?: string }>;
+  const from = (name: string) => `${name} · from ${phone}`;
+  return JSON.stringify({ item: { ...item, id, ...(item.title === undefined ? {} : { title: from(item.title) }), ...(item.name === undefined ? {} : { name: from(item.name) }) } });
+}
+
+/** An own setlist entry with song `from` swapped for song `to`. */
+export function setlistWithSongMoved(value: string, from: number, to: number): string {
+  const entry = JSON.parse(value) as OwnEntry<StoredSetlist>;
+  if (!entry.item.songIds.includes(from)) return value;
+  return JSON.stringify({ ...entry, item: { ...entry.item, songIds: entry.item.songIds.map((id) => (id === from ? to : id)) } });
 }
 
 export function loadAwake(): boolean {
@@ -358,4 +462,11 @@ export function loadScrollVersions(ref: SongRef): ScrollVersions {
 
 export function saveScrollVersions(ref: SongRef, value: ScrollVersions): boolean {
   return writeRaw(`${SCROLL_VERSIONS_KEY}.${refKey(ref)}`, JSON.stringify(value));
+}
+
+/** Applies one change to the stored versions, not to a copy a screen holds, so a version pulled meanwhile stays. */
+export function updateScrollVersions(ref: SongRef, change: (current: ScrollVersions) => ScrollVersions): ScrollVersions {
+  const next = change(loadScrollVersions(ref));
+  saveScrollVersions(ref, next);
+  return next;
 }

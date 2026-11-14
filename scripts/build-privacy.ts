@@ -56,7 +56,6 @@ export function privacyHtml(contact: string | undefined): string {
 `;
 }
 
-/** Emits the privacy page into every build, with the contact from `VITE_PRIVACY_CONTACT` (env or .env files). */
 export function privacyPage(): Plugin {
   let contact: string | undefined;
   return {

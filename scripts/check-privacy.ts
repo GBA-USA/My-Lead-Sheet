@@ -25,11 +25,12 @@ function matches(text: string, pattern: RegExp): string[] {
   return [...text.matchAll(pattern)].map((found) => found[1].replace(/\.$/, ""));
 }
 
-/** Every localStorage key under src/, and every table and Durable Object storage key under worker/. */
+/** Every localStorage key and IndexedDB database under src/, and every table and Durable Object storage key under worker/. */
 function storedKeys(tree: string): Set<string> {
   const keys = new Set<string>();
   for (const file of filesUnder(join(tree, "src"))) {
     const text = readFileSync(file, "utf8");
+    for (const key of matches(text, /indexedDB\.open\(\s*["'`]([^"'`$]+)/g)) keys.add(key);
     if (!text.includes("localStorage")) continue;
     for (const key of matches(text, /\bconst\s+\w*_KEY\s*=\s*["'`]([^"'`$]+)["'`]/g)) keys.add(key);
     for (const key of matches(text, /localStorage\.(?:getItem|setItem|removeItem)\(\s*["'`]([^"'`$]+)/g)) keys.add(key);
@@ -48,13 +49,14 @@ const seed = (path: string, text: string) => {
   writeFileSync(join(fixture, path), text);
 };
 seed("src/app.ts", 'export const THEME_KEY = "leadSheetsTheme";\nlocalStorage.setItem(`leadSheetsDraft.${id}`, "1");\n');
-check(storedKeys(fixture).size === 2, "a tree with no worker/ folder still scans src/");
+seed("src/clock.ts", 'const db = indexedDB.open("leadSheetsClock", 1);\n');
+check(storedKeys(fixture).size === 3, "a tree with no worker/ folder still scans src/");
 seed("worker/directory.ts", 'sql.exec(`CREATE TABLE IF NOT EXISTS users (user_id TEXT)`);\nawait this.ctx.storage.put("relay_budget", budget);\n');
 seed("worker/schema.sql", "create table google_logins (google_sub text);\n");
 const fixtureKeys = [...storedKeys(fixture)].sort().join(",");
 check(
-  fixtureKeys === "google_logins,leadSheetsDraft,leadSheetsTheme,relay_budget,users",
-  `the scan finds seeded keys in src/ and worker/ (found ${fixtureKeys})`,
+  fixtureKeys === "google_logins,leadSheetsClock,leadSheetsDraft,leadSheetsTheme,relay_budget,users",
+  `the scan finds seeded localStorage, IndexedDB, table and storage keys (found ${fixtureKeys})`,
 );
 rmSync(fixture, { recursive: true, force: true });
 

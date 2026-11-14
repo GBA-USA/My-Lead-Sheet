@@ -1,7 +1,6 @@
 import { useId } from "react";
 import type { BandView } from "./bands-model";
 
-/** Band settings, for admins only. The server refuses a member's change anyway. */
 export function BandSettings({ band, busy, onScrollWithLeader }: { band: BandView; busy: boolean; onScrollWithLeader: (on: boolean) => void }) {
   const id = useId();
   return (

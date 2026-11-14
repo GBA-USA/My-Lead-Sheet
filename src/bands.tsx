@@ -27,7 +27,6 @@ const message = (error: unknown) => {
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-/** Bands: your bands, New band, joining by a scanned code or link, and each band's members, Invite and Band settings. `code` is a band code to open first. */
 export function BandsSheet({ account, code, onSignedOut, onClose }: { account: Account; code?: string; onSignedOut: () => void; onClose: () => void }) {
   const titleId = useId();
   const nameId = useId();

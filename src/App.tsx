@@ -96,10 +96,10 @@ export function App() {
     const open = landed?.screen === "friends" ? setFriends : landed?.screen === "bands" ? setBands : null;
     if (!landed || !open || checking) return;
     if (!account) return setAccountOpen(true);
-    setAccountOpen(false);
+    if (accountOpen) return;
     open({ code: landed.code });
     setLanded(null);
-  }, [landed, account, checking]);
+  }, [landed, account, checking, accountOpen]);
 
   useEffect(() => {
     if (!window.location.hash) {

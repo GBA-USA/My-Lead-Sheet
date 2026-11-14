@@ -12,6 +12,20 @@ type MemberRow = { user_id: string; role: Role; state: MemberState; joined_at: n
 export const NOT_A_MEMBER_CLOSE = 4403;
 const BAND_ID = /^band_[A-Za-z0-9_-]{22}$/;
 
+/** Room refusals arrive over RPC as plain errors carrying the reason, so the Directory gives each its status back here. */
+const ROOM_REFUSALS = {
+  "no-band": 404,
+  "not-a-member": 403,
+  "not-admin": 403,
+  "not-found": 404,
+  "last-admin": 409,
+  "band-exists": 409,
+  "code-stopped": 410,
+  yourself: 400,
+} as const;
+
+const refused = (reason: keyof typeof ROOM_REFUSALS) => new Refused(reason, ROOM_REFUSALS[reason]);
+
 export function createMemberTables(sql: SqlStorage) {
   sql.exec(`CREATE TABLE IF NOT EXISTS meta (
     id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -38,24 +52,23 @@ const activeAdmins = (sql: SqlStorage) => sql.exec<{ n: number }>(`SELECT count(
 /** Whether this room is a band that `userId` may not enter. Rooms that are not bands stay open to any signed-in player. */
 export const shutOut = (sql: SqlStorage, userId: string) => metaOf(sql) !== undefined && memberOf(sql, userId)?.state !== "active";
 
-/** The band and the caller's active membership in it, or the refusal a phone shows. */
 function inBand(sql: SqlStorage, userId: string): { meta: Meta; me: MemberRow } {
   const meta = metaOf(sql);
-  if (!meta) throw new Refused("no-band", 404);
+  if (!meta) throw refused("no-band");
   const me = memberOf(sql, userId);
-  if (me?.state !== "active") throw new Refused("not-a-member", 403);
+  if (me?.state !== "active") throw refused("not-a-member");
   return { meta, me };
 }
 
 function asAdmin(sql: SqlStorage, userId: string) {
   const band = inBand(sql, userId);
-  if (band.me.role !== "admin") throw new Refused("not-admin", 403);
+  if (band.me.role !== "admin") throw refused("not-admin");
   return band;
 }
 
 function activeTarget(sql: SqlStorage, userId: string): MemberRow {
   const target = memberOf(sql, userId);
-  if (target?.state !== "active") throw new Refused("not-found", 404);
+  if (target?.state !== "active") throw refused("not-found");
   return target;
 }
 
@@ -74,10 +87,10 @@ function setState(sql: SqlStorage, userId: string, state: MemberState, now: numb
   sql.exec(`UPDATE members SET state = ?, changed_at = ? WHERE user_id = ?`, state, now, userId);
 }
 
-/** What one band Room does with its members, called by the Directory once it knows who is asking. */
+/** Every user id here is trusted: only the Directory calls these, after it has checked the session. */
 export const bandRoom = {
   create(band: Band, user: { userId: string; name: string }, name: string, now: number): BandView {
-    if (metaOf(band.sql)) throw new Refused("band-exists", 409);
+    if (metaOf(band.sql)) throw refused("band-exists");
     band.sql.exec(`INSERT INTO meta (id, kind, name, created_by, created_at) VALUES (1, 'band', ?, ?, ?)`, name, user.userId, now);
     band.sql.exec(`INSERT INTO members (user_id, role, state, joined_at, changed_at, display_name) VALUES (?, 'admin', 'active', ?, ?, ?)`, user.userId, now, now, user.name);
     return view(band, user.userId);
@@ -97,7 +110,7 @@ export const bandRoom = {
   preview({ sql }: Band, inviterId: string, userId: string): BandPreview {
     const meta = metaOf(sql);
     const inviter = memberOf(sql, inviterId);
-    if (!meta || inviter?.state !== "active" || inviter.role !== "admin") throw new Refused("code-stopped", 410);
+    if (!meta || inviter?.state !== "active" || inviter.role !== "admin") throw refused("code-stopped");
     return { name: meta.name, invitedBy: inviter.display_name, member: memberOf(sql, userId)?.state === "active" };
   },
 
@@ -106,7 +119,7 @@ export const bandRoom = {
     bandRoom.preview(band, code.inviterId, user.userId);
     const me = memberOf(band.sql, user.userId);
     if (me?.state === "active") return view(band, user.userId);
-    if (me?.state === "removed" && code.madeAt <= me.changed_at) throw new Refused("code-stopped", 410);
+    if (me?.state === "removed" && code.madeAt <= me.changed_at) throw refused("code-stopped");
     band.sql.exec(
       `INSERT INTO members (user_id, role, state, joined_at, changed_at, display_name) VALUES (?1, 'member', 'active', ?2, ?2, ?3)
        ON CONFLICT (user_id) DO UPDATE SET role = 'member', state = 'active', joined_at = ?2, changed_at = ?2, display_name = ?3`,
@@ -126,7 +139,7 @@ export const bandRoom = {
 
   remove(band: Band, adminId: string, userId: string, now: number): BandView {
     asAdmin(band.sql, adminId);
-    if (userId === adminId) throw new Refused("yourself");
+    if (userId === adminId) throw refused("yourself");
     activeTarget(band.sql, userId);
     setState(band.sql, userId, "removed", now);
     return view(band, adminId);
@@ -135,7 +148,7 @@ export const bandRoom = {
   leave({ sql }: Band, userId: string, now: number) {
     const { me } = inBand(sql, userId);
     const others = sql.exec<{ n: number }>(`SELECT count(*) AS n FROM members WHERE state = 'active' AND user_id != ?`, userId).one().n;
-    if (me.role === "admin" && others > 0 && activeAdmins(sql) === 1) throw new Refused("last-admin", 409);
+    if (me.role === "admin" && others > 0 && activeAdmins(sql) === 1) throw refused("last-admin");
     setState(sql, userId, "left", now);
   },
 
@@ -163,24 +176,12 @@ export function createBandIndex(sql: SqlStorage) {
   )`);
 }
 
-/** Room refusals arrive over RPC as plain errors carrying the reason, so the Directory gives each its status back here. */
-const ROOM_REFUSALS: Record<string, number> = {
-  "no-band": 404,
-  "not-a-member": 403,
-  "not-admin": 403,
-  "not-found": 404,
-  "last-admin": 409,
-  "band-exists": 409,
-  "code-stopped": 410,
-  yourself: 400,
-};
-
 async function fromRoom<T>(call: Promise<T>): Promise<T> {
   try {
     return await call;
   } catch (error) {
     const reason = error instanceof Error ? error.message : "";
-    if (reason in ROOM_REFUSALS) throw new Refused(reason, ROOM_REFUSALS[reason]);
+    if (reason in ROOM_REFUSALS) throw refused(reason as keyof typeof ROOM_REFUSALS);
     throw error;
   }
 }
@@ -198,7 +199,6 @@ function userIdIn(body: Record<string, unknown>): string {
   return body.userId;
 }
 
-/** Only a band admin can make a band's invite code (PLAN.md 6). Used by `POST /api/codes` for `{kind: "band", bandId}`. */
 export async function bandInviteTarget(c: Context, user: User) {
   const bandId = bandIdIn(c.body);
   await fromRoom(roomOf(c, bandId).requireAdmin(user.user_id));
@@ -278,7 +278,6 @@ export const BAND_ROUTES: Record<string, Route> = {
     return { body: { ok: true } };
   },
 
-  /** Reset link: every live invite code for the band stops at once, whichever admin made it. */
   async "POST /api/bands/reset-link"(c) {
     const bandId = bandIdIn(c.body);
     await fromRoom(roomOf(c, bandId).requireAdmin(signedIn(c).user_id));

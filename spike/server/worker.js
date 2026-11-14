@@ -55,7 +55,9 @@ export class Room extends DurableObject {
     } catch {
       return;
     }
+    if (typeof msg?.k !== "string") return;
     if (role === "leader" && msg.k === "state") {
+      if (!Number.isSafeInteger(msg.rev)) return ws.send(JSON.stringify({ k: "refused", rev: msg.rev }));
       const have = this.latest()?.rev ?? 0;
       if (msg.rev <= have) return ws.send(JSON.stringify({ k: "refused", rev: msg.rev, have }));
       this.ctx.storage.sql.exec("INSERT OR REPLACE INTO gig (id, rev, body) VALUES (1, ?, ?)", msg.rev, message);

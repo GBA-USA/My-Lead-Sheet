@@ -87,7 +87,7 @@ function pct(values, p) {
   return sorted[Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1)];
 }
 
-const ms = (v) => Math.round(v * 100) / 100;
+const round2 = (v) => Math.round(v * 100) / 100;
 
 async function drill() {
   const changes = Number(opt.changes);
@@ -178,7 +178,7 @@ async function drill() {
   for (const run of runs) expect(run.backward === 0, `${run.id} never saw rev go backward`);
   expect(rejoined.join !== null, "rejoined follower got a snapshot");
   expect(rejoined.join?.rev >= rejoined.spawnedAtRev, `rejoin snapshot rev ${rejoined.join?.rev} >= leader rev ${rejoined.spawnedAtRev}`);
-  expect(rejoined.join?.ms <= REJOIN_TARGET_MS, `rejoin got latest rev in ${ms(rejoined.join?.ms)} ms <= ${REJOIN_TARGET_MS}`);
+  expect(rejoined.join?.ms <= REJOIN_TARGET_MS, `rejoin got latest rev in ${round2(rejoined.join?.ms)} ms <= ${REJOIN_TARGET_MS}`);
   expect(Math.max(rejoined.join?.rev ?? 0, ...rejoined.states.map((s) => s.rev)) === changes, `rejoined follower ends on rev ${changes}`);
   expect(refused === 0, "room refused no leader change");
   expect(stats.leader === leaderSent, `room counted ${stats.leader} leader messages, leader sent ${leaderSent}`);
@@ -187,7 +187,7 @@ async function drill() {
   const lat = runs.flatMap((run) => run.states.map((s) => s.lat));
   const clock = runs.flatMap((run) => run.clock);
   const spreadP95 = pct(clock.map((c) => c.spread), 95);
-  expect(spreadP95 <= SPREAD_TARGET_MS, `relayed-ping spread p95 ${ms(spreadP95)} ms <= ${SPREAD_TARGET_MS}`);
+  expect(spreadP95 <= SPREAD_TARGET_MS, `relayed-ping spread p95 ${round2(spreadP95)} ms <= ${SPREAD_TARGET_MS}`);
 
   const inbound = stats.leader + stats.follower;
   const inboundPerPing = inbound > changes && stats.follower ? (inbound - changes) / stats.follower : 2;
@@ -201,23 +201,23 @@ async function drill() {
     url: base,
     room,
     params: { followers: FOLLOWERS, changes, everyMs, killS, pingMs, killAtRev },
-    tapToFollowerMs: { n: lat.length, p50: ms(pct(lat, 50)), p95: ms(pct(lat, 95)), p99: ms(pct(lat, 99)), max: ms(Math.max(...lat)) },
+    tapToFollowerMs: { n: lat.length, p50: round2(pct(lat, 50)), p95: round2(pct(lat, 95)), p99: round2(pct(lat, 99)), max: round2(Math.max(...lat)) },
     relayedPingMs: {
       samples: clock.length,
-      rttP50: ms(pct(clock.map((c) => c.rtt), 50)),
-      rttP95: ms(pct(clock.map((c) => c.rtt), 95)),
-      spreadP95: ms(spreadP95),
-      offsetErrorP95: ms(pct(clock.map((c) => Math.abs(c.err)), 95)),
+      rttP50: round2(pct(clock.map((c) => c.rtt), 50)),
+      rttP95: round2(pct(clock.map((c) => c.rtt), 95)),
+      spreadP95: round2(spreadP95),
+      offsetErrorP95: round2(pct(clock.map((c) => Math.abs(c.err)), 95)),
     },
-    rejoin: { killedForS: killS, snapshotRev: rejoined.join?.rev, leaderRevAtRejoin: rejoined.spawnedAtRev, ms: ms(rejoined.join?.ms) },
-    roomCounts: { upgrades: stats.upgrades, leaderMessages: stats.leader, followerMessages: stats.follower, awakeS: ms(stats.awakeMs / 1000) },
-    costThisDrill: { doRequests: ms(drillRequests), gbS: ms(drillGbS) },
+    rejoin: { killedForS: killS, snapshotRev: rejoined.join?.rev, leaderRevAtRejoin: rejoined.spawnedAtRev, ms: round2(rejoined.join?.ms) },
+    roomCounts: { upgrades: stats.upgrades, leaderMessages: stats.leader, followerMessages: stats.follower, awakeS: round2(stats.awakeMs / 1000) },
+    costThisDrill: { doRequests: round2(drillRequests), gbS: round2(drillGbS) },
     costPerGig: {
-      assumes: `${GIG.hours} h, ${GIG.changes} changes, ${GIG.followers} server followers pinging every ${GIG.pingEveryS} s, ${ms(inboundPerPing)} inbound messages per ping, ${WS_MESSAGES_PER_REQUEST} messages per billed request, room never idle ${GIG.pingEveryS} s`,
+      assumes: `${GIG.hours} h, ${GIG.changes} changes, ${GIG.followers} server followers pinging every ${GIG.pingEveryS} s, ${round2(inboundPerPing)} inbound messages per ping, ${WS_MESSAGES_PER_REQUEST} messages per billed request, room never idle ${GIG.pingEveryS} s`,
       doRequests: Math.round(gigRequests),
-      requestsPctOfFreeDay: ms((gigRequests / FREE_REQUESTS_PER_DAY) * 100),
+      requestsPctOfFreeDay: round2((gigRequests / FREE_REQUESTS_PER_DAY) * 100),
       gbS: gigGbS,
-      gbSPctOfFreeDay: ms((gigGbS / FREE_GB_S_PER_DAY) * 100),
+      gbSPctOfFreeDay: round2((gigGbS / FREE_GB_S_PER_DAY) * 100),
     },
     failures,
   };

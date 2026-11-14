@@ -10,7 +10,7 @@ The code is throwaway. It lives only in `spike/server/` and has its own wrangler
 - `drill.mjs <url>` runs 1 leader and 4 followers in a fresh room. The leader runs in the drill process. Each follower is its own Node process, so killing a follower is a real `SIGKILL`, not a polite socket close. The leader sends 200 changes, one every 500 ms, each about 1.3 KB. Each follower bursts 16 pings 100 ms apart on join, then pings every second (`--ping-ms 5000` gives the plan's server cadence). At change 50 the drill kills follower 4. It starts the follower again 60 s later and expects the newest `rev` within 2 s.
 - The clock math follows PLAN 7.6. The sample offset is `band - (t0 + t1) / 2`. The filter keeps the last 32 samples, takes the 8 with the shortest round trips, and uses their median. The spread is the range of those 8. The leader's band time has a known fake offset, so the drill also prints the true estimate error.
 - The drill exits 1 and names each failure unless all of these hold. Spread p95 is 8 ms or less. The rejoined follower gets a snapshot at or above the leader's rev within 2 s and ends on rev 200. The 3 followers that stayed up see every rev 1..200 in order. No follower sees a rev go backward. The room refuses no change. The room's leader-message count equals what the leader sent, and it counts 6 upgrades.
-- `npm run check:spike-server` boots this Worker in Miniflare and runs a short drill (40 changes, 3 s kill). It fails when the Room stops sending the join snapshot (4 named failures) and when it drops pongs (spread p95 NaN). It passes on the real Room.
+- `npm run check:spike-server` boots this Worker in Miniflare. It sends junk from the leader (bad JSON, `null`, a state without an integer `rev`) and checks the next real change still reaches a follower. Then it runs a short drill (40 changes, 3 s kill). It fails when the Room stops sending the join snapshot (4 named failures), when it drops pongs (spread p95 NaN), and when the junk guard is removed (the follower never gets rev 1). It passes on the real Room.
 
 ## Local numbers (`wrangler dev --local`, not the go/no-go)
 
@@ -23,8 +23,9 @@ Wrangler 4.162.0, Node 24.22.1, Linux. The drill and the Worker ran on the same 
 | 3 | 1 s | 3.12 / 4.85 / 6.48 / 6.84 | 3.11 / 5.54 | 1.52 | 0.37 | 170 / 169, 60.5 ms | PASS |
 | 4 | 1 s | 3.09 / 5.38 / 10.18 / 52.07 | 3.30 / 5.57 | 1.50 | 0.37 | 169 / 169, 46.0 ms | PASS |
 | 5 | 5 s | 3.58 / 4.77 / 5.70 / 12.48 | 3.15 / 4.69 | 1.52 | 0.31 | 169 / 169, 44.7 ms | PASS |
+| 6, final code | 1 s | 3.33 / 6.42 / 10.68 / 16.39 | 3.53 / 7.74 | 2.23 | 0.38 | 169 / 169, 48.5 ms | PASS |
 
-Medians over the 5 runs are tap p50 3.26 ms, tap p95 4.89 ms, spread p95 1.52 ms against the 8 ms target, and rejoin 46.9 ms against the 2 s target.
+Runs 1 to 5 ran before the review fixes, and run 6 ran on the code in this PR. Medians over the 6 runs are tap p50 3.26 ms, tap p95 5.14 ms, spread p95 1.52 ms against the 8 ms target, and rejoin 47.7 ms against the 2 s target.
 
 What the numbers say:
 
@@ -63,7 +64,7 @@ npx wrangler whoami
 npx wrangler deploy --config spike/server/wrangler.jsonc
 ```
 
-Wrangler prints the Worker's address, `https://mls-spike-server.<your workers.dev subdomain>.workers.dev`. Use it as `URL` below.
+If the account has never used workers.dev, wrangler first asks for a subdomain name, and any name works. Wrangler prints the Worker's address, `https://mls-spike-server.<your workers.dev subdomain>.workers.dev`. Use it as `URL` below.
 
 ```sh
 node spike/server/drill.mjs "$URL" | tee spike-server-deployed-1s.txt

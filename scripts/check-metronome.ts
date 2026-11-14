@@ -17,6 +17,8 @@ const entry = `
   export { METRONOME_PREFS_KEY } from "./src/storage.ts";
   export { LeadSheet } from "./src/sheet.tsx";
   export { useMetronome } from "./src/metronome-view.tsx";
+  export * as band from "./src/band-time.ts";
+  export * as gig from "./src/gig-state.ts";
   export { createElement } from "react";
   export { createRoot } from "react-dom/client";
 `;
@@ -40,6 +42,8 @@ const EPSILON = 1e-9;
 let now = 0;
 let resumeRejects = false;
 const started: number[] = [];
+/** Every scheduled click with the audio time its gain was cut, so a click cut before it starts is never heard. */
+const scheduled: { time: number; gain: { cutAt: number | null } }[] = [];
 const timers = new Map<number, { at: number; every: number | null; run: () => void }>();
 let nextTimer = 1;
 let frames: (() => void)[] = [];
@@ -47,19 +51,37 @@ let frames: (() => void)[] = [];
 const param = { setValueAtTime() {}, exponentialRampToValueAtTime() {} };
 const node = { connect() {}, disconnect() {} };
 
+/** The audio clock runs at `rate` against the page clock `now`, and the output presents a frame `outputLatency` after the context renders it. */
 class FakeAudioContext {
   static last: FakeAudioContext;
   static made = 0;
   state: AudioContextState = "suspended";
   outputLatency: number | undefined = 0.01;
   baseLatency: number | undefined = 0.005;
+  rendering = true;
+  base = 0;
+  since = 0;
+  rate = 1;
   constructor() {
     FakeAudioContext.last = this;
     FakeAudioContext.made += 1;
   }
   destination = {};
   get currentTime() {
-    return now;
+    return this.base + (now - this.since) * this.rate;
+  }
+  drift(rate: number) {
+    this.base = this.currentTime;
+    this.since = now;
+    this.rate = rate;
+  }
+  /** The page time, in seconds, at which the output presents audio time `time`. */
+  presented(time: number) {
+    return this.since + (time + (this.outputLatency ?? 0) - this.base) / this.rate;
+  }
+  getOutputTimestamp() {
+    if (!this.rendering) return { contextTime: 0, performanceTime: 0 };
+    return { contextTime: this.currentTime - (this.outputLatency ?? 0), performanceTime: now * 1000 };
   }
   resume() {
     if (resumeRejects) return Promise.reject(new Error("NotAllowedError"));
@@ -67,12 +89,27 @@ class FakeAudioContext {
     return Promise.resolve();
   }
   createOscillator() {
-    return { ...node, type: "", frequency: param, start: (time: number) => started.push(time), stop() {}, onended: null };
+    const osc = {
+      ...node,
+      type: "",
+      frequency: param,
+      gain: { cutAt: null as number | null },
+      connect: (gain: { cutAt: number | null }) => void (osc.gain = gain),
+      start: (time: number) => {
+        started.push(time);
+        scheduled.push({ time, gain: osc.gain });
+      },
+      stop() {},
+      onended: null,
+    };
+    return osc;
   }
   createGain() {
-    return { ...node, gain: param };
+    const gain = { ...node, gain: param, cutAt: null as number | null, disconnect: () => void (gain.cutAt ??= FakeAudioContext.last.currentTime) };
+    return gain;
   }
 }
+const heardClicks = (from: number) => scheduled.slice(from).filter((click) => click.gain.cutAt === null || click.gain.cutAt > click.time).map((click) => click.time);
 
 const addTimer = (run: () => void, ms: number, every: boolean) => {
   const id = nextTimer++;
@@ -121,6 +158,8 @@ type Ui = {
   METRONOME_PREFS_KEY: string;
   LeadSheet: unknown;
   useMetronome: typeof import("../src/metronome-view.tsx").useMetronome;
+  band: typeof import("../src/band-time.ts");
+  gig: typeof import("../src/gig-state.ts");
   createElement: (type: unknown, props?: object) => unknown;
   createRoot: (container: unknown) => { render: (element: unknown) => void; unmount: () => void };
 };
@@ -176,14 +215,14 @@ const flashStarts = (seen: { at: number; state: string }[]) =>
   seen.filter((frame, index) => index > 0 && frame.state === "on" && seen[index - 1].state !== "on").map((frame) => frame.at);
 
 /** Every flash lands within one frame after a heard click, and every click heard in the window flashes. */
-function inSync(label: string, seen: { at: number; state: string }[], heard: number[]) {
+function inSync(label: string, seen: { at: number; state: string }[], heard: number[], slack = EPSILON) {
   const flashes = flashStarts(seen);
-  const lag = (flash: number) => Math.min(...heard.map((time) => (flash - time >= -EPSILON ? flash - time : Infinity)));
+  const lag = (flash: number) => Math.min(...heard.map((time) => (flash - time >= -slack ? flash - time : Infinity)));
   const from = seen[0].at;
   const to = seen[seen.length - 1].at - FRAME;
   const due = heard.filter((time) => time >= from && time <= to);
-  const stray = flashes.filter((flash) => lag(flash) > FRAME + EPSILON);
-  const missed = due.filter((time) => !flashes.some((flash) => flash - time >= -EPSILON && flash - time <= FRAME + EPSILON));
+  const stray = flashes.filter((flash) => lag(flash) > FRAME + slack);
+  const missed = due.filter((time) => !flashes.some((flash) => flash - time >= -slack && flash - time <= FRAME + slack));
   if (!due.length) fail(`${label}: no heard clicks in the window`);
   if (stray.length || missed.length) {
     fail(`${label}: ${stray.length} flashes off any heard click (first at ${stray[0]?.toFixed(4)}), ${missed.length} heard clicks never flashed (first at ${missed[0]?.toFixed(4)})`);
@@ -397,6 +436,73 @@ const parsed = model.parseMetronomePrefs(JSON.parse(store.get(ui.METRONOME_PREFS
 if (parsed.indicator !== false || parsed.sound !== true || parsed.syncMode !== "auto" || parsed.syncOffsetMs !== model.SYNC_OFFSET_MAX_MS) fail("bad saved fields must fall back one by one");
 console.log(`persist: +50 ms and the switches reload; bad fields fall back alone; offset ${model.SYNC_OFFSET_MIN_MS}..+${model.SYNC_OFFSET_MAX_MS} ms in ${model.SYNC_OFFSET_STEP_MS} ms steps`);
 root.unmount();
+
+if (typeof audio.followBand !== "function") fail("no band click: metronome-audio has no followBand");
+audio.stopMetronome();
+const speaker = FakeAudioContext.last;
+speaker.outputLatency = 0.012;
+speaker.drift(1 + 50e-6);
+const ORIGIN = 1_731_560_000_000;
+const follower = { at: ORIGIN, offset: 412_345.678, skew: 30e-6 };
+const bandAt = (perfMs: number): number => ui.band.bandAt(follower as never, (ORIGIN + perfMs) as never);
+const bandNow = () => bandAt(now * 1000);
+const SPEAKER_MS = 40;
+const heardPage = (time: number) => speaker.presented(time) + SPEAKER_MS / 1000;
+const heardBand = (time: number) => bandAt(heardPage(time) * 1000);
+let gigState = ui.gig.startGig({ gigId: "gig", order: ["song"], leader: "lead", admin: "lead", backup: null, lineup: ["lead"], route: "auto", scrollAlong: false, now: bandNow() as never });
+let opId = 0;
+const leaderDoes = (op: object) => {
+  const out = ui.gig.reduce(gigState, { opId: String(++opId), epoch: 0, ...op } as never, { by: "lead", now: bandNow() as never, lead: 150 });
+  if (!out.ok) fail(`the leader's ${JSON.stringify(op)} was refused: ${out.refused}`);
+  gigState = out.state;
+};
+leaderDoes({ kind: "countIn", bpm: 120, beatsPerBar: 4, bars: 1, version: null, rate: 1 });
+const bandGrid = gigState.click[gigState.click.length - 1].value ?? fail("count-in made no grid");
+const beatMs = 60_000 / bandGrid.bpm;
+const bandFrom = scheduled.length;
+failures = 0;
+speaker.rendering = false;
+audio.followBand(gigState.click, bandAt, SPEAKER_MS, () => failures++);
+await settle();
+run(0.05, moduleDot);
+if (scheduled.length !== bandFrom) fail("a band click was scheduled before the output reported a timestamp");
+speaker.rendering = true;
+const tenMinutes = run(600, moduleDot);
+const end = bandNow();
+const gridBeats: number[] = [];
+for (let n = 0; ui.band.beatTime(bandGrid, n) < end - 200; n++) gridBeats.push(ui.band.beatTime(bandGrid, n));
+const bandHeard = heardClicks(bandFrom).map(heardBand).filter((at) => at < end - 199);
+if (bandHeard.length !== gridBeats.length) fail(`10 minutes at 120 bpm: ${bandHeard.length} clicks heard for ${gridBeats.length} grid beats`);
+const worstMs = Math.max(...gridBeats.map((at, i) => Math.abs(bandHeard[i] - at)));
+if (!(worstMs <= 0.1)) fail(`click times drift from the band grid under 50 ppm audio drift: worst ${worstMs.toFixed(3)} ms`);
+if (failures) fail("a band click reported a failure");
+console.log(`band click, 50 ppm audio drift, 30 ppm band skew, ${SPEAKER_MS} ms speaker delay: ${gridBeats.length} clicks over 10 min, each heard within ${(worstMs * 1000).toFixed(2)} µs of its grid beat`);
+inSync("band click: dot on each heard click", tenMinutes.slice(-600), heardClicks(bandFrom).map(heardPage), 1e-5);
+
+leaderDoes({ kind: "stop" });
+const stopAt = gigState.click[gigState.click.length - 1].at;
+if (gigState.click[gigState.click.length - 1].value !== null) fail("Stop made no stop step");
+run((stopAt - 60 - bandNow()) / 1000, moduleDot);
+if (!heardClicks(bandFrom).some((time) => Math.abs(heardBand(time) - stopAt) < 0.1)) fail("setup: the beat at Stop should already be queued when the Stop arrives 60 ms early");
+audio.followBand(gigState.click, bandAt, SPEAKER_MS, () => failures++);
+const afterStop = run(3, moduleDot);
+const allHeard = heardClicks(bandFrom).map(heardBand);
+const pastStop = allHeard.filter((at) => at >= stopAt - 0.1);
+if (pastStop.length) fail(`${pastStop.length} clicks heard at or after Stop`);
+if (Math.abs(allHeard[allHeard.length - 1] - (stopAt - beatMs)) > 0.1) fail("the last click must be the beat before Stop");
+if (afterStop.some((frame) => bandAt(frame.at * 1000) >= stopAt && frame.state !== "off")) fail("the dot lit after Stop");
+console.log("band Stop arriving 60 ms before it lands: the queued beat at Stop is silenced, the last click is the beat before, no dot after");
+
+audio.stopMetronome();
+speaker.drift(1);
+const soloFrom = started.length;
+startOrFail(90);
+await settle();
+run(3, moduleDot);
+const solo = started.slice(soloFrom);
+if (solo.length < 4 || solo.some((time, i) => i > 0 && Math.abs(time - solo[i - 1] - model.metronomeBeatSeconds(90)) > 1e-6)) fail("solo after a gig must click at 90 bpm again");
+audio.stopMetronome();
+console.log("solo after a gig: clicks 0.667 s apart on the audio clock");
 
 const css = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
 const dotRule = css.match(/\.beat-dot \{[^}]*\}/)?.[0] ?? fail("no .beat-dot rule");

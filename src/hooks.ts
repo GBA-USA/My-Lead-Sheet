@@ -1,13 +1,28 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type Dispatch, type SetStateAction } from "react";
 import { clampScrollPercent, type Notation } from "./music";
 import { READING_LINE, runScroll, type Motion, type Section } from "./scroll-timing";
-import { loadNotation, loadScrollPercent, saveNotation, saveScrollPercent } from "./storage";
+import { loadNotation, loadScrollPercent, onStorageChange, saveNotation, saveScrollPercent, storageGeneration } from "./storage";
 import type { SongRef } from "./types";
+
+/**
+ * A value a screen keeps from storage. It is read again when `key` changes and whenever a sync rewrites storage, so
+ * no screen goes on showing, or writing back, a copy older than what is stored.
+ */
+export function useStored<T>(load: () => T, key: unknown = null): [T, Dispatch<SetStateAction<T>>] {
+  const generation = useSyncExternalStore(onStorageChange, storageGeneration);
+  const [held, setHeld] = useState(() => ({ value: load(), key, generation }));
+  const set: Dispatch<SetStateAction<T>> = (next) =>
+    setHeld((current) => ({ ...current, value: next instanceof Function ? next(current.value) : next }));
+  if (held.key === key && held.generation === generation) return [held.value, set];
+  const fresh = { value: load(), key, generation };
+  setHeld(fresh);
+  return [fresh.value, set];
+}
 
 export function usePerformance(songRef: SongRef | null) {
   const [semitones, setSemitones] = useState(0);
-  const [notation, setNotation] = useState<Notation>("notes");
-  const [percent, setPercent] = useState(100);
+  const [notation, setNotation] = useStored<Notation>(() => (songRef == null ? "notes" : loadNotation(songRef)), songRef);
+  const [percent, setPercent] = useStored(() => (songRef == null ? 100 : loadScrollPercent(songRef)), songRef);
   const [scrolling, setScrolling] = useState(false);
   const [boundRef, setBoundRef] = useState<SongRef | null>(null);
 
@@ -15,13 +30,6 @@ export function usePerformance(songRef: SongRef | null) {
     setBoundRef(songRef);
     setSemitones(0);
     setScrolling(false);
-    if (songRef == null) {
-      setNotation("notes");
-      setPercent(100);
-    } else {
-      setNotation(loadNotation(songRef));
-      setPercent(loadScrollPercent(songRef));
-    }
   }
 
   useEffect(() => {

@@ -1,5 +1,20 @@
+import { BACKUP_KINDS, MAX_VALUE_CHARS, backupKindOf, validBackupKey, type BackupKind } from "./backup-keys";
 import { ApiError, api } from "./sign-in-methods";
-import { AWAKE_KEY, LIBRARY_KEY, NOTATION_KEY, SCROLL_PERCENT_KEY, SCROLL_VERSIONS_KEY, SONG_DATA_KEY, TEXT_SCALE_KEY, mergeOwnLibraries, ownLibrary } from "./storage";
+import {
+  LIBRARY_KEY,
+  NOTATION_KEY,
+  SCROLL_PERCENT_KEY,
+  SCROLL_VERSIONS_KEY,
+  SETLIST_KEY,
+  SONG_DATA_KEY,
+  SONG_KEY,
+  copiedOwnItem,
+  freeOwnId,
+  ownLibraryItems,
+  setlistWithSongMoved,
+  storageChanged,
+  withOwnLibraryItems,
+} from "./storage";
 
 /** This phone's sync state for the signed-in account. Present only while signed in, so a signed-out phone never syncs. */
 export const BACKUP_KEY = "leadSheetsBackup";
@@ -7,16 +22,6 @@ export const BACKUP_KEY = "leadSheetsBackup";
 type Value = string | null;
 /** How two values of one key combine when both phones changed it since they last synced. */
 type Merge = (server: Value, phone: Value, phoneLabel: string) => Value;
-
-interface Kind {
-  name: string;
-  key: string;
-  /** Only `key` itself. Without it, every `key.<song ref>` entry belongs to the kind too. */
-  exact?: true;
-  /** What this phone backs up for the key, from the raw localStorage text. */
-  read?: (raw: Value) => Value;
-  merge: Merge;
-}
 
 const lastSyncWins: Merge = (_server, phone) => phone;
 
@@ -46,22 +51,26 @@ const combineVersions: Merge = (server, phone, phoneLabel) => {
   return JSON.stringify({ versions, selected });
 };
 
-/**
- * Everything a phone backs up, one entry per localStorage key. Conflict rule (PLAN.md section 10): songs and setlists
- * keep both copies, timing versions are combined, and for a single value the phone that syncs last wins.
- * `leadSheetsMetronome` stays on each phone, because its Bluetooth delay belongs to that phone's speaker.
- */
-const KINDS: readonly Kind[] = [
-  { name: "library", key: LIBRARY_KEY, exact: true, read: ownLibrary, merge: mergeOwnLibraries },
-  { name: "timing", key: SCROLL_VERSIONS_KEY, merge: combineVersions },
-  { name: "song-data", key: SONG_DATA_KEY, merge: lastSyncWins },
-  { name: "scroll", key: SCROLL_PERCENT_KEY, merge: lastSyncWins },
-  { name: "notation", key: NOTATION_KEY, merge: lastSyncWins },
-  { name: "settings", key: TEXT_SCALE_KEY, exact: true, merge: lastSyncWins },
-  { name: "settings", key: AWAKE_KEY, exact: true, merge: lastSyncWins },
-];
+const keepServer: Merge = (server) => server;
 
-const kindOf = (key: string) => KINDS.find((kind) => key === kind.key || (!kind.exact && key.startsWith(`${kind.key}.`)));
+/**
+ * How each kind merges (PLAN.md section 10). A song or setlist both phones changed keeps the server's copy under its
+ * id, and the phone's copy moves to a new id (`keepBoth`). Timing versions are combined. For a single value the
+ * phone that syncs last wins. `leadSheetsMetronome` stays on each phone, because its Bluetooth delay belongs to that
+ * phone's speaker.
+ */
+const MERGE: Record<BackupKind, Merge> = {
+  song: keepServer,
+  setlist: keepServer,
+  timing: combineVersions,
+  "song-data": lastSyncWins,
+  scroll: lastSyncWins,
+  notation: lastSyncWins,
+  settings: lastSyncWins,
+};
+
+/** What a song's own settings are stored under, `<key>.<song id>`. They move with the song when it gets a new id. */
+const PER_SONG_KEYS = [SCROLL_VERSIONS_KEY, SONG_DATA_KEY, SCROLL_PERCENT_KEY, NOTATION_KEY];
 
 interface State {
   account: string;
@@ -86,12 +95,16 @@ interface Reply {
 }
 
 export interface BackupResult {
-  /** Keys this sync wrote on this phone. The app reloads what it shows from them. */
+  /** Keys this sync wrote on this phone. */
   changed: string[];
   /** When this phone was last fully backed up, or null if never. */
   at: number | null;
-  /** False when the server could not be reached or refused, so `at` may be old. */
+  /** False when the sync failed, so `at` may be old. */
   ok: boolean;
+  /** Why it failed: no answer from the server, the account's backup is full, or the server turned the sync down. */
+  problem?: "offline" | "full" | "failed";
+  /** Values this phone holds back because the room can't store them: a key it can't name, or a value too long. */
+  heldBack: number;
   signedOut?: true;
 }
 
@@ -117,31 +130,51 @@ function readState(): State | null {
 
 const writeState = (state: State) => localStorage.setItem(BACKUP_KEY, JSON.stringify(state));
 
-function readValue(key: string): Value {
-  const raw = localStorage.getItem(key);
-  const read = kindOf(key)?.read;
-  return read ? read(raw) : raw;
+/** This phone's backed-up values by key: its localStorage entries, with the library as one entry per own song and setlist. */
+type Local = Map<string, string>;
+
+function readLocal(): Local {
+  const local: Local = new Map();
+  for (let i = 0; i < localStorage.length; i += 1) {
+    const key = localStorage.key(i);
+    const value = key === null ? null : localStorage.getItem(key);
+    if (key !== null && value !== null && backupKindOf(key)) local.set(key, value);
+  }
+  for (const [key, value] of ownLibraryItems(localStorage.getItem(LIBRARY_KEY))) local.set(key, value);
+  return local;
 }
 
-function writeValue(key: string, value: Value) {
-  if (value === null) localStorage.removeItem(key);
-  else localStorage.setItem(key, value);
-}
+const isLibraryItem = (key: string) => key.startsWith(`${SONG_KEY}.`) || key.startsWith(`${SETLIST_KEY}.`);
 
-function localKeys(): string[] {
-  return Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i)).filter((key): key is string => key !== null && !!kindOf(key));
+/** Writes one reply's changes, the songs and setlists as one library write, then tells every screen to read again. */
+function writeLocal(writes: Map<string, Value>) {
+  if (writes.size === 0) return;
+  const items = new Map([...writes].filter(([key]) => isLibraryItem(key)));
+  for (const [key, value] of writes) {
+    if (items.has(key)) continue;
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
+  }
+  if (items.size > 0) localStorage.setItem(LIBRARY_KEY, withOwnLibraryItems(localStorage.getItem(LIBRARY_KEY), items));
+  storageChanged();
 }
 
 const syncedPrint = (state: State, key: string) => state.synced[key]?.[1] ?? print(null);
 
-/** Keys whose value here differs from the last one agreed with the server, removed keys included. */
-function pending(state: State): Map<string, Value> {
+/**
+ * Keys whose value here differs from the last one agreed with the server, removed keys included. A key the room
+ * can't take is held back rather than sent, so it can't make the rest of the sync fail.
+ */
+function pending(state: State, local: Local) {
   const changes = new Map<string, Value>();
-  for (const key of new Set([...localKeys(), ...Object.keys(state.synced)])) {
-    const value = readValue(key);
-    if (print(value) !== syncedPrint(state, key)) changes.set(key, value);
+  const held = new Set<string>();
+  for (const key of new Set([...local.keys(), ...Object.keys(state.synced)])) {
+    const value = local.get(key) ?? null;
+    if (print(value) === syncedPrint(state, key)) continue;
+    if (validBackupKey(key) && (value?.length ?? 0) <= MAX_VALUE_CHARS) changes.set(key, value);
+    else held.add(key);
   }
-  return changes;
+  return { changes, held };
 }
 
 function batches(changes: Map<string, Value>): Map<string, Value>[] {
@@ -160,16 +193,18 @@ function batches(changes: Map<string, Value>): Map<string, Value>[] {
   return out;
 }
 
-function counts(): Record<string, number> {
+/** How many values of each kind the server should hold for this phone. A held-back key counts only if the server has an older value of it. */
+function counts(state: State, local: Local, held: Set<string>): Record<string, number> {
   const out: Record<string, number> = {};
-  for (const key of localKeys()) {
-    const name = kindOf(key)?.name;
-    if (name && readValue(key) !== null) out[name] = (out[name] ?? 0) + 1;
+  for (const key of local.keys()) {
+    const kind = backupKindOf(key);
+    if (kind && !(held.has(key) && syncedPrint(state, key) === print(null))) out[kind] = (out[kind] ?? 0) + 1;
   }
   return out;
 }
 
-const sameCounts = (a: Record<string, number>, b: Record<string, number>) => KINDS.every(({ name }) => (a[name] ?? 0) === (b[name] ?? 0));
+const KIND_NAMES = [...new Set(BACKUP_KINDS.map((kind) => kind.name))];
+const sameCounts = (a: Record<string, number>, b: Record<string, number>) => KIND_NAMES.every((name) => (a[name] ?? 0) === (b[name] ?? 0));
 
 /** A short name for this phone, used in "· from iPhone" when both phones changed the same song. */
 function phoneLabel(): string {
@@ -180,31 +215,83 @@ function phoneLabel(): string {
 /** A print no value has, so the key counts as changed here and goes out next round, where the server's row meets it. */
 const UNSETTLED = "?";
 
+const itemText = (value: string) => {
+  try {
+    return JSON.stringify(JSON.parse(value).item);
+  } catch {
+    return value;
+  }
+};
+
 /**
  * Applies one reply. A key this phone sent comes back either as sent (stored) or as the server's newer value, which
  * is merged with this phone's and sent again next round. A key it didn't send is pulled, unless it changed here
- * meanwhile. Returns how many keys still need another round.
+ * meanwhile. A song or setlist both phones changed stays the server's under its id, and this phone's copy moves to a
+ * new id with its per-song settings and this phone's unsent setlists. Returns how many keys still need another round.
  */
 function apply(state: State, sent: Map<string, Value>, reply: Reply, changed: Set<string>): number {
+  const local = readLocal();
+  const writes = new Map<string, Value>();
+  const write = (key: string, value: Value) => {
+    if ((local.get(key) ?? null) === value) return;
+    if (value === null) local.delete(key);
+    else local.set(key, value);
+    writes.set(key, value);
+    changed.add(key);
+  };
+  const rows = new Map(reply.rows.map((row) => [row.key, row]));
+  const settled = new Set<string>();
+  const unsent = (key: string) => print(local.get(key) ?? null) !== syncedPrint(state, key);
+  const idsIn = (prefix: string) => reply.rows.filter((row) => row.key.startsWith(`${prefix}.`)).map((row) => Number(row.key.slice(prefix.length + 1))).filter(Number.isInteger);
+  const taken = { [SONG_KEY]: idsIn(SONG_KEY), [SETLIST_KEY]: idsIn(SETLIST_KEY) };
+
+  const moveSetting = (from: string, to: string) => {
+    const mine = local.get(from) ?? null;
+    if (mine !== null) write(to, mine);
+    const there = rows.get(from);
+    if (there) {
+      write(from, sent.has(from) && there.value === sent.get(from) ? null : there.value);
+      state.synced[from] = [there.rev, print(there.value)];
+      settled.add(from);
+    } else if (!state.synced[from]) write(from, null);
+  };
+  const keepBoth = (prefix: typeof SONG_KEY | typeof SETLIST_KEY, key: string) => {
+    const id = Number(key.slice(prefix.length + 1));
+    const to = freeOwnId(localStorage.getItem(LIBRARY_KEY), prefix, taken[prefix]);
+    taken[prefix].push(to);
+    write(`${prefix}.${to}`, copiedOwnItem(local.get(key)!, to, phoneLabel()));
+    if (prefix !== SONG_KEY) return;
+    for (const songKey of PER_SONG_KEYS) moveSetting(`${songKey}.${id}`, `${songKey}.${to}`);
+    for (const [other, value] of [...local]) if (other.startsWith(`${SETLIST_KEY}.`) && unsent(other)) write(other, setlistWithSongMoved(value, id, to));
+  };
+
   let conflicts = 0;
+  for (const prefix of [SONG_KEY, SETLIST_KEY] as const) {
+    for (const row of reply.rows) {
+      const mine = local.get(row.key);
+      if (!row.key.startsWith(`${prefix}.`) || !sent.has(row.key) || row.value === null || mine === undefined) continue;
+      if (itemText(row.value) !== itemText(mine)) {
+        keepBoth(prefix, row.key);
+        conflicts += 1;
+      }
+    }
+  }
   for (const row of reply.rows) {
-    const kind = kindOf(row.key);
-    if (!kind) continue;
-    const local = readValue(row.key);
+    const kind = backupKindOf(row.key);
+    if (!kind || settled.has(row.key)) continue;
+    const mine = local.get(row.key) ?? null;
     let next = row.value;
-    if (sent.has(row.key)) next = row.value === sent.get(row.key) ? local : kind.merge(row.value, local, phoneLabel());
-    else if (print(local) !== syncedPrint(state, row.key)) {
+    if (sent.has(row.key)) next = row.value === sent.get(row.key) ? mine : MERGE[kind](row.value, mine, phoneLabel());
+    else if (unsent(row.key)) {
       state.synced[row.key] = [state.synced[row.key]?.[0] ?? 0, UNSETTLED];
       continue;
     }
-    if (next !== local) {
-      writeValue(row.key, next);
-      changed.add(row.key);
-    }
+    write(row.key, next);
     if (next !== row.value) conflicts += 1;
     state.synced[row.key] = [row.rev, print(row.value)];
   }
   state.pulled = Math.max(state.pulled, reply.rev);
+  writeLocal(writes);
   return conflicts;
 }
 
@@ -220,8 +307,8 @@ async function syncOnce(state: State): Promise<BackupResult> {
   let serverCounts: Record<string, number> = {};
   for (let round = 0; round < ROUNDS; round += 1) {
     let conflicts = 0;
-    for (const batch of batches(pending(state))) {
-      const changes = [...batch].map(([key, value]) => ({ key, kind: kindOf(key)!.name, value, base: state.synced[key]?.[0] ?? 0 }));
+    for (const batch of batches(pending(state, readLocal()).changes)) {
+      const changes = [...batch].map(([key, value]) => ({ key, kind: backupKindOf(key), value, base: state.synced[key]?.[0] ?? 0 }));
       const reply = await api<Reply>("/api/backup", { since: state.pulled, changes });
       conflicts += apply(state, batch, reply, changed);
       serverCounts = reply.counts;
@@ -229,9 +316,11 @@ async function syncOnce(state: State): Promise<BackupResult> {
     }
     if (conflicts === 0) break;
   }
-  if (pending(state).size === 0 && sameCounts(serverCounts, counts())) state.at = Date.now();
+  const local = readLocal();
+  const { changes, held } = pending(state, local);
+  if (changes.size === 0 && sameCounts(serverCounts, counts(state, local, held))) state.at = Date.now();
   save(state);
-  return { changed: [...changed], at: state.at, ok: true };
+  return { changed: [...changed], at: state.at, ok: true, heldBack: held.size };
 }
 
 let running: Promise<BackupResult> | null = null;
@@ -243,15 +332,16 @@ let running: Promise<BackupResult> | null = null;
  */
 export function syncBackup({ onlyIfChanged = false } = {}): Promise<BackupResult> {
   const state = readState();
-  if (!state || running) return running ?? Promise.resolve({ changed: [], at: null, ok: true });
-  if (onlyIfChanged && pending(state).size === 0) return Promise.resolve({ changed: [], at: state.at, ok: true });
+  if (!state || running) return running ?? Promise.resolve({ changed: [], at: null, ok: true, heldBack: 0 });
+  if (onlyIfChanged && pending(state, readLocal()).changes.size === 0) return Promise.resolve({ changed: [], at: state.at, ok: true, heldBack: 0 });
   running = syncOnce(state)
     .catch((error): BackupResult => {
       if (error instanceof ApiError && error.status === 401 && stillOn(state)) {
         backupOff();
-        return { changed: [], at: null, ok: false, signedOut: true };
+        return { changed: [], at: null, ok: false, heldBack: 0, signedOut: true };
       }
-      return { changed: [], at: state.at, ok: false };
+      const problem = !(error instanceof ApiError) ? "failed" : error.status === 0 ? "offline" : error.reason === "backup-full" ? "full" : "failed";
+      return { changed: [], at: state.at, ok: false, heldBack: 0, problem };
     })
     .finally(() => (running = null));
   return running;

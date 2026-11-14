@@ -3,7 +3,7 @@ import { AccountSheet } from "./account";
 import { backupOff, backupOn, syncBackup, type BackupResult } from "./backup";
 import { BackIcon, DotsIcon, Menu, OverflowMenu, ScreenToggle, SongControls } from "./controls";
 import { LearnedCues } from "./cues";
-import { useAutoScroll, usePerformance, useWakeLock } from "./hooks";
+import { useAutoScroll, usePerformance, useStored, useWakeLock } from "./hooks";
 import { LearnSong } from "./learn-song";
 import { initialMetronomeBpm } from "./metronome";
 import { useMetronome } from "./metronome-view";
@@ -71,8 +71,8 @@ const BACKUP_EVERY_MS = 60_000;
 const loadAllSongData = (library: Library): SongDataByRef => Object.fromEntries(library.songs.map((song) => [song.ref, loadSongData(song.ref)]));
 
 export function App() {
-  const [stored, setStored] = useState<Library>(() => loadLibrary());
-  const [songData, setSongData] = useState<SongDataByRef>(() => loadAllSongData(stored));
+  const [stored] = useStored<Library>(loadLibrary);
+  const [songData, setSongData] = useStored<SongDataByRef>(() => loadAllSongData(stored), stored);
   const library = useMemo<Library>(
     () => ({ ...stored, songs: stored.songs.map((song) => withSongData(song, songData[song.ref] ?? {})) }),
     [stored, songData],
@@ -80,8 +80,8 @@ export function App() {
   const [editing, setEditing] = useState(false);
   const [teaching, setTeaching] = useState<Teaching | null>(null);
   const [hash, setHash] = useState(() => window.location.hash);
-  const [textIndex, setTextIndex] = useState(() => loadTextScaleIndex());
-  const [awake, setAwake] = useState(() => loadAwake());
+  const [textIndex, setTextIndex] = useStored(loadTextScaleIndex);
+  const [awake, setAwake] = useStored(loadAwake);
   const [menu, setMenu] = useState<MenuId>(null);
   const [account, setAccount] = useState<Account | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
@@ -90,13 +90,6 @@ export function App() {
   const runBackup = useCallback(async (onlyIfChanged = false) => {
     const result = await syncBackup({ onlyIfChanged });
     if (result.signedOut) setAccount(null);
-    if (result.changed.length > 0) {
-      const next = loadLibrary();
-      setStored(next);
-      setSongData(loadAllSongData(next));
-      setTextIndex(loadTextScaleIndex());
-      setAwake(loadAwake());
-    }
     setBackup(result);
   }, []);
 

@@ -32,9 +32,15 @@ const message = (error: unknown) => {
 
 const methodsThatWork = SIGN_IN_METHODS.filter((method) => method.works());
 
+const BACKUP_PROBLEM = { offline: "can't reach the server", full: "your backup is full", failed: "the backup didn't go through" } as const;
+
 const backupLine = (backup: BackupResult | null) => {
-  if (backup?.ok && backup.at) return `Backed up · ${new Date(backup.at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`;
-  if (backup && !backup.ok) return "Not backed up · can't reach the server";
+  if (backup?.ok && backup.at) {
+    const when = new Date(backup.at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    const held = backup.heldBack === 0 ? "" : ` · ${backup.heldBack} ${backup.heldBack === 1 ? "item" : "items"} not backed up`;
+    return `Backed up · ${when}${held}`;
+  }
+  if (backup && !backup.ok) return `Not backed up · ${BACKUP_PROBLEM[backup.problem ?? "failed"]}`;
   return "Backing up this phone…";
 };
 

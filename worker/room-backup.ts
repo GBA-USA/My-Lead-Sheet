@@ -1,12 +1,14 @@
+import { MAX_VALUE_CHARS, backupKindOf, validBackupKey } from "../src/backup-keys";
 import { Refused } from "./refused";
 
 /** Each account's own backup lives in one Room. The Worker derives this name from the session, never from the request. */
 export const selfRoomId = (userId: string) => `self:${userId}`;
 
-const KEY = /^leadSheets[A-Za-z]{1,40}(\.[A-Za-z0-9/_-]{1,130})?$/;
-const KIND = /^[a-z-]{1,20}$/;
+/** Provisional caps on one account's backup, until Terry sets them (decisions.tsv). A sync that would pass either gets 413. */
+export const MAX_BACKUP_ROWS = 5_000;
+export const MAX_BACKUP_BYTES = 5_000_000;
+
 const MAX_BODY_CHARS = 4_000_000;
-const MAX_VALUE_CHARS = 1_000_000;
 const MAX_CHANGES = 500;
 
 type Change = { key: string; kind: string; value: string | null; base: number };
@@ -17,8 +19,8 @@ const revision = (value: unknown) => Number.isSafeInteger(value) && (value as nu
 function parseChange(value: unknown): Change {
   const { key, kind, value: text, base } = (typeof value === "object" && value !== null ? value : {}) as Record<string, unknown>;
   const goodValue = text === null || (typeof text === "string" && text.length <= MAX_VALUE_CHARS);
-  if (typeof key !== "string" || !KEY.test(key) || typeof kind !== "string" || !KIND.test(kind) || !goodValue || !revision(base)) throw new Refused("bad-request");
-  return { key, kind, value: text as string | null, base: base as number };
+  if (typeof key !== "string" || !validBackupKey(key) || kind !== backupKindOf(key) || !goodValue || !revision(base)) throw new Refused("bad-request");
+  return { key, kind: kind as string, value: text as string | null, base: base as number };
 }
 
 async function readRequest(request: Request): Promise<{ since: number; changes: Change[] }> {
@@ -51,6 +53,9 @@ export async function handleBackup(request: Request, storage: DurableObjectStora
       sql.exec(`CREATE TABLE IF NOT EXISTS backup_items (key TEXT PRIMARY KEY, kind TEXT NOT NULL, value TEXT, rev INTEGER NOT NULL)`);
       sql.exec(`CREATE INDEX IF NOT EXISTS backup_items_by_rev ON backup_items (rev)`);
       const current = (key: string) => sql.exec<Row>(`SELECT key, value, rev FROM backup_items WHERE key = ?`, key).toArray()[0];
+      const size = () =>
+        sql.exec<{ n: number; bytes: number }>(`SELECT count(*) AS n, coalesce(sum(length(CAST(key AS BLOB)) + coalesce(length(CAST(value AS BLOB)), 0)), 0) AS bytes FROM backup_items`).one();
+      const before = changes.length > 0 ? size() : null;
       let rev = sql.exec<{ rev: number }>(`SELECT coalesce(max(rev), 0) AS rev FROM backup_items`).one().rev;
       for (const change of changes) {
         const row = current(change.key);
@@ -64,6 +69,9 @@ export async function handleBackup(request: Request, storage: DurableObjectStora
           rev,
         );
       }
+      const after = before && size();
+      const grewPastCap = before && after && ((after.n > MAX_BACKUP_ROWS && after.n > before.n) || (after.bytes > MAX_BACKUP_BYTES && after.bytes > before.bytes));
+      if (grewPastCap) throw new Refused("backup-full", 413);
       const rows = new Map(sql.exec<Row>(`SELECT key, value, rev FROM backup_items WHERE rev > ? ORDER BY rev`, since).toArray().map((row) => [row.key, row]));
       for (const change of changes) if (!rows.has(change.key)) rows.set(change.key, current(change.key));
       const counts = Object.fromEntries(

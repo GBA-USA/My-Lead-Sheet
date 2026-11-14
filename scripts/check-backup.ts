@@ -1,6 +1,7 @@
 import { build } from "esbuild";
 import type { ScrollVersion } from "../src/scroll-timing.ts";
 import { Phone, TEST_ORIGIN, startApi } from "./api-session.ts";
+import { openSite } from "./chrome.ts";
 
 type App = typeof import("../src/backup.ts") & typeof import("../src/storage.ts");
 
@@ -52,9 +53,11 @@ class Device {
   duringFetch: (() => void) | null = null;
   readonly phone: Phone;
   readonly agent: string;
-  constructor(phone: Phone, agent: string) {
+  readonly origin: string;
+  constructor(phone: Phone, agent: string, origin = TEST_ORIGIN) {
     this.phone = phone;
     this.agent = agent;
+    this.origin = origin;
   }
 
   use() {
@@ -62,8 +65,8 @@ class Device {
     Object.defineProperty(globalThis, "navigator", { value: { userAgent: this.agent }, configurable: true });
     globalThis.fetch = async (path, init) => {
       this.calls += 1;
-      const headers = { ...(init?.headers as Record<string, string>), origin: TEST_ORIGIN, ...(this.phone.cookie ? { cookie: this.phone.cookie } : {}) };
-      const response = await realFetch(new URL(String(path), base), { ...init, headers });
+      const headers = { ...(init?.headers as Record<string, string>), origin: this.origin, ...(this.phone.cookie ? { cookie: this.phone.cookie } : {}) };
+      const response = await realFetch(new URL(String(path), this.phone.base), { ...init, headers });
       const edit = this.duringFetch;
       this.duringFetch = null;
       edit?.();
@@ -277,13 +280,194 @@ try {
   const callsBefore = b.calls;
   await b.sync();
   check(b.calls === callsBefore, "once signed out the phone stops calling the server");
+
+  const c = new Device(new Phone(base), iphone);
+  c.boot();
+  addOwnSong(c, 980, "Chain Breaker");
+  c.use();
+  app.saveSongData(ref(980), { tempo: 100, timeSignature: "4/4" });
+  app.saveScrollVersions(ref(980), { versions: [version("Chain timing", 200)], selected: 0 });
+  const samId: string = (await c.phone.createAccount("Sam Drums")).body.account.userId;
+  c.use();
+  app.backupOn(samId);
+  await c.sync();
+  const d = new Device(new Phone(base, c.phone.authenticator), android);
+  d.boot();
+  addOwnSong(d, 980, "Wagon Wheel");
+  d.use();
+  app.saveSongData(ref(980), { tempo: 140, timeSignature: "3/4" });
+  app.saveScrollVersions(ref(980), { versions: [version("Wagon timing", 180)], selected: 0 });
+  await d.phone.signIn();
+  d.use();
+  app.backupOn(samId);
+  await d.sync();
+  await c.sync();
+  await d.sync();
+  for (const [name, device] of [["iPhone", c], ["Android", d]] as const) {
+    const songs = device.boot().songs;
+    const own = (song: (typeof songs)[number] | undefined) => song && { title: song.title, data: app.loadSongData(song.ref), timing: app.loadScrollVersions(song.ref).versions.map((item) => item.name) };
+    const chain = own(songs.find((song) => song.id === 980));
+    const wagon = own(songs.find((song) => song.title.startsWith("Wagon Wheel")));
+    check(
+      JSON.stringify(chain) === JSON.stringify({ title: "Chain Breaker", data: { tempo: 100, timeSignature: "4/4" }, timing: ["Chain timing"] }),
+      `two phones' own songs with one id: the first keeps its tempo, time signature and timing on the ${name} (${JSON.stringify(chain)})`,
+    );
+    check(
+      JSON.stringify(wagon) === JSON.stringify({ title: "Wagon Wheel · from Android", data: { tempo: 140, timeSignature: "3/4" }, timing: ["Wagon timing"] }),
+      `the second phone's song moves to a new id with its own tempo, time signature and timing on the ${name} (${JSON.stringify(wagon)})`,
+    );
+  }
+
+  const inSync = d.boot().songs.length;
+  addOwnSong(c, 980, "Chain Breaker (fixed bridge)");
+  addOwnSong(d, 990, "New on B");
+  await c.sync();
+  await d.sync();
+  await c.sync();
+  const titlesC = c.boot().songs.map((song) => `${song.id} ${song.title}`).sort();
+  const titlesD = d.boot().songs.map((song) => `${song.id} ${song.title}`).sort();
+  check(
+    titlesD.length === inSync + 1 && JSON.stringify(titlesC) === JSON.stringify(titlesD) && titlesD.includes("980 Chain Breaker (fixed bridge)") && !titlesD.some((title) => title.includes("Chain Breaker ·")),
+    `an edit on one phone makes no duplicate when the other adds a song (${inSync} songs, then ${titlesD.length}: ${titlesD.filter((title) => /^9\d\d /.test(title)).join(", ")})`,
+  );
+
+  const rowsOf = async (cookie: string) => (await post(cookie, { since: 0, changes: [] })).body.rows?.length ?? -1;
+  const samRows = await rowsOf(c.phone.cookie);
+  const unknownKey = await post(c.phone.cookie, { since: 0, changes: [{ key: "leadSheetsJunk.1", kind: "timing", value: "x", base: 0 }] });
+  const wrongKind = await post(c.phone.cookie, { since: 0, changes: [{ key: `${app.SCROLL_PERCENT_KEY}.1`, kind: "timing", value: "1", base: 0 }] });
+  const metronome = await post(c.phone.cookie, { since: 0, changes: [{ key: app.METRONOME_PREFS_KEY, kind: "settings", value: "{}", base: 0 }] });
+  check(
+    unknownKey.status === 400 && wrongKind.status === 400 && metronome.status === 400 && (await rowsOf(c.phone.cookie)) === samRows,
+    `the room refuses a key no phone backs up, and a kind that is not the key's (${unknownKey.status}, ${wrongKind.status}, ${metronome.status})`,
+  );
+
+  d.use();
+  d.store.setItem(`${app.SCROLL_VERSIONS_KEY}.3`, JSON.stringify({ versions: [version("x".repeat(1_000_001), 100)], selected: null }));
+  d.store.setItem(`${app.NOTATION_KEY}.not a ref`, JSON.stringify("nashville"));
+  app.saveScrollPercent(ref(4), 70);
+  const heldBack = (await d.sync()) as Awaited<ReturnType<typeof d.sync>> & { heldBack?: number };
+  await c.sync();
+  c.use();
+  check(
+    heldBack.ok && heldBack.at !== null && heldBack.heldBack === 2 && app.loadScrollPercent(ref(4)) === 70,
+    `a value too long and a key the room can't store are held back, the rest backs up, and the phone says how many (ok ${heldBack.ok}, held ${heldBack.heldBack})`,
+  );
+  d.use();
+  d.store.removeItem(`${app.SCROLL_VERSIONS_KEY}.3`);
+  d.store.removeItem(`${app.NOTATION_KEY}.not a ref`);
+
+  const full = new Device(new Phone(base), iphone);
+  full.boot();
+  await full.phone.createAccount("Alex Full");
+  const many = (from: number, n: number) => Array.from({ length: n }, (_, i) => ({ key: `${app.SCROLL_PERCENT_KEY}.r${from + i}`, kind: "scroll", value: "90", base: 0 }));
+  const fills = [];
+  for (let i = 0; i < 10; i += 1) fills.push((await post(full.phone.cookie, { since: 0, changes: many(i * 500, 500) })).status);
+  const overRows = await post(full.phone.cookie, { since: 0, changes: many(5000, 1) });
+  check(
+    fills.every((status) => status === 200) && overRows.status === 413 && overRows.body.error === "backup-full" && (await rowsOf(full.phone.cookie)) === 5000,
+    `a backup at 5,000 rows refuses one more with 413 and keeps none of it (${fills.join(",")} then ${overRows.status})`,
+  );
+  check((await post(full.phone.cookie, { since: 0, changes: [] })).status === 200, "a full backup still answers a sync that sends nothing, so its phones can still pull");
+
+  const big = new Device(new Phone(base), android);
+  big.boot();
+  const bigId: string = (await big.phone.createAccount("Jo Big")).body.account.userId;
+  const huge = (n: number) => ({ key: `${app.SCROLL_VERSIONS_KEY}.${n}`, kind: "timing", value: "x".repeat(999_000), base: 0 });
+  const underBytes = [(await post(big.phone.cookie, { since: 0, changes: [huge(1), huge(2), huge(3)] })).status, (await post(big.phone.cookie, { since: 0, changes: [huge(4), huge(5)] })).status];
+  const overBytes = await post(big.phone.cookie, { since: 0, changes: [{ key: `${app.SCROLL_PERCENT_KEY}.1`, kind: "scroll", value: "9".repeat(10_000), base: 0 }] });
+  check(underBytes.every((status) => status === 200) && overBytes.status === 413 && (await rowsOf(big.phone.cookie)) === 5, `a backup near 5 MB refuses a write that passes it with 413 (${underBytes.join(",")} then ${overBytes.status})`);
+  big.use();
+  app.backupOn(bigId);
+  await big.sync();
+  big.store.setItem(`${app.SCROLL_PERCENT_KEY}.2`, "9".repeat(10_000));
+  const refused = (await big.sync()) as Awaited<ReturnType<typeof big.sync>> & { problem?: string };
+  check(!refused.ok && refused.problem === "full", `a phone whose backup is full says so instead of "can't reach the server" (ok ${refused.ok}, problem ${refused.problem})`);
 } finally {
   globalThis.fetch = realFetch;
   await worker.dispose();
+}
+
+let sheetBase = "";
+const site = await openSite(root, "backup-sheet", () => sheetBase);
+const sheetOrigin = site.origin.replace("127.0.0.1", "localhost");
+const sheetApi = await startApi({ APP_ORIGIN: sheetOrigin, RP_ID: "localhost" });
+sheetBase = sheetApi.base;
+try {
+  const SONG_ONE = `${app.SCROLL_VERSIONS_KEY}.1`;
+  const settle = (ms: number) => new Promise((done) => setTimeout(done, ms));
+  const until = async (expression: string, ms = 15000) => {
+    for (const end = Date.now() + ms; Date.now() < end; await settle(100)) if (await site.evaluate<boolean>(expression)) return true;
+    return false;
+  };
+  const TIMING = `[...document.querySelectorAll("button.teach-btn")].find((b) => b.textContent.includes("Timing:"))`;
+  const timingMenu = async () => {
+    await until(`!!${TIMING}`);
+    await site.evaluate(`${TIMING}.click()`);
+    await until(`!!document.querySelector("[role=menuitemradio]")`);
+    return site.evaluate<string[]>(`[...document.querySelectorAll("[role=menuitemradio]")].map((b) => b.textContent.replace("✓", "").trim())`);
+  };
+  const backedUpOnB = () => until(`(() => { const state = JSON.parse(localStorage.getItem("leadSheetsBackup") ?? "{}"); return state.at != null && !Object.values(state.synced).some(([, print]) => print === "?"); })()`);
+  const versionsOnB = async () => (JSON.parse((await site.evaluate<string | null>(`localStorage.getItem(${JSON.stringify(SONG_ONE)})`)) ?? "{}").versions ?? []).map((item: ScrollVersion) => item.name);
+
+  const phoneA = new Device(new Phone(sheetBase), iphone, sheetOrigin);
+  phoneA.boot();
+  const created = await phoneA.phone.createAccount("Terry Bass", { origin: sheetOrigin, rpId: "localhost" });
+  const sheetUser: string = created.body.account.userId;
+  const [cookieName, cookieValue] = phoneA.phone.cookie.split(/=(.*)/s);
+  await site.send("Network.enable");
+  await site.send("Network.setCookie", { name: cookieName, value: cookieValue, url: sheetOrigin, httpOnly: true, secure: true, sameSite: "Lax" });
+  await site.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
+  await site.send("Page.navigate", { url: `${sheetOrigin}/#/songs` });
+  await until(`!!document.querySelector(".shell-header")`);
+  await site.evaluate(`(() => {
+    localStorage.setItem(${JSON.stringify(SONG_ONE)}, ${JSON.stringify(JSON.stringify({ versions: [version("Mine", 150)], selected: null }))});
+    localStorage.setItem("leadSheetsBackup", JSON.stringify({ account: ${JSON.stringify(sheetUser)}, pulled: 0, synced: {}, at: null }));
+  })()`);
+  await site.send("Page.reload");
+  await until(`!!document.querySelector(".shell-header")`);
+  await backedUpOnB();
+  await site.evaluate(`location.hash = "#/song/1"`);
+  const before = await timingMenu();
+  await site.evaluate(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }))`);
+
+  phoneA.use();
+  app.backupOn(sheetUser);
+  await phoneA.sync();
+  phoneA.use();
+  const onlyA = app.loadScrollVersions(app.localRef(1)).versions;
+  app.saveScrollVersions(app.localRef(1), { versions: [...onlyA, version("Learned on iPad", 210)], selected: onlyA.length });
+  await phoneA.sync();
+
+  await site.evaluate(`document.dispatchEvent(new Event("visibilitychange"))`);
+  const pulled = await until(`(localStorage.getItem(${JSON.stringify(SONG_ONE)}) ?? "").includes("Learned on iPad")`);
+  await settle(300);
+  const shown = await timingMenu();
+  check(pulled && before.includes("Mine") && shown.includes("Learned on iPad"), `an open sheet's Timing menu shows a version pulled from the other phone (${JSON.stringify(before)} then ${JSON.stringify(shown)})`);
+  const tapped = await site.evaluate<boolean>(`(() => {
+    const mine = [...document.querySelectorAll("[role=menuitemradio]")].find((b) => b.textContent.includes("Mine"));
+    mine?.click();
+    return !!mine;
+  })()`);
+  await settle(300);
+  await site.evaluate(`document.dispatchEvent(new Event("visibilitychange"))`);
+  await settle(500);
+  await backedUpOnB();
+  await phoneA.sync();
+  phoneA.use();
+  const onA = app.loadScrollVersions(app.localRef(1)).versions.map((item) => item.name);
+  const onB = await versionsOnB();
+  check(
+    tapped && onA.includes("Learned on iPad") && onB.includes("Learned on iPad") && onA.includes("Mine") && onB.includes("Mine"),
+    `tapping a Timing choice on the open sheet keeps the pulled version on both phones (A ${JSON.stringify(onA)}, B ${JSON.stringify(onB)})`,
+  );
+} finally {
+  globalThis.fetch = realFetch;
+  await site.close();
+  await sheetApi.worker.dispose();
 }
 
 if (failures > 0) {
   console.error(`check:backup failed (${failures})`);
   process.exit(1);
 }
-console.log("check:backup passed: first upload, byte-equal restore, two-way edits, conflict rule, signed-out and other-account cases");
+console.log("check:backup passed: first upload, byte-equal restore, two-way edits, conflict rule, per-song data across a moved song, held-back keys, the key allowlist and caps, an open sheet after a pull, signed-out and other-account cases");

@@ -46,6 +46,7 @@ const started: number[] = [];
 const scheduled: { time: number; gain: { cutAt: number | null } }[] = [];
 const timers = new Map<number, { at: number; every: number | null; run: () => void }>();
 let nextTimer = 1;
+let timersSet = 0;
 let frames: (() => void)[] = [];
 
 const param = { setValueAtTime() {}, exponentialRampToValueAtTime() {} };
@@ -113,6 +114,7 @@ const heardClicks = (from: number) => scheduled.slice(from).filter((click) => cl
 
 const addTimer = (run: () => void, ms: number, every: boolean) => {
   const id = nextTimer++;
+  timersSet += 1;
   timers.set(id, { at: now + ms / 1000, every: every ? ms / 1000 : null, run });
   return id;
 };
@@ -527,6 +529,63 @@ const solo = started.slice(soloFrom);
 if (solo.length < 4 || solo.some((time, i) => i > 0 && Math.abs(time - solo[i - 1] - model.metronomeBeatSeconds(90)) > 1e-6)) fail("solo after a gig must click at 90 bpm again");
 audio.stopMetronome();
 console.log("solo after a gig: clicks 0.667 s apart on the audio clock");
+
+leaderDoes({ kind: "countIn", bpm: 120, beatsPerBar: 4, bars: 1, version: null, rate: 1 });
+audio.followBand(gigState.click, bandAt, SPEAKER_MS, () => failures++);
+await settle();
+for (let i = 0; i < 10; i++) {
+  run(0.1, moduleDot);
+  audio.followBand(gigState.click, bandAt, SPEAKER_MS, () => failures++);
+}
+const timersBefore = timersSet;
+run(1, moduleDot);
+const ticks = timersSet - timersBefore;
+if (Math.abs(ticks - 40) > 1) fail(`10 timelines while running must leave one 25 ms scheduler: ${ticks} timers in 1 s, expected 40`);
+console.log(`band: 11 timelines delivered while running, then ${ticks} scheduler ticks in the next second`);
+audio.stopMetronome();
+
+const restartFrom = started.length;
+startOrFail(70);
+await settle();
+run(2, moduleDot);
+const before78 = started.length;
+startOrFail(78);
+await settle();
+run(3, moduleDot);
+const restarted = started.slice(restartFrom);
+const gaps = restarted.slice(1).map((time, i) => time - restarted[i]);
+const expected = gaps.map((_, i) => model.metronomeBeatSeconds(i < before78 - restartFrom ? 70 : 78));
+if (gaps.length < 5 || gaps.some((gap, i) => Math.abs(gap - expected[i]) > 1e-6)) {
+  fail(`start at 78 bpm on a running 70 bpm click must change the gaps from the next unscheduled beat: ${gaps.map((gap) => gap.toFixed(4)).join(" ")}`);
+}
+audio.stopMetronome();
+console.log(`solo start at 78 bpm while 70 plays: ${before78 - restartFrom} beats 0.857 s apart, then ${gaps.length - (before78 - restartFrom)} gaps of 0.769 s`);
+
+const oldStart = bandNow() + 100;
+const oldGrid = { bpm: 120, beatsPerBar: 4, startAt: oldStart, firstBar: 0 };
+audio.followBand([{ at: oldStart, value: oldGrid }] as never, bandAt, SPEAKER_MS, () => failures++);
+await settle();
+run(1.51, moduleDot);
+const queuedClick = scheduled[scheduled.length - 1];
+if (!(queuedClick.time > speaker.currentTime)) fail("setup: a band click should still be queued");
+const queuedBeat = ui.band.beatTime(oldGrid as never, Math.round(((heardBand(queuedClick.time) - oldStart) * 120) / 60_000));
+const newStart = queuedBeat + 0.015;
+const coincideFrom = scheduled.length - 1;
+audio.followBand(
+  [
+    { at: oldStart, value: oldGrid },
+    { at: queuedBeat - 100, value: null },
+    { at: newStart, value: { bpm: 120, beatsPerBar: 4, startAt: newStart, firstBar: 0 } },
+  ] as never,
+  bandAt,
+  SPEAKER_MS,
+  () => failures++,
+);
+run(1, moduleDot);
+const nearBeat = heardClicks(coincideFrom).map(heardBand).filter((at) => Math.abs(at - newStart) < 1);
+if (nearBeat.length !== 1 || Math.abs(nearBeat[0] - newStart) > 0.1) fail(`a new grid beat 15 µs after a queued stopped beat must click once on the new grid: ${nearBeat.length} clicks`);
+audio.stopMetronome();
+console.log("Stop then a count-in whose first beat is 15 µs after a queued beat: one click, on the new grid");
 
 const css = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
 const dotRule = css.match(/\.beat-dot \{[^}]*\}/)?.[0] ?? fail("no .beat-dot rule");

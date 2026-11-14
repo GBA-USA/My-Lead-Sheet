@@ -5,7 +5,7 @@ type RelayKind = (typeof RELAYED)[number];
 
 type Inbound = { kind: RelayKind; to: string; body: unknown };
 
-export type Outbound =
+type Outbound =
   | { kind: "hello"; you: string; peers: string[] }
   | { kind: RelayKind; from: string; body: unknown; rx: number; tx: number }
   | { kind: "error"; error: "bad-message" | "no-peer"; to?: string };

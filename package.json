@@ -28,6 +28,8 @@
     "check:privacy": "node --experimental-strip-types scripts/check-privacy.ts",
     "check:api": "tsc -p worker && node --experimental-strip-types scripts/check-api.ts",
     "check:portable": "node --experimental-strip-types scripts/check-portable.ts",
+    "check:auth": "tsc -p worker && node --experimental-strip-types scripts/check-auth.ts",
+    "check:account": "node --experimental-strip-types scripts/check-account.ts",
     "check:share-rule": "node --experimental-strip-types scripts/check-share-rule.ts",
     "check:friends": "node --experimental-strip-types scripts/check-friends.ts",
     "check:bands": "node --experimental-strip-types scripts/check-bands.ts",

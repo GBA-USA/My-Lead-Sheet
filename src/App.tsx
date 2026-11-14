@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
-import { BackIcon, DotsIcon, OverflowMenu, ScreenToggle, SongControls } from "./controls";
+import { AccountSheet } from "./account";
+import { BackIcon, DotsIcon, Menu, OverflowMenu, ScreenToggle, SongControls } from "./controls";
 import { LearnedCues } from "./cues";
 import { useAutoScroll, usePerformance, useWakeLock } from "./hooks";
 import { LearnSong } from "./learn-song";
@@ -9,6 +10,7 @@ import { displayKeyLabel } from "./music";
 import { READING_LINE, changeTempo, evenPlan, nextVersionName, scrollMotion, startTake, toggleHold, type ScrollVersion, type Take } from "./scroll-timing";
 import { LeadSheet } from "./sheet";
 import { PRIVACY_HREF } from "./data-kinds";
+import type { Account } from "./sign-in-methods";
 import { SongDataEditor } from "./song-data-editor";
 import {
   TEXT_SCALES,
@@ -78,6 +80,8 @@ export function App() {
   const [textIndex, setTextIndex] = useState(() => loadTextScaleIndex());
   const [awake, setAwake] = useState(() => loadAwake());
   const [menu, setMenu] = useState<MenuId>(null);
+  const [account, setAccount] = useState<Account | null>(null);
+  const [accountOpen, setAccountOpen] = useState(false);
 
   useEffect(() => {
     if (!window.location.hash) {
@@ -228,9 +232,18 @@ export function App() {
             onClose={closeMenu}
           />
         ) : (
-          <button type="button" className="icon-btn" aria-label="More">
-            <DotsIcon />
-          </button>
+          <Menu button={<DotsIcon />} label="More" className="icon-btn" open={menu === "shell"} onToggle={() => toggleMenu("shell")} onClose={closeMenu}>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                closeMenu();
+                setAccountOpen(true);
+              }}
+            >
+              {account ? "Account" : "Sign in"}
+            </button>
+          </Menu>
         )}
       </header>
 
@@ -328,6 +341,8 @@ export function App() {
           onClose={() => setEditing(false)}
         />
       ) : null}
+
+      {accountOpen ? <AccountSheet account={account} onAccount={setAccount} onClose={() => setAccountOpen(false)} /> : null}
 
       {liveSetlist && liveSetlist.songRefs.length > 0 ? (
         <div className="live-nav">

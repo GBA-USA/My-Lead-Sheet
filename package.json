@@ -43,7 +43,8 @@
     "check:sync-rating": "node --experimental-strip-types scripts/check-sync-rating.ts",
     "check:chat": "node --experimental-strip-types scripts/check-chat.ts",
     "check:band-status": "node --experimental-strip-types scripts/check-band-status.ts",
-    "check:look-ahead": "node --experimental-strip-types scripts/check-look-ahead.ts"
+    "check:look-ahead": "node --experimental-strip-types scripts/check-look-ahead.ts",
+    "check:spike-server": "node spike/server/check.mjs"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.5",

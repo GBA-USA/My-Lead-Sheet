@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { build } from "esbuild";
+import type { Learned, ScrollVersion } from "../src/scroll-timing.ts";
 import type { LibraryFile, Song } from "../src/types.ts";
 import { displayChordLine, displayKeyLabel } from "../src/music.ts";
 
@@ -174,6 +175,18 @@ check(app.saveTextScaleIndex(2) === false && app.saveAwake(false) === false, "fa
 check(app.loadLibrary().songs.length === seed.songs.length, "the library still loads in memory when storage is full");
 storage.failWrites = false;
 check(app.saveScrollPercent(10, 150) === true, "a stored scroll save is reported as saved");
+
+freshStorage();
+const learned: Learned = { beatsPerBar: 4, downbeat: 2.4, beats: [2.4, 3, 3.6, 4.2], sections: [{ heading: "VERSE 1", at: 0 }, { heading: "HOOK", at: 3.6 }], vocals: [] };
+const version = (sections: unknown[]) => ({ name: "V1", bpm: 100, marks: [{ at: 0, progress: 0 }, { at: 5, progress: 1 }], learned: { ...learned, sections } }) as ScrollVersion;
+storage.map.set(`${app.SCROLL_VERSIONS_KEY}.13`, JSON.stringify({ versions: [version(learned.sections)], selected: 0 }));
+const old = app.loadScrollVersions(13);
+check(old.selected === 0 && old.versions[0].learned?.sections.every((section) => section.heard === undefined), "a learned version saved before heard chords still loads, with no heard bars");
+const kept = [{ heading: "VERSE 1", at: 0, heard: ["A7", null, "D7"] }, learned.sections[1]];
+app.saveScrollVersions(13, { versions: [version(kept)], selected: 0 });
+check(JSON.stringify(app.loadScrollVersions(13).versions[0].learned?.sections) === JSON.stringify(kept), "kept heard bars, not-sure bars included, load back as saved");
+storage.map.set(`${app.SCROLL_VERSIONS_KEY}.13`, JSON.stringify({ versions: [version([{ heading: "VERSE 1", at: 0, heard: ["A7", 7] }])], selected: 0 }));
+check(app.loadScrollVersions(13).versions.length === 0, "a version whose heard bars are not chord names is dropped");
 
 if (failures) {
   console.error(`${failures} storage check(s) failed`);

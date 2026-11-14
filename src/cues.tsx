@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type RefObject } from "react";
 import { shortHeading } from "./learn-analyze";
 import { startMetronome, stopMetronome } from "./metronome-audio";
 import type { Learned } from "./scroll-timing";
@@ -32,6 +32,22 @@ export function countIn(learned: Learned, rate: number): { bpm: number; seconds:
   return { bpm: ((60 * learned.beatsPerBar) / learned.downbeat) * rate, seconds: learned.downbeat / rate };
 }
 
+let playing: Learned | null = null;
+const listeners = new Set<() => void>();
+const subscribe = (listener: () => void) => {
+  listeners.add(listener);
+  return () => void listeners.delete(listener);
+};
+const play = (learned: Learned | null) => {
+  playing = learned;
+  listeners.forEach((listener) => listener());
+};
+
+/** The learned version scrolling now, while LearnedCues is mounted; otherwise null. */
+export function usePlayingLearned(): Learned | null {
+  return useSyncExternalStore(subscribe, () => playing);
+}
+
 function chartSections(): HTMLElement[] {
   return [...document.querySelectorAll<HTMLElement>("#chord-section .chart-section")];
 }
@@ -57,6 +73,11 @@ export function LearnedCues({
   metronome.current = metronomeOn;
   const speed = useRef(rate);
   speed.current = rate;
+
+  useEffect(() => {
+    play(learned);
+    return () => play(null);
+  }, [learned]);
 
   useEffect(() => {
     let counting = false;

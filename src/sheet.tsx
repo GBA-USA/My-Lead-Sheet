@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { chartColumns, chartFont, fitChartFont, wrapAligned, type ChartPiece } from "./chart-fit";
+import { usePlayingLearned } from "./cues";
 import { BeatDot, MetronomeControl, type MetronomeState } from "./metronome-view";
 import {
   displayBassNote,
@@ -161,29 +162,41 @@ function Chart({
     return () => observer.disconnect();
   }, []);
 
+  const playing = usePlayingLearned();
   const columns = chartColumns(width, chartFont(scale), charAdvance);
   const fontFor = (piece: ChartPiece) => `${fitChartFont(width, Math.max(piece.chords.length, piece.lyrics?.length ?? 0), scale, charAdvance)}px`;
 
   return (
     <div className="chart" id="chord-section" ref={ref}>
-      {song.body.map((section, index) => (
-        <section key={`${section.heading}-${index}`} className="chart-section">
-          <h3 className="chart-heading">{section.heading}</h3>
-          {section.lines.map((line, lineIndex) => (
-            <ChartRow
-              key={lineIndex}
-              line={line}
-              columns={columns}
-              fontFor={fontFor}
-              song={song}
-              semitones={semitones}
-              notation={notation}
-            />
-          ))}
-        </section>
-      ))}
+      {song.body.map((section, index) => {
+        const learned = playing?.sections[index];
+        const heard = learned?.heading === section.heading ? learned.heard : undefined;
+        const rows = heard ? [{ bars: heardRow(heard) }, ...section.lines] : section.lines;
+        return (
+          <section key={`${section.heading}-${index}`} className="chart-section">
+            <h3 className="chart-heading">{section.heading}</h3>
+            {rows.map((line, lineIndex) => (
+              <ChartRow
+                key={lineIndex}
+                line={line}
+                columns={columns}
+                fontFor={fontFor}
+                song={song}
+                semitones={semitones}
+                notation={notation}
+              />
+            ))}
+          </section>
+        );
+      })}
     </div>
   );
+}
+
+/** Kept heard bars as a bar row, blank where Learn was not sure: "Heard | A7 |    | E7 |". */
+function heardRow(heard: (string | null)[]): string {
+  const width = Math.max(...heard.map((chord) => chord?.length ?? 0));
+  return `Heard | ${heard.map((chord) => (chord ?? "").padEnd(width)).join(" | ")} |`;
 }
 
 function ChartRow({

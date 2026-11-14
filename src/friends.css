@@ -1,0 +1,76 @@
+.friends-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.friends-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.friends-list li > span:first-child,
+.codes-words {
+  display: grid;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.friends-list small,
+.codes-words small {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.friends-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.friends-notice {
+  color: var(--text);
+}
+
+.codes-qr {
+  justify-self: center;
+  width: min(100%, 280px);
+  background: #fff;
+  border-radius: 8px;
+  line-height: 0;
+}
+
+.codes-qr svg {
+  width: 100%;
+  height: auto;
+  shape-rendering: crispEdges;
+}
+
+.codes-words {
+  margin: 0;
+  font-weight: 700;
+  font-size: 17px;
+  text-align: center;
+}
+
+.codes-link {
+  margin: 0;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.codes-camera {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 12px;
+  background: #000;
+}

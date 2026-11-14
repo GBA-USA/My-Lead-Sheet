@@ -15,7 +15,7 @@ const RENEW_AFTER_MS = DAY_MS;
 const CLOCK_SLACK_MS = 5 * 60 * 1000;
 const ATTRIBUTES = "Path=/; HttpOnly; Secure; SameSite=Lax";
 
-async function hmacKey(secret: string | undefined): Promise<CryptoKey> {
+export async function hmacKey(secret: string | undefined): Promise<CryptoKey> {
   if (!secret || secret.length < 32) throw new Refused("not-configured", 503);
   return crypto.subtle.importKey("raw", utf8(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
 }

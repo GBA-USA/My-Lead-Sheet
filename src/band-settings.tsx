@@ -1,46 +1,15 @@
-import { useState } from "react";
-import {
-  canEditBandSettings,
-  setScrollWithLeader,
-  fixtureSettingsBand,
-  type SettingsBand,
-} from "./band-settings-model";
+import { useId } from "react";
+import type { BandView } from "./bands-model";
 
-export function BandSettingsScreen({ me }: { me: string }) {
-  const [band, setBand] = useState<SettingsBand>(fixtureSettingsBand);
-
-  const canEdit = canEditBandSettings(band, me);
-
-  const handleScrollWithLeaderChange = (checked: boolean) => {
-    const result = setScrollWithLeader(band, me, checked);
-    if (result.ok) {
-      setBand(result.band);
-    }
-  };
-
+export function BandSettings({ band, busy, onScrollWithLeader }: { band: BandView; busy: boolean; onScrollWithLeader: (on: boolean) => void }) {
+  const id = useId();
   return (
-    <div className="band-settings-screen">
-      <h1>{band.name}</h1>
-      {canEdit ? (
-        <div className="band-settings-control">
-          <label htmlFor="scroll-with-leader">Scroll with the leader</label>
-          <input
-            id="scroll-with-leader"
-            type="checkbox"
-            role="switch"
-            aria-checked={band.settings.scrollWithLeader}
-            checked={band.settings.scrollWithLeader}
-            onChange={(e) => handleScrollWithLeaderChange(e.target.checked)}
-          />
-          <p className="band-settings-help">
-            When on, everyone's chart scrolls with the gig leader.
-          </p>
-        </div>
-      ) : (
-        <p className="band-settings-readonly">
-          Only band admins can change band settings.
-        </p>
-      )}
-    </div>
+    <>
+      <div className="account-row">
+        <label htmlFor={id}>Scroll with the leader</label>
+        <input id={id} type="checkbox" role="switch" checked={band.scrollWithLeader} disabled={busy} onChange={(event) => onScrollWithLeader(event.target.checked)} />
+      </div>
+      <p className="account-note">When on, everyone's chart scrolls with the leader's song, using the band's timing. Nobody's private versions are shared.</p>
+    </>
   );
 }

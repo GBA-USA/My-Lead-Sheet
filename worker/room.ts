@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "./index";
+import { bandRoom, createMemberTables, NOT_A_MEMBER_CLOSE, shutOut } from "./room-members";
 
 const RELAYED = ["intro", "ping", "pong"] as const;
 type RelayKind = (typeof RELAYED)[number];
@@ -39,6 +40,7 @@ export class Room extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS session_floors (user_id TEXT PRIMARY KEY, version INTEGER NOT NULL)`);
+    createMemberTables(ctx.storage.sql);
   }
 
   private floor(userId: string): number {
@@ -49,6 +51,7 @@ export class Room extends DurableObject<Env> {
     const userId = request.headers.get(USER_HEADER);
     const version = Number(request.headers.get(SESSION_HEADER));
     if (!userId || !(version >= this.floor(userId))) return Response.json({ error: "signed-out" }, { status: 401 });
+    if (shutOut(this.ctx.storage.sql, userId)) return Response.json({ error: "not-a-member" }, { status: 403 });
     if (request.headers.get("Upgrade") !== "websocket") {
       return Response.json({ room: this.ctx.id.name, peers: this.ctx.getWebSockets().length });
     }
@@ -71,6 +74,61 @@ export class Room extends DurableObject<Env> {
     for (const ws of this.ctx.getWebSockets(userTag(userId))) {
       if ((ws.deserializeAttachment() as { version: number }).version < version) ws.close(SIGNED_OUT_CLOSE, "signed-out");
     }
+  }
+
+  private closeMember(userId: string) {
+    for (const ws of this.ctx.getWebSockets(userTag(userId))) ws.close(NOT_A_MEMBER_CLOSE, "not-a-member");
+  }
+
+  private get band() {
+    return { sql: this.ctx.storage.sql, bandId: this.ctx.id.name! };
+  }
+
+  createBand(user: { userId: string; name: string }, name: string, now: number) {
+    return bandRoom.create(this.band, user, name, now);
+  }
+
+  bandSummary(userId: string) {
+    return bandRoom.summary(this.band, userId);
+  }
+
+  bandView(userId: string) {
+    return bandRoom.view(this.band, userId);
+  }
+
+  bandPreview(inviterId: string, userId: string) {
+    return bandRoom.preview(this.band, inviterId, userId);
+  }
+
+  joinBand(user: { userId: string; name: string }, code: { inviterId: string; madeAt: number }, now: number) {
+    return bandRoom.join(this.band, user, code, now);
+  }
+
+  makeAdmin(adminId: string, userId: string) {
+    return bandRoom.makeAdmin(this.band, adminId, userId);
+  }
+
+  removeMember(adminId: string, userId: string, now: number) {
+    const band = bandRoom.remove(this.band, adminId, userId, now);
+    this.closeMember(userId);
+    return band;
+  }
+
+  leaveBand(userId: string, now: number) {
+    bandRoom.leave(this.band, userId, now);
+    this.closeMember(userId);
+  }
+
+  requireAdmin(userId: string) {
+    bandRoom.requireAdmin(this.band, userId);
+  }
+
+  setScrollWithLeader(adminId: string, on: boolean) {
+    return bandRoom.setScrollWithLeader(this.band, adminId, on);
+  }
+
+  bandPack(userId: string) {
+    return bandRoom.pack(this.band, userId);
   }
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {

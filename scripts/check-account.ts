@@ -122,7 +122,9 @@ try {
 
   await site.send("Page.reload");
   await until(`!!document.querySelector(".shell-header [aria-label=More]")`, "the library after a reload");
-  await openSheet("Sign in");
+  await until(`performance.getEntriesByType("resource").some((entry) => entry.name.endsWith("/api/me"))`, "the account check a signed-in phone makes on load");
+  await settle();
+  await openSheet("Account");
   await atStep("account");
   check((await site.evaluate<string>(`document.querySelector(".account-handle")?.textContent ?? ""`)) === "@samrivera", "after a reload the session cookie still opens the account");
 

@@ -1,3 +1,4 @@
+import { LANDING_PATH } from "./codes";
 import type { Directory } from "./directory";
 import { Refused } from "./refused";
 import { SESSION_HEADER, USER_HEADER, type Room } from "./room";
@@ -20,10 +21,11 @@ export interface Env {
   GOOGLE_REDIRECT_URI?: string;
   PASSWORD_PEPPER?: string;
   PASSWORD_MINUTE_MS?: string;
+  CODE_MINUTE_MS?: string;
 }
 
 const ROOM_PATH = /^\/api\/rooms\/([A-Za-z0-9_-]{1,64})$/;
-const ACCOUNT_PATH = /^\/api\/(auth|me)(\/|$)/;
+const DIRECTORY_PATH = /^\/api\/(auth|me|codes|friends|bands)(\/|$)/;
 
 const refuse = (error: string, status: number) => Response.json({ error }, { status });
 
@@ -52,7 +54,8 @@ export default {
       if (error instanceof Refused) return refuse(error.reason, error.status);
       throw error;
     }
-    if (ACCOUNT_PATH.test(pathname)) {
+    if (LANDING_PATH.test(pathname) && request.method === "GET") return env.DIRECTORY.getByName("directory").fetch(request);
+    if (DIRECTORY_PATH.test(pathname)) {
       if (request.method !== "GET" && !fromApp(request, env)) return refuse("wrong-origin", 403);
       return env.DIRECTORY.getByName("directory").fetch(request);
     }

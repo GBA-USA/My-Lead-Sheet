@@ -7,10 +7,20 @@ export interface Mark {
   progress: number;
 }
 
-/** How the chord section moves: straight lines between marks, so two marks at one progress are a hold. */
+/** From `at` seconds on a plan's clock, the song plays at `bpm`. */
+export interface Tempo {
+  at: number;
+  bpm: number;
+}
+
+/**
+ * How the chord section moves: straight lines between marks, so two marks at one progress are a hold.
+ * The clock's seconds are at `bpm`. `tempo`, when present, starts at 0 and is what the metronome plays from each spot.
+ */
 export interface ScrollPlan {
   bpm: number;
   marks: Mark[];
+  tempo?: Tempo[];
 }
 
 export interface Span {
@@ -44,6 +54,7 @@ export interface Take {
   slope: number;
   marks: Mark[];
   holding: boolean;
+  tempo: Tempo[];
 }
 
 /** How far below the top of the sheet a learned section's heading sits as its music starts: about two lines. */
@@ -57,6 +68,8 @@ export type Motion =
       progressAt: (clock: number) => number;
       startAt: (progress: number, slack: number) => number;
       rate: number;
+      /** False when the clock itself is meaningful, as with a live take or a tempo map, so `runScroll` never re-times it. */
+      holdOpening: boolean;
     }
   | {
       /** Each heading reaches the reading line as its section starts, and the chart's end as the song ends. */
@@ -105,7 +118,7 @@ export function timeAt(marks: Mark[], progress: number, slack = 0): number {
 
 export function startTake(even: ScrollPlan, bpm: number): Take {
   const runtime = even.marks[even.marks.length - 1].at;
-  return { bpm, slope: bpm / even.bpm / runtime, marks: [{ at: 0, progress: 0 }], holding: false };
+  return { bpm, slope: bpm / even.bpm / runtime, marks: [{ at: 0, progress: 0 }], holding: false, tempo: [{ at: 0, bpm }] };
 }
 
 export function takeProgress(take: Take, at: number): number {
@@ -120,7 +133,43 @@ export function toggleHold(take: Take, at: number): Take {
 }
 
 export function finishTake(take: Take, at: number): ScrollPlan {
-  return { bpm: take.bpm, marks: [...take.marks, { at, progress: 1 }] };
+  return withTempo({ bpm: take.bpm, marks: [...take.marks, { at, progress: 1 }] }, take.tempo);
+}
+
+/** Metronome taps within this many seconds of the last change, like a run of + taps, are one change. */
+const SAME_CHANGE = 2;
+
+/** The metronome moved to `bpm` at `at` on the take's clock. */
+export function changeTempo(take: Take, at: number, bpm: number): Take {
+  const last = take.tempo[take.tempo.length - 1];
+  if (bpm === last.bpm) return take;
+  const tempo = at - last.at < SAME_CHANGE ? [...take.tempo.slice(0, -1), { at: last.at, bpm }] : [...take.tempo, { at, bpm }];
+  return { ...take, tempo };
+}
+
+/** `plan` with `tempo` as its map, leaving repeats out, and no map at all when the song stays at the plan's BPM. */
+export function withTempo<P extends ScrollPlan>(plan: P, tempo: Tempo[]): P {
+  const map = tempo.filter((change, i) => i === 0 || change.bpm !== tempo[i - 1].bpm);
+  const { tempo: _old, ...rest } = plan;
+  return (map.length === 1 && map[0].bpm === plan.bpm ? rest : { ...rest, tempo: map }) as P;
+}
+
+export function tempoAt(tempo: Tempo[], at: number): Tempo {
+  return tempo.filter((change) => change.at <= at).at(-1) ?? tempo[0];
+}
+
+/** Seconds into the song as heard at 100%, for a spot on the plan's clock. */
+export function heardAt(tempo: Tempo[], planBpm: number, at: number): number {
+  return tempo.reduce((heard, change, i) => {
+    const end = Math.min(at, tempo[i + 1]?.at ?? Infinity);
+    return end > change.at ? heard + ((end - change.at) * planBpm) / change.bpm : heard;
+  }, 0);
+}
+
+/** The spot on the plan's clock heard `heard` seconds into the song at 100%. */
+export function clockAt(tempo: Tempo[], planBpm: number, heard: number): number {
+  const change = tempo.filter((each) => heardAt(tempo, planBpm, each.at) <= heard).at(-1) ?? tempo[0];
+  return change.at + ((heard - heardAt(tempo, planBpm, change.at)) * change.bpm) / planBpm;
 }
 
 /**
@@ -130,7 +179,7 @@ export function finishTake(take: Take, at: number): ScrollPlan {
 export function scrollMotion(song: Song, version: ScrollVersion | null, take: Take | null, bpm: number | null, percent: number): Motion {
   if (take) {
     const rate = clockRate(take.bpm, bpm ?? take.bpm, percent);
-    return { kind: "timed", rate, progressAt: (at) => takeProgress(take, at), startAt: () => 0 };
+    return { kind: "timed", rate, progressAt: (at) => takeProgress(take, at), startAt: () => 0, holdOpening: false };
   }
   const plan = version ?? evenPlan(song);
   if (!plan) return { kind: "pace", pxPerSec: scrollPixelsPerSecond(song.tempo, percent) };
@@ -139,7 +188,13 @@ export function scrollMotion(song: Song, version: ScrollVersion | null, take: Ta
     const end = plan.marks[plan.marks.length - 1].at;
     return { kind: "learned", rate, arrivals: [...version.learned.sections.map((section) => section.at), end] };
   }
-  return { kind: "timed", rate, progressAt: (at) => progressAt(plan.marks, at), startAt: (progress, slack) => timeAt(plan.marks, progress, slack) };
+  return {
+    kind: "timed",
+    rate,
+    progressAt: (at) => progressAt(plan.marks, at),
+    startAt: (progress, slack) => timeAt(plan.marks, progress, slack),
+    holdOpening: !plan.tempo,
+  };
 }
 
 /** V1, V2, V3 … skipping a name already taken by a rename. */
@@ -227,7 +282,7 @@ export function runScroll(
   }
   const length = first ? first.startAt(1, 0) : 0;
   const even =
-    initial.kind === "timed" && length > 2 && [0.25, 0.5, 0.75].every((f) => Math.abs(initial.progressAt(length * f) - f) < 1e-6);
+    initial.kind === "timed" && initial.holdOpening && length > 2 && [0.25, 0.5, 0.75].every((f) => Math.abs(initial.progressAt(length * f) - f) < 1e-6);
   const hold = even && clock.current === 0 ? 2 : 0;
   const planTime = (at: number) => (hold ? (Math.max(0, at - hold) * length) / (length - hold) : at);
   let expected = position;

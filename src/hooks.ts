@@ -9,7 +9,7 @@ import type { SongRef } from "./types";
  * no screen goes on showing, or writing back, a copy older than what is stored.
  */
 export function useStored<T>(load: () => T, key: unknown = null): [T, Dispatch<SetStateAction<T>>] {
-  const generation = useSyncExternalStore(onStorageChange, storageGeneration);
+  const generation = useSyncExternalStore(onStorageChange, storageGeneration, storageGeneration);
   const [held, setHeld] = useState(() => ({ value: load(), key, generation }));
   const set: Dispatch<SetStateAction<T>> = (next) =>
     setHeld((current) => ({ ...current, value: next instanceof Function ? next(current.value) : next }));

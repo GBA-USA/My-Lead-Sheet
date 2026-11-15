@@ -34,7 +34,6 @@ export function visibleSongs(bandId: string, songs: BandSong[], query: string, s
   return songs.filter((item) => hits.has(bandSongRef(bandId, item.songId))).sort((a, b) => order[sort](a, b) || byText(a.songId, b.songId));
 }
 
-/** `mine` keeps only what the caller shared. `tag` keeps setlists carrying it. */
 export function visibleSetlists(setlists: BandSetlist[], filter: { mine: boolean; tag: string | null }, me: string, sort: SetlistSort): BandSetlist[] {
   const order: Record<SetlistSort, (a: BandSetlist, b: BandSetlist) => number> = {
     newest: (a, b) => b.sharedAt - a.sharedAt,

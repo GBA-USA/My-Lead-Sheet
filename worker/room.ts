@@ -1,10 +1,10 @@
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "./index";
 import { handleBackup } from "./room-backup";
-import { bandLibrary, createLibraryTables, selfCopies, type SetlistFields, type SongShare } from "./room-library";
+import type { SongContent } from "../src/band-library-model";
+import { bandLibrary, createLibraryTables, selfCopies, type SetlistFields, type SetlistShare, type SongShare } from "./room-library";
 import { bandRoom, createMemberTables, NOT_A_MEMBER_CLOSE, shutOut } from "./room-members";
 import type { StoredShare } from "./share-guard";
-import type { SongContent } from "../src/band-library-model";
 
 const RELAYED = ["intro", "ping", "pong"] as const;
 type RelayKind = (typeof RELAYED)[number];
@@ -150,7 +150,7 @@ export class Room extends DurableObject<Env> {
     return bandLibrary.shareSong(this.band, userId, share, from, now);
   }
 
-  shareSetlist(userId: string, fields: SetlistFields & { localId: number | null; choice: SongShare["choice"] }, now: number) {
+  shareSetlist(userId: string, fields: SetlistShare, now: number) {
     return bandLibrary.shareSetlist(this.band, userId, fields, now);
   }
 

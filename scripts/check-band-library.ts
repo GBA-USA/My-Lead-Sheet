@@ -83,6 +83,14 @@ async function apiChecks(base: string, origin: string) {
       assert.match(String(tried.body.error), /^private_(copy|ancestor)$/, "the refusal says it was shared privately");
     }
   }
+  const sameOnScreen = {
+    ...chainBreaker,
+    body: [
+      { heading: "Verse 1", lines: [{ lyrics: "Break every chain tonight   ", chords: "G       C", hidden: "x" }, {}] },
+      { heading: "", lines: [] },
+    ],
+  };
+  assert.equal((await share(mike, side, sameOnScreen as SongContent, "public")).status, 403, "nor by changing only what never shows: key order, an unknown field, trailing spaces, empty lines");
   assert.equal((await share(mike, blue, chainBreaker, "public")).status, 403, "nor share it again into The Blue Notes");
   assert.deepEqual(refusal(await share(dana, side, chainBreaker, "public", { copyId: copied.body.copy.id })), [403, "not-a-member"], "Dana can't use Mike's copy in a band she isn't in");
   assert.deepEqual(refusal(await share(ann, side, chainBreaker, "public", { copyId: copied.body.copy.id })), [404, "not_found"], "nor can Ann name Mike's copy as hers");
@@ -168,7 +176,10 @@ async function appChecks(site: Awaited<ReturnType<typeof openSite>>, base: strin
   };
   const tab = (name: string) => app.click(name, `document.querySelector(".band-tabs")`);
   const setField = async (by: "label" | "select", target: string, value: string) => {
-    const field = by === "label" ? `[...document.querySelectorAll("[role=dialog] label")].find((l) => l.textContent.trim() === ${JSON.stringify(target)}).control` : `document.querySelector(${JSON.stringify(target)})`;
+    const field =
+      by === "label"
+        ? `[...document.querySelectorAll("[role=dialog] label")].find((l) => l.textContent.trim() === ${JSON.stringify(target)}).control`
+        : `document.querySelector(${JSON.stringify(target)})`;
     await site.evaluate(
       `(() => { const field = ${field}; Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field), "value").set.call(field, ${JSON.stringify(value)}); field.dispatchEvent(new Event(field.tagName === "SELECT" ? "change" : "input", { bubbles: true })); })()`,
     );

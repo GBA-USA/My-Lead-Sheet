@@ -196,7 +196,7 @@ export function bandIdIn(body: Record<string, unknown>): string {
 }
 
 export const roomOf = (c: Context, bandId: string) => c.env.ROOM.getByName(bandId);
-export const who = (user: User) => ({ userId: user.user_id, name: user.display_name });
+const who = (user: User) => ({ userId: user.user_id, name: user.display_name });
 
 function userIdIn(body: Record<string, unknown>): string {
   if (typeof body.userId !== "string" || body.userId.length > 64) throw new Refused("bad-request");

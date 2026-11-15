@@ -1,9 +1,10 @@
 import type { BandLibrary, BandSetlist, BandSong, CopiedSong, SongContent } from "../src/band-library-model";
+import type { ChartLine, ChartSection } from "../src/types";
 import { randomBytes, toBase64Url } from "./bytes";
 import { signedIn, type Context, type Route } from "./directory-http";
 import { Refused } from "./refused";
 import { selfRoomId } from "./room-backup";
-import { bandIdIn, bandIdsOf, fromRoom, inBand, refused, roomOf, type Band } from "./room-members";
+import { bandIdIn, bandIdsOf, fromRoom, inBand, refused, roomOf, shutOut, type Band } from "./room-members";
 import { checkSend, lineage, type ShareChoice, type StoredShare } from "./share-guard";
 
 type Shared = { share_id: string; shared_by: string; local_id: number | null; shared_at: number; updated_by: string; updated_at: number; rev: number };
@@ -66,7 +67,7 @@ function holding(sql: SqlStorage, row: Shared, userId: string): Chain {
   return userId === row.shared_by ? chain.slice(1) : [{ ...chain[0], ownerId: userId }, ...chain.slice(1)];
 }
 
-function shared(sql: SqlStorage, row: Shared, userId: string, names: Map<string, string>) {
+function sharedFields(sql: SqlStorage, row: Shared, userId: string, names: Map<string, string>) {
   return {
     sharedBy: row.shared_by,
     sharedByName: names.get(row.shared_by) ?? "",
@@ -87,20 +88,19 @@ const memberNames = (sql: SqlStorage) =>
       .map((row) => [row.user_id, row.display_name]),
   );
 
-const songOf = (sql: SqlStorage, row: SongRow, userId: string, names = memberNames(sql)): BandSong => ({ songId: row.song_id, song: JSON.parse(row.song), ...shared(sql, row, userId, names) });
+const songOf = (sql: SqlStorage, row: SongRow, userId: string, names = memberNames(sql)): BandSong => ({ songId: row.song_id, song: JSON.parse(row.song), ...sharedFields(sql, row, userId, names) });
 
 const setlistOf = (sql: SqlStorage, row: SetlistRow, userId: string, names = memberNames(sql)): BandSetlist => ({
   setlistId: row.setlist_id,
   name: row.name,
   songIds: JSON.parse(row.song_ids),
   tags: JSON.parse(row.tags),
-  ...shared(sql, row, userId, names),
+  ...sharedFields(sql, row, userId, names),
 });
 
 const songRow = (sql: SqlStorage, songId: string) => sql.exec<SongRow>(`SELECT * FROM band_songs WHERE song_id = ?`, songId).toArray()[0];
 const setlistRow = (sql: SqlStorage, setlistId: string) => sql.exec<SetlistRow>(`SELECT * FROM band_setlists WHERE setlist_id = ?`, setlistId).toArray()[0];
 
-/** Only the member who shared an item, or an admin, edits it (PLAN.md section 6). */
 function editable<T extends Shared>(band: Band, userId: string, row: T | undefined): T {
   const { me } = inBand(band.sql, userId);
   if (!row) throw refused("not-found");
@@ -114,6 +114,7 @@ function bandSongsOnly(sql: SqlStorage, songIds: string[]) {
 
 export type SongShare = { song: SongContent; print: string; localId: number | null; choice: ShareChoice };
 export type SetlistFields = { name: string; songIds: string[]; tags: string[] };
+export type SetlistShare = SetlistFields & { localId: number | null; choice: ShareChoice };
 
 /** Every user id here is trusted: only the Directory calls these, after it has checked the session and the share rule. */
 export const bandLibrary = {
@@ -155,7 +156,7 @@ export const bandLibrary = {
     return songOf(band.sql, songRow(band.sql, songId), userId);
   },
 
-  shareSetlist(band: Band, userId: string, fields: SetlistFields & { localId: number | null; choice: ShareChoice }, now: number): BandSetlist {
+  shareSetlist(band: Band, userId: string, fields: SetlistShare, now: number): BandSetlist {
     inBand(band.sql, userId);
     bandSongsOnly(band.sql, fields.songIds);
     const setlistId = newId("setlist");
@@ -176,7 +177,6 @@ export const bandLibrary = {
     return setlistOf(band.sql, setlistRow(band.sql, setlistId), userId);
   },
 
-  /** Saved only when `base` is the rev the editor started from. Otherwise nothing changes and the current song comes back. */
   editSong(band: Band, userId: string, songId: string, base: number, song: SongContent, print: string, now: number): Saved<BandSong> {
     const row = editable(band, userId, songRow(band.sql, songId));
     if (row.rev !== base) return { item: songOf(band.sql, row, userId), changed: true };
@@ -200,7 +200,6 @@ export const bandLibrary = {
     return { item: setlistOf(band.sql, setlistRow(band.sql, setlistId), userId), changed: false };
   },
 
-  /** The chart and what the caller holds of it, for Add to My Songs. */
   copyOut(band: Band, userId: string, songId: string): { song: SongContent; print: string; from: Chain } {
     inBand(band.sql, userId);
     const row = songRow(band.sql, songId);
@@ -208,9 +207,9 @@ export const bandLibrary = {
     return { song: JSON.parse(row.song), print: row.print, from: holding(band.sql, row, userId) };
   },
 
-  /** What the caller holds of every band song with this chart, leaving out `except` (the song being edited). Empty for a non-member. */
+  /** What the caller holds of every band song with this chart, except the song being edited. */
   heldByPrint(band: Band, userId: string, print: string, except: string | null): Chain[] {
-    if (band.sql.exec(`SELECT 1 FROM members WHERE user_id = ? AND state = 'active'`, userId).toArray().length === 0) return [];
+    if (shutOut(band.sql, userId)) return [];
     return band.sql
       .exec<SongRow>(`SELECT * FROM band_songs WHERE print = ? AND song_id IS NOT ?`, print, except)
       .toArray()
@@ -218,7 +217,6 @@ export const bandLibrary = {
   },
 };
 
-/** The copies in a player's own self room, which Add to My Songs fills. */
 export const selfCopies = {
   record(sql: SqlStorage, userId: string, from: Chain, print: string): CopiedSong["copy"] {
     const id = adopt(sql, newId("copy"), userId, from, "public");
@@ -226,7 +224,6 @@ export const selfCopies = {
     return { id, canSendOn: allowed([storeOf(sql)(id)!, ...from], userId, "public").ok };
   },
 
-  /** The chains for the copy named `copyId`, if it is here, and for every copy with this chart. */
   chains(sql: SqlStorage, copyId: string | null, print: string): { named: Chain | null; byPrint: Chain[] } {
     const chainOf = (id: string) => {
       const chain = lineage(storeOf(sql), id);
@@ -251,15 +248,27 @@ function choiceIn(body: Record<string, unknown>): ShareChoice {
   return body.choice;
 }
 
-/** The parts every phone's chart screen needs. Anything else rides along as stored, and the phone checks it again when it adds the song. */
+const LINE_FIELDS = ["chords", "lyrics", "bars", "note"] as const;
+const record = (value: unknown) => (typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null);
+
+function lineIn(value: unknown): ChartLine {
+  const line = record(value);
+  if (!line || LINE_FIELDS.some((field) => line[field] !== undefined && typeof line[field] !== "string")) throw new Refused("bad-request");
+  return Object.fromEntries(LINE_FIELDS.filter((field) => line[field] !== undefined).map((field) => [field, line[field]]));
+}
+
+function sectionIn(value: unknown): ChartSection {
+  const section = record(value);
+  if (typeof section?.heading !== "string" || !Array.isArray(section.lines)) throw new Refused("bad-request");
+  return { heading: section.heading, lines: section.lines.map(lineIn) };
+}
+
+/** The chart keeps only the parts a sheet shows. The other fields ride along as stored, and the phone checks them again when it adds the song. */
 function songIn(value: unknown): SongContent {
-  const song = (typeof value === "object" && value !== null && !Array.isArray(value) ? value : {}) as Record<string, unknown>;
-  const sections = Array.isArray(song.body) ? song.body : null;
-  const sectionOk = (section: unknown) =>
-    typeof section === "object" && section !== null && typeof (section as { heading?: unknown }).heading === "string" && Array.isArray((section as { lines?: unknown }).lines);
-  if (!isText(song.title, 200) || typeof song.artist !== "string" || !sections?.every(sectionOk) || JSON.stringify(song).length > MAX_SONG_CHARS) throw new Refused("bad-request");
+  const song = record(value);
+  if (!song || !isText(song.title, 200) || typeof song.artist !== "string" || !Array.isArray(song.body) || JSON.stringify(song).length > MAX_SONG_CHARS) throw new Refused("bad-request");
   const { ref: _ref, id: _id, copy: _copy, ...content } = song;
-  return content as SongContent;
+  return { ...content, body: song.body.map(sectionIn) } as SongContent;
 }
 
 const localIdIn = (value: unknown) => (Number.isSafeInteger(value) ? (value as number) : null);
@@ -279,8 +288,12 @@ function setlistIn(body: Record<string, unknown>): SetlistFields {
   return { name: (name as string).trim(), songIds: songIds.map(idIn), tags: tags.map((tag: string) => tag.trim()) };
 }
 
+/** A one-way code of the chart as a sheet shows it, so changes that never show (spacing at line ends, empty lines) give the same code. */
 async function printOf(song: SongContent): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(song.body)));
+  const shown = song.body
+    .map((section) => [section.heading.trim(), section.lines.map((line) => LINE_FIELDS.map((field) => line[field]?.trimEnd() ?? "")).filter((fields) => fields.some(Boolean))] as const)
+    .filter(([heading, lines]) => heading || lines.length > 0);
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(shown)));
   return toBase64Url(new Uint8Array(digest));
 }
 
@@ -297,13 +310,16 @@ async function guardContent(c: Context, userId: string, print: string, choice: S
     fromRoom(selfRoom(c, userId).copyChains(copyId, print)),
     ...bandIdsOf(c.sql, userId).map((bandId) => fromRoom(roomOf(c, bandId).heldByPrint(userId, print, except))),
   ]);
-  const refuse = (verdict: ReturnType<typeof allowed>) => !verdict.ok && new Refused(verdict.code, verdict.status);
+  const verdict = (chain: Chain) => allowed(chain, userId, choice);
+  const mustAllow = (chain: Chain) => {
+    const result = verdict(chain);
+    if (!result.ok) throw new Refused(result.code, result.status);
+  };
   if (copyId !== null && !mine.named) throw new Refused("not_found", 404);
-  const named = mine.named && refuse(allowed(mine.named, userId, choice));
-  if (named) throw named;
+  if (mine.named) mustAllow(mine.named);
   const held = [...mine.byPrint, ...inBands.flat()];
-  const allowing = held.find((chain) => allowed(chain, userId, choice).ok);
-  if (held.length > 0 && !allowing) throw refuse(allowed(held[0], userId, choice));
+  const allowing = held.find((chain) => verdict(chain).ok);
+  if (held.length > 0 && !allowing) mustAllow(held[0]);
   return mine.named ?? allowing ?? null;
 }
 

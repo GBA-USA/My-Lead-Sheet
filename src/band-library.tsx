@@ -67,7 +67,6 @@ function SortPicker<T extends string>({ label, className, sorts, value, onChange
   );
 }
 
-/** Private or Public, with nothing picked in advance (PLAN.md 8.1). */
 function ShareQuestion({ what, band, busy, onShare, onCancel }: { what: string; band: string; busy: boolean; onShare: (choice: ShareChoice) => void; onCancel: () => void }) {
   const [choice, setChoice] = useState<ShareChoice | null>(null);
   return (
@@ -171,7 +170,6 @@ function SetlistEditor({
   );
 }
 
-/** The band screen's Songs and Setlists tabs: what members shared into the band, Share from My Songs, edits, and Add to My Songs. */
 export function BandLibraryTab({ band, me, tab, busy, run, notify }: Props) {
   const [library, setLibrary] = useState<BandLibrary | null>(null);
   const [mode, setMode] = useState<Mode>({ name: "list" });
@@ -180,7 +178,7 @@ export function BandLibraryTab({ band, me, tab, busy, run, notify }: Props) {
   const [setlistSort, setSetlistSort] = useState<SetlistSort>("newest");
   const [mine, setMine] = useState(false);
   const [tag, setTag] = useState<string | null>(null);
-  const [mySongs, setMySongs] = useState(() => loadLibrary());
+  const [myLibrary, setMyLibrary] = useState(() => loadLibrary());
 
   const reload = () => api<BandLibrary>("/api/bands/library", { bandId: band.bandId }).then(setLibrary);
 
@@ -215,12 +213,13 @@ export function BandLibraryTab({ band, me, tab, busy, run, notify }: Props) {
         await shareSong(picked.song, choice);
         return notify(`Shared ${picked.song.title} as ${CHOICES[choice].label}.`);
       }
+      const inBand = new Map(library?.songs.filter((item) => item.sharedBy === me && item.localId !== null).map((item) => [item.localId, item.songId]));
       const songIds: string[] = [];
       for (const ref of picked.setlist.songRefs) {
-        const song = songByRef(mySongs.songs, ref);
+        const song = songByRef(myLibrary.songs, ref);
         if (!song) continue;
-        const already = library?.songs.find((item) => item.sharedBy === me && item.localId === song.id);
-        songIds.push(already?.songId ?? (await shareSong(song, choice)).songId);
+        if (!inBand.has(song.id)) inBand.set(song.id, (await shareSong(song, choice)).songId);
+        songIds.push(inBand.get(song.id)!);
       }
       await api<BandSetlist>("/api/bands/library/share-setlist", { bandId: band.bandId, name: picked.setlist.name, songIds, tags: [], choice, localId: picked.setlist.id });
       notify(`Shared ${picked.setlist.name} as ${CHOICES[choice].label}.`);
@@ -263,7 +262,7 @@ export function BandLibraryTab({ band, me, tab, busy, run, notify }: Props) {
         {tab === "songs" ? <LabeledInput label="Find a song" value={query} onChange={setQuery} /> : null}
         <ul className="friends-list">
           {tab === "songs"
-            ? matchingSongs(mySongs.songs, query).map((song) =>
+            ? matchingSongs(myLibrary.songs, query).map((song) =>
                 pickRow(
                   song.ref,
                   <>
@@ -274,8 +273,8 @@ export function BandLibraryTab({ band, me, tab, busy, run, notify }: Props) {
                   { kind: "song", song },
                 ),
               )
-            : mySongs.setlists.map((setlist) => {
-                const blocked = setlist.songRefs.some((ref) => unsendable(songByRef(mySongs.songs, ref)));
+            : myLibrary.setlists.map((setlist) => {
+                const blocked = setlist.songRefs.some((ref) => unsendable(songByRef(myLibrary.songs, ref)));
                 return pickRow(
                   String(setlist.id),
                   <>
@@ -295,7 +294,7 @@ export function BandLibraryTab({ band, me, tab, busy, run, notify }: Props) {
   }
 
   const openPicker = () => {
-    setMySongs(loadLibrary());
+    setMyLibrary(loadLibrary());
     setQuery("");
     setMode({ name: "pick" });
   };

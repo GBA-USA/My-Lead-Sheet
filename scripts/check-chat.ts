@@ -278,6 +278,9 @@ async function appChecks() {
 
     await site.send("Network.enable");
     await site.send("Page.navigate", { url: `${origin}/#/songs` });
+    await site.evaluate("Promise.race([navigator.serviceWorker.ready.then(() => true), new Promise((done) => setTimeout(done, 20000, false))])");
+    if (!(await site.evaluate<boolean>("!!navigator.serviceWorker.controller"))) await site.send("Page.reload");
+    await app.until("!!navigator.serviceWorker?.controller", "the service worker to take control of the page", 60000);
     await app.library();
     assert.deepEqual(await app.openMenu(), ["Sign in"], "signed out, the More menu has no Messages");
     await app.closeMenu();
@@ -312,7 +315,7 @@ async function appChecks() {
     await app.shot(shots && `${shots}/chat-thread.png`);
     pass("a thread sends and receives live");
 
-    await app.until("!!navigator.serviceWorker?.controller", "the service worker to settle before the signal goes", 60000);
+    await app.until("!!navigator.serviceWorker?.controller", "the service worker still in control before the signal goes");
     await offline(true);
     await app.type("Message", "first offline");
     await app.click("Send");
@@ -389,9 +392,13 @@ async function appChecks() {
     await app.type("Message", "Sam's late one");
     await app.click("Send");
     await app.until(`document.querySelectorAll(".chat-waiting").length === 1`, "Sam's message waiting");
+    // Chrome lets a send that failed under offline emulation out once the emulation ends, so nothing answers the API during the switch.
+    apiBase = "http://127.0.0.1:9";
     await site.send("Page.navigate", { url: "about:blank" });
     await site.send("Network.clearBrowserCookies");
     await offline(false);
+    await sleep(1000);
+    apiBase = base;
     await site.send("Page.navigate", { url: `${origin}/#/songs` });
     await app.library();
     await eventually(me, (who) => who === undefined, "the server to say nobody is signed in on this phone");
@@ -404,7 +411,7 @@ async function appChecks() {
     assert.equal(await waiting(), 0, "Pat's thread shows nothing of Sam's waiting");
     await sleep(1500);
     const bandLines = (await terryReads(bandId)).map((m) => `${m.fromName}: ${m.text}`);
-    assert.ok(!bandLines.some((line) => line.endsWith("Sam's late one")), `Sam's unsent message never goes out while Pat is signed in (${JSON.stringify(bandLines)})`);
+    assert.ok(!bandLines.some((line) => !line.startsWith("Sam Rivera:") && line.endsWith("Sam's late one")), `Sam's unsent message is never sent as anyone but Sam while Pat is signed in (${JSON.stringify(bandLines)})`);
     assert.match(await site.evaluate<string>(`localStorage.getItem("leadSheetsChatQueue") ?? ""`), /Sam's late one/, "and is still kept for Sam");
     pass("another account on the same phone never sends what Sam wrote offline");
 

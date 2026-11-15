@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 import type { BackupResult } from "./backup";
 import { PRIVACY_HREF } from "./data-kinds";
+import { useEscape } from "./hooks";
 import { commonPasswords, MIN_PASSWORD_LENGTH, passwordProblem } from "./password";
 import {
   ApiError,
@@ -176,13 +177,7 @@ export function AccountSheet({
     };
   }, [onAccount, returned]);
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscape(onClose);
 
   const go = (next: Step) => {
     setError("");

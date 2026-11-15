@@ -168,7 +168,6 @@ export function useWakeLock(enabled: boolean) {
   }, [enabled]);
 }
 
-/** Escape closes the sheet that calls this. */
 export function useEscape(onClose: () => void) {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {

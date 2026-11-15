@@ -1,3 +1,4 @@
+import seedLibrary from "../data/library.json" with { type: "json" };
 import type { BandLibrary, BandSetlist, BandSong, CopiedSong, SongContent } from "../src/band-library-model";
 import type { ChartLine, ChartSection } from "../src/types";
 import { randomBytes, toBase64Url } from "./bytes";
@@ -8,7 +9,7 @@ import { bandIdIn, bandIdsOf, fromRoom, inBand, refused, roomOf, shutOut, type B
 import { checkSend, lineage, type ShareChoice, type StoredShare } from "./share-guard";
 
 type Shared = { share_id: string; shared_by: string; local_id: number | null; shared_at: number; updated_by: string; updated_at: number; rev: number };
-type SongRow = Shared & { song_id: string; song: string; print: string };
+type SongRow = Shared & { song_id: string; song: string; print: string; sent_id: string | null };
 type SetlistRow = Shared & { setlist_id: string; name: string; song_ids: string; tags: string };
 type ShareRow = { id: string; owner_id: string; parent_id: string | null; choice: ShareChoice };
 
@@ -21,9 +22,10 @@ export function createLibraryTables(sql: SqlStorage) {
   sql.exec(`CREATE TABLE IF NOT EXISTS shares (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, parent_id TEXT, choice TEXT NOT NULL)`);
   sql.exec(`CREATE TABLE IF NOT EXISTS band_songs (
     song_id TEXT PRIMARY KEY, share_id TEXT NOT NULL, song TEXT NOT NULL, print TEXT NOT NULL,
-    shared_by TEXT NOT NULL, local_id INTEGER, shared_at INTEGER NOT NULL, updated_by TEXT NOT NULL, updated_at INTEGER NOT NULL, rev INTEGER NOT NULL
+    shared_by TEXT NOT NULL, local_id INTEGER, shared_at INTEGER NOT NULL, updated_by TEXT NOT NULL, updated_at INTEGER NOT NULL, rev INTEGER NOT NULL, sent_id TEXT
   )`);
   sql.exec(`CREATE INDEX IF NOT EXISTS band_songs_by_print ON band_songs (print)`);
+  sql.exec(`CREATE UNIQUE INDEX IF NOT EXISTS band_songs_by_sent ON band_songs (shared_by, sent_id)`);
   sql.exec(`CREATE TABLE IF NOT EXISTS band_setlists (
     setlist_id TEXT PRIMARY KEY, share_id TEXT NOT NULL, name TEXT NOT NULL, song_ids TEXT NOT NULL, tags TEXT NOT NULL,
     shared_by TEXT NOT NULL, local_id INTEGER, shared_at INTEGER NOT NULL, updated_by TEXT NOT NULL, updated_at INTEGER NOT NULL, rev INTEGER NOT NULL
@@ -59,12 +61,15 @@ function adopt(sql: SqlStorage, id: string, ownerId: string, from: Chain | null,
 
 /**
  * What the caller holds of a band item. The member who shared it holds what they shared it from. Every other member
- * holds the band's copy, so the choice made when it was shared into the band is the one that applies to them.
+ * holds their own node under the band's copy, carrying the choice made when it was shared into the band. The node's id
+ * names the member, so storing it in another room never collides with the band copy's row or another member's node.
  */
 function holding(sql: SqlStorage, row: Shared, userId: string): Chain {
   const chain = lineage(storeOf(sql), row.share_id);
   if (!chain) throw refused("lineage_broken");
-  return userId === row.shared_by ? chain.slice(1) : [{ ...chain[0], ownerId: userId }, ...chain.slice(1)];
+  if (userId === row.shared_by) return chain.slice(1);
+  const [band] = chain;
+  return [{ id: `${band.id}/${userId}`, ownerId: userId, parentId: band.id, choice: band.choice }, ...chain];
 }
 
 function sharedFields(sql: SqlStorage, row: Shared, userId: string, names: Map<string, string>) {
@@ -112,7 +117,9 @@ function bandSongsOnly(sql: SqlStorage, songIds: string[]) {
   for (const id of songIds) if (!songRow(sql, id)) throw refused("not-a-band-song");
 }
 
-export type SongShare = { song: SongContent; print: string; localId: number | null; choice: ShareChoice };
+/** `sentId` is the phone's own id for this share, so a retry after a lost reply gets the band song it already made. */
+export type SongShare = { song: SongContent; print: string; localId: number | null; choice: ShareChoice; sentId: string | null };
+export type SongChange = { song: SongContent; print: string };
 export type SetlistFields = { name: string; songIds: string[]; tags: string[] };
 export type SetlistShare = SetlistFields & { localId: number | null; choice: ShareChoice };
 
@@ -139,10 +146,12 @@ export const bandLibrary = {
 
   shareSong(band: Band, userId: string, share: SongShare, from: Chain | null, now: number): BandSong {
     inBand(band.sql, userId);
+    const sent = band.sql.exec<SongRow>(`SELECT * FROM band_songs WHERE shared_by = ? AND sent_id = ?`, userId, share.sentId).toArray()[0];
+    if (sent) return songOf(band.sql, sent, userId);
     const songId = newId("song");
     const shareId = adopt(band.sql, `${band.bandId}/${songId}`, userId, from, share.choice);
     band.sql.exec(
-      `INSERT INTO band_songs (song_id, share_id, song, print, shared_by, local_id, shared_at, updated_by, updated_at, rev) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+      `INSERT INTO band_songs (song_id, share_id, song, print, shared_by, local_id, shared_at, updated_by, updated_at, rev, sent_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
       songId,
       shareId,
       JSON.stringify(share.song),
@@ -152,6 +161,7 @@ export const bandLibrary = {
       now,
       userId,
       now,
+      share.sentId,
     );
     return songOf(band.sql, songRow(band.sql, songId), userId);
   },
@@ -177,10 +187,11 @@ export const bandLibrary = {
     return setlistOf(band.sql, setlistRow(band.sql, setlistId), userId);
   },
 
-  editSong(band: Band, userId: string, songId: string, base: number, song: SongContent, print: string, now: number): Saved<BandSong> {
+  /** `change` is null when the share rule refused the new chart. The base rev is still checked, so a stale edit always hears `changed`. */
+  editSong(band: Band, userId: string, songId: string, base: number, change: SongChange | null, now: number): Saved<BandSong> {
     const row = editable(band, userId, songRow(band.sql, songId));
-    if (row.rev !== base) return { item: songOf(band.sql, row, userId), changed: true };
-    band.sql.exec(`UPDATE band_songs SET song = ?, print = ?, updated_by = ?, updated_at = ?, rev = rev + 1 WHERE song_id = ?`, JSON.stringify(song), print, userId, now, songId);
+    if (row.rev !== base || !change) return { item: songOf(band.sql, row, userId), changed: row.rev !== base };
+    band.sql.exec(`UPDATE band_songs SET song = ?, print = ?, updated_by = ?, updated_at = ?, rev = rev + 1 WHERE song_id = ?`, JSON.stringify(change.song), change.print, userId, now, songId);
     return { item: songOf(band.sql, songRow(band.sql, songId), userId), changed: false };
   },
 
@@ -207,11 +218,22 @@ export const bandLibrary = {
     return { song: JSON.parse(row.song), print: row.print, from: holding(band.sql, row, userId) };
   },
 
-  /** What the caller holds of every band song with this chart, except the song being edited. */
-  heldByPrint(band: Band, userId: string, print: string, except: string | null): Chain[] {
+  /**
+   * What the caller holds of the band songs that show this chart, except the song being edited. With `takenFrom` (the
+   * share ids the caller's own copies came through), only the songs the caller shared or took a copy from; with null, all.
+   */
+  heldByPrint(band: Band, userId: string, print: string, except: string | null, takenFrom: string[] | null): Chain[] {
     if (shutOut(band.sql, userId)) return [];
+    const taken = takenFrom && JSON.stringify(takenFrom);
     return band.sql
-      .exec<SongRow>(`SELECT * FROM band_songs WHERE print = ? AND song_id IS NOT ?`, print, except)
+      .exec<SongRow>(
+        `SELECT * FROM band_songs WHERE print = ? AND song_id IS NOT ? AND (? IS NULL OR shared_by = ? OR share_id IN (SELECT value FROM json_each(?)))`,
+        print,
+        except,
+        taken,
+        userId,
+        taken,
+      )
       .toArray()
       .map((row) => holding(band.sql, row, userId));
   },
@@ -224,18 +246,24 @@ export const selfCopies = {
     return { id, canSendOn: allowed([storeOf(sql)(id)!, ...from], userId, "public").ok };
   },
 
-  chains(sql: SqlStorage, copyId: string | null, print: string): { named: Chain | null; byPrint: Chain[] } {
+  /** The named copy with the chart it was made of, the copies showing this chart, and every share id the caller's copies came through. */
+  chains(sql: SqlStorage, copyId: string | null, print: string): { named: { chain: Chain; print: string } | null; byPrint: Chain[]; takenFrom: string[] } {
     const chainOf = (id: string) => {
       const chain = lineage(storeOf(sql), id);
       if (!chain) throw refused("lineage_broken");
       return chain;
     };
-    const named = copyId !== null && sql.exec(`SELECT 1 FROM song_copies WHERE copy_id = ?`, copyId).toArray().length > 0 ? chainOf(copyId) : null;
+    const namedRow = copyId === null ? undefined : sql.exec<{ print: string }>(`SELECT print FROM song_copies WHERE copy_id = ?`, copyId).toArray()[0];
+    const named = namedRow ? { chain: chainOf(copyId!), print: namedRow.print } : null;
     const byPrint = sql
       .exec<{ copy_id: string }>(`SELECT copy_id FROM song_copies WHERE print = ?`, print)
       .toArray()
       .map((row) => chainOf(row.copy_id));
-    return { named, byPrint };
+    const takenFrom = sql
+      .exec<{ id: string }>(`SELECT id FROM shares`)
+      .toArray()
+      .map((row) => row.id);
+    return { named, byPrint, takenFrom };
   },
 };
 
@@ -299,29 +327,48 @@ async function printOf(song: SongContent): Promise<string> {
 
 const selfRoom = (c: Context, userId: string) => c.env.ROOM.getByName(selfRoomId(userId));
 
+let builtInPrints: Promise<Set<string>> | undefined;
+
+/** Every phone ships the built-in library, so holding one of its charts says nothing about where a player got it. */
+async function isBuiltIn(print: string) {
+  builtInPrints ??= Promise.all(seedLibrary.songs.map((song) => printOf(song as SongContent))).then((prints) => new Set(prints));
+  return (await builtInPrints).has(print);
+}
+
 /**
- * The server's share rule for a chart the phone sends. The phone may name the copy it is sending, and that copy must
- * allow it. The phone can't hide a copy either: when the caller holds this same chart (a copy in their self room, or a
- * song in one of their bands), one of those must allow sending it on. Returns the chain the new copy comes from, or
- * null for the caller's own original.
+ * The server's share rule for a chart the phone sends, judged by lineage, never by who else has the same chart. A copy
+ * the phone names must allow it, and vouches for the chart it was made of. Otherwise the caller's copies of this chart
+ * and the band songs they shared or took a copy from that show it must include one that allows it; a chart the caller
+ * holds none of is their own original. A named copy sent with another chart vouches for nothing more, so every band song
+ * the caller can see with that chart counts. A built-in chart is only ever judged by a named copy. Returns the chain the
+ * new copy comes from, or null for the caller's own original.
  */
 async function guardContent(c: Context, userId: string, print: string, choice: ShareChoice, copyId: string | null, except: string | null): Promise<Chain | null> {
-  const [mine, ...inBands] = await Promise.all([
-    fromRoom(selfRoom(c, userId).copyChains(copyId, print)),
-    ...bandIdsOf(c.sql, userId).map((bandId) => fromRoom(roomOf(c, bandId).heldByPrint(userId, print, except))),
-  ]);
+  const mine = await fromRoom(selfRoom(c, userId).copyChains(copyId, print));
   const verdict = (chain: Chain) => allowed(chain, userId, choice);
   const mustAllow = (chain: Chain) => {
     const result = verdict(chain);
     if (!result.ok) throw new Refused(result.code, result.status);
   };
   if (copyId !== null && !mine.named) throw new Refused("not_found", 404);
-  if (mine.named) mustAllow(mine.named);
+  if (mine.named) mustAllow(mine.named.chain);
+  if (mine.named?.print === print || (await isBuiltIn(print))) return mine.named?.chain ?? null;
+  const takenFrom = mine.named ? null : mine.takenFrom;
+  const inBands = await Promise.all(bandIdsOf(c.sql, userId).map((bandId) => fromRoom(roomOf(c, bandId).heldByPrint(userId, print, except, takenFrom))));
   const held = [...mine.byPrint, ...inBands.flat()];
   const allowing = held.find((chain) => verdict(chain).ok);
   if (held.length > 0 && !allowing) mustAllow(held[0]);
-  return mine.named ?? allowing ?? null;
+  return mine.named?.chain ?? allowing ?? null;
 }
+
+const refusalOf = (rule: Promise<unknown>) =>
+  rule.then(
+    () => null,
+    (error) => {
+      if (error instanceof Refused) return error;
+      throw error;
+    },
+  );
 
 function saved<T>({ item, changed }: Saved<T>): { body: T } {
   if (changed) throw new Refused("changed", 409, { current: item });
@@ -341,8 +388,9 @@ export const LIBRARY_ROUTES: Record<string, Route> = {
     const choice = choiceIn(c.body);
     const song = songIn(c.body.song);
     const print = await printOf(song);
+    const sentId = c.body.shareId === undefined ? null : idIn(c.body.shareId);
     const from = await guardContent(c, userId, print, choice, c.body.copyId === undefined ? null : idIn(c.body.copyId), null);
-    return { body: await fromRoom(roomOf(c, bandId).shareSong(userId, { song, print, localId: localIdIn(c.body.localId), choice }, from, c.now)) };
+    return { body: await fromRoom(roomOf(c, bandId).shareSong(userId, { song, print, localId: localIdIn(c.body.localId), choice, sentId }, from, c.now)) };
   },
 
   async "POST /api/bands/library/share-setlist"(c) {
@@ -361,8 +409,10 @@ export const LIBRARY_ROUTES: Record<string, Route> = {
     const userId = signedIn(c).user_id;
     const print = await printOf(song);
     await fromRoom(roomOf(c, bandId).requireMember(userId));
-    await guardContent(c, userId, print, "public", null, songId);
-    return saved(await fromRoom(roomOf(c, bandId).editBandSong(userId, songId, base, song, print, c.now)));
+    const refusal = await refusalOf(guardContent(c, userId, print, "public", null, songId));
+    const result = await fromRoom(roomOf(c, bandId).editBandSong(userId, songId, base, refusal ? null : { song, print }, c.now));
+    if (refusal && !result.changed) throw refusal;
+    return saved(result);
   },
 
   async "POST /api/bands/library/edit-setlist"(c) {

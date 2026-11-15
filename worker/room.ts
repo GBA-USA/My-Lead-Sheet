@@ -1,8 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "./index";
 import { handleBackup } from "./room-backup";
-import type { SongContent } from "../src/band-library-model";
-import { bandLibrary, createLibraryTables, selfCopies, type SetlistFields, type SetlistShare, type SongShare } from "./room-library";
+import { bandLibrary, createLibraryTables, selfCopies, type SetlistFields, type SetlistShare, type SongChange, type SongShare } from "./room-library";
 import { bandRoom, createMemberTables, NOT_A_MEMBER_CLOSE, shutOut } from "./room-members";
 import type { StoredShare } from "./share-guard";
 
@@ -154,8 +153,8 @@ export class Room extends DurableObject<Env> {
     return bandLibrary.shareSetlist(this.band, userId, fields, now);
   }
 
-  editBandSong(userId: string, songId: string, base: number, song: SongContent, print: string, now: number) {
-    return bandLibrary.editSong(this.band, userId, songId, base, song, print, now);
+  editBandSong(userId: string, songId: string, base: number, change: SongChange | null, now: number) {
+    return bandLibrary.editSong(this.band, userId, songId, base, change, now);
   }
 
   editBandSetlist(userId: string, setlistId: string, base: number, fields: SetlistFields, now: number) {
@@ -166,8 +165,8 @@ export class Room extends DurableObject<Env> {
     return bandLibrary.copyOut(this.band, userId, songId);
   }
 
-  heldByPrint(userId: string, print: string, except: string | null) {
-    return bandLibrary.heldByPrint(this.band, userId, print, except);
+  heldByPrint(userId: string, print: string, except: string | null, takenFrom: string[] | null) {
+    return bandLibrary.heldByPrint(this.band, userId, print, except, takenFrom);
   }
 
   /** Self room only: the Directory names it from the session, so the copies here are always the caller's. */

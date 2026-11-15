@@ -4,8 +4,9 @@ import { ACCOUNT_ROUTES, authorizeRoom, closeRooms, createAccountTables } from "
 import { handleDirectoryRequest } from "./directory-http";
 import { createFriendTables, FRIEND_ROUTES } from "./directory-friends";
 import type { Env } from "./index";
+import { BAND_ROUTES, createBandIndex } from "./room-members";
 
-const ROUTES = { ...ACCOUNT_ROUTES, ...CODE_ROUTES, ...FRIEND_ROUTES };
+const ROUTES = { ...ACCOUNT_ROUTES, ...CODE_ROUTES, ...FRIEND_ROUTES, ...BAND_ROUTES };
 
 export class Directory extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
@@ -13,6 +14,7 @@ export class Directory extends DurableObject<Env> {
     createAccountTables(ctx.storage.sql);
     createCodeTables(ctx.storage.sql);
     createFriendTables(ctx.storage.sql);
+    createBandIndex(ctx.storage.sql);
   }
 
   fetch(request: Request): Promise<Response> {

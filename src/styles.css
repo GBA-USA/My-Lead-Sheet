@@ -879,7 +879,7 @@ a:focus-visible {
 }
 
 .metro-pad.is-on .metro-lamp {
-  background: #e1a01e;
+  background: #d7263d;
   animation: metro-blink calc(60s / var(--metro-bpm, 60)) linear infinite;
 }
 

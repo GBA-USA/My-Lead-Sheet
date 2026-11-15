@@ -1,8 +1,9 @@
 import { CODE_KINDS, CODE_REFUSED, CODE_SCREEN, readPayload, signedText, type CodeFields, type CodeKind } from "../src/code-link";
 import { fromBase64Url, randomBytes, toBase64Url, utf8 } from "./bytes";
-import { signedIn, type Route } from "./directory-http";
+import { signedIn, type Context, type Route, type User } from "./directory-http";
 import type { Env } from "./index";
 import { Refused } from "./refused";
+import { bandInviteTarget } from "./room-members";
 import { hmacKey } from "./session";
 
 const MINUTE_MS = 60 * 1000;
@@ -32,18 +33,23 @@ export type CodeRow = {
   nonce: string;
   expires_at: number;
   stopped_at: number | null;
+  created_at: number;
 };
+
+type Target = { targetId: string };
 
 /** How a signed-in player gets each kind of code. A kind with no entry can't be made yet. */
 interface Minter {
   minutes: number;
   /** Hand back the player's live code of this kind instead of making another, so Stop this code stops the one link they shared. */
   reuse?: true;
+  target(c: Context, user: User): Target | Promise<Target>;
 }
 
 const MINTERS: Partial<Record<CodeKind, Minter>> = {
-  "friend-now": { minutes: 10 },
-  "friend-link": { minutes: 7 * DAY_MINUTES, reuse: true },
+  "friend-now": { minutes: 10, target: (_, user) => ({ targetId: user.user_id }) },
+  "friend-link": { minutes: 7 * DAY_MINUTES, reuse: true, target: (_, user) => ({ targetId: user.user_id }) },
+  band: { minutes: 7 * DAY_MINUTES, reuse: true, target: bandInviteTarget },
 };
 
 const fieldsOf = (row: CodeRow): CodeFields => ({ kind: row.kind, codeId: row.code_id, expiresAt: row.expires_at, nonce: row.nonce });
@@ -81,20 +87,22 @@ export const CODE_ROUTES: Record<string, Route> = {
     const minter = typeof kind === "string" && (CODE_KINDS as readonly string[]).includes(kind) ? MINTERS[kind as CodeKind] : undefined;
     if (!minter) throw new Refused("bad-kind");
     const user = signedIn(c);
+    const target = await minter.target(c, user);
     const reused = minter.reuse
       ? c.sql
-          .exec<CodeRow>(`SELECT * FROM codes WHERE created_by = ? AND kind = ? AND stopped_at IS NULL AND expires_at > ? ORDER BY expires_at DESC LIMIT 1`, user.user_id, kind, c.now)
+          .exec<CodeRow>(`SELECT * FROM codes WHERE created_by = ? AND kind = ? AND target_id = ? AND stopped_at IS NULL AND expires_at > ? ORDER BY expires_at DESC LIMIT 1`, user.user_id, kind, target.targetId, c.now)
           .toArray()[0]
       : undefined;
     if (reused) return { body: await codeView(c.env, reused) };
     const row: CodeRow = {
       code_id: toBase64Url(randomBytes(12)),
       kind: kind as CodeKind,
-      target_id: user.user_id,
+      target_id: target.targetId,
       created_by: user.user_id,
       nonce: toBase64Url(randomBytes(6)),
       expires_at: c.now + minter.minutes * (Number(c.env.CODE_MINUTE_MS) || MINUTE_MS),
       stopped_at: null,
+      created_at: c.now,
     };
     c.sql.exec(`DELETE FROM codes WHERE expires_at <= ?`, c.now);
     c.sql.exec(

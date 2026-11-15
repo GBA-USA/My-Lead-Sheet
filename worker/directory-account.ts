@@ -4,7 +4,7 @@ import { clientChallenge, creationOptions, relyingParty, requestOptions, verifyA
 import { fromBase64Url, randomBytes, sha256, toBase64Url, utf8 } from "./bytes";
 import type { Env } from "./index";
 import { Refused } from "./refused";
-import { CLEARED_COOKIE, needsRenewal, readSession, sessionCookie, signSession, type Session } from "./session";
+import { CLEARED_COOKIE, cookieValue, needsRenewal, readSession, sessionCookie, signSession, type Session } from "./session";
 
 const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS users (
@@ -262,16 +262,6 @@ function waitLeft(sql: SqlStorage, counter: string, rule: WaitRule, now: number)
 
 const googleCookie = (state: string, ttlMs: number) => `${GOOGLE_COOKIE}=${state}; ${GOOGLE_COOKIE_ATTRIBUTES}; Max-Age=${Math.ceil(ttlMs / 1000)}`;
 const CLEARED_GOOGLE_COOKIE = `${GOOGLE_COOKIE}=; ${GOOGLE_COOKIE_ATTRIBUTES}; Max-Age=0`;
-
-function cookieValue(header: string | null, name: string): string {
-  return (
-    header
-      ?.split(";")
-      .map((part) => part.trim())
-      .find((part) => part.startsWith(`${name}=`))
-      ?.slice(name.length + 1) ?? ""
-  );
-}
 
 function requireGoogle(env: Env): { client: GoogleClient; secret: string } {
   const client = googleClient(env);

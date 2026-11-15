@@ -1,6 +1,5 @@
 import { useEffect, useId, useState } from "react";
-import { CHOICES } from "./band-library";
-import type { SongContent } from "./band-library-model";
+import { CHOICES, content } from "./band-library";
 import { newMsgId, type ChatMessage, type Queued } from "./chat-model";
 import { onDelivery, queueMessage, sendQueued, type Delivery } from "./chat-queue";
 import { useEscape, useStored } from "./hooks";
@@ -34,8 +33,6 @@ const messageFor = (error: unknown) => {
   const reason = error instanceof ApiError ? (error.status >= 500 ? "offline" : error.reason) : "";
   return SEND_MESSAGES[reason] ?? "Something went wrong. Try again.";
 };
-
-const content = ({ ref: _ref, id: _id, copy: _copy, ...song }: Song): SongContent => song;
 
 /** Per account, per song, per friend: the share id last sent, so sending the same song again is an update. */
 const SENT_KEY = "leadSheetsSentSongs";

@@ -290,7 +290,7 @@ export function choiceIn(body: Record<string, unknown>): ShareChoice {
 }
 
 const LINE_FIELDS = ["chords", "lyrics", "bars", "note"] as const;
-const record = (value: unknown) => (typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null);
+export const record = (value: unknown) => (typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null);
 
 function lineIn(value: unknown): ChartLine {
   const line = record(value);

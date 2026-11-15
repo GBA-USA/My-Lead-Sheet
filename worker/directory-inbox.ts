@@ -7,7 +7,7 @@ import { pairOf } from "./directory-friends";
 import { signedIn, userById, who, type Context, type Route, type User } from "./directory-http";
 import { fromRoom, Refused } from "./refused";
 import type { Posted } from "./room-chat";
-import { choiceIn, guardContent, printOf, receivedCopy, selfRoom, songIn } from "./room-library";
+import { choiceIn, guardContent, printOf, receivedCopy, record, selfRoom, songIn } from "./room-library";
 
 const ROOM_ID = /^(band|dm)_[A-Za-z0-9_-]{22}$/;
 const MSG_ID = /^[A-Za-z0-9_-]{8,64}$/;
@@ -64,7 +64,6 @@ function seqIn(value: unknown): number {
 
 const SHARE_ID = /^[A-Za-z0-9]{16,64}$/;
 const MAX_VERSIONS = 20;
-const record = (value: unknown) => (typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null);
 
 function idOrNull(value: unknown, pattern: RegExp): string | null {
   if (value === undefined || value === null) return null;

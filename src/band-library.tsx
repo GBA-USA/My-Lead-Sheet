@@ -34,7 +34,7 @@ export const CHOICES: Record<ShareChoice, { label: string; line: string }> = {
   public: { label: "Public", line: "They can pass it on." },
 };
 
-const content = ({ ref: _ref, id: _id, copy: _copy, ...song }: Song): SongContent => song;
+export const content = ({ ref: _ref, id: _id, copy: _copy, ...song }: Song): SongContent => song;
 const titleOf = (song: BandSong | undefined) => song?.song.title ?? "A song no longer in the band";
 const lockFor = (item: { sharedAs: ShareChoice }) =>
   item.sharedAs === "private" ? (

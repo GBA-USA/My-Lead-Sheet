@@ -1,6 +1,6 @@
 import { CODE_KINDS, CODE_REFUSED, CODE_SCREEN, readPayload, signedText, type CodeFields, type CodeKind } from "../src/code-link";
 import { fromBase64Url, randomBytes, toBase64Url, utf8 } from "./bytes";
-import { signedIn, type Route } from "./directory-account";
+import { signedIn, type Route } from "./directory-http";
 import type { Env } from "./index";
 import { Refused } from "./refused";
 import { hmacKey } from "./session";

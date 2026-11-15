@@ -32,7 +32,7 @@ for (const { what, pattern, home, dir } of ONE_COPY) {
 }
 
 const lines = (file: string) => text.get(file)?.split("\n").length ?? 0;
-const defines = (file: string, name: string) => new RegExp(`(function|const|interface|type) ${name}\\b`).test(text.get(file) ?? "");
+const defines = (file: string, name: string) => new RegExp(`^(export )?(async )?(function|const|interface|type) ${name}\\b`, "m").test(text.get(file) ?? "");
 
 check(lines("src/App.tsx") <= 450, `src/App.tsx is at most 450 lines (has ${lines("src/App.tsx")})`);
 check(!["parseHash", "SongList", "SetlistList", "SongBody", "Tab"].some((name) => defines("src/App.tsx", name)), "route parsing and the library lists live outside src/App.tsx");

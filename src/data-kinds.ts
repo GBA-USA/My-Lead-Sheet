@@ -22,6 +22,7 @@ export const DATA_KINDS: readonly DataKind[] = [
     place: "phone",
     what: "The scroll timings you taught or learned for each song: tap times, beat times, section times and chord names heard. No sound is kept.",
   },
+  { key: "leadSheetsSignedIn", place: "phone", what: "That this phone signed in before, so the app checks your account when it opens. Signing out removes it." },
   {
     key: "leadSheetsBackup",
     place: "phone",
@@ -51,6 +52,16 @@ export const DATA_KINDS: readonly DataKind[] = [
     key: "password_misses",
     place: "server",
     what: "Each wrong password try, kept as one-way codes of the username typed and of the network address it came from, with the time, so waits can grow. A try stops counting after a day and is cleared out at the next wrong try.",
+  },
+  {
+    key: "codes",
+    place: "server",
+    what: "Each code or share link you make: its kind, who it adds or what it opens, when it ends, and whether you stopped it. Ended codes are cleared out when the next code is made.",
+  },
+  {
+    key: "friendships",
+    place: "server",
+    what: "For each person you asked, who asked you, or you blocked: whether it is a request, a friendship or a block, who asked or blocked, and when it last changed.",
   },
   {
     key: "backup_items",

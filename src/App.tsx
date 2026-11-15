@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
-import { AccountSheet, googleReturn } from "./account";
+import { AccountSheet, googleReturn, useAccount } from "./account";
 import { backupOff, backupOn, syncBackup, type BackupResult } from "./backup";
+import { clearLanding, landedCode } from "./codes";
 import { BackIcon, DotsIcon, Menu, OverflowMenu, ScreenToggle, SongControls } from "./controls";
 import { LearnedCues } from "./cues";
 import { useAutoScroll, usePerformance, useStored, useWakeLock } from "./hooks";
@@ -9,6 +10,7 @@ import { initialMetronomeBpm } from "./metronome";
 import { useMetronome } from "./metronome-view";
 import { displayKeyLabel } from "./music";
 import { READING_LINE, changeTempo, evenPlan, nextVersionName, scrollMotion, startTake, toggleHold, type ScrollVersion, type Take } from "./scroll-timing";
+import { FriendsSheet } from "./friends";
 import { LeadSheet } from "./sheet";
 import { PRIVACY_HREF } from "./data-kinds";
 import type { Account } from "./sign-in-methods";
@@ -83,8 +85,23 @@ export function App() {
   const [textIndex, setTextIndex] = useStored(loadTextScaleIndex);
   const [awake, setAwake] = useStored(loadAwake);
   const [menu, setMenu] = useState<MenuId>(null);
-  const [account, setAccount] = useState<Account | null>(null);
+  const { account, setAccount, checking } = useAccount();
   const [accountOpen, setAccountOpen] = useState(() => googleReturn() !== null);
+  const [friends, setFriends] = useState<{ code?: string } | null>(null);
+  const [landed, setLanded] = useState(landedCode);
+
+  useEffect(() => {
+    if (landed) clearLanding();
+  }, []);
+
+  useEffect(() => {
+    if (landed?.screen !== "friends" || checking) return;
+    if (!account) return setAccountOpen(true);
+    setAccountOpen(false);
+    setFriends({ code: landed.code });
+    setLanded(null);
+  }, [landed, account, checking]);
+
   const [backup, setBackup] = useState<BackupResult | null>(null);
 
   const runBackup = useCallback(async (onlyIfChanged = false) => {
@@ -278,6 +295,18 @@ export function App() {
             >
               {account ? "Account" : "Sign in"}
             </button>
+            {account ? (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  closeMenu();
+                  setFriends({});
+                }}
+              >
+                Friends
+              </button>
+            ) : null}
           </Menu>
         )}
       </header>
@@ -378,6 +407,18 @@ export function App() {
       ) : null}
 
       {accountOpen ? <AccountSheet account={account} backup={backup} onAccount={onAccount} onClose={() => setAccountOpen(false)} /> : null}
+
+      {friends && account ? (
+        <FriendsSheet
+          account={account}
+          code={friends.code}
+          onSignedOut={() => {
+            setAccount(null);
+            setFriends(null);
+          }}
+          onClose={() => setFriends(null)}
+        />
+      ) : null}
 
       {liveSetlist && liveSetlist.songRefs.length > 0 ? (
         <div className="live-nav">

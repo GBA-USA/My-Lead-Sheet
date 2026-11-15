@@ -1,89 +1,34 @@
-export type CodeKind = "friend" | "band-invite" | "setlist" | "guest";
-export type ScannedCode = { kind: CodeKind; id: string; from?: string };
-export type Handoff = "friend-request" | "band-join" | "setlist-import" | "guest-join";
+import { codeInText } from "./code-link";
 
-export function parseCode(raw: string): ScannedCode | null {
-  const trimmed = raw.trim();
-  
-  // Try JSON
-  if (trimmed.startsWith("{")) {
-    try {
-      const parsed = JSON.parse(trimmed);
-      if (
-        typeof parsed === "object" &&
-        parsed !== null &&
-        (parsed.kind === "friend" || parsed.kind === "band-invite" || parsed.kind === "setlist" || parsed.kind === "guest") &&
-        typeof parsed.id === "string" &&
-        parsed.id.length > 0
-      ) {
-        return {
-          kind: parsed.kind,
-          id: parsed.id,
-          ...(typeof parsed.from === "string" ? { from: parsed.from } : {}),
-        };
-      }
-    } catch {
-      return null;
+const FRAME_MS = 150;
+const MAX_SIDE = 640;
+
+/**
+ * Shows the back camera in `video` and reads its frames with the bundled decoder until one holds a code link,
+ * then returns the code's payload. iOS Safari has no built-in QR decoder, so jsQR is loaded here on first use.
+ */
+export async function scanCamera(video: HTMLVideoElement, signal: AbortSignal): Promise<string> {
+  const [{ default: jsQR }, stream] = await Promise.all([import("jsqr"), navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false })]);
+  try {
+    video.srcObject = stream;
+    await video.play();
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d", { willReadFrequently: true })!;
+    while (!signal.aborted) {
+      await new Promise((done) => setTimeout(done, FRAME_MS));
+      const scale = Math.min(1, MAX_SIDE / Math.max(video.videoWidth, video.videoHeight, 1));
+      canvas.width = Math.round(video.videoWidth * scale);
+      canvas.height = Math.round(video.videoHeight * scale);
+      if (!canvas.width || !canvas.height) continue;
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const frame = context.getImageData(0, 0, canvas.width, canvas.height);
+      const found = jsQR(frame.data, frame.width, frame.height, { inversionAttempts: "dontInvert" });
+      const payload = found && codeInText(found.data);
+      if (payload) return payload;
     }
-    return null;
+    throw new DOMException("The scan was closed", "AbortError");
+  } finally {
+    for (const track of stream.getTracks()) track.stop();
+    video.srcObject = null;
   }
-  
-  // Try link
-  if (trimmed.startsWith("https://")) {
-    const match = trimmed.match(/^https:\/\/[^/]+\/c\/([^/]+)\/(.+)$/);
-    if (match) {
-      const kind = match[1];
-      const encodedId = match[2];
-      if (kind === "friend" || kind === "band-invite" || kind === "setlist" || kind === "guest") {
-        try {
-          const id = decodeURIComponent(encodedId);
-          if (id.length > 0) {
-            return { kind, id };
-          }
-        } catch {
-          return null;
-        }
-      }
-    }
-    return null;
-  }
-  
-  return null;
-}
-
-export function handoffFor(code: ScannedCode): Handoff {
-  switch (code.kind) {
-    case "friend":
-      return "friend-request";
-    case "band-invite":
-      return "band-join";
-    case "setlist":
-      return "setlist-import";
-    case "guest":
-      return "guest-join";
-  }
-}
-
-export type FakeCamera = { frames: string[] };
-
-export function scanFeed(cam: FakeCamera): ScannedCode | null {
-  for (const frame of cam.frames) {
-    const parsed = parseCode(frame);
-    if (parsed) {
-      return parsed;
-    }
-  }
-  return null;
-}
-
-export type MyCode = { kind: CodeKind; id: string; active: boolean };
-
-export function stopCode(codes: MyCode[], id: string): MyCode[] {
-  return codes.map((code) =>
-    code.id === id ? { ...code, active: false } : code
-  );
-}
-
-export function isLive(codes: MyCode[], scanned: ScannedCode): boolean {
-  return codes.some((code) => code.kind === scanned.kind && code.id === scanned.id && code.active);
 }

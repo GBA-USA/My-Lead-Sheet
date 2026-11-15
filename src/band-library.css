@@ -1,0 +1,95 @@
+.band-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--bg-2);
+}
+
+.band-tabs [role="tab"] {
+  flex: 1;
+  min-height: 44px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: var(--text-dim);
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.band-tabs [role="tab"][aria-selected="true"] {
+  border-bottom-color: var(--gold);
+  color: var(--text);
+}
+
+.band-library-tools {
+  display: grid;
+  gap: 8px;
+}
+
+.band-library-name {
+  font-weight: 700;
+}
+
+.band-library-lock {
+  font-size: 14px;
+}
+
+.band-library-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.band-library-chip,
+.band-library-choice,
+.band-library-pick-row {
+  min-height: 44px;
+  border: 1px solid var(--bg-2);
+  border-radius: 999px;
+  padding: 0 14px;
+  background: transparent;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.band-library-chip[aria-pressed="true"],
+.band-library-choice[aria-pressed="true"] {
+  border-color: var(--gold);
+  background: var(--gold);
+  color: var(--on-gold);
+}
+
+.band-library-pick-row {
+  display: grid;
+  width: 100%;
+  padding: 8px 14px;
+  border-radius: 12px;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.band-library-pick-row small,
+.band-library-choices small {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.band-library-pick-row:disabled {
+  opacity: 0.5;
+}
+
+.band-library-share,
+.band-library-choices {
+  display: grid;
+  gap: 12px;
+}
+
+.band-library-choices > div {
+  display: grid;
+  gap: 4px;
+}
+
+.band-library-choice {
+  min-height: 56px;
+  font-weight: 700;
+  font-size: 17px;
+}

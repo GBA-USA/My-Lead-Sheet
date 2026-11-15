@@ -170,7 +170,7 @@ export function bandIdIn(body: Record<string, unknown>): string {
   return body.bandId;
 }
 
-const roomOf = (c: Context, bandId: string) => c.env.ROOM.getByName(bandId);
+export const roomOf = (c: Context, bandId: string) => c.env.ROOM.getByName(bandId);
 
 function userIdIn(body: Record<string, unknown>): string {
   if (typeof body.userId !== "string" || body.userId.length > 64) throw new Refused("bad-request");
@@ -189,6 +189,8 @@ async function bandCode(c: Context) {
   return row;
 }
 
+export const bandIdsOf = (sql: SqlStorage, userId: string) => sql.exec<{ room_id: string }>(`SELECT room_id FROM band_rooms WHERE user_id = ?`, userId).toArray().map((row) => row.room_id);
+
 /** The band goes on the player's Bands list and, as a thread, on their Messages list. */
 function remember(c: Context, userId: string, band: BandView) {
   c.sql.exec(`INSERT OR IGNORE INTO band_rooms (user_id, room_id) VALUES (?, ?)`, userId, band.bandId);
@@ -204,7 +206,7 @@ export const BAND_ROUTES: Record<string, Route> = {
   /** The Directory only remembers which rooms to ask. Each room says whether the caller is still in it, and a room that says no is forgotten. */
   async "GET /api/bands"(c) {
     const me = signedIn(c).user_id;
-    const ids = c.sql.exec<{ room_id: string }>(`SELECT room_id FROM band_rooms WHERE user_id = ?`, me).toArray().map((row) => row.room_id);
+    const ids = bandIdsOf(c.sql, me);
     const found = await Promise.all(ids.map((id) => roomOf(c, id).bandSummary(me)));
     ids.forEach((id, index) => found[index] === null && forget(c, me, id));
     const bands = found.filter((band): band is BandSummary => band !== null).sort((a, b) => a.name.localeCompare(b.name));

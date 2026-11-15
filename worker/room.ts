@@ -1,7 +1,9 @@
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "./index";
 import { handleBackup } from "./room-backup";
+import { bandLibrary, createLibraryTables, selfCopies, type SetlistFields, type SetlistShare, type SongChange, type SongShare } from "./room-library";
 import { bandRoom, createMemberTables, NOT_A_MEMBER_CLOSE, shutOut } from "./room-members";
+import type { StoredShare } from "./share-guard";
 
 const RELAYED = ["intro", "ping", "pong"] as const;
 type RelayKind = (typeof RELAYED)[number];
@@ -43,6 +45,7 @@ export class Room extends DurableObject<Env> {
     super(ctx, env);
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS session_floors (user_id TEXT PRIMARY KEY, version INTEGER NOT NULL)`);
     createMemberTables(ctx.storage.sql);
+    createLibraryTables(ctx.storage.sql);
   }
 
   private floor(userId: string): number {
@@ -132,6 +135,47 @@ export class Room extends DurableObject<Env> {
 
   bandPack(userId: string) {
     return bandRoom.pack(this.band, userId);
+  }
+
+  bandLibrary(userId: string) {
+    return bandLibrary.view(this.band, userId);
+  }
+
+  requireMember(userId: string) {
+    bandLibrary.requireMember(this.band, userId);
+  }
+
+  shareSong(userId: string, share: SongShare, from: StoredShare[] | null, now: number) {
+    return bandLibrary.shareSong(this.band, userId, share, from, now);
+  }
+
+  shareSetlist(userId: string, fields: SetlistShare, now: number) {
+    return bandLibrary.shareSetlist(this.band, userId, fields, now);
+  }
+
+  editBandSong(userId: string, songId: string, base: number, change: SongChange | null, now: number) {
+    return bandLibrary.editSong(this.band, userId, songId, base, change, now);
+  }
+
+  editBandSetlist(userId: string, setlistId: string, base: number, fields: SetlistFields, now: number) {
+    return bandLibrary.editSetlist(this.band, userId, setlistId, base, fields, now);
+  }
+
+  copyBandSong(userId: string, songId: string) {
+    return bandLibrary.copyOut(this.band, userId, songId);
+  }
+
+  heldByPrint(userId: string, print: string, except: string | null, takenFrom: string[] | null) {
+    return bandLibrary.heldByPrint(this.band, userId, print, except, takenFrom);
+  }
+
+  /** Self room only: the Directory names it from the session, so the copies here are always the caller's. */
+  recordCopy(userId: string, from: StoredShare[], print: string) {
+    return selfCopies.record(this.ctx.storage.sql, userId, from, print);
+  }
+
+  copyChains(copyId: string | null, print: string) {
+    return selfCopies.chains(this.ctx.storage.sql, copyId, print);
   }
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {

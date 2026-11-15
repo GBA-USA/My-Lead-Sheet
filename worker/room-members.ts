@@ -23,9 +23,12 @@ const ROOM_REFUSALS = {
   "band-exists": 409,
   "code-stopped": 410,
   yourself: 400,
+  "not-yours": 403,
+  "not-a-band-song": 400,
+  lineage_broken: 403,
 } as const;
 
-const refused = (reason: keyof typeof ROOM_REFUSALS) => new Refused(reason, ROOM_REFUSALS[reason]);
+export const refused = (reason: keyof typeof ROOM_REFUSALS) => new Refused(reason, ROOM_REFUSALS[reason]);
 
 export function createMemberTables(sql: SqlStorage) {
   sql.exec(`CREATE TABLE IF NOT EXISTS meta (
@@ -53,7 +56,7 @@ const activeAdmins = (sql: SqlStorage) => sql.exec<{ n: number }>(`SELECT count(
 /** Whether this room is a band that `userId` may not enter. Rooms that are not bands stay open to any signed-in player. */
 export const shutOut = (sql: SqlStorage, userId: string) => metaOf(sql) !== undefined && memberOf(sql, userId)?.state !== "active";
 
-function inBand(sql: SqlStorage, userId: string): { meta: Meta; me: MemberRow } {
+export function inBand(sql: SqlStorage, userId: string): { meta: Meta; me: MemberRow } {
   const meta = metaOf(sql);
   if (!meta) throw refused("no-band");
   const me = memberOf(sql, userId);
@@ -73,7 +76,7 @@ function activeTarget(sql: SqlStorage, userId: string): MemberRow {
   return target;
 }
 
-type Band = { sql: SqlStorage; bandId: string };
+export type Band = { sql: SqlStorage; bandId: string };
 
 function view({ sql, bandId }: Band, userId: string): BandView {
   const { meta, me } = inBand(sql, userId);
@@ -177,7 +180,7 @@ export function createBandIndex(sql: SqlStorage) {
   )`);
 }
 
-async function fromRoom<T>(call: Promise<T>): Promise<T> {
+export async function fromRoom<T>(call: Promise<T>): Promise<T> {
   try {
     return await call;
   } catch (error) {
@@ -192,7 +195,7 @@ export function bandIdIn(body: Record<string, unknown>): string {
   return body.bandId;
 }
 
-const roomOf = (c: Context, bandId: string) => c.env.ROOM.getByName(bandId);
+export const roomOf = (c: Context, bandId: string) => c.env.ROOM.getByName(bandId);
 const who = (user: User) => ({ userId: user.user_id, name: user.display_name });
 
 function userIdIn(body: Record<string, unknown>): string {
@@ -212,6 +215,8 @@ async function bandCode(c: Context) {
   return row;
 }
 
+export const bandIdsOf = (sql: SqlStorage, userId: string) => sql.exec<{ room_id: string }>(`SELECT room_id FROM band_rooms WHERE user_id = ?`, userId).toArray().map((row) => row.room_id);
+
 function remember(c: Context, userId: string, bandId: string) {
   c.sql.exec(`INSERT OR IGNORE INTO band_rooms (user_id, room_id) VALUES (?, ?)`, userId, bandId);
 }
@@ -224,7 +229,7 @@ export const BAND_ROUTES: Record<string, Route> = {
   /** The Directory only remembers which rooms to ask. Each room says whether the caller is still in it, and a room that says no is forgotten. */
   async "GET /api/bands"(c) {
     const me = signedIn(c).user_id;
-    const ids = c.sql.exec<{ room_id: string }>(`SELECT room_id FROM band_rooms WHERE user_id = ?`, me).toArray().map((row) => row.room_id);
+    const ids = bandIdsOf(c.sql, me);
     const found = await Promise.all(ids.map((id) => roomOf(c, id).bandSummary(me)));
     ids.forEach((id, index) => found[index] === null && forget(c, me, id));
     const bands = found.filter((band): band is BandSummary => band !== null).sort((a, b) => a.name.localeCompare(b.name));

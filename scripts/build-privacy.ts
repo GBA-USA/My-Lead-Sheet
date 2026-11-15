@@ -33,7 +33,7 @@ export function privacyHtml(contact: string | undefined): string {
     <p><a href="./">Back to Lead Sheets</a></p>
 
     <h2>What the app keeps on this phone</h2>
-    <p>These stay in this browser on this phone. They are not sent anywhere.</p>
+    <p>These stay in this browser on this phone. Signed out, they are not sent anywhere. Signed in, the phone also sends a copy of your songs, setlists, timings and settings to your own backup on the server (listed below), so your other phones get them. The metronome settings stay on this phone. Nobody else can read your backup.</p>
     ${kindList("phone", "Nothing.")}
 
     <h2>What the app keeps on its server</h2>

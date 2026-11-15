@@ -15,38 +15,32 @@ import {
   type Tempo,
 } from "./scroll-timing";
 import { formatRuntime, parseBpm, parseRuntime } from "./song-data-editor";
-import { loadScrollVersions, saveScrollVersions, type ScrollVersions } from "./storage";
+import { useStored } from "./hooks";
+import { loadScrollVersions, updateScrollVersions, type ScrollVersions } from "./storage";
 import type { SongRef } from "./types";
 import "./teach.css";
 
 const NONE: ScrollVersions = { versions: [], selected: null };
 
-/** The current song's taught versions, saved on every change. */
+/** The current song's taught versions. Each change applies to the stored versions and is saved at once. */
 export function useScrollVersions(songRef: SongRef | null) {
-  const [state, setState] = useState<ScrollVersions>(NONE);
-  const [boundRef, setBoundRef] = useState<SongRef | null>(null);
+  const [state, setState] = useStored(() => (songRef == null ? NONE : loadScrollVersions(songRef)), songRef);
 
-  if (songRef !== boundRef) {
-    setBoundRef(songRef);
-    setState(songRef == null ? NONE : loadScrollVersions(songRef));
-  }
-
-  const update = (next: ScrollVersions) => {
-    setState(next);
-    if (songRef != null) saveScrollVersions(songRef, next);
+  const update = (change: (current: ScrollVersions) => ScrollVersions) => {
+    if (songRef != null) setState(updateScrollVersions(songRef, change));
   };
   const edit = (index: number, change: (version: ScrollVersion) => ScrollVersion) =>
-    update({ ...state, versions: state.versions.map((version, i) => (i === index ? change(version) : version)) });
+    update((current) => ({ ...current, versions: current.versions.map((version, i) => (i === index ? change(version) : version)) }));
 
   return {
     ...state,
-    select: (selected: number | null) => update({ ...state, selected }),
+    select: (selected: number | null) => update((current) => ({ ...current, selected })),
     rename: (index: number, name: string) => edit(index, (version) => ({ ...version, name })),
     retime: (index: number, tempo: Tempo[]) => edit(index, (version) => withTempo(version, tempo)),
-    add: (plan: Omit<ScrollVersion, "name">, name = nextVersionName(state.versions)) =>
-      update({ versions: [...state.versions, { name, ...plan }], selected: state.versions.length }),
+    add: (plan: Omit<ScrollVersion, "name">, name?: string) =>
+      update((current) => ({ versions: [...current.versions, { name: name ?? nextVersionName(current.versions), ...plan }], selected: current.versions.length })),
     /** Deletes the chosen version and goes back to the even pace. */
-    remove: () => update({ versions: state.versions.filter((_, i) => i !== state.selected), selected: null }),
+    remove: () => update((current) => ({ versions: current.versions.filter((_, i) => i !== current.selected), selected: null })),
   };
 }
 

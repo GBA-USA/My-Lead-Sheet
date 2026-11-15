@@ -72,14 +72,10 @@ async function apiChecks() {
     assert.equal((await terry.call("/api/codes", { kind: "friend-link" })).body.code, shared.body.code, "Share link again hands back the same live link");
     assert.equal((await land(base, shared.body.code)).location, `${TEST_ORIGIN}/?open=friends&code=${shared.body.code}`, "a friend link lands on Friends");
 
-    const privateCopy = await terry.call("/api/codes", { kind: "my-setlist", setlistId: "local/3", songIds: ["local/1"], sharedAs: "public", reshareable: false });
-    assert.deepEqual([privateCopy.status, privateCopy.body.error], [403, "shared-privately"], "asking for a code on a Private copy is refused by the server");
-    const ownSetlist = await terry.call("/api/codes", { kind: "my-setlist", setlistId: "local/3", songIds: ["local/1", "local/7"], sharedAs: "private", reshareable: true });
-    assert.equal(ownSetlist.status, 200, "an original setlist gets a code");
-    assert.ok(!ownSetlist.body.link.includes("local"), "a setlist code carries no setlist or song id");
-    assert.equal((await land(base, ownSetlist.body.code)).location, `${TEST_ORIGIN}/?open=setlists&code=${ownSetlist.body.code}`, "a setlist code lands on Setlists");
-    pass("each kind this server makes lands on its screen, and a Private copy gets no code");
+    pass("each kind this server makes lands on its screen");
 
+    const claimedReshareable = await terry.call("/api/codes", { kind: "my-setlist", setlistId: "local/3", songIds: ["local/1"], sharedAs: "public", reshareable: true });
+    assert.deepEqual([claimedReshareable.status, claimedReshareable.body.error], [400, "bad-kind"], "a setlist code is not made while the server holds no setlist lineage, whatever the phone claims");
     for (const kind of ["gig", "guest", "band-setlist"]) assert.deepEqual((await terry.call("/api/codes", { kind })).body.error, "bad-kind", `${kind} codes, whose screens are not built yet, are not made`);
     assert.equal((await new Phone(base).call("/api/codes", { kind: "friend-now" })).status, 401, "a signed-out phone gets no code");
     assert.equal((await terry.call("/api/codes", { kind: "friend-now" }, { origin: "https://evil.test" })).status, 403, "another site can't ask for a code");

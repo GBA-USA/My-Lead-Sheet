@@ -234,6 +234,20 @@ function learnedTrack(arrivals: number[], lines: number[]): Track {
   return { start, end, progressAt: (at) => progressAt(marks, at), startAt: (fraction, slack) => timeAt(marks, fraction, slack) };
 }
 
+/** Milliseconds on the clock that drives a scroll or a click, for a `performance.now()` reading: band time in a gig. */
+export type TimeSource = (perfMs: number) => number;
+
+/** The solo clock: frame times, with a frame longer than 50 ms, as after a hidden tab, counted as 50 ms. */
+function frameClock(): TimeSource {
+  let last = performance.now();
+  let total = 0;
+  return (perfMs) => {
+    total += Math.min(50, perfMs - last);
+    last = perfMs;
+    return total;
+  };
+}
+
 interface Scroller {
   scrollTop: number;
   scrollHeight: number;
@@ -245,7 +259,8 @@ interface Scroller {
 /**
  * Drives `el` until `onStop`. Grabbing or a manual scroll stops with "user"; reaching the end stops with "end".
  * `motion` and `section` are read every frame, so a BPM, percent or text size change applies at once.
- * The timed clock is written to `clock` for teach taps.
+ * The timed clock is written to `clock` for teach taps. It moves with `time`, so in a gig every frame lands where
+ * band time puts it however late the frame is.
  * The even pace started from the top of the chord section holds there for its first 2 seconds, so the first chords
  * can be read, and plays the rest a touch faster to still end on time. A taught version keeps its own timing, and
  * a resume or a live take does not hold.
@@ -256,6 +271,7 @@ export function runScroll(
   section: () => Section | null,
   clock: { current: number },
   onStop: (reason: "user" | "end") => void,
+  time: TimeSource = frameClock(),
 ): () => void {
   const limit = () => Math.max(0, el.scrollHeight - el.clientHeight);
   const track = (current: Exclude<Motion, { kind: "pace" }>): Track => {
@@ -288,7 +304,7 @@ export function runScroll(
   let expected = position;
   let armed = false;
   let frame = 0;
-  let last = performance.now();
+  let last = time(performance.now());
 
   const stop = () => onStop("user");
   const onScroll = () => {
@@ -307,8 +323,9 @@ export function runScroll(
     el.scrollTop = next;
   };
 
-  const tick = (now: number) => {
-    const dt = Math.min(0.05, (now - last) / 1000);
+  const tick = (frameMs: number) => {
+    const now = time(frameMs);
+    const dt = (now - last) / 1000;
     last = now;
     const current = motion.current;
     if (current.kind !== "pace") {

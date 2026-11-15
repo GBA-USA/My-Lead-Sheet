@@ -158,10 +158,11 @@ async function appChecks() {
     sockets.push(memberSocket.ws);
     const sent = await site.evaluate<string[]>(`JSON.parse(sessionStorage.getItem("__sent") ?? "[]")`);
     assert.ok(sent.some((entry) => entry.includes(`"scrollWithLeader":true`)), `the recorder saw Sam's phone send the setting (${sent.length} sends)`);
-    for (const [where, text] of [["the gig pack", JSON.stringify(pack)], ["the band room's socket message", memberSocket.first], ...sent.map((entry) => ["what Sam's phone sent", entry])]) {
+    const shared = sent.filter((entry) => !/^fetch \S*\/api\/backup /.test(entry));
+    for (const [where, text] of [["the gig pack", JSON.stringify(pack)], ["the band room's socket message", memberSocket.first], ...shared.map((entry) => ["what Sam's phone sent", entry])]) {
       for (const mark of PRIVATE_MARKS) assert.ok(!text.includes(mark), `Sam's private timing version (${mark}) never appears in ${where}: ${text.slice(0, 160)}`);
     }
-    pass(`Sam's private timing version never appears in the pack, the room's socket message, or any of ${sent.length} things Sam's phone sent`);
+    pass(`Sam's private timing version never appears in the pack, the room's socket message, or any of ${shared.length} things Sam's phone sent outside its own backup`);
 
     assert.deepEqual(await app.errors(), [], "no page errors");
   } finally {

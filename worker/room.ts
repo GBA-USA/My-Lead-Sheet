@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "./index";
+import { handleBackup } from "./room-backup";
 import { bandRoom, createMemberTables, NOT_A_MEMBER_CLOSE, shutOut } from "./room-members";
 
 const RELAYED = ["intro", "ping", "pong"] as const;
@@ -33,6 +34,7 @@ function send(ws: WebSocket, message: Outbound) {
 export const USER_HEADER = "X-MLS-User";
 export const SESSION_HEADER = "X-MLS-Session";
 export const SIGNED_OUT_CLOSE = 4401;
+export const BACKUP_PATH = "/api/backup";
 
 const userTag = (userId: string) => `user:${userId}`;
 
@@ -52,6 +54,7 @@ export class Room extends DurableObject<Env> {
     const version = Number(request.headers.get(SESSION_HEADER));
     if (!userId || !(version >= this.floor(userId))) return Response.json({ error: "signed-out" }, { status: 401 });
     if (shutOut(this.ctx.storage.sql, userId)) return Response.json({ error: "not-a-member" }, { status: 403 });
+    if (new URL(request.url).pathname === BACKUP_PATH) return handleBackup(request, this.ctx.storage, this.ctx.id.name, userId);
     if (request.headers.get("Upgrade") !== "websocket") {
       return Response.json({ room: this.ctx.id.name, peers: this.ctx.getWebSockets().length });
     }

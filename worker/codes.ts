@@ -1,5 +1,4 @@
 import { CODE_KINDS, CODE_REFUSED, CODE_SCREEN, readPayload, signedText, type CodeFields, type CodeKind } from "../src/code-link";
-import { reshareable } from "../src/share-rule";
 import { fromBase64Url, randomBytes, toBase64Url, utf8 } from "./bytes";
 import { signedIn, type Context, type Route, type User } from "./directory-account";
 import type { Env } from "./index";
@@ -9,7 +8,6 @@ import { hmacKey } from "./session";
 
 const MINUTE_MS = 60 * 1000;
 const DAY_MINUTES = 24 * 60;
-const MAX_SONGS = 500;
 
 export const LANDING_PATH = /^\/c\/([^/]+)$/;
 
@@ -22,8 +20,6 @@ export function createCodeTables(sql: SqlStorage) {
     nonce TEXT NOT NULL,
     expires_at INTEGER NOT NULL,
     stopped_at INTEGER,
-    song_ids TEXT,
-    shared_as TEXT,
     created_at INTEGER NOT NULL
   )`);
   sql.exec(`CREATE INDEX IF NOT EXISTS codes_by_owner ON codes (created_by, kind, expires_at)`);
@@ -37,12 +33,10 @@ export type CodeRow = {
   nonce: string;
   expires_at: number;
   stopped_at: number | null;
-  song_ids: string | null;
-  shared_as: string | null;
   created_at: number;
 };
 
-type Target = { targetId: string; songIds?: string[]; sharedAs?: "private" | "public" };
+type Target = { targetId: string };
 
 /** How a signed-in player gets each kind of code. A kind with no entry can't be made yet. */
 interface Minter {
@@ -52,19 +46,9 @@ interface Minter {
   target(c: Context, user: User): Target | Promise<Target>;
 }
 
-function setlistCopy(body: Record<string, unknown>): Target {
-  const { setlistId, songIds, sharedAs } = body;
-  if (!reshareable({ reshareable: body.reshareable === true }, "public")) throw new Refused("shared-privately", 403);
-  if (typeof setlistId !== "string" || !/^[A-Za-z0-9_/-]{1,80}$/.test(setlistId)) throw new Refused("bad-request");
-  if (!Array.isArray(songIds) || songIds.length < 1 || songIds.length > MAX_SONGS || !songIds.every((id) => typeof id === "string" && id.length <= 80)) throw new Refused("bad-request");
-  if (sharedAs !== "private" && sharedAs !== "public") throw new Refused("bad-request");
-  return { targetId: setlistId, songIds, sharedAs };
-}
-
 const MINTERS: Partial<Record<CodeKind, Minter>> = {
   "friend-now": { minutes: 10, target: (_, user) => ({ targetId: user.user_id }) },
   "friend-link": { minutes: 7 * DAY_MINUTES, reuse: true, target: (_, user) => ({ targetId: user.user_id }) },
-  "my-setlist": { minutes: 7 * DAY_MINUTES, target: (c) => setlistCopy(c.body) },
   band: { minutes: 7 * DAY_MINUTES, reuse: true, target: bandInviteTarget },
 };
 
@@ -118,21 +102,17 @@ export const CODE_ROUTES: Record<string, Route> = {
       nonce: toBase64Url(randomBytes(6)),
       expires_at: c.now + minter.minutes * (Number(c.env.CODE_MINUTE_MS) || MINUTE_MS),
       stopped_at: null,
-      song_ids: target.songIds ? JSON.stringify(target.songIds) : null,
-      shared_as: target.sharedAs ?? null,
       created_at: c.now,
     };
     c.sql.exec(`DELETE FROM codes WHERE expires_at <= ?`, c.now);
     c.sql.exec(
-      `INSERT INTO codes (code_id, kind, target_id, created_by, nonce, expires_at, song_ids, shared_as, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO codes (code_id, kind, target_id, created_by, nonce, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
       row.code_id,
       row.kind,
       row.target_id,
       row.created_by,
       row.nonce,
       row.expires_at,
-      row.song_ids,
-      row.shared_as,
       c.now,
     );
     return { body: await codeView(c.env, row) };

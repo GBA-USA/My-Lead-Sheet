@@ -16,7 +16,11 @@ The plan is `/workspace/mls-social-plan-2026-11-13/PLAN.md`. Where this file and
   load, so on a shared box they run one at a time under `flock /tmp/mls-auth-checks.lock`. `scripts/verify.sh`
   does this for you. Running one by hand on a shared box: `flock /tmp/mls-auth-checks.lock npm run check:password`.
 - Known flaky under load: `check:spike-links` (WebRTC "no path" timeout), `check:password`, `check:band-settings`.
-  Rerun once before calling a failure real. A second failure is yours to explain.
+  `check:google` hung once with an empty log while headless Chrome spawned gpu processes in a loop (repo-setup,
+  Nov 15 2026). Rerun once before calling a failure real. A second failure is yours to explain.
+- `scripts/verify.sh` stops a check that runs past `VERIFY_CHECK_TIMEOUT` seconds (default 1200) with its whole
+  process group, so a hung Chrome or Worker cannot hold the auth lock forever. Exit code 124 in summary.tsv
+  means the timeout stopped it. The longest honest check seen is 652s.
 - A new feature ships with a check that fails before and passes after. Checks print `ok  ` / `FAIL` lines and
   exit 1 on any FAIL (see `scripts/check-one-copy.ts` for the smallest one).
 - Deep cooks run under a Stop hook that re-runs `npm run verify` before you may finish. Fix the code; never edit

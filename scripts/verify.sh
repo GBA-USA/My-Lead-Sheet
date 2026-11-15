@@ -5,6 +5,7 @@ OUT=${VERIFY_LOG_DIR:-.verify-logs}
 mkdir -p "$OUT"
 AUTH_FAMILY=" check:auth check:account check:google check:password check:backup "
 AUTH_LOCK=/tmp/mls-auth-checks.lock
+CHECK_TIMEOUT=${VERIFY_CHECK_TIMEOUT:-1200}
 
 if [ $# -gt 0 ]; then names=("$@"); else
   mapfile -t names < <(node -e 'for (const k of Object.keys(require("./package.json").scripts)) if (k.startsWith("check:")) console.log(k)')
@@ -26,7 +27,7 @@ fi
 run_check() {
   local name=$1 log=$2 lock=()
   [[ "$AUTH_FAMILY" == *" $name "* ]] && lock=(flock "$AUTH_LOCK")
-  "${lock[@]}" npm run --silent "$name" > "$log" 2>&1 < /dev/null
+  "${lock[@]}" timeout -k 10 "$CHECK_TIMEOUT" npm run --silent "$name" > "$log" 2>&1 < /dev/null
 }
 
 failed=()

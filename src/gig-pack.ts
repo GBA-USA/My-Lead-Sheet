@@ -1,6 +1,6 @@
 import type { SongContent } from "./band-library-model";
 import type { GigPlan } from "./gig-plan-model";
-import { getFromPhone, putOnPhone } from "./phone-db";
+import { claimPhone, getFromPhone, putOnPhone } from "./phone-db";
 import type { ScrollVersion } from "./scroll-timing";
 import { api } from "./sign-in-methods";
 
@@ -24,16 +24,22 @@ export type GigPack = {
 };
 
 /** Downloads the pack and keeps it on this phone under the gig's id, so a second download replaces the first. An older rev never replaces a newer one. */
-export async function downloadPack(bandId: string, gigId: string): Promise<GigPack> {
+export async function downloadPack(userId: string, bandId: string, gigId: string): Promise<GigPack> {
   const fresh = await api<GigPack>("/api/bands/gig/pack", { bandId, gigId });
+  await claimPhone(userId);
   const kept = await getFromPhone("gigPacks", gigId);
   if (kept && kept.packRev > fresh.packRev) return kept;
   await putOnPhone("gigPacks", gigId, fresh);
   return fresh;
 }
 
-/** The packs on this phone for these gigs. A phone that can't open its database has none. */
-export async function packsOnPhone(gigIds: string[]): Promise<Record<string, GigPack>> {
+/** The packs on this phone for these gigs that `userId` downloaded. A phone that can't open its database has none. */
+export async function packsOnPhone(userId: string, gigIds: string[]): Promise<Record<string, GigPack>> {
+  const claimed = await claimPhone(userId).then(
+    () => true,
+    () => false,
+  );
+  if (!claimed) return {};
   const found = await Promise.all(gigIds.map((gigId) => getFromPhone("gigPacks", gigId).catch(() => undefined)));
   return Object.fromEntries(found.flatMap((pack) => (pack ? [[pack.gig.gigId, pack]] : [])));
 }

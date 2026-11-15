@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { BandLibraryTab, LIBRARY_MESSAGES, type LibraryTab } from "./band-library";
 import type { BandLibrary } from "./band-library-model";
 import { BandSettings } from "./band-settings";
@@ -9,6 +9,7 @@ import { downloadPack, packsOnPhone, type GigPack } from "./gig-pack";
 import { GigCard, GigPlanForm, GigSong, newGigId } from "./gig-plan";
 import type { GigDraft, GigView } from "./gig-plan-model";
 import { useEscape } from "./hooks";
+import { clearPhone } from "./phone-db";
 import { ApiError, api, type Account } from "./sign-in-methods";
 import "./friends.css";
 
@@ -66,6 +67,15 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
  * Bands: the list, one band's Setlists, Songs and Members tabs with Message on each bandmate, Invite and Band settings,
  * and a card for each gig not yet played. `code` is a band or gig code to open first.
  */
+/** Band data on this phone leaves with the account, whichever way it signed out (PLAN.md 10). A launch that never signed in, such as one with no signal, keeps it. */
+export function useBandDataOwner(userId: string | null) {
+  const last = useRef(userId);
+  useEffect(() => {
+    if (last.current && !userId) clearPhone().catch(() => {});
+    last.current = userId;
+  }, [userId]);
+}
+
 export function BandsSheet({
   account,
   code,
@@ -105,7 +115,10 @@ export function BandsSheet({
   };
 
   const failed = (caught: unknown) => {
-    if (caught instanceof ApiError && caught.status === 401) return onSignedOut();
+    if (caught instanceof ApiError && caught.status === 401) {
+      onClose();
+      return onSignedOut();
+    }
     if (caught instanceof ApiError && (caught.reason === "not-a-member" || caught.reason === "no-band")) setView({ name: "list" });
     setError(message(caught));
   };
@@ -127,7 +140,7 @@ export function BandsSheet({
   /** The band's gigs and the packs this phone holds for them, set together so the card never pairs a gig with a pack it lacks. */
   const loadGigs = async (bandId: string) => {
     const { gigs: list } = await api<{ gigs: GigView[] }>("/api/bands/gig/list", { bandId });
-    const onPhone = await packsOnPhone(list.map((item) => item.gig.gigId));
+    const onPhone = await packsOnPhone(account.userId, list.map((item) => item.gig.gigId));
     setPacks(onPhone);
     setGigs({ bandId, list });
   };
@@ -147,7 +160,7 @@ export function BandsSheet({
   useEffect(() => {
     for (const item of gigs?.list ?? []) {
       if (!item.gig.lineup.includes(account.userId) || (packs[item.gig.gigId]?.packRev ?? 0) >= item.packRev) continue;
-      downloadPack(item.gig.bandId, item.gig.gigId).then(
+      downloadPack(account.userId, item.gig.bandId, item.gig.gigId).then(
         () => loadGigs(item.gig.bandId),
         () => {},
       );
@@ -157,7 +170,7 @@ export function BandsSheet({
   const getReady = (item: GigView) =>
     run(async () => {
       try {
-        const pack = await downloadPack(item.gig.bandId, item.gig.gigId);
+        const pack = await downloadPack(account.userId, item.gig.bandId, item.gig.gigId);
         setPacks((held) => ({ ...held, [pack.gig.gigId]: pack }));
       } catch (caught) {
         if (!unreachable(caught)) throw caught;

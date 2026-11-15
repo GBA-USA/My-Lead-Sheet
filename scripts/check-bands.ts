@@ -191,6 +191,14 @@ async function appChecks() {
 
     await site.send("Page.navigate", { url: terrysLink });
     await app.until(`document.querySelector(".account-sheet")?.dataset.step === "start"`, "the sign-in screen first");
+    await app.click("✕");
+    await settle(1500);
+    assert.ok(!(await site.evaluate<boolean>(`!!document.querySelector(".account-sheet")`)), "a signed-out visitor can close the sign-in screen a band link opened");
+    assert.deepEqual(await app.openMenu(), ["Sign in"], "and is back in the app, still signed out");
+    await app.closeMenu();
+
+    await site.send("Page.navigate", { url: terrysLink });
+    await app.until(`document.querySelector(".account-sheet")?.dataset.step === "start"`, "the sign-in screen first");
     assert.equal(await site.evaluate<string>("location.search"), "", "the landed code leaves the address bar");
     await app.click("New here? Create an account");
     await app.type("Your name (what bandmates see)", "Sam Rivera");

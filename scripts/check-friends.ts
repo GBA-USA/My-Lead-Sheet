@@ -253,6 +253,15 @@ async function appChecks() {
     assert.deepEqual(await app.openMenu(), ["Sign in"], "and stays gone after a reload");
     pass("signing out takes Friends away again");
 
+    await site.send("Page.navigate", { url: (await mike.call("/api/codes", { kind: "friend-link" })).body.link });
+    await app.until(`document.querySelector(".account-sheet")?.dataset.step === "start"`, "the sign-in screen a friend link opens");
+    await app.click("✕");
+    await settle(1500);
+    assert.ok(!(await site.evaluate<boolean>(`!!document.querySelector(".account-sheet")`)), "a signed-out visitor can close the sign-in screen a friend link opened");
+    assert.deepEqual(await app.openMenu(), ["Sign in"], "and is back in the app, still signed out");
+    await app.closeMenu();
+    pass("a signed-out visitor on a friend link is asked to sign in once");
+
     assert.deepEqual(await app.errors(), [], "no page errors");
   } finally {
     await site.close();

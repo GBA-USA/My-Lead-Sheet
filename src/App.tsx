@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { AccountSheet, googleReturn, useAccount } from "./account";
 import { backupOff, backupOn, syncBackup, type BackupResult } from "./backup";
+import { BandsSheet } from "./bands";
 import { clearLanding, landedCode } from "./codes";
 import { BackIcon, DotsIcon, Menu, OverflowMenu, ScreenToggle, SongControls } from "./controls";
 import { LearnedCues } from "./cues";
@@ -88,6 +89,7 @@ export function App() {
   const { account, setAccount, checking } = useAccount();
   const [accountOpen, setAccountOpen] = useState(() => googleReturn() !== null);
   const [friends, setFriends] = useState<{ code?: string } | null>(null);
+  const [bands, setBands] = useState<{ code?: string } | null>(null);
   const [landed, setLanded] = useState(landedCode);
 
   useEffect(() => {
@@ -95,12 +97,13 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (landed?.screen !== "friends" || checking) return;
+    const open = landed?.screen === "friends" ? setFriends : landed?.screen === "bands" ? setBands : null;
+    if (!landed || !open || checking) return;
     if (!account) return setAccountOpen(true);
-    setAccountOpen(false);
-    setFriends({ code: landed.code });
+    if (accountOpen) return;
+    open({ code: landed.code });
     setLanded(null);
-  }, [landed, account, checking]);
+  }, [landed, account, checking, accountOpen]);
 
   const [backup, setBackup] = useState<BackupResult | null>(null);
 
@@ -307,6 +310,18 @@ export function App() {
                 Friends
               </button>
             ) : null}
+            {account ? (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  closeMenu();
+                  setBands({});
+                }}
+              >
+                Bands
+              </button>
+            ) : null}
           </Menu>
         )}
       </header>
@@ -406,7 +421,17 @@ export function App() {
         />
       ) : null}
 
-      {accountOpen ? <AccountSheet account={account} backup={backup} onAccount={onAccount} onClose={() => setAccountOpen(false)} /> : null}
+      {accountOpen ? (
+        <AccountSheet
+          account={account}
+          backup={backup}
+          onAccount={onAccount}
+          onClose={() => {
+            setAccountOpen(false);
+            if (!account) setLanded(null);
+          }}
+        />
+      ) : null}
 
       {friends && account ? (
         <FriendsSheet
@@ -417,6 +442,18 @@ export function App() {
             setFriends(null);
           }}
           onClose={() => setFriends(null)}
+        />
+      ) : null}
+
+      {bands && account ? (
+        <BandsSheet
+          account={account}
+          code={bands.code}
+          onSignedOut={() => {
+            setAccount(null);
+            setBands(null);
+          }}
+          onClose={() => setBands(null)}
         />
       ) : null}
 

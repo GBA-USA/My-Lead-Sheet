@@ -69,4 +69,11 @@ export const DATA_KINDS: readonly DataKind[] = [
     what: "Your backup, in a room only your account can open: the songs and setlists you added or changed, your timing versions, the runtime, tempo and time signature you entered, the scroll speed and Notes or Nashville choice for each song, and your text size and Screen on choice. Your phones sync it when you are signed in.",
   },
   { key: "session_floors", place: "server", what: "In each band or chat room, the oldest sign-in it still lets in for each person, after they signed out everywhere." },
+  { key: "meta", place: "server", what: "For each band: its name, who made it and when, and whether Scroll with the leader is on." },
+  {
+    key: "members",
+    place: "server",
+    what: "For each band: everyone who joined, with the name bandmates see, whether they are an admin, whether they are still in the band, left or were removed, and when that last changed.",
+  },
+  { key: "band_rooms", place: "server", what: "Which bands you are in, so your Bands list can find them. A band you left or were removed from is dropped the next time the list loads." },
 ];

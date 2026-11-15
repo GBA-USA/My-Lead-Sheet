@@ -36,7 +36,7 @@ export function createLibraryTables(sql: SqlStorage) {
 
 const newId = (prefix: string) => `${prefix}_${toBase64Url(randomBytes(16))}`;
 
-function storeOf(sql: SqlStorage) {
+export function storeOf(sql: SqlStorage) {
   return (id: string): StoredShare | undefined => {
     const row = sql.exec<ShareRow>(`SELECT * FROM shares WHERE id = ?`, id).toArray()[0];
     return row && { id: row.id, ownerId: row.owner_id, parentId: row.parent_id, choice: row.choice };
@@ -166,11 +166,11 @@ export const bandLibrary = {
     return songOf(band.sql, songRow(band.sql, songId), userId);
   },
 
-  shareSetlist(band: RoomStore, userId: string, fields: SetlistShare, now: number): BandSetlist {
+  shareSetlist(band: RoomStore, userId: string, fields: SetlistShare, now: number, from: Chain | null = null): BandSetlist {
     inRoom(band.sql, userId);
     bandSongsOnly(band.sql, fields.songIds);
     const setlistId = newId("setlist");
-    const shareId = adopt(band.sql, `${band.bandId}/${setlistId}`, userId, null, fields.choice);
+    const shareId = adopt(band.sql, `${band.bandId}/${setlistId}`, userId, from, fields.choice);
     band.sql.exec(
       `INSERT INTO band_setlists (setlist_id, share_id, name, song_ids, tags, shared_by, local_id, shared_at, updated_by, updated_at, rev) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
       setlistId,
@@ -269,7 +269,7 @@ export const selfCopies = {
 
 const MAX_SONG_CHARS = 12_000;
 const MAX_SETLIST_SONGS = 200;
-const isText = (value: unknown, max: number) => typeof value === "string" && value.trim().length > 0 && value.length <= max;
+export const isText = (value: unknown, max: number) => typeof value === "string" && value.trim().length > 0 && value.length <= max;
 
 function choiceIn(body: Record<string, unknown>): ShareChoice {
   if (body.choice !== "public" && body.choice !== "private") throw new Refused("choice_required");
@@ -277,7 +277,7 @@ function choiceIn(body: Record<string, unknown>): ShareChoice {
 }
 
 const LINE_FIELDS = ["chords", "lyrics", "bars", "note"] as const;
-const record = (value: unknown) => (typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null);
+export const record = (value: unknown) => (typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null);
 
 function lineIn(value: unknown): ChartLine {
   const line = record(value);
@@ -292,7 +292,7 @@ function sectionIn(value: unknown): ChartSection {
 }
 
 /** The chart keeps only the parts a sheet shows. The other fields ride along as stored, and the phone checks them again when it adds the song. */
-function songIn(value: unknown): SongContent {
+export function songIn(value: unknown): SongContent {
   const song = record(value);
   if (!song || !isText(song.title, 200) || typeof song.artist !== "string" || !Array.isArray(song.body) || JSON.stringify(song).length > MAX_SONG_CHARS) throw new Refused("bad-request");
   const { ref: _ref, id: _id, copy: _copy, ...content } = song;
@@ -309,7 +309,7 @@ const baseIn = (value: unknown) => {
   return value as number;
 };
 
-function setlistIn(body: Record<string, unknown>): SetlistFields {
+export function setlistIn(body: Record<string, unknown>): SetlistFields {
   const { name, songIds, tags } = body;
   if (!isText(name, 60)) throw new Refused("bad-name");
   if (!Array.isArray(songIds) || songIds.length > MAX_SETLIST_SONGS || !Array.isArray(tags) || tags.length > 8 || !tags.every((tag) => isText(tag, 24))) throw new Refused("bad-request");
@@ -317,7 +317,7 @@ function setlistIn(body: Record<string, unknown>): SetlistFields {
 }
 
 /** A one-way code of the chart as a sheet shows it, so changes that never show (spacing at line ends, empty lines) give the same code. */
-async function printOf(song: SongContent): Promise<string> {
+export async function printOf(song: SongContent): Promise<string> {
   const shown = song.body
     .map((section) => [section.heading.trim(), section.lines.map((line) => LINE_FIELDS.map((field) => line[field]?.trimEnd() ?? "")).filter((fields) => fields.some(Boolean))] as const)
     .filter(([heading, lines]) => heading || lines.length > 0);

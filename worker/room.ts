@@ -4,6 +4,7 @@ import type { Person } from "./directory-http";
 import type { Env } from "./index";
 import { handleBackup } from "./room-backup";
 import { chatRoom, createChatTables, type Posted } from "./room-chat";
+import { exportBand, importBandFile } from "./room-export";
 import { bandLibrary, createLibraryTables, selfCopies, type SetlistFields, type SetlistShare, type SongChange, type SongShare } from "./room-library";
 import { createGigTables, gigRoom, type GigFields } from "./room-gig";
 import { bandRoom, createMemberTables, shutOut } from "./room-members";
@@ -66,6 +67,7 @@ export class Room extends DurableObject<Env> {
     if (!userId || !(version >= this.floor(userId))) return Response.json({ error: "signed-out" }, { status: 401 });
     if (shutOut(this.ctx.storage.sql, userId)) return Response.json({ error: "not-a-member" }, { status: 403 });
     if (new URL(request.url).pathname === BACKUP_PATH) return handleBackup(request, this.ctx.storage, this.ctx.id.name, userId);
+    if (request.method === "POST") return importBandFile(request, this.ctx.storage, this.band, userId, this.env.APP_ORIGIN);
     if (request.headers.get("Upgrade") !== "websocket") {
       return Response.json({ room: this.ctx.id.name, peers: this.ctx.getWebSockets().length });
     }
@@ -205,6 +207,10 @@ export class Room extends DurableObject<Env> {
 
   bandLibrary(userId: string) {
     return bandLibrary.view(this.band, userId);
+  }
+
+  exportBand(userId: string, now: number) {
+    return exportBand(this.band, userId, this.env.APP_ORIGIN, now);
   }
 
   requireMember(userId: string) {

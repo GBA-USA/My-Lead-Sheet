@@ -8,3 +8,17 @@ export class Refused extends Error {
     super(reason);
   }
 }
+
+/** A request's JSON object body. Over `maxChars` is `too-large` (413). Not JSON, or not an object, is `bad-request`. An empty body is `{}`. */
+export async function readJsonObject(request: Request, maxChars: number): Promise<Record<string, unknown>> {
+  const text = await request.text();
+  if (text.length > maxChars) throw new Refused("too-large", 413);
+  let body: unknown;
+  try {
+    body = JSON.parse(text || "{}");
+  } catch {
+    throw new Refused("bad-request");
+  }
+  if (typeof body !== "object" || body === null || Array.isArray(body)) throw new Refused("bad-request");
+  return body as Record<string, unknown>;
+}

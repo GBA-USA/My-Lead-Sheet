@@ -3,7 +3,7 @@ import { counterKey, hasPepper, KEY_BYTES, keyMac, madeUpSalt, passwordSecrets, 
 import { clientChallenge, creationOptions, relyingParty, requestOptions, verifyAssertion, verifyRegistration, type Ceremony } from "./auth-passkey";
 import { fromBase64Url, randomBytes, sha256, toBase64Url, utf8 } from "./bytes";
 import type { Env } from "./index";
-import { Refused } from "./refused";
+import { readJsonObject, Refused } from "./refused";
 import { CLEARED_COOKIE, cookieValue, needsRenewal, readSession, sessionCookie, signSession, type Session } from "./session";
 
 const SCHEMA = [
@@ -553,19 +553,7 @@ export const ACCOUNT_ROUTES: Record<string, Route> = {
   },
 };
 
-async function readBody(request: Request): Promise<Record<string, unknown>> {
-  if (request.method !== "POST") return {};
-  const text = await request.text();
-  if (text.length > MAX_BODY_BYTES) throw new Refused("too-large", 413);
-  let body: unknown;
-  try {
-    body = JSON.parse(text || "{}");
-  } catch {
-    throw new Refused("bad-request");
-  }
-  if (typeof body !== "object" || body === null || Array.isArray(body)) throw new Refused("bad-request");
-  return body as Record<string, unknown>;
-}
+const readBody = (request: Request) => (request.method === "POST" ? readJsonObject(request, MAX_BODY_BYTES) : Promise.resolve({}));
 
 /** The cookie a reply sets: a new session on sign-in, a cleared one on sign-out, or a renewed one for a session older than a day. */
 async function replyCookie(env: Env, sql: SqlStorage, reply: Reply, session: Session | null, now: number): Promise<string | null> {

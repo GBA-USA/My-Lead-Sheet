@@ -110,6 +110,7 @@ const isSong = shaped<StoredSong>({
       ),
     }),
   ),
+  copy: optional(shaped<NonNullable<Song["copy"]>>({ id: isString, canSendOn: (value) => typeof value === "boolean" })),
 });
 const isSetlist = shaped<StoredSetlist>({ id: isId, name: isString, songIds: listOf(isId) });
 
@@ -260,6 +261,15 @@ export function freeOwnId(raw: string | null, key: typeof SONG_ROW | typeof SETL
   const library = storedLibrary(parseStored(raw));
   const items: { id: number }[] = key === SONG_ROW ? library.songs : library.setlists;
   return Math.max(0, ...items.map((item) => item.id), ...taken) + 1;
+}
+
+/** Adds a song to My Songs under a new id. Null when the browser refused the write or the song isn't one this phone can show. */
+export function addOwnSong(song: Omit<Song, "ref" | "id">): number | null {
+  const raw = readRaw(LIBRARY_KEY);
+  const id = freeOwnId(raw, SONG_ROW, []);
+  if (!writeRaw(LIBRARY_KEY, withOwnLibraryItems(raw, new Map([[`${SONG_ROW}.${id}`, JSON.stringify({ item: { ...song, id } })]])))) return null;
+  storageChanged();
+  return loadLibrary().songs.some((stored) => stored.id === id) ? id : null;
 }
 
 /** An own song or setlist entry copied to a new id, named "<name> · from <phone>". It is an added item, so it has no seed print. */

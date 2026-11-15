@@ -1,145 +1,61 @@
-export type LibSong = { id: string; title: string; artist: string; key: string; addedBy: string; addedAt: number; tags: string[] };
-export type BandTab = { bandId: string; name: string; songs: LibSong[] };
+import { matchingSongs } from "./search";
+import type { ShareChoice } from "./share-rule";
+import type { Song, SongRef } from "./types";
 
-export const fixtureBandTabs: BandTab[] = [
-  {
-    bandId: "b1",
-    name: "Back Porch",
-    songs: [
-      {
-        id: "s1",
-        title: "Golden Hour",
-        artist: "Alex Chen",
-        key: "G",
-        addedBy: "@alex",
-        addedAt: 1700000000,
-        tags: ["ballad"],
-      },
-      {
-        id: "s2",
-        title: "Midnight Run",
-        artist: "Mike Taylor",
-        key: "Em",
-        addedBy: "@mike",
-        addedAt: 1700100000,
-        tags: ["fast", "cover"],
-      },
-      {
-        id: "s3",
-        title: "Summer Breeze",
-        artist: "Dana Lee",
-        key: "D",
-        addedBy: "@alex",
-        addedAt: 1700200000,
-        tags: ["ballad"],
-      },
-      {
-        id: "s4",
-        title: "Electric Dreams",
-        artist: "Alex Chen",
-        key: "Am",
-        addedBy: "@mike",
-        addedAt: 1700300000,
-        tags: ["fast"],
-      },
-    ],
-  },
-  {
-    bandId: "b2",
-    name: "Night Owls",
-    songs: [
-      {
-        id: "s5",
-        title: "Neon Lights",
-        artist: "Jordan Park",
-        key: "F#m",
-        addedBy: "@alex",
-        addedAt: 1700400000,
-        tags: ["cover"],
-      },
-      {
-        id: "s6",
-        title: "Starlight Serenade",
-        artist: "Casey Morgan",
-        key: "Bb",
-        addedBy: "@mike",
-        addedAt: 1700500000,
-        tags: ["ballad", "fast"],
-      },
-    ],
-  },
-];
+/** A chart as it travels and is stored outside a phone: a `Song` without this phone's `ref` and `id`. */
+export type SongContent = Omit<Song, "ref" | "id" | "copy">;
 
-export type SortBy = "title" | "artist" | "recent";
-export type LibView = { tab: string; sort: SortBy; filter: string; tag: string | null };
+/** What every band item says about how it arrived. `canSendOn` is the server's answer for the caller, so the phone only hides buttons with it. */
+type Shared = { sharedBy: string; sharedByName: string; sharedAt: number; updatedAt: number; rev: number; sharedAs: ShareChoice; canSendOn: boolean; localId: number | null };
 
-export function visibleSongs(tabs: BandTab[], view: LibView): LibSong[] {
-  const tab = tabs.find((t) => t.bandId === view.tab);
-  if (!tab) return [];
+export type BandSong = Shared & { songId: string; song: SongContent };
+export type BandSetlist = Shared & { setlistId: string; name: string; songIds: string[]; tags: string[] };
+export type BandLibrary = { songs: BandSong[]; setlists: BandSetlist[] };
 
-  let songs = [...tab.songs];
+export type CopiedSong = { song: SongContent; copy: { id: string; canSendOn: boolean } };
 
-  // Filter by substring (case-insensitive)
-  if (view.filter.trim()) {
-    const filterLower = view.filter.trim().toLowerCase();
-    songs = songs.filter(
-      (s) =>
-        s.title.toLowerCase().includes(filterLower) ||
-        s.artist.toLowerCase().includes(filterLower)
-    );
-  }
+export const SONG_SORTS = { title: "A-Z", artist: "Artist", newest: "Newest" } as const;
+export type SongSort = keyof typeof SONG_SORTS;
+export const SETLIST_SORTS = { newest: "Newest", name: "A-Z" } as const;
+export type SetlistSort = keyof typeof SETLIST_SORTS;
 
-  // Filter by tag
-  if (view.tag) {
-    songs = songs.filter((s) => s.tags.includes(view.tag!));
-  }
+export const bandSongRef = (bandId: string, songId: string): SongRef => `${bandId}/${songId}`;
 
-  // Sort
-  if (view.sort === "title") {
-    songs.sort((a, b) => {
-      const cmp = a.title.localeCompare(b.title);
-      return cmp !== 0 ? cmp : a.id.localeCompare(b.id);
-    });
-  } else if (view.sort === "artist") {
-    songs.sort((a, b) => {
-      const cmp = a.artist.localeCompare(b.artist);
-      return cmp !== 0 ? cmp : a.id.localeCompare(b.id);
-    });
-  } else if (view.sort === "recent") {
-    songs.sort((a, b) => b.addedAt - a.addedAt);
-  }
+const byText = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base" });
 
-  return songs;
-}
-
-export type MySong = { id: string; title: string; artist: string; key: string; fromBand: string };
-
-export function addToMySongs(
-  mine: MySong[],
-  band: BandTab,
-  songId: string
-): { mine: MySong[]; notice: string } {
-  const song = band.songs.find((s) => s.id === songId);
-  if (!song) {
-    return { mine, notice: "Song not found" };
-  }
-
-  const alreadyThere = mine.some((s) => s.id === "my-" + songId);
-  if (alreadyThere) {
-    return { mine, notice: "Already in My Songs" };
-  }
-
-  const newSong: MySong = {
-    id: "my-" + songId,
-    title: song.title,
-    artist: song.artist,
-    key: song.key,
-    fromBand: band.bandId,
+export function visibleSongs(bandId: string, songs: BandSong[], query: string, sort: SongSort): BandSong[] {
+  const asSongs = songs.map((item): Song => ({ ...item.song, ref: bandSongRef(bandId, item.songId), id: 0 }));
+  const hits = new Set(matchingSongs(asSongs, query).map((song) => song.ref));
+  const order: Record<SongSort, (a: BandSong, b: BandSong) => number> = {
+    title: (a, b) => byText(a.song.title, b.song.title),
+    artist: (a, b) => byText(a.song.artist, b.song.artist) || byText(a.song.title, b.song.title),
+    newest: (a, b) => b.sharedAt - a.sharedAt,
   };
-
-  return { mine: [...mine, newSong], notice: `Added ${song.title} to My Songs` };
+  return songs.filter((item) => hits.has(bandSongRef(bandId, item.songId))).sort((a, b) => order[sort](a, b) || byText(a.songId, b.songId));
 }
 
-export function shareLink(bandId: string, songId: string): string {
-  return `/band/${encodeURIComponent(bandId)}/song/${encodeURIComponent(songId)}`;
+/** `mine` keeps only what the caller shared. `tag` keeps setlists carrying it. */
+export function visibleSetlists(setlists: BandSetlist[], filter: { mine: boolean; tag: string | null }, me: string, sort: SetlistSort): BandSetlist[] {
+  const order: Record<SetlistSort, (a: BandSetlist, b: BandSetlist) => number> = {
+    newest: (a, b) => b.sharedAt - a.sharedAt,
+    name: (a, b) => byText(a.name, b.name),
+  };
+  return setlists
+    .filter((item) => (!filter.mine || item.sharedBy === me) && (filter.tag === null || item.tags.includes(filter.tag)))
+    .sort((a, b) => order[sort](a, b) || byText(a.setlistId, b.setlistId));
+}
+
+export const setlistTags = (setlists: BandSetlist[]) => [...new Set(setlists.flatMap((item) => item.tags))].sort(byText);
+
+export function parseTags(text: string): string[] {
+  return [
+    ...new Set(
+      text
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean),
+    ),
+  ]
+    .slice(0, 8)
+    .map((tag) => tag.slice(0, 24));
 }

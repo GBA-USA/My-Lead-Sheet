@@ -1,4 +1,5 @@
 import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
+import { BandLibraryTab, LIBRARY_MESSAGES, type LibraryTab } from "./band-library";
 import { BandSettings } from "./band-settings";
 import type { BandPreview, BandSummary, BandView } from "./bands-model";
 import { CODE_REFUSED, CODE_SCREEN, codeInText, readPayload } from "./code-link";
@@ -8,10 +9,18 @@ import { ApiError, api, type Account } from "./sign-in-methods";
 import "./friends.css";
 
 type InBand = "band" | "invite" | "settings";
+type BandTab = LibraryTab | "members";
 type View = { name: "list" } | { name: InBand; bandId: string } | { name: "scan" } | { name: "code"; code: string };
+
+const BAND_TABS: [BandTab, string][] = [
+  ["setlists", "Setlists"],
+  ["songs", "Songs"],
+  ["members", "Members"],
+];
 
 const MESSAGES: Record<string, string> = {
   ...CODE_REFUSED,
+  ...LIBRARY_MESSAGES,
   offline: "Can't reach the server. Check your connection and try again.",
   "bad-name": "Give the band a name of up to 40 letters.",
   "not-a-band-code": "That isn't a band code.",
@@ -40,6 +49,7 @@ export function BandsSheet({ account, code, onSignedOut, onClose }: { account: A
   const [link, setLink] = useState("");
   const [confirming, setConfirming] = useState<string | null>(null);
   const [inviteRound, setInviteRound] = useState(0);
+  const [bandTab, setBandTab] = useState<BandTab>("members");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -190,54 +200,76 @@ export function BandsSheet({ account, code, onSignedOut, onClose }: { account: A
               </button>
             </div>
           ) : null}
-          <h3 className="account-section">Members</h3>
-          <ul className="friends-list bands-members">
-            {shown.members.map((member) => (
-              <li key={member.userId}>
-                <span>
-                  {member.name}
-                  {member.role === "admin" ? <small>Admin</small> : null}
-                </span>
-                {isAdmin && member.userId !== account.userId ? (
-                  <span className="friends-actions">
-                    {member.role === "member" ? (
-                      <button type="button" className="account-link" disabled={busy} onClick={() => change("/api/bands/make-admin", { bandId: shown.bandId, userId: member.userId }, `${member.name} is now an admin.`)}>
-                        Make admin
-                      </button>
-                    ) : null}
-                    {confirming === member.userId ? (
-                      <button type="button" className="account-secondary" disabled={busy} onClick={() => change("/api/bands/remove", { bandId: shown.bandId, userId: member.userId }, `Removed ${member.name}.`)}>
-                        Yes, remove
-                      </button>
-                    ) : (
-                      <button type="button" className="account-link" onClick={() => setConfirming(member.userId)}>
-                        Remove
-                      </button>
-                    )}
-                  </span>
-                ) : null}
-              </li>
+          <div className="band-tabs" role="tablist" aria-label={shown.name}>
+            {BAND_TABS.map(([key, label]) => (
+              <button key={key} type="button" role="tab" aria-selected={bandTab === key} onClick={() => setBandTab(key)}>
+                {label}
+              </button>
             ))}
-          </ul>
-          {confirming === "leave" ? (
-            <button
-              type="button"
-              className="account-secondary"
-              disabled={busy}
-              onClick={() =>
-                run(async () => {
-                  await api("/api/bands/leave", { bandId: shown.bandId });
-                  setView({ name: "list" });
-                  setNotice(`You left ${shown.name}.`);
-                })
-              }
-            >
-              Yes, leave {shown.name}
-            </button>
+          </div>
+          {bandTab === "members" ? (
+            <>
+              <ul className="friends-list bands-members">
+                {shown.members.map((member) => (
+                  <li key={member.userId}>
+                    <span>
+                      {member.name}
+                      {member.role === "admin" ? <small>Admin</small> : null}
+                    </span>
+                    {isAdmin && member.userId !== account.userId ? (
+                      <span className="friends-actions">
+                        {member.role === "member" ? (
+                          <button
+                            type="button"
+                            className="account-link"
+                            disabled={busy}
+                            onClick={() => change("/api/bands/make-admin", { bandId: shown.bandId, userId: member.userId }, `${member.name} is now an admin.`)}
+                          >
+                            Make admin
+                          </button>
+                        ) : null}
+                        {confirming === member.userId ? (
+                          <button
+                            type="button"
+                            className="account-secondary"
+                            disabled={busy}
+                            onClick={() => change("/api/bands/remove", { bandId: shown.bandId, userId: member.userId }, `Removed ${member.name}.`)}
+                          >
+                            Yes, remove
+                          </button>
+                        ) : (
+                          <button type="button" className="account-link" onClick={() => setConfirming(member.userId)}>
+                            Remove
+                          </button>
+                        )}
+                      </span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+              {confirming === "leave" ? (
+                <button
+                  type="button"
+                  className="account-secondary"
+                  disabled={busy}
+                  onClick={() =>
+                    run(async () => {
+                      await api("/api/bands/leave", { bandId: shown.bandId });
+                      setView({ name: "list" });
+                      setNotice(`You left ${shown.name}.`);
+                    })
+                  }
+                >
+                  Yes, leave {shown.name}
+                </button>
+              ) : (
+                <button type="button" className="account-link" onClick={() => setConfirming("leave")}>
+                  Leave band
+                </button>
+              )}
+            </>
           ) : (
-            <button type="button" className="account-link" onClick={() => setConfirming("leave")}>
-              Leave band
-            </button>
+            <BandLibraryTab band={shown} me={account.userId} tab={bandTab} busy={busy} run={run} notify={setNotice} />
           )}
           {backTo({ name: "list" }, "All bands")}
         </>
@@ -340,7 +372,15 @@ export function BandsSheet({ account, code, onSignedOut, onClose }: { account: A
   const screen = screens[view.name]();
   return (
     <div className="account-backdrop" onClick={onClose}>
-      <section className="account-sheet bands-sheet" role="dialog" aria-modal="true" aria-labelledby={titleId} data-view={view.name} onClick={(event) => event.stopPropagation()}>
+      <section
+        className="account-sheet bands-sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        data-view={view.name}
+        data-band={"bandId" in view ? view.bandId : undefined}
+        onClick={(event) => event.stopPropagation()}
+      >
         <header className="account-top">
           <h2 id={titleId}>{screen.title}</h2>
           <button type="button" className="account-close" aria-label="Close" onClick={onClose}>

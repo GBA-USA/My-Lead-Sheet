@@ -76,4 +76,16 @@ export const DATA_KINDS: readonly DataKind[] = [
     what: "For each band: everyone who joined, with the name bandmates see, whether they are an admin, whether they are still in the band, left or were removed, and when that last changed.",
   },
   { key: "band_rooms", place: "server", what: "Which bands you are in, so your Bands list can find them. A band you left or were removed from is dropped the next time the list loads." },
+  {
+    key: "band_songs",
+    place: "server",
+    what: "For each band: every song a member shared into it, as a copy of the whole chart, with who shared it, when, who last changed it, and a one-way code of the chart so a Private song is not passed on as if it were new.",
+  },
+  { key: "band_setlists", place: "server", what: "For each band: every setlist a member shared into it, with its name, songs in order, tags, who shared it, and when it last changed." },
+  {
+    key: "shares",
+    place: "server",
+    what: "For every song or setlist copy, in the band or your own room that holds it: who it came from and whether it was shared Private or Public, so the server can refuse to pass on a Private copy.",
+  },
+  { key: "song_copies", place: "server", what: "In a room only your account can open: each band song you added to My Songs, with a one-way code of its chart, so its Private or Public rule goes with your copy." },
 ];

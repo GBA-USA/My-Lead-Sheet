@@ -18,7 +18,7 @@ const check = (ok: boolean, message: string) => {
 const filesWith = (pattern: RegExp, dir = "") => sources.filter((file) => file.startsWith(dir) && pattern.test(text.get(file)!));
 
 const ONE_COPY: { what: string; pattern: RegExp; home: string; dir?: string }[] = [
-  { what: "base64url encoding on the phone", pattern: /btoa\(/, home: "src/base64url.ts", dir: "src/" },
+  { what: "base64url encoding on the phone", pattern: /btoa\(/, home: "src/password.ts", dir: "src/" },
   { what: "Escape closes a sheet", pattern: /event\.key === "Escape"\) onClose\(\)/, home: "src/hooks.ts" },
   { what: "reading one cookie from a Cookie header", pattern: /\.split\(";"\)/, home: "worker/session.ts" },
   { what: "the request body size cap", pattern: /Refused\("too-large", 413\)/, home: "worker/refused.ts" },

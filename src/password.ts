@@ -1,10 +1,10 @@
-import { fromBase64Url, toBase64Url } from "./base64url";
-
 export const MIN_PASSWORD_LENGTH = 10;
 const PBKDF2_ROUNDS = 600_000;
 const SALT_BYTES = 16;
 const KEY_BITS = 256;
 
+export const toBase64Url = (bytes: ArrayBuffer | Uint8Array) => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+export const fromBase64Url = (text: string) => Uint8Array.from(atob(text.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
 
 export const newSalt = () => toBase64Url(crypto.getRandomValues(new Uint8Array(SALT_BYTES)));
 

@@ -1,6 +1,5 @@
-import { fromBase64Url, toBase64Url } from "./base64url";
 import { normalizeHandle } from "./handle";
-import { newSalt, passwordKey } from "./password";
+import { fromBase64Url, newSalt, passwordKey, toBase64Url } from "./password";
 
 export type WayKind = "passkey" | "google" | "password";
 

@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
+    "verify": "bash scripts/verify.sh",
     "check:data": "node scripts/check-library.mjs",
     "check:music": "node --experimental-strip-types scripts/check-music.ts",
     "check:scroll": "node --experimental-strip-types scripts/check-scroll.ts",

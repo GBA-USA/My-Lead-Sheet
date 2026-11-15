@@ -33,7 +33,7 @@ function afterAsk(pair: Pair | undefined, asker: string, preApproved: boolean): 
 
 const sorted = (a: string, b: string) => (a < b ? [a, b] : [b, a]);
 
-const pairOf = (sql: SqlStorage, a: string, b: string) => sql.exec<Pair>(`SELECT state, asked_by FROM friendships WHERE low_id = ? AND high_id = ?`, ...sorted(a, b)).toArray()[0];
+export const pairOf = (sql: SqlStorage, a: string, b: string) => sql.exec<Pair>(`SELECT state, asked_by FROM friendships WHERE low_id = ? AND high_id = ?`, ...sorted(a, b)).toArray()[0];
 
 function savePair(c: Context, a: string, b: string, pair: Pair) {
   c.sql.exec(

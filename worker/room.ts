@@ -1,8 +1,11 @@
 import { DurableObject } from "cloudflare:workers";
+import { NOT_A_MEMBER_CLOSE, type ChatMessage } from "../src/chat-model";
+import type { Person } from "./directory-http";
 import type { Env } from "./index";
 import { handleBackup } from "./room-backup";
+import { chatRoom, createChatTables } from "./room-chat";
 import { bandLibrary, createLibraryTables, selfCopies, type SetlistFields, type SetlistShare, type SongChange, type SongShare } from "./room-library";
-import { bandRoom, createMemberTables, NOT_A_MEMBER_CLOSE, shutOut } from "./room-members";
+import { bandRoom, createMemberTables, shutOut } from "./room-members";
 import type { StoredShare } from "./share-guard";
 
 const RELAYED = ["intro", "ping", "pong"] as const;
@@ -13,6 +16,7 @@ type Inbound = { kind: RelayKind; to: string; body: unknown };
 type Outbound =
   | { kind: "hello"; you: string; peers: string[] }
   | { kind: RelayKind; from: string; body: unknown; rx: number; tx: number }
+  | { kind: "message"; message: ChatMessage }
   | { kind: "error"; error: "bad-message" | "no-peer"; to?: string };
 
 function parseInbound(message: string | ArrayBuffer): Inbound | null {
@@ -45,6 +49,7 @@ export class Room extends DurableObject<Env> {
     super(ctx, env);
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS session_floors (user_id TEXT PRIMARY KEY, version INTEGER NOT NULL)`);
     createMemberTables(ctx.storage.sql);
+    createChatTables(ctx.storage.sql);
     createLibraryTables(ctx.storage.sql);
   }
 
@@ -135,6 +140,21 @@ export class Room extends DurableObject<Env> {
 
   bandPack(userId: string) {
     return bandRoom.pack(this.band, userId);
+  }
+
+  createDm(people: [Person, Person], now: number) {
+    chatRoom.createDm(this.band, people, now);
+  }
+
+  chatMessages(userId: string, after: number) {
+    return chatRoom.messages(this.band, userId, after);
+  }
+
+  /** Stores the post, and a post this call stored goes to every phone on the room's socket. */
+  chatPost(author: Person, msgId: string, text: string, now: number) {
+    const posted = chatRoom.post(this.band, author, msgId, text, now);
+    if (posted.stored) for (const ws of this.ctx.getWebSockets()) send(ws, { kind: "message", message: posted.message });
+    return posted;
   }
 
   bandLibrary(userId: string) {

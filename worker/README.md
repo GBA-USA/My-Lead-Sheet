@@ -23,6 +23,23 @@ A phone sends `{"kind":"intro"|"ping"|"pong","to":peerId,"body":...}`. The room 
 
 A message the room can't read gets `{"kind":"error","error":"bad-message"}`. One addressed to a peer who isn't in the room gets `{"kind":"error","error":"no-peer","to":peerId}`.
 
+Each chat message a band or DM room stores goes to every socket in the room as `{"kind":"message","message":{seq, msgId, fromId, fromName, text, at}}`.
+
+## Chat routes (C12)
+
+The Directory answers these and calls the room. A band room checks its own members. For a DM, the Directory first checks the two people are friends, or both still in one band, and that neither blocked the other, before every read and post.
+
+| Route | Answer |
+|---|---|
+| `GET /api/chat` | `{chats: [{roomId, kind, title, lastSeq, lastReadSeq, mutedUntil, preview, lastAt}]}`, newest first. A band is listed from the moment you join it. |
+| `POST /api/chat/dm` `{userId}` | `{roomId, title}`: the one DM room for you and that person, made on first ask. `403 not-friends` otherwise. |
+| `POST /api/chat/open` `{roomId, after?}` | `{messages}` with `seq` above `after`, oldest first, at most 500 |
+| `POST /api/chat/send` `{roomId, msgId, text}` | `{message}`. `msgId` is 8 to 64 of `A-Z a-z 0-9 _ -`, made on the phone; the same id again from the same author returns the stored message and stores nothing. `text` is 1 to 2000 characters. |
+| `POST /api/chat/read` `{roomId, seq}` | Moves your last read message up to `seq` |
+| `POST /api/chat/mute` `{roomId, mutedUntil}` | A time in milliseconds, `9007199254740991` for always, or `null` to unmute |
+
+A removed member's open socket closes with code 4403 and their chat calls answer `403 not-a-member`.
+
 ## Config and handoff
 
 `wrangler.jsonc` has no account id, domain or email. Wrangler takes the account from your login or `CLOUDFLARE_ACCOUNT_ID`. `env.test` is Terry's test account and `env.production` is Brian's. Each holds the same vars, empty until the owner fills them in:

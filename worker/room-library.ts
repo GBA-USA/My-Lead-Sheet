@@ -3,9 +3,9 @@ import type { BandLibrary, BandSetlist, BandSong, CopiedSong, SongContent } from
 import type { ChartLine, ChartSection } from "../src/types";
 import { randomBytes, toBase64Url } from "./bytes";
 import { signedIn, type Context, type Route } from "./directory-http";
-import { Refused } from "./refused";
+import { fromRoom, Refused, roomRefused as refused } from "./refused";
 import { selfRoomId } from "./room-backup";
-import { bandIdIn, bandIdsOf, fromRoom, inBand, refused, roomOf, shutOut, type Band } from "./room-members";
+import { bandIdIn, bandIdsOf, inRoom, roomOf, shutOut, type RoomStore } from "./room-members";
 import { checkSend, lineage, type ShareChoice, type StoredShare } from "./share-guard";
 
 type Shared = { share_id: string; shared_by: string; local_id: number | null; shared_at: number; updated_by: string; updated_at: number; rev: number };
@@ -106,8 +106,8 @@ const setlistOf = (sql: SqlStorage, row: SetlistRow, userId: string, names = mem
 const songRow = (sql: SqlStorage, songId: string) => sql.exec<SongRow>(`SELECT * FROM band_songs WHERE song_id = ?`, songId).toArray()[0];
 const setlistRow = (sql: SqlStorage, setlistId: string) => sql.exec<SetlistRow>(`SELECT * FROM band_setlists WHERE setlist_id = ?`, setlistId).toArray()[0];
 
-function editable<T extends Shared>(band: Band, userId: string, row: T | undefined): T {
-  const { me } = inBand(band.sql, userId);
+function editable<T extends Shared>(band: RoomStore, userId: string, row: T | undefined): T {
+  const { me } = inRoom(band.sql, userId);
   if (!row) throw refused("not-found");
   if (me.role !== "admin" && row.shared_by !== userId) throw refused("not-yours");
   return row;
@@ -125,8 +125,8 @@ export type SetlistShare = SetlistFields & { localId: number | null; choice: Sha
 
 /** Every user id here is trusted: only the Directory calls these, after it has checked the session and the share rule. */
 export const bandLibrary = {
-  view(band: Band, userId: string): BandLibrary {
-    inBand(band.sql, userId);
+  view(band: RoomStore, userId: string): BandLibrary {
+    inRoom(band.sql, userId);
     const names = memberNames(band.sql);
     return {
       songs: band.sql
@@ -140,12 +140,12 @@ export const bandLibrary = {
     };
   },
 
-  requireMember(band: Band, userId: string) {
-    inBand(band.sql, userId);
+  requireMember(band: RoomStore, userId: string) {
+    inRoom(band.sql, userId);
   },
 
-  shareSong(band: Band, userId: string, share: SongShare, from: Chain | null, now: number): BandSong {
-    inBand(band.sql, userId);
+  shareSong(band: RoomStore, userId: string, share: SongShare, from: Chain | null, now: number): BandSong {
+    inRoom(band.sql, userId);
     const sent = band.sql.exec<SongRow>(`SELECT * FROM band_songs WHERE shared_by = ? AND sent_id = ?`, userId, share.sentId).toArray()[0];
     if (sent) return songOf(band.sql, sent, userId);
     const songId = newId("song");
@@ -166,8 +166,8 @@ export const bandLibrary = {
     return songOf(band.sql, songRow(band.sql, songId), userId);
   },
 
-  shareSetlist(band: Band, userId: string, fields: SetlistShare, now: number): BandSetlist {
-    inBand(band.sql, userId);
+  shareSetlist(band: RoomStore, userId: string, fields: SetlistShare, now: number): BandSetlist {
+    inRoom(band.sql, userId);
     bandSongsOnly(band.sql, fields.songIds);
     const setlistId = newId("setlist");
     const shareId = adopt(band.sql, `${band.bandId}/${setlistId}`, userId, null, fields.choice);
@@ -188,14 +188,14 @@ export const bandLibrary = {
   },
 
   /** `change` is null when the share rule refused the new chart. The base rev is still checked, so a stale edit always hears `changed`. */
-  editSong(band: Band, userId: string, songId: string, base: number, change: SongChange | null, now: number): Saved<BandSong> {
+  editSong(band: RoomStore, userId: string, songId: string, base: number, change: SongChange | null, now: number): Saved<BandSong> {
     const row = editable(band, userId, songRow(band.sql, songId));
     if (row.rev !== base || !change) return { item: songOf(band.sql, row, userId), changed: row.rev !== base };
     band.sql.exec(`UPDATE band_songs SET song = ?, print = ?, updated_by = ?, updated_at = ?, rev = rev + 1 WHERE song_id = ?`, JSON.stringify(change.song), change.print, userId, now, songId);
     return { item: songOf(band.sql, songRow(band.sql, songId), userId), changed: false };
   },
 
-  editSetlist(band: Band, userId: string, setlistId: string, base: number, fields: SetlistFields, now: number): Saved<BandSetlist> {
+  editSetlist(band: RoomStore, userId: string, setlistId: string, base: number, fields: SetlistFields, now: number): Saved<BandSetlist> {
     const row = editable(band, userId, setlistRow(band.sql, setlistId));
     if (row.rev !== base) return { item: setlistOf(band.sql, row, userId), changed: true };
     bandSongsOnly(band.sql, fields.songIds);
@@ -211,8 +211,8 @@ export const bandLibrary = {
     return { item: setlistOf(band.sql, setlistRow(band.sql, setlistId), userId), changed: false };
   },
 
-  copyOut(band: Band, userId: string, songId: string): { song: SongContent; print: string; from: Chain } {
-    inBand(band.sql, userId);
+  copyOut(band: RoomStore, userId: string, songId: string): { song: SongContent; print: string; from: Chain } {
+    inRoom(band.sql, userId);
     const row = songRow(band.sql, songId);
     if (!row) throw refused("not-found");
     return { song: JSON.parse(row.song), print: row.print, from: holding(band.sql, row, userId) };
@@ -222,7 +222,7 @@ export const bandLibrary = {
    * What the caller holds of the band songs that show this chart, except the song being edited. With `takenFrom` (the
    * share ids the caller's own copies came through), only the songs the caller shared or took a copy from; with null, all.
    */
-  heldByPrint(band: Band, userId: string, print: string, except: string | null, takenFrom: string[] | null): Chain[] {
+  heldByPrint(band: RoomStore, userId: string, print: string, except: string | null, takenFrom: string[] | null): Chain[] {
     if (shutOut(band.sql, userId)) return [];
     const taken = takenFrom && JSON.stringify(takenFrom);
     return band.sql

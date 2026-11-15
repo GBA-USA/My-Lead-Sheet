@@ -102,7 +102,21 @@ class Sheet {
 const SECTION = { start: 1000, end: 4000 - 800 };
 const DISTANCE = SECTION.end - SECTION.start;
 
-function scroller(app: App, start: Parameters<App["runScroll"]>[1]["current"], at = 0) {
+/** Frames 4 to 34 ms apart, and one in ten a stall of 120 to 520 ms. */
+function playJittered(seconds: number, each: () => void) {
+  let seed = 7;
+  const random = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+  const end = now + seconds * 1000;
+  while (now < end && frames.length) {
+    now += random() < 0.1 ? 120 + random() * 400 : 4 + random() * 30;
+    const due = frames;
+    frames = [];
+    for (const run of due) run(now);
+    each();
+  }
+}
+
+function scroller(app: App, start: Parameters<App["runScroll"]>[1]["current"], at = 0, time?: (frameMs: number) => number) {
   const sheet = new Sheet();
   sheet.top = at;
   const motion = { current: start };
@@ -111,7 +125,7 @@ function scroller(app: App, start: Parameters<App["runScroll"]>[1]["current"], a
   const cancel = app.runScroll(sheet, motion, () => SECTION, clock, (reason) => {
     stops.push({ reason, at: now / 1000 });
     cancel();
-  });
+  }, time);
   const startedAt = now / 1000;
   return { sheet, motion, clock, stops, startedAt, elapsed: () => now / 1000 - startedAt };
 }
@@ -123,6 +137,48 @@ const take = song(5);
 const half = song(13);
 
 check(chain.officialRuntimeSec === 197 && chain.tempo === 78, "Chain Breaker has a 3:17 runtime at 78 BPM");
+
+{
+  const version = { name: "Band", bpm: 78, marks: [{ at: 0, progress: 0 }, { at: 60, progress: 0.5 }, { at: 100, progress: 1 }] };
+  const live = (perfMs: number) => 1_731_560_412_345.678 + perfMs * (1 + 200e-6);
+  let held: number | null = null;
+  const band = (perfMs: number) => held ?? live(perfMs);
+  const bandStart = band(now);
+  const expected = () => {
+    const sec = (band(now) - bandStart) / 1000;
+    const progress = sec < 60 ? sec / 120 : Math.min(1, 0.5 + (sec - 60) / 80);
+    return SECTION.start + DISTANCE * progress;
+  };
+  const run = scroller(app, app.scrollMotion(chain, version, null, 78, 100), SECTION.start, band);
+  let worst = 0;
+  let stalls = 0;
+  let previous = now;
+  playJittered(40, () => {
+    worst = Math.max(worst, Math.abs(run.sheet.scrollTop - expected()));
+    if (now - previous > 50) stalls += 1;
+    previous = now;
+  });
+  check(stalls > 10 && worst < 0.01, `band time: the chart is where band time puts it on every frame, through ${stalls} stalled frames (worst ${worst.toFixed(4)} px)`);
+  held = band(now);
+  const heldAt = run.sheet.scrollTop;
+  playJittered(5, () => (worst = Math.max(worst, Math.abs(run.sheet.scrollTop - heldAt))));
+  check(worst < 0.01, "band time standing still holds the chart still");
+  held = null;
+  worst = 0;
+  playJittered(20, () => (worst = Math.max(worst, Math.abs(run.sheet.scrollTop - expected()))));
+  check(worst < 0.01 && run.stops.length === 0, `when band time moves again the chart is at the band's place on the next frame (worst ${worst.toFixed(4)} px)`);
+  run.sheet.listeners.get("pointerdown")?.();
+}
+
+{
+  const run = scroller(app, app.scrollMotion(chain, null, null, 78, 100), SECTION.start + DISTANCE / 2);
+  play(1);
+  const before = run.clock.current;
+  now += 5000;
+  play(0.01);
+  check(near(run.clock.current - before, 0.05, 1e-6), `solo: a 5 s gap between frames, as from a hidden tab, still moves the clock only 50 ms (moved ${((run.clock.current - before) * 1000).toFixed(1)} ms)`);
+  run.sheet.listeners.get("pointerdown")?.();
+}
 
 {
   const run = scroller(app, app.scrollMotion(chain, null, null, 78, 100));

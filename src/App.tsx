@@ -421,7 +421,17 @@ export function App() {
         />
       ) : null}
 
-      {accountOpen ? <AccountSheet account={account} backup={backup} onAccount={onAccount} onClose={() => setAccountOpen(false)} /> : null}
+      {accountOpen ? (
+        <AccountSheet
+          account={account}
+          backup={backup}
+          onAccount={onAccount}
+          onClose={() => {
+            setAccountOpen(false);
+            if (!account) setLanded(null);
+          }}
+        />
+      ) : null}
 
       {friends && account ? (
         <FriendsSheet

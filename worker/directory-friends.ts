@@ -1,5 +1,6 @@
 import { liveCode, type CodeRow } from "./codes";
-import { normalizeHandle, signedIn, userById, type Context, type Route, type User } from "./directory-account";
+import { normalizeHandle } from "../src/handle";
+import { signedIn, userById, type Context, type Route, type User } from "./directory-account";
 import { Refused } from "./refused";
 
 export function createFriendTables(sql: SqlStorage) {

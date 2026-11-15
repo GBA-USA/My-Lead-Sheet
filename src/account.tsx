@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 import type { BackupResult } from "./backup";
 import { PRIVACY_HREF } from "./data-kinds";
+import { handleFromName } from "./handle";
 import { useEscape } from "./hooks";
 import { commonPasswords, MIN_PASSWORD_LENGTH, passwordProblem } from "./password";
 import {
@@ -94,14 +95,6 @@ const message = (error: unknown) => {
   return error instanceof ApiError && error.waitMs > 0 ? `${text} Wait ${minutes(error.waitMs)} before the next try.` : text;
 };
 
-const suggestedHandle = (name: string) =>
-  name
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, "")
-    .slice(0, 20);
-
 const BACKUP_PROBLEM = { offline: "can't reach the server", full: "your backup is full", failed: "the backup didn't go through" } as const;
 
 const backupLine = (backup: BackupResult | null) => {
@@ -182,7 +175,7 @@ export function AccountSheet({
   const go = (next: Step) => {
     setError("");
     setSecret("");
-    if (next.name === "make-password") setHandle((current) => current || suggestedHandle(name));
+    if (next.name === "make-password") setHandle((current) => current || handleFromName(name));
     setStep(next);
   };
 

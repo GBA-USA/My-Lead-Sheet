@@ -1,3 +1,4 @@
+import { handleFromName, normalizeHandle } from "../src/handle";
 import { authorizeUrl, googleClient, identityFromCode, type GoogleClient } from "./auth-google";
 import { counterKey, hasPepper, KEY_BYTES, keyMac, madeUpSalt, passwordSecrets, SALT_BYTES, sameText, type PasswordSecrets, type WaitRule } from "./auth-password";
 import { clientChallenge, creationOptions, relyingParty, requestOptions, verifyAssertion, verifyRegistration, type Ceremony } from "./auth-passkey";
@@ -105,13 +106,7 @@ function displayName(value: unknown): string {
 
 /** A free lowercase @handle from the display name: "Sam Rivera" becomes samrivera, then samrivera2 on a clash. */
 function freeHandle(sql: SqlStorage, name: string): string {
-  const base =
-    name
-      .normalize("NFKD")
-      .replace(/[̀-ͯ]/g, "")
-      .toLowerCase()
-      .replace(/[^a-z0-9]/g, "")
-      .slice(0, 20) || "player";
+  const base = handleFromName(name) || "player";
   const taken = new Set(sql.exec<{ handle: string }>(`SELECT handle FROM users WHERE handle = ?1 OR handle GLOB ?1 || '[0-9]*'`, base).toArray().map((row) => row.handle));
   for (let n = 1; ; n += 1) {
     const handle = n === 1 ? base : `${base}${n}`;
@@ -134,8 +129,6 @@ function storeBackupCodes(sql: SqlStorage, userId: string, hashes: string[]) {
   sql.exec(`DELETE FROM backup_codes WHERE user_id = ?`, userId);
   for (const hash of hashes) sql.exec(`INSERT INTO backup_codes (user_id, code_hash) VALUES (?, ?)`, userId, hash);
 }
-
-export const normalizeHandle = (value: unknown) => (typeof value === "string" ? value.trim().replace(/^@/, "").toLowerCase() : "");
 
 /** A username someone picks with a password: their public @name, 3 to 20 of a-z and 0-9. */
 function pickedHandle(value: unknown): string {

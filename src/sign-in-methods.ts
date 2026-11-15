@@ -1,4 +1,5 @@
 import { fromBase64Url, toBase64Url } from "./base64url";
+import { normalizeHandle } from "./handle";
 import { newSalt, passwordKey } from "./password";
 
 export type WayKind = "passkey" | "google" | "password";
@@ -173,8 +174,6 @@ const password: SignInMethod = {
 };
 
 export const SIGN_IN_METHODS: readonly SignInMethod[] = [passkey, google, password];
-
-const normalizeHandle = (handle: string) => handle.trim().replace(/^@/, "").toLowerCase();
 
 export async function signInWithPassword(handle: string, typed: string): Promise<SignedIn> {
   const { salt } = await api<{ salt: string }>("/api/auth/password/salt", { handle: normalizeHandle(handle) });

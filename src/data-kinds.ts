@@ -96,7 +96,12 @@ export const DATA_KINDS: readonly DataKind[] = [
   {
     key: "messages",
     place: "server",
-    what: "In each band or DM room: every message posted, with who wrote it, their name at the time, the text, when it was sent, and the id your phone gave it so a resend is stored once.",
+    what: "In each band or DM room: every message posted, with who wrote it, their name at the time, the text, when it was sent, the id your phone gave it so a resend is stored once, what kind of message it is (words, a note from the app, or a song, setlist or gig card), and which song share, setlist or gig a card points at.",
+  },
+  {
+    key: "mls-phone",
+    place: "phone",
+    what: "Copies of the songs in your bands, and the gig packs you downloaded: the setlist for the night with its charts, the band timing for those songs, and the gig secret that proves your phone is on the lineup. Kept so they open with no signal.",
   },
   {
     key: "inbox",

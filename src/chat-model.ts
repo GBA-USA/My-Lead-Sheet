@@ -3,7 +3,11 @@ export type ChatKind = "dm" | "band";
 /** One row of the Messages list, as the Directory's inbox keeps it (PLAN.md 5). Unread is `lastSeq - lastReadSeq`. */
 export type ChatEntry = { roomId: string; kind: ChatKind; title: string; lastSeq: number; lastReadSeq: number; mutedUntil: number | null; preview: string; lastAt: number };
 
-export type ChatMessage = { seq: number; msgId: string; fromId: string; fromName: string; text: string; at: number };
+/** What a message is: words, a note from the app, or a card for a song, setlist or gig (PLAN.md 5). */
+export type MessageKind = "text" | "system" | "song" | "setlist" | "gig";
+
+/** `ref` is what a card points at (a song share id, a setlist id or a gig id) and null for words. */
+export type ChatMessage = { seq: number; msgId: string; fromId: string; fromName: string; text: string; at: number; kind: MessageKind; ref: string | null };
 
 /**
  * A message written on this phone that the room has not confirmed yet. `msgId` is made here, so a resend stores nothing

@@ -1,10 +1,18 @@
-import type { ChatKind, ChatMessage } from "../src/chat-model";
+import type { ChatKind, ChatMessage, MessageKind } from "../src/chat-model";
 import type { Person } from "./directory-http";
 import { inRoom, type RoomStore } from "./room-members";
 
 const MAX_THREAD_PAGE = 500;
 
-type MessageRow = { seq: number; msg_id: string; author: string; author_name: string; body: string; created_at: number };
+type MessageRow = { seq: number; msg_id: string; author: string; author_name: string; body: string; created_at: number; kind: MessageKind; ref: string | null };
+
+/** Columns added after a table first shipped. A room made before them has its table as it was, so each is added there once. */
+const MESSAGE_COLUMNS_ADDED: Record<string, string> = { kind: "TEXT NOT NULL DEFAULT 'text'", ref: "TEXT" };
+
+function addColumns(sql: SqlStorage, table: string, columns: Record<string, string>) {
+  const have = new Set(sql.exec<{ name: string }>(`PRAGMA table_info(${table})`).toArray().map((row) => row.name));
+  for (const [name, type] of Object.entries(columns)) if (!have.has(name)) sql.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
+}
 
 export function createChatTables(sql: SqlStorage) {
   sql.exec(`CREATE TABLE IF NOT EXISTS messages (
@@ -14,11 +22,14 @@ export function createChatTables(sql: SqlStorage) {
     author_name TEXT NOT NULL,
     body TEXT NOT NULL,
     created_at INTEGER NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'text',
+    ref TEXT,
     UNIQUE (author, msg_id)
   )`);
+  addColumns(sql, "messages", MESSAGE_COLUMNS_ADDED);
 }
 
-const toMessage = (row: MessageRow): ChatMessage => ({ seq: row.seq, msgId: row.msg_id, fromId: row.author, fromName: row.author_name, text: row.body, at: row.created_at });
+const toMessage = (row: MessageRow): ChatMessage => ({ seq: row.seq, msgId: row.msg_id, fromId: row.author, fromName: row.author_name, text: row.body, at: row.created_at, kind: row.kind, ref: row.ref });
 
 /** What the Directory needs after a post: the stored message, whether this call stored it, and whose chat lists to update. */
 export type Posted = { message: ChatMessage; stored: boolean; kind: ChatKind; title: string; members: Person[] };

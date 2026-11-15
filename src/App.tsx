@@ -9,7 +9,7 @@ import { LearnedCues } from "./cues";
 import { useAutoScroll, usePerformance, useStored, useWakeLock } from "./hooks";
 import { LearnSong } from "./learn-song";
 import { SetlistList, SongBody, SongList, Tab } from "./library-lists";
-import { SendSongSheet } from "./send-song";
+import { useSendSong } from "./send-song";
 import { initialMetronomeBpm } from "./metronome";
 import { useMetronome } from "./metronome-view";
 import { displayKeyLabel } from "./music";
@@ -64,8 +64,8 @@ export function App() {
   const [friends, setFriends] = useState<{ code?: string } | null>(null);
   const [bands, setBands] = useState<{ code?: string } | null>(null);
   const [chat, setChat] = useState<{ open?: ChatTarget } | null>(null);
-  const [sending, setSending] = useState<Song | null>(null);
   const [landed, setLanded] = useState(landedCode);
+  const sendSong = useSendSong(account, stored.songs, { friends: () => setFriends({}), chat: (roomId) => setChat({ open: { roomId } }) });
 
   useEffect(() => {
     if (landed) clearLanding();
@@ -267,18 +267,7 @@ export function App() {
         {activeSong ? <p className="shell-title">Lead Sheets</p> : <h1 className="shell-title">Lead Sheets</h1>}
         {activeSong ? (
           <OverflowMenu label="More" size="shell" open={menu === "shell"} onToggle={() => toggleMenu("shell")} onClose={closeMenu}>
-            {account && activeSong.copy?.canSendOn !== false ? (
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  closeMenu();
-                  setSending(songByRef(stored.songs, activeSong.ref) ?? null);
-                }}
-              >
-                Send to a friend…
-              </button>
-            ) : null}
+            {sendSong.item(activeSong, closeMenu)}
           </OverflowMenu>
         ) : (
           <Menu button={<DotsIcon />} label="More" className="icon-btn" open={menu === "shell"} onToggle={() => toggleMenu("shell")} onClose={closeMenu}>
@@ -431,23 +420,7 @@ export function App() {
           onClose={() => setBands(null)}
         />
       ) : null}
-
-      {sending && account ? (
-        <SendSongSheet
-          key={account.userId}
-          account={account}
-          song={sending}
-          onFriends={() => {
-            setSending(null);
-            setFriends({});
-          }}
-          onSent={(roomId) => {
-            setSending(null);
-            setChat({ open: { roomId } });
-          }}
-          onClose={() => setSending(null)}
-        />
-      ) : null}
+      {sendSong.sheet}
 
       {chat && account ? (
         <ChatSheet

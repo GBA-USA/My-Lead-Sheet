@@ -6,7 +6,7 @@ import { useEscape, useStored } from "./hooks";
 import { applyUpdate, canSend, cardLine, received, songMessageIn, type Received, type SendPick, type SongSend, type UpdateChoice } from "./send-song-model";
 import type { ShareChoice } from "./share-rule";
 import { ApiError, api, type Account } from "./sign-in-methods";
-import { addOwnSong, loadLibrary, loadScrollVersions, loadSongData, localRef, replaceOwnSong, saveScrollVersions, saveSongData, storageChanged } from "./storage";
+import { addOwnSong, loadLibrary, loadScrollVersions, loadSongData, localRef, replaceOwnSong, saveScrollVersions, saveSongData, songByRef, storageChanged } from "./storage";
 import type { Song } from "./types";
 import "./friends.css";
 import "./band-library.css";
@@ -237,6 +237,43 @@ export function SendSongSheet({ account, song, onFriends, onSent, onClose }: { a
       </section>
     </div>
   );
+}
+
+/** The song page's "Send to a friend…" entry and the sheet it opens. A signed-out phone or a Private copy gets no entry. The sheet is sent the song as stored. */
+export function useSendSong(account: Account | null, songs: Song[], open: { friends: () => void; chat: (roomId: string) => void }) {
+  const [sending, setSending] = useState<Song | null>(null);
+  const item = (song: Song, closeMenu: () => void) =>
+    account && song.copy?.canSendOn !== false ? (
+      <button
+        type="button"
+        role="menuitem"
+        onClick={() => {
+          closeMenu();
+          setSending(songByRef(songs, song.ref) ?? null);
+        }}
+      >
+        Send to a friend…
+      </button>
+    ) : null;
+  const close = () => setSending(null);
+  const sheet =
+    sending && account ? (
+      <SendSongSheet
+        key={account.userId}
+        account={account}
+        song={sending}
+        onFriends={() => {
+          close();
+          open.friends();
+        }}
+        onSent={(roomId) => {
+          close();
+          open.chat(roomId);
+        }}
+        onClose={close}
+      />
+    ) : null;
+  return { item, sheet };
 }
 
 /** A song card in a DM thread. The friend adds it to My Songs, or, for an update of a copy they hold, picks what to keep. */

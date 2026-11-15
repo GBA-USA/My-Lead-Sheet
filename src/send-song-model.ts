@@ -34,7 +34,7 @@ export function applyUpdate(update: SongMessage, fromName: string, choice: Updat
   return { replace: null, add: received(update, fromName, `${update.song.title} (update)`) };
 }
 
-/** The line under a song card: "from Terry · Private · includes V2 · learned". */
+/** The line under a song card: "from Mike · Private · includes V2 · learned". */
 export function cardLine(message: SongMessage, fromName: string): string {
   const parts = [`from ${fromName}`, message.sharedAs === "private" ? "Private" : "Public"];
   if (message.versions.length > 0) parts.push(`includes ${message.versions.map((v) => (v.learned ? `${v.name} · learned` : v.name)).join(", ")}`);

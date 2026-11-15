@@ -32,7 +32,7 @@ export function createChatTables(sql: SqlStorage) {
 
 const toMessage = (row: MessageRow): ChatMessage => ({ seq: row.seq, msgId: row.msg_id, fromId: row.author, fromName: row.author_name, text: row.body, at: row.created_at, kind: row.kind, ref: row.ref });
 
-/** A card points at what it shows. `updateOf` is the earlier song share a song card replaces, or null. */
+/** `updateOf` is the earlier song share a song card replaces, or null. */
 export type Card = { kind: "song"; ref: string; updateOf: string | null };
 
 /** What the Directory needs after a post: the stored message, whether this call stored it, and whose chat lists to update. */

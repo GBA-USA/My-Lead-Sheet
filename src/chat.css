@@ -1,0 +1,133 @@
+.chat-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 8px;
+  align-items: center;
+  width: 100%;
+  min-height: 56px;
+  padding: 8px 4px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.chat-row-title {
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+
+.chat-row-unread .chat-row-title,
+.chat-row-unread .chat-row-preview {
+  font-weight: 700;
+}
+
+.chat-row-preview {
+  grid-column: 1;
+  overflow: hidden;
+  color: var(--text-dim);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-row-side {
+  grid-row: 1 / span 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chat-badge {
+  min-width: 22px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--gold);
+  color: var(--on-gold);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.chat-muted {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.chat-top-side {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.chat-messages {
+  display: grid;
+  gap: 8px;
+  max-height: 50vh;
+  margin: 0;
+  padding: 0 2px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.chat-line {
+  display: grid;
+  gap: 2px;
+  justify-items: start;
+}
+
+.chat-line-mine {
+  justify-items: end;
+}
+
+.chat-name {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.chat-bubble {
+  max-width: 80%;
+  padding: 8px 12px;
+  border-radius: 14px;
+  background: var(--bg-2);
+  font-size: 16px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.chat-line-mine .chat-bubble {
+  background: var(--gold);
+  color: var(--on-gold);
+}
+
+.chat-waiting {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.chat-new-line {
+  margin: 4px 0;
+  padding-top: 4px;
+  border-top: 1px solid var(--gold);
+  color: var(--gold);
+  font-size: 12px;
+  text-align: center;
+}
+
+.chat-composer {
+  display: flex;
+  gap: 8px;
+}
+
+.chat-composer .account-input {
+  flex: 1;
+}

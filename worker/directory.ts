@@ -3,10 +3,11 @@ import { codeLanding, CODE_ROUTES, createCodeTables, LANDING_PATH } from "./code
 import { ACCOUNT_ROUTES, authorizeRoom, closeRooms, createAccountTables } from "./directory-account";
 import { handleDirectoryRequest } from "./directory-http";
 import { createFriendTables, FRIEND_ROUTES } from "./directory-friends";
+import { CHAT_ROUTES, createInboxTables } from "./directory-inbox";
 import type { Env } from "./index";
 import { BAND_ROUTES, createBandIndex } from "./room-members";
 
-const ROUTES = { ...ACCOUNT_ROUTES, ...CODE_ROUTES, ...FRIEND_ROUTES, ...BAND_ROUTES };
+const ROUTES = { ...ACCOUNT_ROUTES, ...CODE_ROUTES, ...FRIEND_ROUTES, ...BAND_ROUTES, ...CHAT_ROUTES };
 
 export class Directory extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
@@ -15,6 +16,7 @@ export class Directory extends DurableObject<Env> {
     createCodeTables(ctx.storage.sql);
     createFriendTables(ctx.storage.sql);
     createBandIndex(ctx.storage.sql);
+    createInboxTables(ctx.storage.sql);
   }
 
   fetch(request: Request): Promise<Response> {

@@ -2,30 +2,16 @@ import type { BandPack, BandPreview, BandSummary, BandView, Member, Role } from 
 import { randomBytes, toBase64Url } from "./bytes";
 import { liveCode } from "./codes";
 import { displayName } from "./directory-account";
-import { signedIn, type Context, type Route, type User } from "./directory-http";
-import { Refused } from "./refused";
+import { signedIn, who, type Context, type Route, type User } from "./directory-http";
+import { joinInbox, leaveInbox } from "./directory-inbox";
+import { fromRoom, Refused, roomRefused as refused } from "./refused";
 
 type MemberState = "active" | "removed" | "left";
 
-type Meta = { kind: "band"; name: string; created_by: string; created_at: number; scroll_with_leader: 0 | 1 };
+type Meta = { kind: "band" | "dm"; name: string; created_by: string; created_at: number; scroll_with_leader: 0 | 1 };
 type MemberRow = { user_id: string; role: Role; state: MemberState; joined_at: number; changed_at: number; display_name: string };
 
-export const NOT_A_MEMBER_CLOSE = 4403;
 const BAND_ID = /^band_[A-Za-z0-9_-]{22}$/;
-
-/** Room refusals arrive over RPC as plain errors carrying the reason, so the Directory gives each its status back here. */
-const ROOM_REFUSALS = {
-  "no-band": 404,
-  "not-a-member": 403,
-  "not-admin": 403,
-  "not-found": 404,
-  "last-admin": 409,
-  "band-exists": 409,
-  "code-stopped": 410,
-  yourself: 400,
-} as const;
-
-const refused = (reason: keyof typeof ROOM_REFUSALS) => new Refused(reason, ROOM_REFUSALS[reason]);
 
 export function createMemberTables(sql: SqlStorage) {
   sql.exec(`CREATE TABLE IF NOT EXISTS meta (
@@ -53,7 +39,8 @@ const activeAdmins = (sql: SqlStorage) => sql.exec<{ n: number }>(`SELECT count(
 /** Whether this room is a band that `userId` may not enter. Rooms that are not bands stay open to any signed-in player. */
 export const shutOut = (sql: SqlStorage, userId: string) => metaOf(sql) !== undefined && memberOf(sql, userId)?.state !== "active";
 
-function inBand(sql: SqlStorage, userId: string): { meta: Meta; me: MemberRow } {
+/** The room and the caller's active membership in it, for a band or a DM alike. */
+export function inRoom(sql: SqlStorage, userId: string): { meta: Meta; me: MemberRow } {
   const meta = metaOf(sql);
   if (!meta) throw refused("no-band");
   const me = memberOf(sql, userId);
@@ -62,7 +49,7 @@ function inBand(sql: SqlStorage, userId: string): { meta: Meta; me: MemberRow } 
 }
 
 function asAdmin(sql: SqlStorage, userId: string) {
-  const band = inBand(sql, userId);
+  const band = inRoom(sql, userId);
   if (band.me.role !== "admin") throw refused("not-admin");
   return band;
 }
@@ -73,10 +60,11 @@ function activeTarget(sql: SqlStorage, userId: string): MemberRow {
   return target;
 }
 
-type Band = { sql: SqlStorage; bandId: string };
+export type RoomStore = { sql: SqlStorage; bandId: string };
+type Band = RoomStore;
 
 function view({ sql, bandId }: Band, userId: string): BandView {
-  const { meta, me } = inBand(sql, userId);
+  const { meta, me } = inRoom(sql, userId);
   const members = sql
     .exec<MemberRow>(`SELECT * FROM members WHERE state = 'active' ORDER BY role = 'admin' DESC, display_name COLLATE NOCASE, user_id`)
     .toArray()
@@ -147,7 +135,7 @@ export const bandRoom = {
   },
 
   leave({ sql }: Band, userId: string, now: number) {
-    const { me } = inBand(sql, userId);
+    const { me } = inRoom(sql, userId);
     const others = sql.exec<{ n: number }>(`SELECT count(*) AS n FROM members WHERE state = 'active' AND user_id != ?`, userId).one().n;
     if (me.role === "admin" && others > 0 && activeAdmins(sql) === 1) throw refused("last-admin");
     setState(sql, userId, "left", now);
@@ -164,7 +152,7 @@ export const bandRoom = {
   },
 
   pack({ sql, bandId }: Band, userId: string): BandPack {
-    const { meta } = inBand(sql, userId);
+    const { meta } = inRoom(sql, userId);
     return { bandId, name: meta.name, scrollWithLeader: meta.scroll_with_leader === 1 };
   },
 };
@@ -177,23 +165,12 @@ export function createBandIndex(sql: SqlStorage) {
   )`);
 }
 
-async function fromRoom<T>(call: Promise<T>): Promise<T> {
-  try {
-    return await call;
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : "";
-    if (reason in ROOM_REFUSALS) throw refused(reason as keyof typeof ROOM_REFUSALS);
-    throw error;
-  }
-}
-
 export function bandIdIn(body: Record<string, unknown>): string {
   if (typeof body.bandId !== "string" || !BAND_ID.test(body.bandId)) throw new Refused("bad-request");
   return body.bandId;
 }
 
 const roomOf = (c: Context, bandId: string) => c.env.ROOM.getByName(bandId);
-const who = (user: User) => ({ userId: user.user_id, name: user.display_name });
 
 function userIdIn(body: Record<string, unknown>): string {
   if (typeof body.userId !== "string" || body.userId.length > 64) throw new Refused("bad-request");
@@ -212,12 +189,15 @@ async function bandCode(c: Context) {
   return row;
 }
 
-function remember(c: Context, userId: string, bandId: string) {
-  c.sql.exec(`INSERT OR IGNORE INTO band_rooms (user_id, room_id) VALUES (?, ?)`, userId, bandId);
+/** The band goes on the player's Bands list and, as a thread, on their Messages list. */
+function remember(c: Context, userId: string, band: BandView) {
+  c.sql.exec(`INSERT OR IGNORE INTO band_rooms (user_id, room_id) VALUES (?, ?)`, userId, band.bandId);
+  joinInbox(c.sql, userId, { roomId: band.bandId, kind: "band", title: band.name }, c.now);
 }
 
 function forget(c: Context, userId: string, bandId: string) {
   c.sql.exec(`DELETE FROM band_rooms WHERE user_id = ? AND room_id = ?`, userId, bandId);
+  leaveInbox(c.sql, userId, bandId);
 }
 
 export const BAND_ROUTES: Record<string, Route> = {
@@ -236,7 +216,7 @@ export const BAND_ROUTES: Record<string, Route> = {
     const user = signedIn(c);
     const bandId = `band_${toBase64Url(randomBytes(16))}`;
     const band = await fromRoom(roomOf(c, bandId).createBand(who(user), name, c.now));
-    remember(c, user.user_id, bandId);
+    remember(c, user.user_id, band);
     return { body: band };
   },
 
@@ -254,7 +234,7 @@ export const BAND_ROUTES: Record<string, Route> = {
     const row = await bandCode(c);
     const user = signedIn(c);
     const band = await fromRoom(roomOf(c, row.target_id).joinBand(who(user), { inviterId: row.created_by, madeAt: row.created_at }, c.now));
-    remember(c, user.user_id, row.target_id);
+    remember(c, user.user_id, band);
     return { body: band };
   },
 

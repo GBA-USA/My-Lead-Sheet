@@ -8,6 +8,10 @@ export type User = { user_id: string; handle: string; display_name: string; sess
 
 export const userById = (sql: SqlStorage, userId: string) => sql.exec<User>(`SELECT * FROM users WHERE user_id = ?`, userId).toArray()[0];
 
+/** A user as a Room stores them: the id and the name bandmates see. */
+export type Person = { userId: string; name: string };
+export const who = (user: User): Person => ({ userId: user.user_id, name: user.display_name });
+
 export interface Context {
   storage: DurableObjectStorage;
   sql: SqlStorage;

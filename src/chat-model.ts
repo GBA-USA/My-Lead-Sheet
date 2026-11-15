@@ -1,87 +1,88 @@
-export type ChatKind = "self" | "dm" | "band";
+export type ChatKind = "dm" | "band";
+
+/** One row of the Messages list, as the Directory's inbox keeps it (PLAN.md 5). Unread is `lastSeq - lastReadSeq`. */
 export type ChatEntry = { roomId: string; kind: ChatKind; title: string; lastSeq: number; lastReadSeq: number; mutedUntil: number | null; preview: string; lastAt: number };
-export type ChatMessage = { seq: number; fromId: string; fromName: string; text: string; at: number };
-export type Outgoing = { localId: string; roomId: string; text: string; state: "waiting" | "sent" };
 
-export const ME = { id: "u-alex", name: "Alex" };
+export type ChatMessage = { seq: number; msgId: string; fromId: string; fromName: string; text: string; at: number };
 
-export const fixtureChats: ChatEntry[] = [
-  { roomId: "r-self", kind: "self", title: "Notes to self", lastSeq: 1, lastReadSeq: 1, mutedUntil: null, preview: "Remember the gig", lastAt: 1699998000000 },
-  { roomId: "r-band-1", kind: "band", title: "The Porch Cats", lastSeq: 12, lastReadSeq: 9, mutedUntil: null, preview: "Dana: sounds good", lastAt: 1700000000000 },
-  { roomId: "r-dm-mike", kind: "dm", title: "Mike", lastSeq: 5, lastReadSeq: 5, mutedUntil: null, preview: "Mike: thanks!", lastAt: 1699999000000 },
-];
+/**
+ * A message written on this phone that the room has not confirmed yet. `msgId` is made here, so a resend stores nothing
+ * twice, and `from` is the account that wrote it, so another account on the same phone never sends it.
+ */
+export type Queued = { msgId: string; roomId: string; text: string; at: number; from: string };
 
-export const fixtureMessages: ChatMessage[] = [
-  { seq: 1, fromId: "u-alex", fromName: "Alex", text: "Hey everyone!", at: 1700000100000 },
-  { seq: 2, fromId: "u-mike", fromName: "Mike", text: "hi alex", at: 1700000200000 },
-  { seq: 3, fromId: "u-dana", fromName: "Dana", text: "what's up", at: 1700000300000 },
-  { seq: 4, fromId: "u-alex", fromName: "Alex", text: "ready for rehearsal?", at: 1700000400000 },
-  { seq: 5, fromId: "u-mike", fromName: "Mike", text: "yep let's go", at: 1700000500000 },
-  { seq: 6, fromId: "u-dana", fromName: "Dana", text: "I'll bring snacks", at: 1700000600000 },
-  { seq: 7, fromId: "u-alex", fromName: "Alex", text: "awesome", at: 1700000700000 },
-  { seq: 8, fromId: "u-mike", fromName: "Mike", text: "see you soon", at: 1700000800000 },
-  { seq: 9, fromId: "u-dana", fromName: "Dana", text: "heading over now", at: 1700000900000 },
-  { seq: 10, fromId: "u-alex", fromName: "Alex", text: "great, door's open", at: 1700001000000 },
-  { seq: 11, fromId: "u-dana", fromName: "Dana", text: "sounds good", at: 1700001100000 },
-  { seq: 12, fromId: "u-mike", fromName: "Mike", text: "almost there", at: 1700001200000 },
-];
-
-export function unread(c: ChatEntry): number {
-  return Math.max(0, c.lastSeq - c.lastReadSeq);
-}
-
-export function sortChats(list: ChatEntry[]): ChatEntry[] {
-  return [...list].sort((a, b) => b.lastAt - a.lastAt);
-}
-
-export function isBold(c: ChatEntry): boolean {
-  return unread(c) > 0;
-}
-
+export const MAX_MESSAGE_CHARS = 2000;
+/** The close code a room gives a socket whose player is no longer an active member. */
+export const NOT_A_MEMBER_CLOSE = 4403;
 export const MUTE_8H = 8 * 3600 * 1000;
 export const MUTE_1W = 7 * 24 * 3600 * 1000;
+/** "Always" has to survive JSON, so it is the largest safe integer rather than Infinity. */
+export const MUTE_ALWAYS = Number.MAX_SAFE_INTEGER;
 
-export function mute(c: ChatEntry, choice: "8h" | "1w" | "always", now: number): ChatEntry {
-  let mutedUntil: number | null;
-  if (choice === "8h") {
-    mutedUntil = now + MUTE_8H;
-  } else if (choice === "1w") {
-    mutedUntil = now + MUTE_1W;
-  } else {
-    mutedUntil = Infinity;
-  }
-  return { ...c, mutedUntil };
-}
+export type MuteChoice = "8h" | "1w" | "always" | "off";
 
-export function isMuted(c: ChatEntry, now: number, gigLive: boolean): boolean {
-  if (gigLive && c.kind === "band") {
-    return true;
-  }
-  return c.mutedUntil !== null && now < c.mutedUntil;
-}
+export const MUTE_LABELS: Record<MuteChoice, string> = { "8h": "8 hours", "1w": "1 week", always: "Always", off: "Unmute" };
 
-export function firstUnreadSeq(c: ChatEntry): number | null {
-  if (unread(c) > 0) {
-    return c.lastReadSeq + 1;
-  }
+export function mutedUntilFor(choice: MuteChoice, now: number): number | null {
+  if (choice === "8h") return now + MUTE_8H;
+  if (choice === "1w") return now + MUTE_1W;
+  if (choice === "always") return MUTE_ALWAYS;
   return null;
 }
 
-export function side(m: ChatMessage): "mine" | "theirs" {
-  return m.fromId === ME.id ? "mine" : "theirs";
+/** A band's thread is quiet on stage during a live gig, whatever its mute says (PLAN.md 8.3). */
+export function isMuted(c: ChatEntry, now: number, gigLive = false): boolean {
+  if (gigLive && c.kind === "band") return true;
+  return c.mutedUntil !== null && now < c.mutedUntil;
 }
 
-export function nameAbove(m: ChatMessage): string {
-  return m.fromId === ME.id ? "You" : m.fromName;
+export const unread = (c: ChatEntry) => Math.max(0, c.lastSeq - c.lastReadSeq);
+
+export const sortChats = (list: ChatEntry[]) => [...list].sort((a, b) => b.lastAt - a.lastAt);
+
+/** The seq the "New messages" line goes above, or null when nothing is unread. */
+export const firstUnreadSeq = (c: ChatEntry) => (unread(c) > 0 ? c.lastReadSeq + 1 : null);
+
+export const side = (m: ChatMessage, me: string) => (m.fromId === me ? "mine" : "theirs");
+
+export const nameAbove = (m: ChatMessage, me: string) => (m.fromId === me ? "You" : m.fromName);
+
+/** Both lists as one thread, in seq order, with a message that arrived twice kept once. */
+export function withMessages(have: ChatMessage[], more: ChatMessage[]): ChatMessage[] {
+  const bySeq = new Map(have.map((m) => [m.seq, m]));
+  for (const m of more) bySeq.set(m.seq, m);
+  return [...bySeq.values()].sort((a, b) => a.seq - b.seq);
 }
 
-export function queueSend(q: Outgoing[], roomId: string, text: string, online: boolean, localId: string): Outgoing[] {
-  if (!text || !text.trim()) {
-    return q;
+export const newMsgId = () => crypto.randomUUID().replace(/-/g, "");
+
+export function enqueue(queue: Queued[], item: Queued): Queued[] {
+  const text = item.text.trim();
+  if (!text) return queue;
+  return [...queue, { ...item, text }];
+}
+
+export const withoutQueued = (queue: Queued[], msgId: string) => queue.filter((item) => item.msgId !== msgId);
+
+/**
+ * Sends the queue in order, oldest first. A send the server never answered stops the run, so the rest wait for the
+ * next try and arrive in order. A send the server refused is dropped, since trying again can't change its answer.
+ */
+export async function flushQueue(
+  queue: Queued[],
+  send: (item: Queued) => Promise<ChatMessage>,
+  unanswered: (error: unknown) => boolean,
+  report: { sent(item: Queued, message: ChatMessage): void; dropped(item: Queued, error: unknown): void },
+): Promise<Queued[]> {
+  let left = queue;
+  for (const item of queue) {
+    try {
+      report.sent(item, await send(item));
+    } catch (error) {
+      if (unanswered(error)) break;
+      report.dropped(item, error);
+    }
+    left = withoutQueued(left, item.msgId);
   }
-  return [...q, { localId, roomId, text, state: online ? "sent" : "waiting" }];
-}
-
-export function flush(q: Outgoing[]): Outgoing[] {
-  return q.map(m => ({ ...m, state: "sent" as const }));
+  return left;
 }

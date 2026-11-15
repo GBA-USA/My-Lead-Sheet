@@ -26,7 +26,7 @@ export interface Env {
 }
 
 const ROOM_PATH = /^\/api\/rooms\/([A-Za-z0-9_-]{1,64})$/;
-const DIRECTORY_PATH = /^\/api\/(auth|me|codes|friends|bands)(\/|$)/;
+const DIRECTORY_PATH = /^\/api\/(auth|me|codes|friends|bands|chat)(\/|$)/;
 
 const refuse = (error: string, status: number) => Response.json({ error }, { status });
 

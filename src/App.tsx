@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "r
 import { AccountSheet, googleReturn, useAccount } from "./account";
 import { backupOff, backupOn, syncBackup, type BackupResult } from "./backup";
 import { BandsSheet } from "./bands";
+import { ChatSheet, queueOwner, type ChatTarget } from "./chat";
 import { clearLanding, landedCode } from "./codes";
 import { BackIcon, DotsIcon, Menu, OverflowMenu, ScreenToggle, SongControls } from "./controls";
 import { LearnedCues } from "./cues";
@@ -61,11 +62,13 @@ export function App() {
   const [accountOpen, setAccountOpen] = useState(() => googleReturn() !== null);
   const [friends, setFriends] = useState<{ code?: string } | null>(null);
   const [bands, setBands] = useState<{ code?: string } | null>(null);
+  const [chat, setChat] = useState<{ open?: ChatTarget } | null>(null);
   const [landed, setLanded] = useState(landedCode);
 
   useEffect(() => {
     if (landed) clearLanding();
   }, []);
+  useEffect(() => queueOwner(account?.userId ?? null), [account?.userId]);
 
   useEffect(() => {
     const open = landed?.screen === "friends" ? setFriends : landed?.screen === "bands" ? setBands : null;
@@ -175,6 +178,17 @@ export function App() {
   const closeMenu = () => setMenu(null);
   const toggleMenu = (id: Exclude<MenuId, null>) => setMenu((current) => (current === id ? null : id));
 
+  const shellMenu: [label: string, open: () => void][] = [
+    [account ? "Account" : "Sign in", () => setAccountOpen(true)],
+    ...(account ? ([["Friends", () => setFriends({})], ["Bands", () => setBands({})], ["Messages", () => setChat({})]] as [string, () => void][]) : []),
+  ];
+
+  const messageUser = (userId: string) => {
+    setFriends(null);
+    setBands(null);
+    setChat({ open: { userId } });
+  };
+
   const changeText = (index: number) => {
     const next = Math.max(0, Math.min(TEXT_SCALES.length - 1, index));
     setTextIndex(next);
@@ -259,40 +273,19 @@ export function App() {
           />
         ) : (
           <Menu button={<DotsIcon />} label="More" className="icon-btn" open={menu === "shell"} onToggle={() => toggleMenu("shell")} onClose={closeMenu}>
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                closeMenu();
-                setAccountOpen(true);
-              }}
-            >
-              {account ? "Account" : "Sign in"}
-            </button>
-            {account ? (
+            {shellMenu.map(([label, open]) => (
               <button
+                key={label}
                 type="button"
                 role="menuitem"
                 onClick={() => {
                   closeMenu();
-                  setFriends({});
+                  open();
                 }}
               >
-                Friends
+                {label}
               </button>
-            ) : null}
-            {account ? (
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  closeMenu();
-                  setBands({});
-                }}
-              >
-                Bands
-              </button>
-            ) : null}
+            ))}
           </Menu>
         )}
       </header>
@@ -408,6 +401,7 @@ export function App() {
         <FriendsSheet
           account={account}
           code={friends.code}
+          onMessage={messageUser}
           onSignedOut={() => {
             setAccount(null);
             setFriends(null);
@@ -420,11 +414,24 @@ export function App() {
         <BandsSheet
           account={account}
           code={bands.code}
+          onMessage={messageUser}
           onSignedOut={() => {
             setAccount(null);
             setBands(null);
           }}
           onClose={() => setBands(null)}
+        />
+      ) : null}
+
+      {chat && account ? (
+        <ChatSheet
+          account={account}
+          open={chat.open}
+          onSignedOut={() => {
+            setAccount(null);
+            setChat(null);
+          }}
+          onClose={() => setChat(null)}
         />
       ) : null}
 

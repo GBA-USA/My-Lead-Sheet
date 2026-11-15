@@ -76,4 +76,20 @@ export const DATA_KINDS: readonly DataKind[] = [
     what: "For each band: everyone who joined, with the name bandmates see, whether they are an admin, whether they are still in the band, left or were removed, and when that last changed.",
   },
   { key: "band_rooms", place: "server", what: "Which bands you are in, so your Bands list can find them. A band you left or were removed from is dropped the next time the list loads." },
+  {
+    key: "leadSheetsChatQueue",
+    place: "phone",
+    what: "Messages you wrote with no signal, kept until they are sent, each marked with the account that wrote it so nobody else signed in on this phone sends it. Each is removed as soon as the room confirms it.",
+  },
+  {
+    key: "messages",
+    place: "server",
+    what: "In each band or DM room: every message posted, with who wrote it, their name at the time, the text, when it was sent, and the id your phone gave it so a resend is stored once.",
+  },
+  {
+    key: "inbox",
+    place: "server",
+    what: "Your Messages list: for each band thread and DM, its name, the number and a one-line preview of the newest message, the last message you read, and until when you muted it.",
+  },
+  { key: "dm_index", place: "server", what: "For each pair of people who message each other, which room holds their one DM thread." },
 ];

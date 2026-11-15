@@ -28,7 +28,20 @@ const message = (error: unknown) => {
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-export function BandsSheet({ account, code, onSignedOut, onClose }: { account: Account; code?: string; onSignedOut: () => void; onClose: () => void }) {
+/** Bands: the list, one band's Members with Message on each bandmate, Invite and Band settings. `code` is a band code to open first. */
+export function BandsSheet({
+  account,
+  code,
+  onMessage,
+  onSignedOut,
+  onClose,
+}: {
+  account: Account;
+  code?: string;
+  onMessage: (userId: string) => void;
+  onSignedOut: () => void;
+  onClose: () => void;
+}) {
   const titleId = useId();
   const nameId = useId();
   const linkId = useId();
@@ -198,6 +211,11 @@ export function BandsSheet({ account, code, onSignedOut, onClose }: { account: A
                   {member.name}
                   {member.role === "admin" ? <small>Admin</small> : null}
                 </span>
+                {member.userId !== account.userId ? (
+                  <button type="button" className="account-link" onClick={() => onMessage(member.userId)}>
+                    Message
+                  </button>
+                ) : null}
                 {isAdmin && member.userId !== account.userId ? (
                   <span className="friends-actions">
                     {member.role === "member" ? (

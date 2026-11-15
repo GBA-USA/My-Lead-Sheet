@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { connect } from "node:net";
+import type { Duplex } from "node:stream";
 import { tmpdir } from "node:os";
 import { extname, join } from "node:path";
 import { build } from "vite";
@@ -25,9 +27,23 @@ async function forward(request: IncomingMessage, response: ServerResponse, apiBa
   response.end(Buffer.from(await reply.arrayBuffer()));
 }
 
+/** A WebSocket upgrade goes on to the API as the bytes the browser sent, so the page's room socket reaches the real Worker. */
+function bridge(request: IncomingMessage, socket: Duplex, head: Buffer, apiBase: string) {
+  const target = new URL(apiBase);
+  const upstream = connect(Number(target.port), target.hostname, () => {
+    const lines = [`${request.method} ${request.url} HTTP/1.1`];
+    for (let i = 0; i < request.rawHeaders.length; i += 2) lines.push(`${request.rawHeaders[i]}: ${request.rawHeaders[i].toLowerCase() === "host" ? target.host : request.rawHeaders[i + 1]}`);
+    upstream.write(`${lines.join("\r\n")}\r\n\r\n`);
+    if (head.length) upstream.write(head);
+    socket.pipe(upstream).pipe(socket);
+  });
+  upstream.on("error", () => socket.destroy());
+  socket.on("error", () => upstream.destroy());
+}
+
 /**
  * Builds the app, serves it on a free port, and opens one tab of headless Chrome on DevTools.
- * With `apiBase`, requests under /api/ and code links under /c/ go on to the API it returns, so the page talks to a real Worker.
+ * With `apiBase`, requests and socket upgrades under /api/ and code links under /c/ go on to the API it returns, so the page talks to a real Worker.
  * `flags` go on Chrome's command line, for example a fake camera.
  */
 export async function openSite(root: string, name: string, apiBase?: () => string, flags: string[] = []): Promise<Site> {
@@ -51,6 +67,10 @@ export async function openSite(root: string, name: string, apiBase?: () => strin
       response.writeHead(404);
       response.end();
     }
+  });
+  server.on("upgrade", (request, socket, head) => {
+    if (apiBase && request.url?.startsWith("/api/")) bridge(request, socket, head, apiBase());
+    else socket.destroy();
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();

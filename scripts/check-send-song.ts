@@ -278,6 +278,12 @@ try {
   });
 
   await check("an update offers Keep mine, Take Terry's or Keep both, and Keep both leaves two songs", async () => {
+    const roomId = await dmOf(terry, sam);
+    if (!(await songMessages(terry, roomId)).some((m) => songIn(m).updateOf === firstSend.shareId)) {
+      landed(await terry.call("/api/chat/send-song", firstSend), firstSend, "Terry sends Sam Open Road as Public");
+      const update = sendBody(sam, openRoadEdited, { choice: "public", updateOf: firstSend.shareId });
+      landed(await terry.call("/api/chat/send-song", update), update, "Terry sends the Open Road update");
+    }
     await reset();
     await openDm("Terry");
     await app.until(`[...document.querySelectorAll(".chat-sheet button")].some((b) => b.textContent.trim() === "Keep both")`, "the update card", 15000);

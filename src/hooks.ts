@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type Dispatch, type SetStateAction } from "react";
 import { clampScrollPercent, type Notation } from "./music";
-import { READING_LINE, runScroll, type Motion, type Section } from "./scroll-timing";
+import { READING_LINE, runScroll, type Motion, type Section, type TimeSource } from "./scroll-timing";
 import { loadNotation, loadScrollPercent, onStorageChange, saveNotation, saveScrollPercent, storageGeneration } from "./storage";
 import type { SongRef } from "./types";
 
@@ -67,13 +67,14 @@ export function usePerformance(songRef: SongRef | null) {
  * Scrolls #sheet-scroll by `motion`. A timed motion moves #chord-section only: from its top at the top of the
  * view to its bottom at the bottom. A learned one brings each heading, then the chart's end, to the reading line.
  * Grabbing or a manual scroll pauses. A new `plan` re-syncs from where the sheet is. Returns the timed clock, in
- * seconds at the plan's BPM.
+ * seconds at the plan's BPM. `time` is band time in a gig; solo leaves it out.
  */
 export function useAutoScroll(
   active: boolean,
   motion: Motion,
   plan: string,
   onStop: (reason: "user" | "end") => void,
+  time?: TimeSource,
 ) {
   const motionRef = useRef(motion);
   motionRef.current = motion;
@@ -85,8 +86,8 @@ export function useAutoScroll(
     if (!active) return;
     const el = document.getElementById("sheet-scroll");
     if (!el) return;
-    return scrollChart(el, () => document.getElementById("chord-section"), motionRef, clock, (reason) => onStopRef.current(reason));
-  }, [active, plan]);
+    return scrollChart(el, () => document.getElementById("chord-section"), motionRef, clock, (reason) => onStopRef.current(reason), time);
+  }, [active, plan, time]);
 
   return clock;
 }
@@ -102,6 +103,7 @@ export function scrollChart(
   motion: { current: Motion },
   clock: { current: number },
   onStop: (reason: "user" | "end") => void,
+  time?: TimeSource,
 ): () => void {
   let last: Section | null = null;
   const section = (): Section | null => {
@@ -121,7 +123,7 @@ export function scrollChart(
     }
   };
   el.addEventListener("scroll", relaid, { passive: true });
-  const stop = runScroll(el, motion, section, clock, onStop);
+  const stop = runScroll(el, motion, section, clock, onStop, time);
   return () => {
     stop();
     el.removeEventListener("scroll", relaid);

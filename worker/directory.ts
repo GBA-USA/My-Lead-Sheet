@@ -5,10 +5,11 @@ import { handleDirectoryRequest } from "./directory-http";
 import { createFriendTables, FRIEND_ROUTES } from "./directory-friends";
 import { CHAT_ROUTES, createInboxTables } from "./directory-inbox";
 import type { Env } from "./index";
+import { EXPORT_ROUTES } from "./room-export";
 import { LIBRARY_ROUTES } from "./room-library";
 import { BAND_ROUTES, createBandIndex } from "./room-members";
 
-const ROUTES = { ...ACCOUNT_ROUTES, ...CODE_ROUTES, ...FRIEND_ROUTES, ...BAND_ROUTES, ...LIBRARY_ROUTES, ...CHAT_ROUTES };
+const ROUTES = { ...ACCOUNT_ROUTES, ...CODE_ROUTES, ...FRIEND_ROUTES, ...BAND_ROUTES, ...LIBRARY_ROUTES, ...CHAT_ROUTES, ...EXPORT_ROUTES };
 
 export class Directory extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {

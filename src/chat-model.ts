@@ -11,9 +11,20 @@ export type ChatMessage = { seq: number; msgId: string; fromId: string; fromName
 
 /**
  * A message written on this phone that the room has not confirmed yet. `msgId` is made here, so a resend stores nothing
- * twice, and `from` is the account that wrote it, so another account on the same phone never sends it.
+ * twice, and `from` is the account that wrote it, so another account on the same phone never sends it. A song waits
+ * with its whole send in `song` and its title in `text`.
  */
-export type Queued = { msgId: string; roomId: string; text: string; at: number; from: string };
+export type Queued = { msgId: string; roomId: string; text: string; at: number; from: string; song?: Record<string, unknown> };
+
+/** A message as one line, for the Messages list: a card shows what it holds, never its JSON. */
+export function previewText(m: Pick<ChatMessage, "kind" | "text">): string {
+  if (m.kind !== "song") return m.text;
+  try {
+    return `🎵 ${String(JSON.parse(m.text).song.title)}`;
+  } catch {
+    return "🎵 A song";
+  }
+}
 
 export const MAX_MESSAGE_CHARS = 2000;
 /** The close code a room gives a socket whose player is no longer an active member. */

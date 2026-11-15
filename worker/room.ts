@@ -3,7 +3,7 @@ import { NOT_A_MEMBER_CLOSE, type ChatMessage } from "../src/chat-model";
 import type { Person } from "./directory-http";
 import type { Env } from "./index";
 import { handleBackup } from "./room-backup";
-import { chatRoom, createChatTables } from "./room-chat";
+import { chatRoom, createChatTables, type Card } from "./room-chat";
 import { bandLibrary, createLibraryTables, selfCopies, type SetlistFields, type SetlistShare, type SongChange, type SongShare } from "./room-library";
 import { bandRoom, createMemberTables, shutOut } from "./room-members";
 import type { StoredShare } from "./share-guard";
@@ -151,8 +151,8 @@ export class Room extends DurableObject<Env> {
   }
 
   /** Stores the post, and a post this call stored goes to every phone on the room's socket. */
-  chatPost(author: Person, msgId: string, text: string, now: number) {
-    const posted = chatRoom.post(this.band, author, msgId, text, now);
+  chatPost(author: Person, msgId: string, text: string, now: number, card: Card | null = null) {
+    const posted = chatRoom.post(this.band, author, msgId, text, now, card);
     if (posted.stored) for (const ws of this.ctx.getWebSockets()) send(ws, { kind: "message", message: posted.message });
     return posted;
   }
@@ -192,6 +192,10 @@ export class Room extends DurableObject<Env> {
   /** Self room only: the Directory names it from the session, so the copies here are always the caller's. */
   recordCopy(userId: string, from: StoredShare[], print: string) {
     return selfCopies.record(this.ctx.storage.sql, userId, from, print);
+  }
+
+  receiveCopy(from: StoredShare[], print: string) {
+    selfCopies.receive(this.ctx.storage.sql, from, print);
   }
 
   copyChains(copyId: string | null, print: string) {

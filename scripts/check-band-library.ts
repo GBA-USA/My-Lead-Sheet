@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { Phone, startApi } from "./api-session.ts";
+import { Phone, startApi, TEST_ORIGIN } from "./api-session.ts";
 import { appPage, PASSWORD_PEPPER, passwordPlayer, settle, WIDTH } from "./app-page.ts";
 import { openSite } from "./chrome.ts";
 import type { BandLibrary, BandSetlist, SongContent } from "../src/band-library-model.ts";
@@ -339,11 +339,11 @@ async function appChecks(site: Awaited<ReturnType<typeof openSite>>, base: strin
   assert.deepEqual(await app.errors(), [], "no page errors");
 }
 
-const { worker: apiWorker, base: apiBase0 } = await startApi({ PASSWORD_PEPPER });
+const apiOnly = await startApi({ PASSWORD_PEPPER });
 try {
-  await apiChecks(apiBase0, "https://app.test");
+  await apiChecks(apiOnly.base, TEST_ORIGIN);
 } finally {
-  await apiWorker.dispose();
+  await apiOnly.worker.dispose();
 }
 
 let apiBase = "";

@@ -1,8 +1,8 @@
 import type { SongContent } from "../src/band-library-model";
 import { signedIn, type Route } from "./directory-http";
-import { readJsonObject, Refused } from "./refused";
+import { fromRoom, readJsonObject, Refused, roomRefused as refused } from "./refused";
 import { bandLibrary, isText, printOf, record, setlistIn, songIn, storeOf } from "./room-library";
-import { bandIdIn, bandRoom, fromRoom, refused, roomOf, type Band } from "./room-members";
+import { bandIdIn, bandRoom, roomOf, type RoomStore } from "./room-members";
 import { lineage, type ShareChoice, type StoredShare } from "./share-guard";
 
 /**
@@ -38,7 +38,7 @@ function shareOf(sql: SqlStorage, shareId: string): MovedShare {
   return { choice: chain.some((share) => share.choice === "private") ? "private" : "public", parentId: chain[0].parentId };
 }
 
-export function exportBand(band: Band, adminId: string, origin: string | undefined, now: number): BandFile {
+export function exportBand(band: RoomStore, adminId: string, origin: string | undefined, now: number): BandFile {
   bandRoom.requireAdmin(band, adminId);
   const { sql } = band;
   return {
@@ -98,7 +98,7 @@ function fileIn(body: Record<string, unknown>): BandFile {
 const heldAs = (sql: SqlStorage, table: "band_songs" | "band_setlists", column: "song_id" | "setlist_id", movedId: string) =>
   sql.exec<{ id: string }>(`SELECT ${column} AS id FROM ${table} WHERE share_id IN (SELECT id FROM shares WHERE parent_id = ?)`, movedId).toArray()[0]?.id;
 
-function importBand(storage: DurableObjectStorage, band: Band, adminId: string, origin: string | undefined, file: BandFile, prints: string[], now: number): Imported {
+function importBand(storage: DurableObjectStorage, band: RoomStore, adminId: string, origin: string | undefined, file: BandFile, prints: string[], now: number): Imported {
   bandRoom.requireAdmin(band, adminId);
   if (file.exportedFrom === sourceOf(origin, band.bandId)) throw new Refused("own-file");
   return storage.transactionSync(() => {
@@ -133,7 +133,7 @@ function importBand(storage: DurableObjectStorage, band: Band, adminId: string, 
 }
 
 /** `POST /api/rooms/<bandId>` with a band file as the body. It comes to the Room directly because the Directory caps a body at 16 KB and a band file is bigger. */
-export async function importBandFile(request: Request, storage: DurableObjectStorage, band: Band, userId: string, origin: string | undefined): Promise<Response> {
+export async function importBandFile(request: Request, storage: DurableObjectStorage, band: RoomStore, userId: string, origin: string | undefined): Promise<Response> {
   try {
     let file: BandFile;
     try {

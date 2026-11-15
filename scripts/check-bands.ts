@@ -220,7 +220,7 @@ async function appChecks() {
     pass("a band link opened signed out joins after sign-up, in the app");
 
     await app.click("✕");
-    assert.deepEqual(await app.openMenu(), ["Account", "Friends", "Bands"], "signed in, Bands sits after Friends");
+    assert.deepEqual(await app.openMenu(), ["Account", "Friends", "Bands", "Messages"], "signed in, Bands sits after Friends");
     await app.pick("Bands");
     await view("list");
     assert.deepEqual(await app.texts(".bands-list li > span:first-child"), ["The Blue Notes2 members"],"the Bands list shows The Blue Notes");

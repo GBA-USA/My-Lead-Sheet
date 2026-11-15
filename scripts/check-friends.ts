@@ -159,7 +159,7 @@ async function appChecks() {
     pass("signed out, there is no Friends item and the app is unchanged");
 
     await app.signUp("Sam Rivera");
-    assert.deepEqual(await app.openMenu(), ["Account", "Friends", "Bands"], "signed in, Friends sits next to Account");
+    assert.deepEqual(await app.openMenu(), ["Account", "Friends", "Bands", "Messages"], "signed in, Friends sits next to Account");
     await app.shot(shots && `${shots}/menu-signed-in.png`);
     await app.closeMenu();
     await site.send("Page.reload");

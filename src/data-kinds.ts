@@ -88,4 +88,20 @@ export const DATA_KINDS: readonly DataKind[] = [
     what: "For every song or setlist copy, in the band or your own room that holds it: who it came from and whether it was shared Private or Public, so the server can refuse to pass on a Private copy.",
   },
   { key: "song_copies", place: "server", what: "In a room only your account can open: each band song you added to My Songs, with a one-way code of its chart, so its Private or Public rule goes with your copy." },
+  {
+    key: "leadSheetsChatQueue",
+    place: "phone",
+    what: "Messages you wrote with no signal, kept until they are sent, each marked with the account that wrote it so nobody else signed in on this phone sends it. Each is removed as soon as the room confirms it.",
+  },
+  {
+    key: "messages",
+    place: "server",
+    what: "In each band or DM room: every message posted, with who wrote it, their name at the time, the text, when it was sent, and the id your phone gave it so a resend is stored once.",
+  },
+  {
+    key: "inbox",
+    place: "server",
+    what: "Your Messages list: for each band thread and DM, its name, the number and a one-line preview of the newest message, the last message you read, and until when you muted it.",
+  },
+  { key: "dm_index", place: "server", what: "For each pair of people who message each other, which room holds their one DM thread." },
 ];

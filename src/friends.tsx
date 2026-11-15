@@ -43,8 +43,23 @@ function PersonRow({ person, children }: { person: Person; children: ReactNode }
   );
 }
 
-/** Friends: the list, requests waiting, Add by @name, Show my code, Share link and Scan a code. `code` is a friend code to open first. */
-export function FriendsSheet({ account, code, onSignedOut, onClose }: { account: Account; code?: string; onSignedOut: () => void; onClose: () => void }) {
+/**
+ * Friends: the list, requests waiting, Add by @name, Show my code, Share link and Scan a code. `code` is a friend code
+ * to open first, and `onMessage` opens the DM with a friend.
+ */
+export function FriendsSheet({
+  account,
+  code,
+  onMessage,
+  onSignedOut,
+  onClose,
+}: {
+  account: Account;
+  code?: string;
+  onMessage: (userId: string) => void;
+  onSignedOut: () => void;
+  onClose: () => void;
+}) {
   const titleId = useId();
   const handleId = useId();
   const [view, setView] = useState<View>(code ? { name: "code", code } : { name: "list" });
@@ -155,6 +170,9 @@ export function FriendsSheet({ account, code, onSignedOut, onClose }: { account:
             <ul className="friends-list friends-friends">
               {lists.friends.map((person) => (
                 <PersonRow key={person.userId} person={person}>
+                  <button type="button" className="account-link" onClick={() => onMessage(person.userId)}>
+                    Message
+                  </button>
                   {blocking === person.userId ? (
                     <button type="button" className="account-secondary" disabled={busy} onClick={() => act("/api/friends/block", { userId: person.userId })}>
                       Yes, block

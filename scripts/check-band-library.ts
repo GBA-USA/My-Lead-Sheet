@@ -114,7 +114,43 @@ async function apiChecks(base: string, origin: string) {
   assert.deepEqual(refusal(await share(ann, side, midnight, "public", { copyId: annsCopy.copy.id })), [403, "private_ancestor"], "so every later copy stays unshareable");
   pass("a Public copy resent as Private can't be passed on again");
 
-  const [first, second] = [songIn(await library(terry, blue), "Midnight Run"), songIn(await library(terry, blue), "Chain Breaker")];
+  for (const [earlier, earlierBand, later, laterBand, laterBandName, builtIn] of [
+    [terry, blue, mike, side, "Side Project", content(seed.songs[1])],
+    [mike, side, terry, blue, "The Blue Notes", content(seed.songs[2])],
+  ] as const) {
+    assert.equal((await share(earlier, earlierBand, builtIn, "private")).status, 200, `${earlier.name} shares the built-in ${builtIn.title} as Private`);
+    const own = await share(later, laterBand, builtIn, "private");
+    assert.equal(own.status, 200, `${later.name} shares the same built-in ${builtIn.title}, which every phone has, into ${laterBandName} (${JSON.stringify(own.body)})`);
+    assert.equal(own.body.canSendOn, true, `and it is ${later.name}'s own to send on`);
+  }
+  const theMiddle = content(seed.songs[3]);
+  const terrysMiddle = await share(terry, blue, theMiddle, "private");
+  const mikesMiddle = (await mike.call("/api/bands/library/copy-song", { bandId: blue, songId: terrysMiddle.body.songId })).body;
+  const namedMiddle = await share(mike, side, theMiddle, "public", { copyId: mikesMiddle.copy.id });
+  assert.equal(namedMiddle.status, 403, `Mike can't send Terry's Private copy of the built-in ${theMiddle.title} on by naming it (${JSON.stringify(namedMiddle.body)})`);
+  const ownMiddle = await share(mike, side, theMiddle, "public");
+  assert.equal(ownMiddle.status, 200, `but his own built-in ${theMiddle.title} is still his to share after he added Terry's Private copy of it to My Songs (${JSON.stringify(ownMiddle.body)})`);
+  pass("a built-in song every phone has stays each player's own, whoever shared it Private first");
+
+  const riverRoad = chart("River Road", "Ann Horn", "Down along the river road");
+  assert.equal((await share(mike, side, riverRoad, "private")).status, 200, "Mike types Ann's River Road into Side Project as Private");
+  const horns = await band(ann, "Horn Section", []);
+  for (const [bandId, where] of [
+    [horns, "her own band"],
+    [side, "Side Project, beside Mike's Private copy"],
+  ] as const) {
+    const authors = await share(ann, bandId, riverRoad, "public");
+    assert.deepEqual([authors.status, authors.body.canSendOn], [200, true], `Ann, who wrote River Road, shares it into ${where} (${JSON.stringify(authors.body)})`);
+  }
+  pass("a chart stays its author's to send after a bandmate shares the same chart Private");
+
+  const openRoad = chart("Open Road", "Terry Bass", "Miles to go before the show");
+  const retried = [await share(terry, blue, openRoad, "public", { shareId: "share_retry_1" }), await share(terry, blue, openRoad, "public", { shareId: "share_retry_1" })];
+  assert.deepEqual(retried.map((reply) => reply.status), [200, 200], `a share sent twice with the same phone-made share id is accepted both times (${JSON.stringify(retried.map((reply) => reply.body))})`);
+  assert.equal((await library(terry, blue)).songs.filter((item) => item.song.title === "Open Road").length, 1, "and the band holds one copy of it, not two");
+  pass("a retried share with the same share id makes one band song");
+
+  const [first, second] =[songIn(await library(terry, blue), "Midnight Run"), songIn(await library(terry, blue), "Chain Breaker")];
   const setlist = { bandId: blue, name: "Friday at Elks", songIds: [second.songId, first.songId], tags: ["Bar"], choice: "private", localId: 7 };
   assert.deepEqual(refusal(await terry.call("/api/bands/library/share-setlist", { ...setlist, choice: undefined })), [400, "choice_required"], "a setlist share asks Private or Public too");
   assert.deepEqual(
@@ -153,6 +189,19 @@ async function apiChecks(base: string, origin: string) {
     [403, "private_copy"],
     "the edited Private song still can't be sent on",
   );
+  const backAlley = chart("Back Alley", "Mike Keys", "Nobody walks the back alley");
+  assert.equal((await share(mike, side, backAlley, "private")).status, 200, "Mike shares Back Alley into Side Project as Private");
+  const terrysAlley = (await terry.call("/api/bands/library/copy-song", { bandId: side, songId: songIn(await library(terry, side), "Back Alley").songId })).body;
+  const alleyOn = await share(terry, blue, backAlley, "public", { copyId: terrysAlley.copy.id });
+  assert.equal(alleyOn.status, 403, `Terry can't send Back Alley on (${JSON.stringify(alleyOn.body)})`);
+  assert.match(String(alleyOn.body.error), /^private_(copy|ancestor)$/, "because it was shared with him privately");
+  const staleAlley = await terry.call("/api/bands/library/edit-song", { bandId: blue, songId: second.songId, base: 1, song: backAlley });
+  assert.deepEqual(
+    [staleAlley.status, staleAlley.body.error, staleAlley.body.current?.rev],
+    [409, "changed", 2],
+    `a stale edit is told the song changed, even when it pastes in a chart Terry can't send on (${JSON.stringify(staleAlley.body)})`,
+  );
+  assert.equal(songIn(await library(terry, blue), "Chain Breaker").song.body[0].lines[0].lyrics, "Break every chain, every night", "and the band song is untouched");
   pass("edits check the base rev, and only the sharer or an admin edits");
 
   await terry.call("/api/bands/remove", { bandId: blue, userId: dana.userId });

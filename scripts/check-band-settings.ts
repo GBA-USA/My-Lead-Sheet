@@ -143,6 +143,7 @@ async function appChecks() {
     await site.evaluate(`location.reload()`);
     await app.library();
     await app.openMenu();
+    await app.until(`[...document.querySelectorAll("[role=menu] [role=menuitem]")].some((item) => item.textContent === "Bands")`, "Bands in the More menu after the reload");
     await app.pick("Bands");
     await view("list");
     await app.click("Open");

@@ -1,5 +1,5 @@
-import { liveCode, type CodeRow } from "./codes";
 import { normalizeHandle } from "../src/handle";
+import { liveCode, type CodeRow } from "./codes";
 import { signedIn, userById, type Context, type Route, type User } from "./directory-http";
 import { Refused } from "./refused";
 

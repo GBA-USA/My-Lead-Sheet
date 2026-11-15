@@ -51,6 +51,23 @@ const pagesNotFound = (outDir: string, base: string): Plugin => ({
   },
 });
 
+const LANDING_WAIT_MS = 6000;
+const CODE = "friend-link.AAAAAAAAAAAAAAAA.1999999999999.AAAAAAAA.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
+const slowCodeLanding = (base: string): Plugin => ({
+  name: "slow-code-landing",
+  configurePreviewServer(server) {
+    server.middlewares.use((req, res, next) => {
+      const code = new URL(req.url ?? "/", "http://preview").pathname.match(/\/c\/([^/]+)$/)?.[1];
+      if (!code) return next();
+      setTimeout(() => {
+        res.writeHead(302, { Location: `${base}?open=friends&code=${code}`, "Cache-Control": "no-store" });
+        res.end();
+      }, LANDING_WAIT_MS);
+    });
+  },
+});
+
 const serve = (outDir: string, base: string, port: number): Promise<PreviewServer> =>
   preview({
     root,
@@ -58,7 +75,7 @@ const serve = (outDir: string, base: string, port: number): Promise<PreviewServe
     logLevel: "silent",
     build: { outDir },
     preview: { host: "127.0.0.1", port, strictPort: true },
-    plugins: [pagesNotFound(outDir, base)],
+    plugins: [slowCodeLanding(base), pagesNotFound(outDir, base)],
   });
 
 const releases = [await buildRelease("first"), await buildRelease("second")];
@@ -76,6 +93,10 @@ async function until<T>(expression: string, done: (value: T) => boolean, label: 
   return value;
 }
 
+const currentEntry = async (): Promise<{ id: number; url: string }> => {
+  const { currentIndex, entries } = await chrome.send("Page.getNavigationHistory");
+  return entries[currentIndex];
+};
 const offline = (on: boolean) => chrome.send("Network.emulateNetworkConditions", { offline: on, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
 const release = () => until<string>("document.querySelector('meta[name=release]')?.content ?? ''", (value) => value !== "", "the page");
 const ourCaches = () => until<string[]>("caches.keys().then((keys) => keys.filter((key) => key.startsWith('lead-sheets ')))", () => true, "cache names");
@@ -126,8 +147,34 @@ try {
       );
     }
 
+    const codeLink = `http://127.0.0.1:${port}${base}c/${CODE}`;
+    const before = (await currentEntry()).id;
+    const arrived = (entry: { id: number; url: string }) => entry.id !== before && new URL(entry.url).pathname === base;
+    void chrome.send("Page.navigate", { url: codeLink });
+    let entry = await currentEntry();
+    for (const started = Date.now(); Date.now() - started < LANDING_WAIT_MS + 6000 && !arrived(entry); ) {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      entry = await currentEntry();
+    }
+    if (!arrived(entry)) {
+      throw new Error(`${base}: a code link whose landing takes ${LANDING_WAIT_MS} ms never reached ${base}, last committed page ${entry.url}`);
+    }
+    const landed = await until<{ path: string; rows: number; signIn: boolean }>(
+      "({ path: location.pathname, rows: document.querySelectorAll('.song-list .song-row').length, signIn: !!document.querySelector('.account-sheet') })",
+      (page) => page.rows === seed.songs.length && page.signIn,
+      `${base}c/ to land in the app`,
+    );
+    check(
+      landed?.path === base && landed.rows === seed.songs.length && landed.signIn,
+      `${base}: a code link whose landing takes ${LANDING_WAIT_MS} ms still opens the app, signed out at the sign-in sheet (saw ${JSON.stringify(landed)})`,
+    );
+
     await server.close();
     await offline(true);
+    const offlineCode = await chrome.send("Page.navigate", { url: codeLink });
+    if (typeof offlineCode.errorText !== "string") {
+      throw new Error(`${base}: offline, a code link got the app shell at a path its files can't load from, not the browser's own offline page (saw ${JSON.stringify(offlineCode)})`);
+    }
     await reloadAt(url);
     check((await release()) === "first", `${base}: offline reload with the server gone still opens the app`);
     await showsSongsAndSheet(`${base} offline`);
@@ -162,4 +209,4 @@ if (failures > 0) {
   console.error(`check:offline failed (${failures})`);
   process.exit(1);
 }
-console.log("check:offline passed: at / and /sub/, the app opens offline with songs and a sheet, a deep path online still reaches the app through 404.html, and a new deploy replaces the old cache");
+console.log("check:offline passed: at / and /sub/, the app opens offline with songs and a sheet, a deep path online still reaches the app through 404.html, a code link is never answered by the service worker, and a new deploy replaces the old cache");

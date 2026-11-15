@@ -51,7 +51,7 @@ export const DATA_KINDS: readonly DataKind[] = [
   {
     key: "codes",
     place: "server",
-    what: "Each code or share link you make: its kind, who it adds or what it opens, when it ends, whether you stopped it, and for a setlist the songs you ticked. Ended codes are cleared out when the next code is made.",
+    what: "Each code or share link you make: its kind, who it adds or what it opens, when it ends, and whether you stopped it. Ended codes are cleared out when the next code is made.",
   },
   {
     key: "friendships",

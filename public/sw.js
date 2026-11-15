@@ -4,6 +4,7 @@ const SCOPE = self.registration.scope;
 const PREFIX = `lead-sheets ${SCOPE} `;
 const CACHE = PREFIX + BUILD.version;
 const NAVIGATION_WAIT_MS = 4000;
+const CODE_LINKS = new URL("c/", SCOPE).pathname;
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -26,7 +27,7 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
-  if (request.method !== "GET" || url.origin !== self.location.origin || url.pathname.includes("/api/")) return;
+  if (request.method !== "GET" || url.origin !== self.location.origin || url.pathname.includes("/api/") || url.pathname.startsWith(CODE_LINKS)) return;
   event.respondWith(request.mode === "navigate" ? openPage(request) : fromCache(request));
 });
 

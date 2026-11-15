@@ -3,6 +3,7 @@ import { BandSettings } from "./band-settings";
 import type { BandPreview, BandSummary, BandView } from "./bands-model";
 import { CODE_REFUSED, CODE_SCREEN, codeInText, readPayload } from "./code-link";
 import { ScanCode, ShowCode } from "./codes";
+import { useEscape } from "./hooks";
 import { ApiError, api, type Account } from "./sign-in-methods";
 import "./friends.css";
 
@@ -79,13 +80,7 @@ export function BandsSheet({ account, code, onSignedOut, onClose }: { account: A
     }
   }, [view]);
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscape(onClose);
 
   const change = (path: string, body: object, done?: string) =>
     run(async () => {

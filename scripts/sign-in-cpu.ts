@@ -10,7 +10,7 @@ const WARM_UP = 200;
 
 async function loadDirectory() {
   const result = await build({
-    stdin: { contents: `export { ACCOUNT_ROUTES, handleDirectoryRequest, createAccountTables } from "./worker/directory-account.ts";`, resolveDir: new URL("..", import.meta.url).pathname, loader: "ts" },
+    stdin: { contents: `export { ACCOUNT_ROUTES, createAccountTables } from "./worker/directory-account.ts"; export { handleDirectoryRequest } from "./worker/directory-http.ts";`, resolveDir: new URL("..", import.meta.url).pathname, loader: "ts" },
     bundle: true,
     write: false,
     format: "esm",

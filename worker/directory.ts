@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { codeLanding, CODE_ROUTES, createCodeTables, LANDING_PATH } from "./codes";
-import { ACCOUNT_ROUTES, authorizeRoom, closeRooms, createAccountTables, handleDirectoryRequest } from "./directory-account";
+import { ACCOUNT_ROUTES, authorizeRoom, closeRooms, createAccountTables } from "./directory-account";
+import { handleDirectoryRequest } from "./directory-http";
 import { createFriendTables, FRIEND_ROUTES } from "./directory-friends";
 import type { Env } from "./index";
 import { BAND_ROUTES, createBandIndex } from "./room-members";

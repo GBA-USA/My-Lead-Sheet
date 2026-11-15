@@ -1,5 +1,6 @@
-import { useEffect, useId, useState } from "react";
+import { useId, useState } from "react";
 import { BpmFinder } from "./bpm-finder";
+import { useEscape } from "./hooks";
 import { METRONOME_MAX, METRONOME_MIN } from "./metronome";
 import type { Song, SongData } from "./types";
 import "./song-data-editor.css";
@@ -92,13 +93,7 @@ export function SongDataEditor({
     song.tempo !== original.tempo ||
     song.timeSignature !== original.timeSignature;
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscape(onClose);
 
   const set = (field: keyof SongDataForm) => (next: string) => setForm((current) => ({ ...current, [field]: next }));
 

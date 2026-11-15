@@ -1,4 +1,5 @@
-import { newSalt, passwordKey } from "./password";
+import { normalizeHandle } from "./handle";
+import { fromBase64Url, newSalt, passwordKey, toBase64Url } from "./password";
 
 export type WayKind = "passkey" | "google" | "password";
 
@@ -86,9 +87,6 @@ export interface SignInMethod {
   remove(id: string): Promise<Account>;
 }
 
-const toBytes = (text: string) => Uint8Array.from(atob(text.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
-const toText = (buffer: ArrayBuffer) => btoa(String.fromCharCode(...new Uint8Array(buffer))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-
 /** The server's creation options: the same fields, with base64url text where WebAuthn wants bytes. */
 type CreationJson = Omit<PublicKeyCredentialCreationOptions, "challenge" | "user" | "excludeCredentials"> & {
   challenge: string;
@@ -98,16 +96,16 @@ type CreationJson = Omit<PublicKeyCredentialCreationOptions, "challenge" | "user
 
 const creationOptions = (options: CreationJson): PublicKeyCredentialCreationOptions => ({
   ...options,
-  challenge: toBytes(options.challenge),
-  user: { ...options.user, id: toBytes(options.user.id) },
-  excludeCredentials: options.excludeCredentials.map((item) => ({ ...item, id: toBytes(item.id) })),
+  challenge: fromBase64Url(options.challenge),
+  user: { ...options.user, id: fromBase64Url(options.user.id) },
+  excludeCredentials: options.excludeCredentials.map((item) => ({ ...item, id: fromBase64Url(item.id) })),
 });
 
 async function makePasskey(path: string, body: object) {
   const { options } = await api<{ options: CreationJson }>(`${path}/options`, body);
   const credential = (await navigator.credentials.create({ publicKey: creationOptions(options) })) as PublicKeyCredential;
   const response = credential.response as AuthenticatorAttestationResponse;
-  return api<SignedIn>(`${path}/finish`, { id: credential.id, clientDataJSON: toText(response.clientDataJSON), attestationObject: toText(response.attestationObject) });
+  return api<SignedIn>(`${path}/finish`, { id: credential.id, clientDataJSON: toBase64Url(response.clientDataJSON), attestationObject: toBase64Url(response.attestationObject) });
 }
 
 const passkey: SignInMethod = {
@@ -120,14 +118,14 @@ const passkey: SignInMethod = {
   create: (displayName) => makePasskey("/api/auth/passkey/create", { name: displayName }),
   async signIn() {
     const { options } = await api<{ options: Omit<PublicKeyCredentialRequestOptions, "challenge"> & { challenge: string } }>("/api/auth/passkey/sign-in/options", {});
-    const credential = (await navigator.credentials.get({ publicKey: { ...options, challenge: toBytes(options.challenge) } })) as PublicKeyCredential;
+    const credential = (await navigator.credentials.get({ publicKey: { ...options, challenge: fromBase64Url(options.challenge) } })) as PublicKeyCredential;
     const response = credential.response as AuthenticatorAssertionResponse;
     return api<SignedIn>("/api/auth/passkey/sign-in/finish", {
       id: credential.id,
-      clientDataJSON: toText(response.clientDataJSON),
-      authenticatorData: toText(response.authenticatorData),
-      signature: toText(response.signature),
-      ...(response.userHandle ? { userHandle: toText(response.userHandle) } : {}),
+      clientDataJSON: toBase64Url(response.clientDataJSON),
+      authenticatorData: toBase64Url(response.authenticatorData),
+      signature: toBase64Url(response.signature),
+      ...(response.userHandle ? { userHandle: toBase64Url(response.userHandle) } : {}),
     });
   },
   addLabel: () => "+ Add another phone",
@@ -175,8 +173,6 @@ const password: SignInMethod = {
 };
 
 export const SIGN_IN_METHODS: readonly SignInMethod[] = [passkey, google, password];
-
-const normalizeHandle = (handle: string) => handle.trim().replace(/^@/, "").toLowerCase();
 
 export async function signInWithPassword(handle: string, typed: string): Promise<SignedIn> {
   const { salt } = await api<{ salt: string }>("/api/auth/password/salt", { handle: normalizeHandle(handle) });

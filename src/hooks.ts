@@ -167,3 +167,13 @@ export function useWakeLock(enabled: boolean) {
     };
   }, [enabled]);
 }
+
+export function useEscape(onClose: () => void) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+}

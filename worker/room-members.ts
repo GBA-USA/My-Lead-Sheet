@@ -1,7 +1,8 @@
 import type { BandPack, BandPreview, BandSummary, BandView, Member, Role } from "../src/bands-model";
 import { randomBytes, toBase64Url } from "./bytes";
 import { liveCode } from "./codes";
-import { displayName, signedIn, type Context, type Route, type User } from "./directory-account";
+import { displayName } from "./directory-account";
+import { signedIn, type Context, type Route, type User } from "./directory-http";
 import { Refused } from "./refused";
 
 type MemberState = "active" | "removed" | "left";

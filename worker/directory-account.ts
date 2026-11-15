@@ -1,10 +1,12 @@
+import { handleFromName, normalizeHandle } from "../src/handle";
 import { authorizeUrl, googleClient, identityFromCode, type GoogleClient } from "./auth-google";
 import { counterKey, hasPepper, KEY_BYTES, keyMac, madeUpSalt, passwordSecrets, SALT_BYTES, sameText, type PasswordSecrets, type WaitRule } from "./auth-password";
 import { clientChallenge, creationOptions, relyingParty, requestOptions, verifyAssertion, verifyRegistration, type Ceremony } from "./auth-passkey";
 import { fromBase64Url, randomBytes, sha256, toBase64Url, utf8 } from "./bytes";
 import type { Env } from "./index";
+import { signedIn, userById, type Context, type Reply, type Route, type User } from "./directory-http";
 import { Refused } from "./refused";
-import { CLEARED_COOKIE, needsRenewal, readSession, sessionCookie, signSession, type Session } from "./session";
+import { cookieValue } from "./session";
 
 const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS users (
@@ -69,7 +71,6 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS password_misses_by_time ON password_misses (at)`,
 ];
 
-export type User = { user_id: string; handle: string; display_name: string; session_version: number };
 type PasskeyRow = { credential_id: string; user_id: string; public_key: ArrayBuffer; sign_count: number; created_at: number; last_used_at: number | null };
 type ChallengeRow = { purpose: Purpose; user_id: string; display_name: string; expires_at: number };
 type Purpose = "create" | "add" | "sign-in" | "google" | "google-link";
@@ -79,7 +80,6 @@ type Way = { kind: WayKind; id: string; detail?: string; createdAt: number; last
 const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 const BACKUP_CODE_COUNT = 8;
 const BACKUP_CODE_LENGTH = 12;
-const MAX_BODY_BYTES = 16 * 1024;
 const ROOM_CLOSE_RETRY_MS = 30 * 1000;
 const GOOGLE_COOKIE = "mls_google";
 const GOOGLE_COOKIE_ATTRIBUTES = "Path=/api/auth/google; HttpOnly; Secure; SameSite=Lax";
@@ -105,13 +105,7 @@ export function displayName(value: unknown): string {
 
 /** A free lowercase @handle from the display name: "Sam Rivera" becomes samrivera, then samrivera2 on a clash. */
 function freeHandle(sql: SqlStorage, name: string): string {
-  const base =
-    name
-      .normalize("NFKD")
-      .replace(/[̀-ͯ]/g, "")
-      .toLowerCase()
-      .replace(/[^a-z0-9]/g, "")
-      .slice(0, 20) || "player";
+  const base = handleFromName(name) || "player";
   const taken = new Set(sql.exec<{ handle: string }>(`SELECT handle FROM users WHERE handle = ?1 OR handle GLOB ?1 || '[0-9]*'`, base).toArray().map((row) => row.handle));
   for (let n = 1; ; n += 1) {
     const handle = n === 1 ? base : `${base}${n}`;
@@ -134,8 +128,6 @@ function storeBackupCodes(sql: SqlStorage, userId: string, hashes: string[]) {
   sql.exec(`DELETE FROM backup_codes WHERE user_id = ?`, userId);
   for (const hash of hashes) sql.exec(`INSERT INTO backup_codes (user_id, code_hash) VALUES (?, ?)`, userId, hash);
 }
-
-export const normalizeHandle = (value: unknown) => (typeof value === "string" ? value.trim().replace(/^@/, "").toLowerCase() : "");
 
 /** A username someone picks with a password: their public @name, 3 to 20 of a-z and 0-9. */
 function pickedHandle(value: unknown): string {
@@ -179,8 +171,6 @@ function accountView(sql: SqlStorage, user: User) {
   const left = sql.exec<{ left: number }>(`SELECT count(*) AS left FROM backup_codes WHERE user_id = ? AND used_at IS NULL`, user.user_id).one().left;
   return { userId: user.user_id, handle: user.handle, displayName: user.display_name, ways: ways(sql, user.user_id), backupCodesLeft: left };
 }
-
-export const userById = (sql: SqlStorage, userId: string) => sql.exec<User>(`SELECT * FROM users WHERE user_id = ?`, userId).toArray()[0];
 
 function insertUser(c: Context, userId: string, name: string, handle = freeHandle(c.sql, name)): User {
   c.sql.exec(`INSERT INTO users (user_id, handle, display_name, created_at, session_version) VALUES (?, ?, ?, ?, 1)`, userId, handle, name, c.now);
@@ -263,16 +253,6 @@ function waitLeft(sql: SqlStorage, counter: string, rule: WaitRule, now: number)
 const googleCookie = (state: string, ttlMs: number) => `${GOOGLE_COOKIE}=${state}; ${GOOGLE_COOKIE_ATTRIBUTES}; Max-Age=${Math.ceil(ttlMs / 1000)}`;
 const CLEARED_GOOGLE_COOKIE = `${GOOGLE_COOKIE}=; ${GOOGLE_COOKIE_ATTRIBUTES}; Max-Age=0`;
 
-function cookieValue(header: string | null, name: string): string {
-  return (
-    header
-      ?.split(";")
-      .map((part) => part.trim())
-      .find((part) => part.startsWith(`${name}=`))
-      ?.slice(name.length + 1) ?? ""
-  );
-}
-
 function requireGoogle(env: Env): { client: GoogleClient; secret: string } {
   const client = googleClient(env);
   if (!client || !env.SESSION_SECRET) throw new Refused("not-configured", 503);
@@ -351,37 +331,6 @@ function insertPasskey(sql: SqlStorage, userId: string, passkey: { credentialId:
   const key = passkey.publicKey.buffer.slice(passkey.publicKey.byteOffset, passkey.publicKey.byteOffset + passkey.publicKey.byteLength);
   sql.exec(`INSERT INTO passkeys (credential_id, user_id, public_key, sign_count, created_at) VALUES (?, ?, ?, ?, ?)`, passkey.credentialId, userId, key, passkey.signCount, now);
 }
-
-export interface Context {
-  storage: DurableObjectStorage;
-  sql: SqlStorage;
-  env: Env;
-  now: number;
-  request: Request;
-  body: Record<string, unknown>;
-  session: Session | null;
-}
-
-/** A JSON `body`, or for a browser coming back from Google, `googleReturn`: the word the app shows once it is sent back there. */
-export type Reply = ({ body: unknown; googleReturn?: undefined } | { googleReturn: string; body?: undefined }) & { signIn?: User; signOut?: true; cookies?: string[] };
-
-/** The caller's users row as it is now, or null once another request has moved its `session_version` on. */
-function currentUser(sql: SqlStorage, session: Session | null): User | null {
-  const user = session ? userById(sql, session.userId) : undefined;
-  return user && user.session_version === session?.version ? user : null;
-}
-
-/**
- * The signed-in caller, read fresh on every call. Other requests run while this one awaits,
- * so a route calls this again in the same synchronous segment as its write.
- */
-export function signedIn(c: Context): User {
-  const user = currentUser(c.sql, c.session);
-  if (!user) throw new Refused("signed-out", 401);
-  return user;
-}
-
-export type Route = (c: Context) => Promise<Reply>;
 
 export const ACCOUNT_ROUTES: Record<string, Route> = {
   async "POST /api/auth/passkey/create/options"(c) {
@@ -562,48 +511,6 @@ export const ACCOUNT_ROUTES: Record<string, Route> = {
     return { body: { ok: true }, signOut: true };
   },
 };
-
-async function readBody(request: Request): Promise<Record<string, unknown>> {
-  if (request.method !== "POST") return {};
-  const text = await request.text();
-  if (text.length > MAX_BODY_BYTES) throw new Refused("too-large", 413);
-  let body: unknown;
-  try {
-    body = JSON.parse(text || "{}");
-  } catch {
-    throw new Refused("bad-request");
-  }
-  if (typeof body !== "object" || body === null || Array.isArray(body)) throw new Refused("bad-request");
-  return body as Record<string, unknown>;
-}
-
-/** The cookie a reply sets: a new session on sign-in, a cleared one on sign-out, or a renewed one for a session older than a day. */
-async function replyCookie(env: Env, sql: SqlStorage, reply: Reply, session: Session | null, now: number): Promise<string | null> {
-  if (reply.signOut) return CLEARED_COOKIE;
-  if (reply.signIn) return sessionCookie(await signSession(env.SESSION_SECRET, { userId: reply.signIn.user_id, version: reply.signIn.session_version, issuedAt: now }));
-  if (session && needsRenewal(session, now) && currentUser(sql, session)) return sessionCookie(await signSession(env.SESSION_SECRET, { ...session, issuedAt: now }));
-  return null;
-}
-
-/** Serves the Directory's API routes. Unknown paths are 404, refusals are `{error}` with their status. */
-export async function handleDirectoryRequest(request: Request, storage: DurableObjectStorage, env: Env, routes: Record<string, Route>): Promise<Response> {
-  const route = routes[`${request.method} ${new URL(request.url).pathname}`];
-  if (!route) return Response.json({ error: "not-found" }, { status: 404 });
-  const headers = new Headers({ "Cache-Control": "no-store" });
-  try {
-    const now = Date.now();
-    const session = await readSession(env.SESSION_SECRET, request.headers.get("Cookie"), now);
-    const reply = await route({ storage, sql: storage.sql, env, now, request, body: await readBody(request), session });
-    const cookie = await replyCookie(env, storage.sql, reply, session, now);
-    for (const value of [...(cookie ? [cookie] : []), ...(reply.cookies ?? [])]) headers.append("Set-Cookie", value);
-    if (reply.googleReturn === undefined) return Response.json(reply.body, { headers });
-    headers.set("Location", `${env.APP_ORIGIN ?? ""}/?google=${encodeURIComponent(reply.googleReturn)}`);
-    return new Response(null, { status: 302, headers });
-  } catch (error) {
-    if (error instanceof Refused) return Response.json({ error: error.reason, ...error.detail }, { status: error.status, headers });
-    throw error;
-  }
-}
 
 /** Lets a socket into a room only under the user's current session, and remembers the room so Sign out everywhere can close it. */
 export function authorizeRoom(sql: SqlStorage, userId: string, version: number, roomId: string): boolean {

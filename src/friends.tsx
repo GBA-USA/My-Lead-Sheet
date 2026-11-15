@@ -1,6 +1,7 @@
 import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 import { CODE_REFUSED, CODE_SCREEN, readPayload } from "./code-link";
 import { ScanCode, ShowCode } from "./codes";
+import { useEscape } from "./hooks";
 import { ApiError, api, type Account } from "./sign-in-methods";
 import "./friends.css";
 
@@ -79,13 +80,7 @@ export function FriendsSheet({ account, code, onSignedOut, onClose }: { account:
     if (view.name === "code") api<Preview>("/api/friends/code", { code: view.code }).then(setPreview, failed);
   }, [view]);
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscape(onClose);
 
   const go = (next: View) => {
     setError("");

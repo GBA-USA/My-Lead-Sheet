@@ -1,5 +1,5 @@
 import { MAX_VALUE_CHARS, backupKindOf, songIdOf, validBackupKey } from "../src/backup-keys";
-import { Refused } from "./refused";
+import { readJsonObject, Refused } from "./refused";
 
 /** Each account's own backup lives in one Room. The Worker derives this name from the session, never from the request. */
 export const selfRoomId = (userId: string) => `self:${userId}`;
@@ -25,15 +25,8 @@ function parseChange(value: unknown): Change {
 
 async function readRequest(request: Request): Promise<{ since: number; changes: Change[] }> {
   if (request.method !== "POST") throw new Refused("not-found", 404);
-  const text = await request.text();
-  if (text.length > MAX_BODY_CHARS) throw new Refused("too-large", 413);
-  let body: Record<string, unknown>;
-  try {
-    body = JSON.parse(text);
-  } catch {
-    throw new Refused("bad-request");
-  }
-  if (!revision(body?.since) || !Array.isArray(body.changes) || body.changes.length > MAX_CHANGES) throw new Refused("bad-request");
+  const body = await readJsonObject(request, MAX_BODY_CHARS);
+  if (!revision(body.since) || !Array.isArray(body.changes) || body.changes.length > MAX_CHANGES) throw new Refused("bad-request");
   const changes = body.changes.map(parseChange);
   if (new Set(changes.map((change) => change.key)).size !== changes.length) throw new Refused("bad-request");
   return { since: body.since as number, changes };

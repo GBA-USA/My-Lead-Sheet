@@ -7,13 +7,14 @@ import { BackIcon, DotsIcon, Menu, OverflowMenu, ScreenToggle, SongControls } fr
 import { LearnedCues } from "./cues";
 import { useAutoScroll, usePerformance, useStored, useWakeLock } from "./hooks";
 import { LearnSong } from "./learn-song";
+import { SetlistList, SongBody, SongList, Tab } from "./library-lists";
 import { initialMetronomeBpm } from "./metronome";
 import { useMetronome } from "./metronome-view";
 import { displayKeyLabel } from "./music";
+import { parseHash, type TabName } from "./route";
 import { READING_LINE, changeTempo, evenPlan, nextVersionName, scrollMotion, startTake, toggleHold, type ScrollVersion, type Take } from "./scroll-timing";
 import { FriendsSheet } from "./friends";
 import { LeadSheet } from "./sheet";
-import { PRIVACY_HREF } from "./data-kinds";
 import type { Account } from "./sign-in-methods";
 import { SongDataEditor } from "./song-data-editor";
 import {
@@ -27,21 +28,10 @@ import {
   saveSongData,
   saveTextScaleIndex,
   songByRef,
-  tempoText,
   withSongData,
 } from "./storage";
 import { SaveTake, TeachBar, taughtPlan, useFollowTempo, useScrollVersions, type BarMenu } from "./teach";
-import type { Library, Setlist, Song, SongData, SongRef } from "./types";
-import { SearchBox } from "./search-box";
-import { matchingSetlists, matchingSongs } from "./search";
-
-type TabName = "songs" | "setlists";
-
-type Route =
-  | { name: "songs" }
-  | { name: "setlists" }
-  | { name: "song"; id: number; from: TabName }
-  | { name: "live"; setlistId: number; index: number };
+import type { Library, Song, SongData, SongRef } from "./types";
 
 type MenuId = "shell" | "song" | BarMenu | null;
 
@@ -49,25 +39,6 @@ type SongDataByRef = Record<SongRef, SongData>;
 
 /** Teach mode: the take while it plays or Learn this song while it listens, then what either taught, until Save or Discard. */
 type Teaching = { take: Take } | { learning: true } | { taught: Omit<ScrollVersion, "name">; data?: SongData | null };
-
-function parseHash(hash: string): Route {
-  const raw = hash.replace(/^#/, "");
-  const path = (raw.split("?")[0] || "/songs").replace(/\/$/, "") || "/songs";
-  const query = raw.includes("?") ? raw.slice(raw.indexOf("?") + 1) : "";
-  const live = path.match(/^\/live\/(\d+)(?:\/(\d+))?$/);
-  if (live) return { name: "live", setlistId: Number(live[1]), index: Number(live[2] ?? 0) };
-  const match = path.match(/^\/song\/(\d+)$/);
-  if (match) {
-    const from = new URLSearchParams(query).get("from") === "setlists" ? "setlists" : "songs";
-    return { name: "song", id: Number(match[1]), from };
-  }
-  if (path === "/setlists") return { name: "setlists" };
-  return { name: "songs" };
-}
-
-function songHref(id: number, from: TabName): string {
-  return from === "setlists" ? `#/song/${id}?from=setlists` : `#/song/${id}`;
-}
 
 const BACKUP_EVERY_MS = 60_000;
 
@@ -517,132 +488,5 @@ export function App() {
         {learned ? <div style={{ height: `calc(100% - ${READING_LINE}px)` }} /> : null}
       </div>
     </div>
-  );
-}
-
-function Tab({ name, selected, children }: { name: TabName; selected: boolean; children: string }) {
-  return (
-    <a
-      href={`#/${name}`}
-      id={`tab-${name}`}
-      role="tab"
-      aria-selected={selected}
-      aria-controls="sheet-scroll"
-      tabIndex={selected ? 0 : -1}
-      className={selected ? "tab is-selected" : "tab"}
-    >
-      {children}
-    </a>
-  );
-}
-
-function SongBody({
-  library,
-  songRef,
-  scale,
-  semitones,
-  notation,
-  metronome,
-}: {
-  library: Library;
-  songRef: SongRef;
-  scale: number;
-  semitones: number;
-  notation: "notes" | "nashville";
-  metronome: ReturnType<typeof useMetronome>;
-}) {
-  const song = songByRef(library.songs, songRef);
-  if (!song) {
-    return (
-      <div className="missing">
-        <p>That song isn&apos;t in this library.</p>
-        <a href="#/songs">Back to My Songs</a>
-      </div>
-    );
-  }
-  return <LeadSheet song={song} scale={scale} semitones={semitones} notation={notation} metronome={metronome} />;
-}
-
-function SongList({ songs }: { songs: Song[] }) {
-  const [query, setQuery] = useState("");
-  const shown = matchingSongs(songs, query);
-  return (
-    <>
-      <SearchBox label="Search songs" value={query} onChange={setQuery} />
-      {query && shown.length === 0 ? (
-        <p className="search-empty" role="status">No songs match.</p>
-      ) : (
-        <ul className="song-list">
-          {shown.map((song) => (
-            <li key={song.ref}>
-              <a className="song-row" href={songHref(song.id, "songs")}>
-                <span className="song-title">{song.title}</span>
-                <span className="song-artist">{song.artist}</span>
-                <span className="song-meta">
-                  <span className="song-key">{song.keyLabel}</span>
-                  <span> · {song.tempo == null ? "Tempo —" : tempoText(song.tempo)}</span>
-                </span>
-              </a>
-            </li>
-          ))}
-        </ul>
-      )}
-      <a className="privacy-link" href={PRIVACY_HREF}>
-        Privacy
-      </a>
-    </>
-  );
-}
-
-function SetlistList({ setlists, songs }: { setlists: Setlist[]; songs: Song[] }) {
-  const [query, setQuery] = useState("");
-  const shown = matchingSetlists(setlists, songs, query);
-  return (
-    <>
-      <SearchBox label="Search setlists" value={query} onChange={setQuery} />
-      {query && shown.length === 0 ? (
-        <p className="search-empty" role="status">No setlists match.</p>
-      ) : (
-        <div className="setlists">
-          {shown.map((setlist) => (
-            <section key={setlist.id} className="setlist" aria-label={setlist.name}>
-              <div className="setlist-head">
-                <h2>{setlist.name}</h2>
-                <a className="live-launch" href={`#/live/${setlist.id}/0`}>
-                  Live
-                </a>
-              </div>
-              {setlist.songRefs.length === 0 ? (
-                <p className="setlist-empty">This setlist is empty.</p>
-              ) : (
-                <ol>
-                  {setlist.songRefs.map((ref, index) => {
-                    const song = songByRef(songs, ref);
-                    return (
-                      <li key={`${setlist.id}-${ref}-${index}`}>
-                        {song ? (
-                          <a className="song-row setlist-row" href={songHref(song.id, "setlists")}>
-                            <span className="setlist-num">{index + 1}</span>
-                            <span className="setlist-copy">
-                              <span className="song-title">{song.title}</span>
-                              <span className="song-artist">{song.artist}</span>
-                            </span>
-                          </a>
-                        ) : (
-                          <div className="song-row setlist-row">
-                            <span className="setlist-num">{index + 1}</span>
-                            <span className="song-artist">Missing from this library</span>
-                          </div>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ol>
-              )}
-            </section>
-          ))}
-        </div>
-      )}
-    </>
   );
 }

@@ -20,6 +20,17 @@ export async function hmacKey(secret: string | undefined): Promise<CryptoKey> {
   return crypto.subtle.importKey("raw", utf8(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
 }
 
+/** The value of cookie `name` in a `Cookie` header, or "" when it isn't there. */
+export function cookieValue(header: string | null, name: string): string {
+  return (
+    header
+      ?.split(";")
+      .map((part) => part.trim())
+      .find((part) => part.startsWith(`${name}=`))
+      ?.slice(name.length + 1) ?? ""
+  );
+}
+
 const payload = (session: Session) => `${session.userId}.${session.version}.${session.issuedAt}`;
 
 export async function signSession(secret: string | undefined, session: Session): Promise<string> {
@@ -30,13 +41,8 @@ export async function signSession(secret: string | undefined, session: Session):
 /** The session in a `Cookie` header, or null when it is missing, tampered with, or past its 90 days. */
 export async function readSession(secret: string | undefined, cookieHeader: string | null, now: number): Promise<Session | null> {
   const key = await hmacKey(secret);
-  const value = cookieHeader
-    ?.split(";")
-    .map((part) => part.trim())
-    .find((part) => part.startsWith(`${COOKIE}=`))
-    ?.slice(COOKIE.length + 1);
-  const parts = value?.split(".");
-  if (!parts || parts.length !== 4) return null;
+  const parts = cookieValue(cookieHeader, COOKIE).split(".");
+  if (parts.length !== 4) return null;
   const [userId, versionText, issuedText, signatureText] = parts;
   const session = { userId, version: Number(versionText), issuedAt: Number(issuedText) };
   const signature = fromBase64Url(signatureText);

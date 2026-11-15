@@ -22,6 +22,10 @@ const ROOM_REFUSALS = {
   "not-yours": 403,
   "not-a-band-song": 400,
   lineage_broken: 403,
+  "not-allowed": 403,
+  "not-on-lineup": 403,
+  "is-leader": 400,
+  "gig-ended": 409,
 } as const;
 
 export const roomRefused = (reason: keyof typeof ROOM_REFUSALS) => new Refused(reason, ROOM_REFUSALS[reason]);

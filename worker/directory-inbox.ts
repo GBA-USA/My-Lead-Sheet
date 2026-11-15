@@ -3,6 +3,7 @@ import { randomBytes, toBase64Url } from "./bytes";
 import { pairOf } from "./directory-friends";
 import { signedIn, userById, who, type Context, type Route, type User } from "./directory-http";
 import { fromRoom, Refused } from "./refused";
+import type { Posted } from "./room-chat";
 
 const ROOM_ID = /^(band|dm)_[A-Za-z0-9_-]{22}$/;
 const MSG_ID = /^[A-Za-z0-9_-]{8,64}$/;
@@ -106,6 +107,32 @@ async function dmRoomFor(c: Context, me: User, other: User): Promise<string> {
   return roomId;
 }
 
+/** A post goes on every member's Messages list with its preview. It counts as read for its author, so nobody's own post is unread. */
+export function deliver(c: Context, roomId: string, posted: Posted) {
+  const { message } = posted;
+  const preview = `${message.fromName}: ${message.text}`.slice(0, PREVIEW_CHARS);
+  for (const member of posted.members) {
+    const title = posted.kind === "band" ? posted.title : (posted.members.find((other) => other.userId !== member.userId)?.name ?? "");
+    c.sql.exec(
+      `INSERT INTO inbox (user_id, room_id, kind, title, last_seq, last_read_seq, preview, last_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+       ON CONFLICT (user_id, room_id) DO UPDATE SET
+         title = excluded.title,
+         preview = CASE WHEN excluded.last_seq >= inbox.last_seq THEN excluded.preview ELSE inbox.preview END,
+         last_seq = max(inbox.last_seq, excluded.last_seq),
+         last_read_seq = max(inbox.last_read_seq, excluded.last_read_seq),
+         last_at = max(inbox.last_at, excluded.last_at)`,
+      member.userId,
+      roomId,
+      posted.kind,
+      title,
+      message.seq,
+      member.userId === message.fromId ? message.seq : 0,
+      preview,
+      message.at,
+    );
+  }
+}
+
 export const CHAT_ROUTES: Record<string, Route> = {
   async "GET /api/chat"(c) {
     const rows = c.sql.exec<InboxRow>(`SELECT * FROM inbox WHERE user_id = ? ORDER BY last_at DESC, room_id`, signedIn(c).user_id).toArray();
@@ -134,29 +161,8 @@ export const CHAT_ROUTES: Record<string, Route> = {
     const me = signedIn(c);
     await allowRoom(c, me, roomId);
     const posted = await fromRoom(c.env.ROOM.getByName(roomId).chatPost(who(me), c.body.msgId, text, c.now));
-    const { message } = posted;
-    const preview = `${message.fromName}: ${message.text}`.slice(0, PREVIEW_CHARS);
-    for (const member of posted.members) {
-      const title = posted.kind === "band" ? posted.title : (posted.members.find((other) => other.userId !== member.userId)?.name ?? "");
-      c.sql.exec(
-        `INSERT INTO inbox (user_id, room_id, kind, title, last_seq, last_read_seq, preview, last_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
-         ON CONFLICT (user_id, room_id) DO UPDATE SET
-           title = excluded.title,
-           preview = CASE WHEN excluded.last_seq >= inbox.last_seq THEN excluded.preview ELSE inbox.preview END,
-           last_seq = max(inbox.last_seq, excluded.last_seq),
-           last_read_seq = max(inbox.last_read_seq, excluded.last_read_seq),
-           last_at = max(inbox.last_at, excluded.last_at)`,
-        member.userId,
-        roomId,
-        posted.kind,
-        title,
-        message.seq,
-        member.userId === message.fromId ? message.seq : 0,
-        preview,
-        message.at,
-      );
-    }
-    return { body: { message } };
+    deliver(c, roomId, posted);
+    return { body: { message: posted.message } };
   },
 
   async "POST /api/chat/read"(c) {

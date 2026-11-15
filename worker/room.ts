@@ -3,9 +3,11 @@ import { NOT_A_MEMBER_CLOSE, type ChatMessage } from "../src/chat-model";
 import type { Person } from "./directory-http";
 import type { Env } from "./index";
 import { handleBackup } from "./room-backup";
-import { chatRoom, createChatTables } from "./room-chat";
+import { chatRoom, createChatTables, type Posted } from "./room-chat";
 import { bandLibrary, createLibraryTables, selfCopies, type SetlistFields, type SetlistShare, type SongChange, type SongShare } from "./room-library";
+import { createGigTables, gigRoom, type GigFields } from "./room-gig";
 import { bandRoom, createMemberTables, shutOut } from "./room-members";
+import type { RouteChoice } from "../src/routes";
 import type { StoredShare } from "./share-guard";
 
 const RELAYED = ["intro", "ping", "pong"] as const;
@@ -51,6 +53,7 @@ export class Room extends DurableObject<Env> {
     createMemberTables(ctx.storage.sql);
     createChatTables(ctx.storage.sql);
     createLibraryTables(ctx.storage.sql);
+    createGigTables(ctx.storage.sql);
   }
 
   private floor(userId: string): number {
@@ -121,12 +124,14 @@ export class Room extends DurableObject<Env> {
 
   removeMember(adminId: string, userId: string, now: number) {
     const band = bandRoom.remove(this.band, adminId, userId, now);
+    gigRoom.dropMember(this.band, userId);
     this.closeMember(userId);
     return band;
   }
 
   leaveBand(userId: string, now: number) {
     bandRoom.leave(this.band, userId, now);
+    gigRoom.dropMember(this.band, userId);
     this.closeMember(userId);
   }
 
@@ -152,9 +157,50 @@ export class Room extends DurableObject<Env> {
 
   /** Stores the post, and a post this call stored goes to every phone on the room's socket. */
   chatPost(author: Person, msgId: string, text: string, now: number) {
-    const posted = chatRoom.post(this.band, author, msgId, text, now);
+    return this.broadcast(chatRoom.post(this.band, author, msgId, text, now));
+  }
+
+  private broadcast(posted: Posted) {
     if (posted.stored) for (const ws of this.ctx.getWebSockets()) send(ws, { kind: "message", message: posted.message });
     return posted;
+  }
+
+  planGig(planner: Person, fields: GigFields, now: number) {
+    const planned = gigRoom.plan(this.band, planner, fields, now);
+    this.broadcast(planned.posted);
+    return planned;
+  }
+
+  gigList(userId: string) {
+    return gigRoom.list(this.band, userId);
+  }
+
+  gigOpen(userId: string, gigId: string) {
+    return gigRoom.open(this.band, userId, gigId);
+  }
+
+  gigLineup(userId: string, gigId: string, lineup: string[]) {
+    return gigRoom.setLineup(this.band, userId, gigId, lineup);
+  }
+
+  gigBackup(userId: string, gigId: string, backup: string | null) {
+    return gigRoom.setBackup(this.band, userId, gigId, backup);
+  }
+
+  gigRoute(userId: string, gigId: string, route: RouteChoice) {
+    return gigRoom.setRoute(this.band, userId, gigId, route);
+  }
+
+  gigPack(userId: string, gigId: string, now: number) {
+    return gigRoom.pack(this.band, this.env.SESSION_SECRET, userId, gigId, now);
+  }
+
+  gigViaLink(userId: string, gigId: string) {
+    return gigRoom.viaLink(this.band, userId, gigId);
+  }
+
+  requireGigAdmin(userId: string, gigId: string) {
+    gigRoom.requireGigAdmin(this.band, userId, gigId);
   }
 
   bandLibrary(userId: string) {

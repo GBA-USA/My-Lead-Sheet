@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "r
 import { AccountSheet, googleReturn, useAccount } from "./account";
 import { backupOff, backupOn, syncBackup, type BackupResult } from "./backup";
 import { BandsSheet } from "./bands";
+import { claimPhone, clearPhone } from "./phone-db";
 import { ChatSheet, queueOwner, type ChatTarget } from "./chat";
 import { clearLanding, landedCode } from "./codes";
 import { BackIcon, DotsIcon, Menu, OverflowMenu, ScreenToggle, SongControls } from "./controls";
@@ -69,9 +70,12 @@ export function App() {
     if (landed) clearLanding();
   }, []);
   useEffect(() => queueOwner(account?.userId ?? null), [account?.userId]);
+  useEffect(() => {
+    if (account) claimPhone(account.userId).catch(() => {});
+  }, [account?.userId]);
 
   useEffect(() => {
-    const open = landed?.screen === "friends" ? setFriends : landed?.screen === "bands" ? setBands : null;
+    const open = landed?.screen === "friends" ? setFriends : landed?.screen === "bands" || landed?.screen === "gig" ? setBands : null;
     if (!landed || !open || checking) return;
     if (!account) return setAccountOpen(true);
     if (accountOpen) return;
@@ -106,6 +110,7 @@ export function App() {
         runBackup();
       } else {
         backupOff();
+        clearPhone().catch(() => {});
         setBackup(null);
       }
     },

@@ -54,12 +54,26 @@ export const chatRoom = {
       .map(toMessage);
   },
 
-  /** Stores the message under the phone's `msgId`. The same id again from the same author stores nothing and returns the first copy. */
-  post({ sql }: RoomStore, author: Person, msgId: string, text: string, now: number): Posted {
+  /**
+   * Stores the message under the phone's `msgId`. The same id again from the same author stores nothing and returns the
+   * first copy. A `card` is a message the app posts for a gig, song or setlist, pointing at it by `ref`.
+   */
+  post({ sql }: RoomStore, author: Person, msgId: string, text: string, now: number, card: { kind: MessageKind; ref: string } | null = null): Posted {
     const { meta } = inRoom(sql, author.userId);
     const mine = () => sql.exec<MessageRow>(`SELECT * FROM messages WHERE author = ? AND msg_id = ?`, author.userId, msgId).toArray()[0];
     const stored = mine() === undefined;
-    if (stored) sql.exec(`INSERT INTO messages (msg_id, author, author_name, body, created_at) VALUES (?, ?, ?, ?, ?)`, msgId, author.userId, author.name, text, now);
+    if (stored) {
+      sql.exec(
+        `INSERT INTO messages (msg_id, author, author_name, body, created_at, kind, ref) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        msgId,
+        author.userId,
+        author.name,
+        text,
+        now,
+        card?.kind ?? "text",
+        card?.ref ?? null,
+      );
+    }
     const message = toMessage(mine()!);
     const members = sql
       .exec<{ user_id: string; display_name: string }>(`SELECT user_id, display_name FROM members WHERE state = 'active'`)

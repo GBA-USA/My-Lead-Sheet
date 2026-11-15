@@ -101,8 +101,16 @@ export const DATA_KINDS: readonly DataKind[] = [
   {
     key: "mls-phone",
     place: "phone",
-    what: "Copies of the songs in your bands, and the gig packs you downloaded: the setlist for the night with its charts, the band timing for those songs, and the gig secret that proves your phone is on the lineup. Kept so they open with no signal.",
+    what: "Copies of the songs in your bands, and the gig packs you downloaded: the setlist for the night with its charts, the band timing for those songs, and the gig secret that proves your phone is on the lineup. Kept so they open with no signal. Removed when you sign out, or when another account signs in on this phone.",
   },
+  { key: "leadSheetsPhoneOwner", place: "phone", what: "Which account the band data on this phone belongs to, so another account signing in here never sees it." },
+  {
+    key: "gigs",
+    place: "server",
+    what: "For each band: every gig planned, with its name and date, the setlist and its song order at the time, who is playing, the leader and backup leader, the connection the admin picked, whether it is planned, live or over, and a number that changes the gig secret when the lineup changes.",
+  },
+  { key: "pack_receipts", place: "server", what: "For each gig: who on the lineup downloaded the gig to their phone, which version of it, and when, so the gig card can show Downloaded." },
+  { key: "gig_ops", place: "server", what: "For each live gig: the id of each change the leader makes and when, so a change sent twice counts once. Nothing is written here until live gigs are built." },
   {
     key: "inbox",
     place: "server",

@@ -1,25 +1,10 @@
 import type { SongContent } from "./band-library-model";
-import type { RouteChoice } from "./routes";
+import type { GigPlan } from "./gig-plan-model";
+import { getFromPhone, putOnPhone } from "./phone-db";
 import type { ScrollVersion } from "./scroll-timing";
+import { api } from "./sign-in-methods";
 
-export type GigStatus = "planned" | "live" | "ended";
-
-/**
- * A gig as the band Room keeps it (PLAN.md 5 `gigs`). `date` is the calendar day as `YYYY-MM-DD`. `lineup`, `leader` and
- * `backup` are user ids. `route` is the admin's choice for the night, `auto` unless they picked one.
- */
-export type GigPlan = {
-  gigId: string;
-  bandId: string;
-  setlistId: string;
-  name: string;
-  date: string;
-  lineup: string[];
-  leader: string;
-  backup: string | null;
-  route: RouteChoice;
-  status: GigStatus;
-};
+export type { GigPlan, GigStatus } from "./gig-plan-model";
 
 /** One song of the pack: the band's chart as frozen at plan time, with the band's timing for it when the band has one. */
 export type GigPackSong = { songId: string; song: SongContent; bandTiming: ScrollVersion | null };
@@ -37,3 +22,18 @@ export type GigPack = {
   packRev: number;
   expiresAt: number | null;
 };
+
+/** Downloads the pack and keeps it on this phone under the gig's id, so a second download replaces the first. An older rev never replaces a newer one. */
+export async function downloadPack(bandId: string, gigId: string): Promise<GigPack> {
+  const fresh = await api<GigPack>("/api/bands/gig/pack", { bandId, gigId });
+  const kept = await getFromPhone("gigPacks", gigId);
+  if (kept && kept.packRev > fresh.packRev) return kept;
+  await putOnPhone("gigPacks", gigId, fresh);
+  return fresh;
+}
+
+/** The packs on this phone for these gigs. A phone that can't open its database has none. */
+export async function packsOnPhone(gigIds: string[]): Promise<Record<string, GigPack>> {
+  const found = await Promise.all(gigIds.map((gigId) => getFromPhone("gigPacks", gigId).catch(() => undefined)));
+  return Object.fromEntries(found.flatMap((pack) => (pack ? [[pack.gig.gigId, pack]] : [])));
+}

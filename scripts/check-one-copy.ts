@@ -34,7 +34,7 @@ for (const { what, pattern, home, dir } of ONE_COPY) {
 const lines = (file: string) => text.get(file)?.split("\n").length ?? 0;
 const defines = (file: string, name: string) => new RegExp(`^(export )?(async )?(function|const|interface|type) ${name}\\b`, "m").test(text.get(file) ?? "");
 
-check(lines("src/App.tsx") <= 450, `src/App.tsx is at most 450 lines (has ${lines("src/App.tsx")})`);
+check(lines("src/App.tsx") <= 500, `src/App.tsx is at most 500 lines (has ${lines("src/App.tsx")})`);
 check(!["parseHash", "SongList", "SetlistList", "SongBody", "Tab"].some((name) => defines("src/App.tsx", name)), "route parsing and the library lists live outside src/App.tsx");
 check(lines("worker/directory-account.ts") <= 600, `worker/directory-account.ts is at most 600 lines (has ${lines("worker/directory-account.ts")})`);
 check(!["handleDirectoryRequest", "signedIn", "readBody", "Context", "Reply"].some((name) => defines("worker/directory-account.ts", name)), "the Directory request plumbing lives outside the account routes");

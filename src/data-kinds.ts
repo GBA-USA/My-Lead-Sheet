@@ -23,6 +23,11 @@ export const DATA_KINDS: readonly DataKind[] = [
     what: "The scroll timings you taught or learned for each song: tap times, beat times, section times and chord names heard. No sound is kept.",
   },
   { key: "leadSheetsSignedIn", place: "phone", what: "That this phone signed in before, so the app checks your account when it opens. Signing out removes it." },
+  {
+    key: "leadSheetsBackup",
+    place: "phone",
+    what: "While you are signed in: which account this phone backs up to, and what it last sent and received, so it only sends changes. Removed when you sign out.",
+  },
   { key: "users", place: "server", what: "Your account: the name bandmates see, your handle (the name others find you by), when you joined, and a number that goes up when you sign out everywhere." },
   {
     key: "passkeys",
@@ -57,6 +62,11 @@ export const DATA_KINDS: readonly DataKind[] = [
     key: "friendships",
     place: "server",
     what: "For each person you asked, who asked you, or you blocked: whether it is a request, a friendship or a block, who asked or blocked, and when it last changed.",
+  },
+  {
+    key: "backup_items",
+    place: "server",
+    what: "Your backup, in a room only your account can open: the songs and setlists you added or changed, your timing versions, the runtime, tempo and time signature you entered, the scroll speed and Notes or Nashville choice for each song, and your text size and Screen on choice. Your phones sync it when you are signed in.",
   },
   { key: "session_floors", place: "server", what: "In each band or chat room, the oldest sign-in it still lets in for each person, after they signed out everywhere." },
 ];

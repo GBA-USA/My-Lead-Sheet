@@ -33,7 +33,7 @@ type Step =
 /** The word the Worker put in `?google=` when it sent the phone back from Google, or null. */
 export const googleReturn = () => new URLSearchParams(window.location.search).get("google");
 
-/** The id of the account this phone signed in to. Builds before Save kept "1", which names no account. */
+/** The id of the account this phone signed in to. Older builds kept "1", which names no account. */
 const SIGNED_IN_KEY = "leadSheetsSignedIn";
 const UNNAMED = "1";
 

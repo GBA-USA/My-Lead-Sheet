@@ -3,13 +3,28 @@ export type ChatKind = "dm" | "band";
 /** One row of the Messages list, as the Directory's inbox keeps it (PLAN.md 5). Unread is `lastSeq - lastReadSeq`. */
 export type ChatEntry = { roomId: string; kind: ChatKind; title: string; lastSeq: number; lastReadSeq: number; mutedUntil: number | null; preview: string; lastAt: number };
 
-export type ChatMessage = { seq: number; msgId: string; fromId: string; fromName: string; text: string; at: number };
+/** What a message is: words, a note from the app, or a card for a song, setlist or gig (PLAN.md 5). */
+export type MessageKind = "text" | "system" | "song" | "setlist" | "gig";
+
+/** `ref` is what a card points at (a song share id, a setlist id or a gig id) and null for words. */
+export type ChatMessage = { seq: number; msgId: string; fromId: string; fromName: string; text: string; at: number; kind: MessageKind; ref: string | null };
 
 /**
  * A message written on this phone that the room has not confirmed yet. `msgId` is made here, so a resend stores nothing
- * twice, and `from` is the account that wrote it, so another account on the same phone never sends it.
+ * twice, and `from` is the account that wrote it, so another account on the same phone never sends it. A song waits
+ * with its whole send in `song` and its title in `text`.
  */
-export type Queued = { msgId: string; roomId: string; text: string; at: number; from: string };
+export type Queued = { msgId: string; roomId: string; text: string; at: number; from: string; song?: Record<string, unknown> };
+
+/** A message as one line, for the Messages list: a card shows what it holds, never its JSON. */
+export function previewText(m: Pick<ChatMessage, "kind" | "text">): string {
+  if (m.kind !== "song") return m.text;
+  try {
+    return `🎵 ${String(JSON.parse(m.text).song.title)}`;
+  } catch {
+    return "🎵 A song";
+  }
+}
 
 export const MAX_MESSAGE_CHARS = 2000;
 /** The close code a room gives a socket whose player is no longer an active member. */

@@ -29,12 +29,12 @@ type Props = { band: BandView; me: string; tab: LibraryTab; busy: boolean; run: 
 type Picked = { kind: "song"; song: Song } | { kind: "setlist"; setlist: Setlist };
 type Mode = { name: "list" } | { name: "pick" } | { name: "ask"; picked: Picked } | { name: "edit"; setlist: BandSetlist };
 
-const CHOICES: Record<ShareChoice, { label: string; line: string }> = {
+export const CHOICES: Record<ShareChoice, { label: string; line: string }> = {
   private: { label: "Private", line: "They can use it, but can't pass it on." },
   public: { label: "Public", line: "They can pass it on." },
 };
 
-const content = ({ ref: _ref, id: _id, copy: _copy, ...song }: Song): SongContent => song;
+export const content = ({ ref: _ref, id: _id, copy: _copy, ...song }: Song): SongContent => song;
 const titleOf = (song: BandSong | undefined) => song?.song.title ?? "A song no longer in the band";
 const lockFor = (item: { sharedAs: ShareChoice }) =>
   item.sharedAs === "private" ? (

@@ -1,8 +1,13 @@
-import { MAX_MESSAGE_CHARS, type ChatEntry, type ChatKind } from "../src/chat-model";
+import { MAX_MESSAGE_CHARS, previewText, type ChatEntry, type ChatKind } from "../src/chat-model";
+import type { SongContent } from "../src/band-library-model";
+import type { ShareChoice } from "../src/share-rule";
+import type { SongData } from "../src/types";
 import { randomBytes, toBase64Url } from "./bytes";
 import { pairOf } from "./directory-friends";
 import { signedIn, userById, who, type Context, type Route, type User } from "./directory-http";
 import { fromRoom, Refused } from "./refused";
+import type { Posted } from "./room-chat";
+import { choiceIn, guardContent, printOf, receivedCopy, record, selfRoom, songIn } from "./room-library";
 
 const ROOM_ID = /^(band|dm)_[A-Za-z0-9_-]{22}$/;
 const MSG_ID = /^[A-Za-z0-9_-]{8,64}$/;
@@ -57,6 +62,60 @@ function seqIn(value: unknown): number {
   return value as number;
 }
 
+const SHARE_ID = /^[A-Za-z0-9]{16,64}$/;
+const MAX_VERSIONS = 20;
+
+function idOrNull(value: unknown, pattern: RegExp): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "string" || !pattern.test(value)) throw new Refused("bad-request");
+  return value;
+}
+
+/** A timing version as it travels (`ScrollVersion` on the phone, whose file the Worker can't load). The phone checks each again when it adds the song. */
+type SentVersion = { name: string; bpm: number; marks: unknown[]; learned?: unknown; tempo?: unknown };
+
+/** The body of `POST /api/chat/send-song`, read. The card keeps everything but `userId`, `choice` and `copyId` (`SongMessage` on the phone). */
+type SongSend = { userId: string; msgId: string; shareId: string; song: SongContent; versions: SentVersion[]; data: SongData | null; choice: ShareChoice; copyId: string | null; updateOf: string | null };
+
+function versionIn(value: unknown): SentVersion {
+  const version = record(value);
+  if (!version || typeof version.name !== "string" || version.name.length < 1 || version.name.length > 80 || typeof version.bpm !== "number" || !Array.isArray(version.marks)) throw new Refused("bad-request");
+  const { name, bpm, marks, learned, tempo } = version;
+  return { name, bpm, marks, ...(learned === undefined ? {} : { learned }), ...(tempo === undefined ? {} : { tempo }) };
+}
+
+function dataIn(value: unknown): SongData | null {
+  if (value === null || value === undefined) return null;
+  const data = record(value);
+  if (!data) throw new Refused("bad-request");
+  const kept: SongData = {};
+  if (typeof data.officialRuntimeSec === "number") kept.officialRuntimeSec = data.officialRuntimeSec;
+  if (typeof data.tempo === "number") kept.tempo = data.tempo;
+  if (typeof data.timeSignature === "string") kept.timeSignature = data.timeSignature;
+  return Object.keys(kept).length > 0 ? kept : null;
+}
+
+/**
+ * A send's body. The share id becomes the friend's copy id, so it has no `_` and can never be a server id. Nothing the
+ * phone says about whether the copy may be passed on is read: the server works that out.
+ */
+function songSendIn(body: Record<string, unknown>): SongSend {
+  const choice = choiceIn(body);
+  if (typeof body.userId !== "string" || typeof body.msgId !== "string" || !MSG_ID.test(body.msgId) || typeof body.shareId !== "string" || !SHARE_ID.test(body.shareId)) throw new Refused("bad-request");
+  if (!Array.isArray(body.versions) || body.versions.length > MAX_VERSIONS) throw new Refused("bad-request");
+  return {
+    userId: body.userId,
+    msgId: body.msgId,
+    shareId: body.shareId,
+    song: songIn(body.song),
+    versions: body.versions.map(versionIn),
+    data: dataIn(body.data),
+    choice,
+    copyId: idOrNull(body.copyId, /^.{1,64}$/),
+    updateOf: idOrNull(body.updateOf, SHARE_ID),
+  };
+}
+
 const pairKey = (a: string, b: string) => (a < b ? `${a}:${b}` : `${b}:${a}`);
 
 /** The person `userId` in the request names, who must have an account and not be the caller. */
@@ -106,6 +165,32 @@ async function dmRoomFor(c: Context, me: User, other: User): Promise<string> {
   return roomId;
 }
 
+/** Puts a stored post on every member's Messages list: the newest preview, and read up to it for the one who wrote it. */
+function deliver(c: Context, roomId: string, posted: Posted) {
+  const { message } = posted;
+  const preview = `${message.fromName}: ${previewText(message)}`.slice(0, PREVIEW_CHARS);
+  for (const member of posted.members) {
+    const title = posted.kind === "band" ? posted.title : (posted.members.find((other) => other.userId !== member.userId)?.name ?? "");
+    c.sql.exec(
+      `INSERT INTO inbox (user_id, room_id, kind, title, last_seq, last_read_seq, preview, last_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+       ON CONFLICT (user_id, room_id) DO UPDATE SET
+         title = excluded.title,
+         preview = CASE WHEN excluded.last_seq >= inbox.last_seq THEN excluded.preview ELSE inbox.preview END,
+         last_seq = max(inbox.last_seq, excluded.last_seq),
+         last_read_seq = max(inbox.last_read_seq, excluded.last_read_seq),
+         last_at = max(inbox.last_at, excluded.last_at)`,
+      member.userId,
+      roomId,
+      posted.kind,
+      title,
+      message.seq,
+      member.userId === message.fromId ? message.seq : 0,
+      preview,
+      message.at,
+    );
+  }
+}
+
 export const CHAT_ROUTES: Record<string, Route> = {
   async "GET /api/chat"(c) {
     const rows = c.sql.exec<InboxRow>(`SELECT * FROM inbox WHERE user_id = ? ORDER BY last_at DESC, room_id`, signedIn(c).user_id).toArray();
@@ -134,29 +219,26 @@ export const CHAT_ROUTES: Record<string, Route> = {
     const me = signedIn(c);
     await allowRoom(c, me, roomId);
     const posted = await fromRoom(c.env.ROOM.getByName(roomId).chatPost(who(me), c.body.msgId, text, c.now));
-    const { message } = posted;
-    const preview = `${message.fromName}: ${message.text}`.slice(0, PREVIEW_CHARS);
-    for (const member of posted.members) {
-      const title = posted.kind === "band" ? posted.title : (posted.members.find((other) => other.userId !== member.userId)?.name ?? "");
-      c.sql.exec(
-        `INSERT INTO inbox (user_id, room_id, kind, title, last_seq, last_read_seq, preview, last_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
-         ON CONFLICT (user_id, room_id) DO UPDATE SET
-           title = excluded.title,
-           preview = CASE WHEN excluded.last_seq >= inbox.last_seq THEN excluded.preview ELSE inbox.preview END,
-           last_seq = max(inbox.last_seq, excluded.last_seq),
-           last_read_seq = max(inbox.last_read_seq, excluded.last_read_seq),
-           last_at = max(inbox.last_at, excluded.last_at)`,
-        member.userId,
-        roomId,
-        posted.kind,
-        title,
-        message.seq,
-        member.userId === message.fromId ? message.seq : 0,
-        preview,
-        message.at,
-      );
-    }
-    return { body: { message } };
+    deliver(c, roomId, posted);
+    return { body: { message: posted.message } };
+  },
+
+  async "POST /api/chat/send-song"(c) {
+    const me = signedIn(c);
+    const { msgId, ...send } = songSendIn(c.body);
+    const other = otherIn(c, me);
+    await allowDm(c, me, other);
+    const roomId = await dmRoomFor(c, me, other);
+    const print = await printOf(send.song);
+    const from = await guardContent(c, me.user_id, print, send.choice, send.copyId, null);
+    const copyFor = (shareId: string) => receivedCopy(shareId, other.user_id, me.user_id, from, send.choice);
+    const { userId: _to, choice, copyId: _copy, ...shown } = send;
+    const body = { ...shown, sharedAs: choice, reshareable: copyFor(send.shareId).reshareable };
+    const card = { kind: "song", ref: send.shareId, updateOf: send.updateOf } as const;
+    const posted = await fromRoom(c.env.ROOM.getByName(roomId).chatPost(who(me), msgId, JSON.stringify(body), c.now, card));
+    await fromRoom(selfRoom(c, other.user_id).receiveCopy(copyFor(posted.message.ref ?? send.shareId).chain, print));
+    deliver(c, roomId, posted);
+    return { body: { roomId, message: posted.message } };
   },
 
   async "POST /api/chat/read"(c) {

@@ -48,7 +48,10 @@ function set(next: Queued[]) {
 /** The server never answered, so the message keeps waiting. A refusal it did give is final. */
 const unanswered = (error: unknown) => !(error instanceof ApiError) || error.status === 0 || error.status >= 500;
 
-const post = (item: Queued) => api<{ message: ChatMessage }>("/api/chat/send", { roomId: item.roomId, msgId: item.msgId, text: item.text }).then((reply) => reply.message);
+const post = (item: Queued) => {
+  const [path, body] = item.song ? ["/api/chat/send-song", { ...item.song, msgId: item.msgId }] : ["/api/chat/send", { roomId: item.roomId, msgId: item.msgId, text: item.text }];
+  return api<{ message: ChatMessage }>(path, body).then((reply) => reply.message);
+};
 
 /** The signed-in account's messages still waiting for signal, for `useSyncExternalStore`. The same array until something changes. */
 export const queuedMessages = () => mine;

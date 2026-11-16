@@ -46,8 +46,8 @@ export interface Song {
   practiceTip: string;
   bassNotes: BassNote[];
   body: ChartSection[];
-  /** Set on a song added from a band: the server's record of the copy, which a later share names so the server can check it. */
-  copy?: { id: string; canSendOn: boolean };
+  /** Set on a song added from a band or a friend: the server's record of the copy, which a later share names so the server can check it. `from` names the friend who sent it. */
+  copy?: { id: string; canSendOn: boolean; from?: { name: string } };
 }
 
 /** Values entered on this device that replace the library's for one song. A missing field keeps the library's. */

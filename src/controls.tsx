@@ -206,6 +206,7 @@ export function OverflowMenu({
   onToggle,
   onClose,
   onSongData,
+  children,
 }: {
   label: string;
   size?: "compact" | "shell";
@@ -213,6 +214,7 @@ export function OverflowMenu({
   onToggle: () => void;
   onClose: () => void;
   onSongData?: () => void;
+  children?: ReactNode;
 }) {
   const noteId = useId();
 
@@ -225,6 +227,7 @@ export function OverflowMenu({
       onToggle={onToggle}
       onClose={onClose}
     >
+      {children}
       {onSongData ? (
         <button
           type="button"

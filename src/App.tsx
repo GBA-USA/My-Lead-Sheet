@@ -5,8 +5,9 @@ import { BandsSheet, BandsTab } from "./bands";
 import { ChatSheet, queueOwner, type ChatTarget } from "./chat";
 import { readPayload, type CodeScreen } from "./code-link";
 import { clearLanding, landedCode } from "./codes";
-import { BackIcon, DotsIcon, Menu, OverflowMenu, SongControls } from "./controls";
+import { BackIcon, OverflowMenu, SongControls } from "./controls";
 import { LearnedCues } from "./cues";
+import { APP_NAME } from "./data-kinds";
 import { useAutoScroll, usePerformance, useStored, useWakeLock } from "./hooks";
 import { LearnSong } from "./learn-song";
 import { SetlistList, SongBody, SongList, Tabs } from "./library-lists";
@@ -14,19 +15,23 @@ import { useSendSong } from "./send-song";
 import { initialMetronomeBpm } from "./metronome";
 import { useMetronome } from "./metronome-view";
 import { displayKeyLabel } from "./music";
-import { parseHash, type TabName } from "./route";
+import type { PersonalDefaults } from "./personal-settings-model";
+import { parseHash, settingsHref, type TabName } from "./route";
 import { READING_LINE, changeTempo, evenPlan, nextVersionName, scrollMotion, startTake, toggleHold, type ScrollVersion, type Take } from "./scroll-timing";
 import { FriendsSheet } from "./friends";
 import { MySetlistCodeSheet, SetlistCopySheet } from "./setlist-code";
+import { GearIcon, SettingsScreen } from "./settings";
 import { LeadSheet } from "./sheet";
 import type { Account } from "./sign-in-methods";
 import { SongDataEditor } from "./song-data-editor";
 import {
   TEXT_SCALES,
   loadLibrary,
+  loadPersonal,
   loadSongData,
   loadTextScaleIndex,
   localRef,
+  savePersonal,
   saveSongData,
   saveTextScaleIndex,
   songByRef,
@@ -60,6 +65,8 @@ export function App() {
   const [textIndex, setTextIndex] = useStored(loadTextScaleIndex);
   const [menu, setMenu] = useState<MenuId>(null);
   const { account, setAccount, checking } = useAccount();
+  const owner = account?.userId ?? null;
+  const [personal, setPersonal] = useStored(() => loadPersonal(owner), owner);
   const [accountOpen, setAccountOpen] = useState(() => googleReturn() !== null);
   const [friends, setFriends] = useState<{ code?: string } | null>(null);
   const [bands, setBands] = useState<{ code?: string; bandId?: string } | null>(null);
@@ -132,7 +139,7 @@ export function App() {
   }, []);
 
   const route = parseHash(hash);
-  const showTabs = route.name !== "live";
+  const showTabs = route.name !== "live" && route.name !== "settings";
   const tab: TabName =
     route.name === "bands" ? "bands" : route.name === "setlists" || (route.name === "song" && route.from === "setlists") ? "setlists" : "songs";
 
@@ -146,7 +153,7 @@ export function App() {
   const activeSong =
     route.name === "song" ? songByRef(library.songs, localRef(route.id)) : route.name === "live" ? liveSong : undefined;
 
-  const performance = usePerformance(activeSong?.ref ?? null);
+  const performance = usePerformance(activeSong?.ref ?? null, personal);
   const metronome = useMetronome(activeSong?.id ?? null, activeSong ? activeSong.tempo : null);
   const versions = useScrollVersions(activeSong?.ref ?? null);
   const take = teaching && "take" in teaching ? teaching.take : null;
@@ -180,16 +187,11 @@ export function App() {
   }, [hash]);
 
   useEffect(() => {
-    document.title = activeSong ? `${activeSong.title} — Lead Sheets` : "Lead Sheets";
+    document.title = activeSong ? `${activeSong.title} — ${APP_NAME}` : APP_NAME;
   }, [activeSong]);
 
   const closeMenu = () => setMenu(null);
   const toggleMenu = (id: Exclude<MenuId, null>) => setMenu((current) => (current === id ? null : id));
-
-  const shellMenu: [label: string, open: () => void][] = [
-    [account ? "Account" : "Sign in", () => setAccountOpen(true)],
-    ...(account ? ([["Friends", () => setFriends({})], ["Bands", () => setBands({})], ["Messages", () => setChat({})]] as [string, () => void][]) : []),
-  ];
 
   const openChat = (open: ChatTarget) => {
     setFriends(null);
@@ -202,7 +204,12 @@ export function App() {
   const changeText = (index: number) => {
     const next = Math.max(0, Math.min(TEXT_SCALES.length - 1, index));
     setTextIndex(next);
-    saveTextScaleIndex(next);
+    return saveTextScaleIndex(next);
+  };
+
+  const changePersonal = (next: PersonalDefaults) => {
+    setPersonal(next);
+    return savePersonal(owner, next);
   };
 
   const goBack = () => {
@@ -210,6 +217,8 @@ export function App() {
       window.location.hash = route.from === "setlists" ? "#/setlists" : "#/songs";
     } else if (route.name === "live") {
       window.location.hash = "#/setlists";
+    } else if (route.name === "settings") {
+      window.location.hash = `#/${route.from}`;
     }
   };
 
@@ -252,32 +261,20 @@ export function App() {
           type="button"
           className="icon-btn"
           aria-label="Back"
-          disabled={route.name !== "song" && route.name !== "live"}
+          disabled={route.name !== "song" && route.name !== "live" && route.name !== "settings"}
           onClick={goBack}
         >
           <BackIcon />
         </button>
-        {activeSong ? <p className="shell-title">Lead Sheets</p> : <h1 className="shell-title">Lead Sheets</h1>}
+        {activeSong ? <p className="shell-title">{APP_NAME}</p> : <h1 className="shell-title">{route.name === "settings" ? "Settings" : APP_NAME}</h1>}
         {activeSong ? (
           <OverflowMenu label="More" size="shell" open={menu === "shell"} onToggle={() => toggleMenu("shell")} onClose={closeMenu}>
             {sendSong.item(activeSong, closeMenu)}
           </OverflowMenu>
-        ) : (
-          <Menu button={<DotsIcon />} label="More" className="icon-btn" open={menu === "shell"} onToggle={() => toggleMenu("shell")} onClose={closeMenu}>
-            {shellMenu.map(([label, open]) => (
-              <button
-                key={label}
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  closeMenu();
-                  open();
-                }}
-              >
-                {label}
-              </button>
-            ))}
-          </Menu>
+        ) : route.name === "settings" ? null : (
+          <button type="button" className="icon-btn" aria-label="Settings" onClick={() => (window.location.hash = settingsHref(tab))}>
+            <GearIcon />
+          </button>
         )}
       </header>
 
@@ -301,7 +298,7 @@ export function App() {
           keyLabel={displayKeyLabel(activeSong, performance.semitones)}
           onTransposeDown={() => performance.setSemitones((value) => value - 1)}
           onTransposeUp={() => performance.setSemitones((value) => value + 1)}
-          onOriginalKey={() => performance.setSemitones(0)}
+          onOriginalKey={performance.originalKey}
         />
       ) : null}
 
@@ -394,6 +391,7 @@ export function App() {
           onMessage={messageUser}
           onChat={(roomId) => openChat({ roomId })}
           onSetlistCopy={(code) => { setBands(null); setSetlistCopy({ code }); }}
+          onSettings={() => { setBands(null); window.location.hash = settingsHref("bands"); }}
           onSignedOut={() => setAccount(null)}
           onClose={() => setBands(null)}
         />
@@ -447,6 +445,20 @@ export function App() {
         ) : null}
         {route.name === "songs" ? <SongList songs={library.songs} userId={account?.userId ?? null} /> : null}
         {route.name === "setlists" ? <SetlistList setlists={library.setlists} songs={library.songs} onShowCode={account ? setSetlistCode : undefined} /> : null}
+        {route.name === "settings" ? (
+          <SettingsScreen
+            account={account}
+            backup={backup}
+            textIndex={textIndex}
+            onTextIndex={changeText}
+            personal={personal}
+            onPersonal={changePersonal}
+            metronome={metronome}
+            onAccount={() => setAccountOpen(true)}
+            onFriends={() => setFriends({})}
+            onMessages={() => setChat({})}
+          />
+        ) : null}
         {route.name === "bands" ? <BandsTab account={account} onOpen={(bandId) => setBands({ bandId })} onSignIn={() => setAccountOpen(true)} onSignedOut={() => setAccount(null)} /> : null}
         {route.name === "song" ? (
           <SongBody

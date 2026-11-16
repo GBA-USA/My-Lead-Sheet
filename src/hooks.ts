@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type Dispatch, type SetStateAction } from "react";
 import { clampScrollPercent, type Notation } from "./music";
+import type { PersonalDefaults } from "./personal-settings-model";
 import { parseHash } from "./route";
 import { READING_LINE, runScroll, type Motion, type Section, type TimeSource } from "./scroll-timing";
 import { loadNotation, loadScrollPercent, onStorageChange, saveNotation, saveScrollPercent, storageGeneration } from "./storage";
@@ -20,17 +21,21 @@ export function useStored<T>(load: () => T, key: unknown = null): [T, Dispatch<S
   return [fresh.value, set];
 }
 
-export function usePerformance(songRef: SongRef | null) {
-  const [semitones, setSemitones] = useState(0);
-  const [notation, setNotation] = useStored<Notation>(() => (songRef == null ? "notes" : loadNotation(songRef)), songRef);
+/** A song opens at the player's Transpose default and, unless the song was switched, their Chords default. */
+export function usePerformance(songRef: SongRef | null, defaults: PersonalDefaults) {
+  const [semitones, setSemitones] = useState(defaults.transpose);
+  const [notation, setNotation] = useStored<Notation>(
+    () => (songRef == null ? defaults.chordStyle : loadNotation(songRef, defaults.chordStyle)),
+    `${songRef} ${defaults.chordStyle}`,
+  );
   const [percent, setPercent] = useStored(() => (songRef == null ? 100 : loadScrollPercent(songRef)), songRef);
   const [scrolling, setScrolling] = useState(false);
-  const [boundRef, setBoundRef] = useState<SongRef | null>(null);
+  const [bound, setBound] = useState({ songRef, transpose: defaults.transpose });
 
-  if (songRef !== boundRef) {
-    setBoundRef(songRef);
-    setSemitones(0);
-    setScrolling(false);
+  if (songRef !== bound.songRef || defaults.transpose !== bound.transpose) {
+    setBound({ songRef, transpose: defaults.transpose });
+    setSemitones(defaults.transpose);
+    if (songRef !== bound.songRef) setScrolling(false);
   }
 
   useEffect(() => {
@@ -54,6 +59,7 @@ export function usePerformance(songRef: SongRef | null) {
   return {
     semitones,
     setSemitones,
+    originalKey: () => setSemitones(defaults.transpose),
     notation,
     changeNotation,
     percent,

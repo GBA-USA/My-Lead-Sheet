@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 import type { BackupResult } from "./backup";
-import { PRIVACY_HREF } from "./data-kinds";
+import { APP_NAME, PRIVACY_HREF } from "./data-kinds";
 import { handleFromName } from "./handle";
 import { useEscape } from "./hooks";
 import { commonPasswords, MIN_PASSWORD_LENGTH, passwordProblem } from "./password";
@@ -23,12 +23,12 @@ type Step =
   | { name: "loading" }
   | { name: "start" }
   | { name: "create" }
-  | { name: "backup-code" }
-  | { name: "codes"; codes: string[] }
+  | { name: "forgot"; back: "start" | "password" }
+  | { name: "nudge" }
   | { name: "account" }
   | { name: "password" }
   | { name: "make-password" }
-  | { name: "set-password"; reset?: true };
+  | { name: "set-password" };
 
 /** The word the Worker put in `?google=` when it sent the phone back from Google, or null. */
 export const googleReturn = () => new URLSearchParams(window.location.search).get("google");
@@ -70,12 +70,11 @@ export function useAccount(): { account: Account | null; setAccount: (account: A
 }
 
 const MESSAGES: Record<string, string> = {
-  NotAllowedError: "Face ID or fingerprint didn't finish. Try again. If it keeps failing, open My Lead Sheet in Safari or Chrome.",
+  NotAllowedError: `Face ID or fingerprint didn't finish. Try again. If it keeps failing, open ${APP_NAME} in Safari or Chrome.`,
   InvalidStateError: "This phone is already a way into your account.",
   offline: "Can't reach the server. Check your connection and try again.",
   "not-configured": "Sign-in isn't set up on this server yet.",
-  "unknown-passkey": "That passkey isn't on an account here. Create an account, or use a backup code.",
-  "wrong-code": "That @name and backup code don't match. Check both and try again.",
+  "unknown-passkey": "That passkey isn't on an account here. Create an account, or sign in another way you set up.",
   "last-way": "This is your only way to sign in. Add another way first.",
   "challenge-expired": "That took too long. Try again.",
   "signed-out": "You're signed out. Sign in again.",
@@ -103,7 +102,7 @@ const message = (error: unknown) => {
 
 const BACKUP_PROBLEM = { offline: "can't reach the server", full: "your backup is full", failed: "the backup didn't go through" } as const;
 
-const backupLine = (backup: BackupResult | null) => {
+export const backupLine = (backup: BackupResult | null) => {
   if (backup?.ok && backup.at) {
     const when = new Date(backup.at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
     const held = backup.heldBack === 0 ? "" : ` · ${backup.heldBack} ${backup.heldBack === 1 ? "item" : "items"} not backed up`;
@@ -112,6 +111,10 @@ const backupLine = (backup: BackupResult | null) => {
   if (backup && !backup.ok) return `Not backed up · ${BACKUP_PROBLEM[backup.problem ?? "failed"]}`;
   return "Backing up this phone…";
 };
+
+/** A new account with no password ends on the nudge to add one, when this server offers passwords: with no codes, a lost phone is otherwise a lost account. */
+const afterCreate = (account: Account, config: AuthConfig | null): Step =>
+  config?.password && !account.ways.some((way) => way.kind === "password") ? { name: "nudge" } : { name: "account" };
 
 const added = (ms: number) => new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 
@@ -129,14 +132,12 @@ export function AccountSheet({
   const titleId = useId();
   const nameId = useId();
   const handleId = useId();
-  const codeId = useId();
   const secretId = useId();
   const [step, setStep] = useState<Step>(account ? { name: "account" } : { name: "loading" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [name, setName] = useState("");
   const [handle, setHandle] = useState("");
-  const [code, setCode] = useState("");
   const [secret, setSecret] = useState("");
   const [config, setConfig] = useState<AuthConfig>({ google: false, password: false });
   const [returned] = useState(googleReturn);
@@ -150,14 +151,20 @@ export function AccountSheet({
 
   useEffect(() => {
     let live = true;
-    api<AuthConfig>("/api/auth/config").then((reply) => live && setConfig(reply), () => {});
+    const configured = api<AuthConfig>("/api/auth/config").then(
+      (reply) => {
+        if (live) setConfig(reply);
+        return reply;
+      },
+      () => null,
+    );
     api<SignedIn>("/api/me").then(
       async (reply) => {
         if (!live) return;
         onAccount(reply.account);
         if (returned === "new") {
-          const fresh = await api<SignedIn>("/api/me/backup-codes", {}).catch(() => reply);
-          if (live) setStep(fresh.backupCodes ? { name: "codes", codes: fresh.backupCodes } : { name: "account" });
+          const offered = await configured;
+          if (live) setStep(afterCreate(reply.account, offered));
           return;
         }
         setStep({ name: "account" });
@@ -201,10 +208,13 @@ export function AccountSheet({
     }
   };
 
-  const signedIn = (reply: SignedIn) => {
+  const signedIn = (reply: SignedIn, created = false) => {
     onAccount(reply.account);
-    go(reply.backupCodes ? { name: "codes", codes: reply.backupCodes } : { name: "account" });
+    go(created ? afterCreate(reply.account, config) : { name: "account" });
   };
+
+  const create = (action: Action<[displayName: string]>, displayName: string) =>
+    typeof action === "string" ? go({ name: action }) : run(async () => signedIn(await action(displayName), true));
 
   const signOut = (path: string) =>
     run(async () => {
@@ -221,7 +231,7 @@ export function AccountSheet({
   const blocked = offered.filter((method) => !method.works());
   const browserNote = blocked.length ? (
     <p className="account-note" role="note">
-      This browser can't use {blocked.map((method) => `${method.wayLabel} sign-in`).join(" or ")}. Open My Lead Sheet in Safari or Chrome.
+      This browser can't use {blocked.map((method) => `${method.wayLabel} sign-in`).join(" or ")}. Open {APP_NAME} in Safari or Chrome.
     </p>
   ) : null;
 
@@ -268,8 +278,8 @@ export function AccountSheet({
           <button type="button" className="account-secondary" onClick={() => go({ name: "create" })}>
             New here? Create an account
           </button>
-          <button type="button" className="account-link" onClick={() => go({ name: "backup-code" })}>
-            Use a backup code
+          <button type="button" className="account-link" onClick={() => go({ name: "forgot", back: "start" })}>
+            Forgot your login?
           </button>
         </>
       ),
@@ -287,7 +297,7 @@ export function AccountSheet({
             <input id={nameId} className="account-input" autoComplete="name" maxLength={40} value={name} onChange={(event) => setName(event.target.value)} />
             {browserNote}
             {usable.map((method) => (
-              <button key={method.kind} type="button" className="account-primary" disabled={busy || !typed} onClick={() => act(method.create, typed)}>
+              <button key={method.kind} type="button" className="account-primary" disabled={busy || !typed} onClick={() => create(method.create, typed)}>
                 {method.createLabel}
               </button>
             ))}
@@ -299,35 +309,32 @@ export function AccountSheet({
       };
     },
 
-    "backup-code": () => {
-      const submit = (event: FormEvent) => {
-        event.preventDefault();
-        run(async () => {
-          const reply = await api<SignedIn>("/api/auth/backup-code", { handle, code });
-          onAccount(reply.account);
-          go(reply.account.ways.some((way) => way.kind === "password") ? { name: "set-password", reset: true } : { name: "account" });
-        });
-      };
-      return {
-        title: "Use a backup code",
-        body: (
-          <form className="account-form" onSubmit={submit}>
-            {handleField("Your @name")}
-            <label className="account-field" htmlFor={codeId}>
-              Backup code
-            </label>
-            <input id={codeId} className="account-input account-mono" autoCapitalize="characters" autoComplete="one-time-code" value={code} onChange={(event) => setCode(event.target.value)} />
-            <p className="account-note">Each code works once. With no code left and no other way to sign in, the account can't be recovered.</p>
-            <button type="submit" className="account-primary" disabled={busy || !handle.trim() || !code.trim()}>
-              Sign in
-            </button>
-            <button type="button" className="account-link" onClick={() => go({ name: "start" })}>
-              Back
-            </button>
-          </form>
-        ),
-      };
-    },
+    forgot: () => ({
+      title: "Forgot your login?",
+      body: (
+        <>
+          <p className="account-note">Password and login reset is coming. For now, sign in another way you set up, or create a new account.</p>
+          <button type="button" className="account-link" onClick={() => go({ name: step.name === "forgot" ? step.back : "start" })}>
+            Back
+          </button>
+        </>
+      ),
+    }),
+
+    nudge: () => ({
+      title: "Your account is ready",
+      body: (
+        <>
+          <p className="account-note">Add a password too, so you can sign in on a new phone. If this phone is lost, a password is the way back in.</p>
+          <button type="button" className="account-primary" onClick={() => go({ name: "set-password" })}>
+            Add a password
+          </button>
+          <button type="button" className="account-link" onClick={() => go({ name: "account" })}>
+            Not now
+          </button>
+        </>
+      ),
+    }),
 
     password: () => {
       const submit = (event: FormEvent) => {
@@ -343,8 +350,8 @@ export function AccountSheet({
             <button type="submit" className="account-primary" disabled={busy || !handle.trim() || !secret}>
               Sign in
             </button>
-            <button type="button" className="account-link" onClick={() => go({ name: "backup-code" })}>
-              Forgot password? Use a backup code
+            <button type="button" className="account-link" onClick={() => go({ name: "forgot", back: "password" })}>
+              Forgot your login?
             </button>
             <button type="button" className="account-link" onClick={() => go({ name: "start" })}>
               Back
@@ -358,7 +365,7 @@ export function AccountSheet({
       const submit = (event: FormEvent) => {
         event.preventDefault();
         run(async () => {
-          if (await newPasswordOk()) signedIn(await createWithPassword(name.trim(), handle, secret));
+          if (await newPasswordOk()) signedIn(await createWithPassword(name.trim(), handle, secret), true);
         });
       };
       return {
@@ -380,7 +387,6 @@ export function AccountSheet({
     },
 
     "set-password": () => {
-      const reset = step.name === "set-password" && step.reset;
       const changing = !!account?.ways.some((way) => way.kind === "password");
       const submit = (event: FormEvent) => {
         event.preventDefault();
@@ -389,10 +395,9 @@ export function AccountSheet({
         });
       };
       return {
-        title: reset ? "Set a new password" : changing ? "Change password" : "Add a password",
+        title: changing ? "Change password" : "Add a password",
         body: (
           <form className="account-form" onSubmit={submit}>
-            {reset && account ? <p className="account-note">Backup code used. {account.backupCodesLeft} left.</p> : null}
             {account ? <p className="account-handle">@{account.handle}</p> : null}
             {secretField("New password", "new-password")}
             <p className="account-note">At least {MIN_PASSWORD_LENGTH} characters. This signs you out on your other phones.</p>
@@ -400,37 +405,9 @@ export function AccountSheet({
               Save password
             </button>
             <button type="button" className="account-link" onClick={() => go({ name: "account" })}>
-              {reset ? "Not now" : "Back"}
+              Back
             </button>
           </form>
-        ),
-      };
-    },
-
-    codes: () => {
-      const codes = step.name === "codes" ? step.codes : [];
-      return {
-        title: "Save your backup codes",
-        body: (
-          <>
-            <p className="account-note">If you lose this phone, each code signs you in once. Keep them somewhere safe. We can't show them again.</p>
-            <ul className="account-codes">
-              {codes.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-            <div className="account-row">
-              <button type="button" className="account-secondary" onClick={() => navigator.clipboard?.writeText(codes.join("\n"))}>
-                Copy
-              </button>
-              <button type="button" className="account-secondary" onClick={() => window.print()}>
-                Print
-              </button>
-            </div>
-            <button type="button" className="account-primary" onClick={() => go({ name: "account" })}>
-              I saved them
-            </button>
-          </>
         ),
       };
     },
@@ -479,18 +456,6 @@ export function AccountSheet({
                 </button>
               ) : null;
             })}
-            <h3 className="account-section">Backup codes</h3>
-            <div className="account-row">
-              <span className="account-note">{account.backupCodesLeft} left</span>
-              <button
-                type="button"
-                className="account-secondary"
-                disabled={busy}
-                onClick={() => run(async () => signedIn(await api<SignedIn>("/api/me/backup-codes", {})))}
-              >
-                Make new codes
-              </button>
-            </div>
             <div className="account-row">
               <button type="button" className="account-secondary" disabled={busy} onClick={() => signOut("/api/auth/sign-out")}>
                 Sign out

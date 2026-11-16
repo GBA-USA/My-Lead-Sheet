@@ -1,5 +1,6 @@
 import seedLibrary from "../data/library.json";
 import { clampScrollPercent, pitchClass, type Notation } from "./music";
+import { parsePersonal, type PersonalDefaults } from "./personal-settings-model";
 import type { Learned, Mark, ScrollVersion, Span, Tempo } from "./scroll-timing";
 import type { BassNote, ChartLine, ChartSection, CopyMark, Library, LibraryFile, Song, SongData, SongRef } from "./types";
 
@@ -329,6 +330,28 @@ export function saveTextScaleIndex(index: number): boolean {
   return writeRaw(TEXT_SCALE_KEY, String(index));
 }
 
+/** The Chords and Transpose defaults from Settings, one entry per account on this phone and "" for signed out. */
+export const PERSONAL_KEY = "leadSheetsPersonal";
+
+function readPersonalEntries(): Record<string, unknown> {
+  try {
+    const value: unknown = JSON.parse(readRaw(PERSONAL_KEY) ?? "{}");
+    return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** An account with no entry yet starts from what the player set while signed out, never from another account's. */
+export function loadPersonal(owner: string | null): PersonalDefaults {
+  const entries = readPersonalEntries();
+  return parsePersonal(entries[owner ?? ""] ?? entries[""]);
+}
+
+export function savePersonal(owner: string | null, next: PersonalDefaults): boolean {
+  return writeRaw(PERSONAL_KEY, JSON.stringify({ ...readPersonalEntries(), [owner ?? ""]: parsePersonal(next) }));
+}
+
 /** Device-wide metronome settings. The metronome module parses what comes back. */
 export const METRONOME_PREFS_KEY = "leadSheetsMetronome";
 
@@ -391,8 +414,10 @@ export function saveScrollPercent(ref: SongRef, percent: number): boolean {
   return writeSongPref(SCROLL_PERCENT_KEY, ref, clampScrollPercent(percent));
 }
 
-export function loadNotation(ref: SongRef): Notation {
-  return readSongPref(NOTATION_KEY, ref) === "nashville" ? "nashville" : "notes";
+/** The song's own Notes or Nashville choice, or `fallback` for a song the player never switched. */
+export function loadNotation(ref: SongRef, fallback: Notation = "notes"): Notation {
+  const value = readSongPref(NOTATION_KEY, ref);
+  return value === "nashville" || value === "notes" ? value : fallback;
 }
 
 export function saveNotation(ref: SongRef, notation: Notation): boolean {

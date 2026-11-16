@@ -5,12 +5,14 @@ import { BandSettings } from "./band-settings";
 import type { BandPreview, BandSummary, BandView } from "./bands-model";
 import { CODE_REFUSED, codeInText, readPayload, type CodeKind } from "./code-link";
 import { ScanCode, ShowCode } from "./codes";
+import { APP_NAME } from "./data-kinds";
 import { downloadPack, packsOnPhone, type GigPack } from "./gig-pack";
 import { GigCard, GigPlanForm, GigSong, newGigId } from "./gig-plan";
 import type { GigDraft, GigView } from "./gig-plan-model";
 import { useCloseOnSong, useEscape } from "./hooks";
 import { keepBandsOnPhone } from "./phone-db";
 import { SETLIST_CODE_MESSAGES } from "./setlist-code";
+import { GearIcon } from "./settings";
 import { ApiError, api, type Account } from "./sign-in-methods";
 import "./friends.css";
 
@@ -97,6 +99,7 @@ export function BandsSheet({
   onMessage,
   onChat,
   onSetlistCopy,
+  onSettings,
   onSignedOut,
   onClose,
 }: {
@@ -106,6 +109,7 @@ export function BandsSheet({
   onMessage: (userId: string) => void;
   onChat: (roomId: string) => void;
   onSetlistCopy: (code: string) => void;
+  onSettings?: () => void;
   onSignedOut: () => void;
   onClose: () => void;
 }) {
@@ -252,7 +256,7 @@ export function BandsSheet({
     const payload = codeInText(link);
     setLink("");
     if (payload) opened(payload);
-    else setError("That link isn't a My Lead Sheet code.");
+    else setError(`That link isn't a ${APP_NAME} code.`);
   };
 
   const shown = band && "bandId" in view && band.bandId === view.bandId ? band : null;
@@ -614,6 +618,11 @@ export function BandsSheet({
       >
         <header className="account-top">
           <h2 id={titleId}>{screen.title}</h2>
+          {view.name === "band" && onSettings ? (
+            <button type="button" className="account-close" style={{ marginLeft: "auto" }} aria-label="Settings" onClick={onSettings}>
+              <GearIcon />
+            </button>
+          ) : null}
           <button type="button" className="account-close" aria-label="Close" onClick={onClose}>
             ✕
           </button>

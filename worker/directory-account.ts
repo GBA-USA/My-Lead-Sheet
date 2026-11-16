@@ -2,7 +2,7 @@ import { handleFromName, normalizeHandle } from "../src/handle";
 import { authorizeUrl, googleClient, identityFromCode, type GoogleClient } from "./auth-google";
 import { counterKey, hasPepper, KEY_BYTES, keyMac, madeUpSalt, passwordSecrets, SALT_BYTES, sameText, type PasswordSecrets, type WaitRule } from "./auth-password";
 import { clientChallenge, creationOptions, relyingParty, requestOptions, verifyAssertion, verifyRegistration, type Ceremony } from "./auth-passkey";
-import { fromBase64Url, randomBytes, sha256, toBase64Url, utf8 } from "./bytes";
+import { fromBase64Url, randomBytes, toBase64Url } from "./bytes";
 import type { Env } from "./index";
 import { signedIn, userById, type Context, type Reply, type Route, type User } from "./directory-http";
 import { Refused } from "./refused";
@@ -78,8 +78,6 @@ type WayKind = "passkey" | "google" | "password";
 type Way = { kind: WayKind; id: string; detail?: string; createdAt: number; lastUsedAt: number | null };
 
 const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
-const BACKUP_CODE_COUNT = 8;
-const BACKUP_CODE_LENGTH = 12;
 const ROOM_CLOSE_RETRY_MS = 30 * 1000;
 const GOOGLE_COOKIE = "mls_google";
 const GOOGLE_COOKIE_ATTRIBUTES = "Path=/api/auth/google; HttpOnly; Secure; SameSite=Lax";
@@ -111,22 +109,6 @@ function freeHandle(sql: SqlStorage, name: string): string {
     const handle = n === 1 ? base : `${base}${n}`;
     if (!taken.has(handle)) return handle;
   }
-}
-
-const normalizeCode = (code: unknown) =>
-  typeof code === "string" ? code.toUpperCase().replace(/[\s-]/g, "").replace(/O/g, "0").replace(/[IL]/g, "1") : "";
-
-const hashCode = async (userId: string, code: string) => toBase64Url(await sha256(utf8(`${userId}:${code}`)));
-
-/** Eight fresh one-time codes shown once, and their hashes for storage. */
-async function makeBackupCodes(userId: string): Promise<{ shown: string[]; hashes: string[] }> {
-  const raw = Array.from({ length: BACKUP_CODE_COUNT }, () => crockford(randomBytes(BACKUP_CODE_LENGTH)));
-  return { shown: raw.map((code) => code.match(/.{4}/g)!.join("-")), hashes: await Promise.all(raw.map((code) => hashCode(userId, code))) };
-}
-
-function storeBackupCodes(sql: SqlStorage, userId: string, hashes: string[]) {
-  sql.exec(`DELETE FROM backup_codes WHERE user_id = ?`, userId);
-  for (const hash of hashes) sql.exec(`INSERT INTO backup_codes (user_id, code_hash) VALUES (?, ?)`, userId, hash);
 }
 
 /** A username someone picks with a password: their public @name, 3 to 20 of a-z and 0-9. */
@@ -168,8 +150,7 @@ function removeWay(c: Context, kind: WayKind): Reply {
 }
 
 function accountView(sql: SqlStorage, user: User) {
-  const left = sql.exec<{ left: number }>(`SELECT count(*) AS left FROM backup_codes WHERE user_id = ? AND used_at IS NULL`, user.user_id).one().left;
-  return { userId: user.user_id, handle: user.handle, displayName: user.display_name, ways: ways(sql, user.user_id), backupCodesLeft: left };
+  return { userId: user.user_id, handle: user.handle, displayName: user.display_name, ways: ways(sql, user.user_id) };
 }
 
 function insertUser(c: Context, userId: string, name: string, handle = freeHandle(c.sql, name)): User {
@@ -343,14 +324,12 @@ export const ACCOUNT_ROUTES: Record<string, Route> = {
 
   async "POST /api/auth/passkey/create/finish"(c) {
     const { challenge, passkey } = await registeredPasskey(c, "create");
-    const codes = await makeBackupCodes(challenge.user_id);
     const user = c.storage.transactionSync(() => {
       const made = insertUser(c, challenge.user_id, challenge.display_name);
       insertPasskey(c.sql, challenge.user_id, passkey, c.now);
-      storeBackupCodes(c.sql, challenge.user_id, codes.hashes);
       return made;
     });
-    return { body: { account: accountView(c.sql, user), backupCodes: codes.shown }, signIn: user };
+    return { body: { account: accountView(c.sql, user) }, signIn: user };
   },
 
   async "POST /api/auth/passkey/add/options"(c) {
@@ -391,23 +370,8 @@ export const ACCOUNT_ROUTES: Record<string, Route> = {
     return { body: { account: accountView(c.sql, user) }, signIn: user };
   },
 
-  async "POST /api/auth/backup-code"(c) {
-    const user = c.sql.exec<User>(`SELECT * FROM users WHERE handle = ?`, normalizeHandle(c.body.handle)).toArray()[0];
-    const hash = user ? await hashCode(user.user_id, normalizeCode(c.body.code)) : "";
-    const used = user ? c.sql.exec(`UPDATE backup_codes SET used_at = ? WHERE user_id = ? AND code_hash = ? AND used_at IS NULL`, c.now, user.user_id, hash).rowsWritten : 0;
-    if (!user || used !== 1) throw new Refused("wrong-code", 401);
-    return { body: { account: accountView(c.sql, user) }, signIn: user };
-  },
-
   async "GET /api/me"(c) {
     return { body: { account: accountView(c.sql, signedIn(c)) } };
-  },
-
-  async "POST /api/me/backup-codes"(c) {
-    const codes = await makeBackupCodes(signedIn(c).user_id);
-    const user = signedIn(c);
-    storeBackupCodes(c.sql, user.user_id, codes.hashes);
-    return { body: { account: accountView(c.sql, user), backupCodes: codes.shown } };
   },
 
   async "POST /api/me/remove-passkey"(c) {
@@ -466,15 +430,13 @@ export const ACCOUNT_ROUTES: Record<string, Route> = {
     const handle = pickedHandle(c.body.handle);
     const password = await passwordFields(c, secrets);
     const userId = ulid(c.now);
-    const codes = await makeBackupCodes(userId);
     const user = c.storage.transactionSync(() => {
       if (c.sql.exec(`SELECT 1 FROM users WHERE handle = ?`, handle).toArray().length) throw new Refused("handle-taken", 409);
       const made = insertUser(c, userId, name, handle);
       storePassword(c, userId, password);
-      storeBackupCodes(c.sql, userId, codes.hashes);
       return made;
     });
-    return { body: { account: accountView(c.sql, user), backupCodes: codes.shown }, signIn: user };
+    return { body: { account: accountView(c.sql, user) }, signIn: user };
   },
 
   async "POST /api/auth/password/sign-in"(c) {

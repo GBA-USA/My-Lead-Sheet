@@ -1,94 +1,83 @@
-import { useState } from "react";
-import { type PersonalSettings, type FixtureStore, savePersonal, loadPersonal, setSetting } from "./personal-settings-model";
+import { useId } from "react";
+import { TextSizeButtons } from "./controls";
+import type { Notation } from "./music";
+import { TRANSPOSE_LIMIT, type ClickMode, type PersonalDefaults } from "./personal-settings-model";
+import { TEXT_SCALES } from "./storage";
 
-export function PersonalSettingsScreen() {
-  const [store, setStore] = useState<FixtureStore>({ saved: null });
-  const [settings, setSettings] = useState<PersonalSettings>(loadPersonal(store));
+const CLICKS: [ClickMode, string][] = [
+  ["out-loud", "Out loud"],
+  ["dot-only", "Dot only"],
+];
+const CHORDS: [Notation, string][] = [
+  ["notes", "Notes"],
+  ["nashville", "Nashville"],
+];
 
-  const handleSettingChange = <K extends keyof PersonalSettings>(key: K, value: PersonalSettings[K]) => {
-    const updated = setSetting(settings, key, value);
-    setSettings(updated);
-    setStore(savePersonal(store, updated));
-  };
-
+function Choice<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: [T, string][]; onChange: (next: T) => void }) {
   return (
-    <div className="personal-settings-screen">
-      <div className="personal-settings-field">
-        <label>Click</label>
-        <div className="personal-settings-radio-group">
-          <label>
-            <input
-              type="radio"
-              name="click"
-              value="out-loud"
-              checked={settings.click === "out-loud"}
-              onChange={() => handleSettingChange("click", "out-loud")}
-            />
-            Out loud
-          </label>
-          <label>
-            <input
-              type="radio"
-              name="click"
-              value="dot-only"
-              checked={settings.click === "dot-only"}
-              onChange={() => handleSettingChange("click", "dot-only")}
-            />
-            Dot only
-          </label>
-        </div>
-      </div>
-
-      <div className="personal-settings-field">
-        <label>Text size</label>
-        <div className="personal-settings-control">
-          <input
-            type="range"
-            min="12"
-            max="32"
-            value={settings.textSize}
-            onChange={(e) => handleSettingChange("textSize", parseInt(e.currentTarget.value, 10))}
-          />
-          <span className="personal-settings-value">{settings.textSize}</span>
-        </div>
-      </div>
-
-      <div className="personal-settings-field">
-        <label>Chords</label>
-        <div className="personal-settings-radio-group">
-          <label>
-            <input
-              type="radio"
-              name="chordStyle"
-              value="notes"
-              checked={settings.chordStyle === "notes"}
-              onChange={() => handleSettingChange("chordStyle", "notes")}
-            />
-            Notes
-          </label>
-          <label>
-            <input
-              type="radio"
-              name="chordStyle"
-              value="nashville"
-              checked={settings.chordStyle === "nashville"}
-              onChange={() => handleSettingChange("chordStyle", "nashville")}
-            />
-            Nashville
-          </label>
-        </div>
-      </div>
-
-      <div className="personal-settings-field">
-        <label>Transpose</label>
-        <div className="personal-settings-control">
-          <button onClick={() => handleSettingChange("transpose", settings.transpose - 1)}>−</button>
-          <span className="personal-settings-value">{settings.transpose}</span>
-          <button onClick={() => handleSettingChange("transpose", settings.transpose + 1)}>+</button>
-        </div>
-      </div>
-
-      <p className="personal-settings-note">Your settings stay yours when you join a gig.</p>
+    <div className="settings-choice" role="group" aria-label={label}>
+      {options.map(([option, text]) => (
+        <button key={option} type="button" aria-pressed={value === option} onClick={() => onChange(option)}>
+          {text}
+        </button>
+      ))}
     </div>
+  );
+}
+
+const signed = (semitones: number) => (semitones > 0 ? `+${semitones}` : semitones < 0 ? `−${-semitones}` : "0");
+
+export function YourSettings({
+  click,
+  onClick,
+  textIndex,
+  onTextIndex,
+  personal,
+  onPersonal,
+}: {
+  click: ClickMode;
+  onClick: (next: ClickMode) => void;
+  textIndex: number;
+  onTextIndex: (index: number) => void;
+  personal: PersonalDefaults;
+  onPersonal: (next: PersonalDefaults) => void;
+}) {
+  const titleId = useId();
+  return (
+    <section className="settings-group" aria-labelledby={titleId}>
+      <h2 id={titleId}>Your settings</h2>
+      <div className="settings-field">
+        <h3>Click</h3>
+        <Choice label="Click" value={click} options={CLICKS} onChange={onClick} />
+      </div>
+      <div className="settings-field">
+        <h3>Chords</h3>
+        <Choice label="Chords" value={personal.chordStyle} options={CHORDS} onChange={(chordStyle) => onPersonal({ ...personal, chordStyle })} />
+        <p className="settings-note">For every song you have not switched yourself.</p>
+      </div>
+      <div className="settings-field">
+        <h3>Text size</h3>
+        <div className="settings-step" role="group" aria-label="Text size">
+          <TextSizeButtons index={textIndex} count={TEXT_SCALES.length} onChange={onTextIndex} />
+          <p className="settings-text-sample" aria-label="Text size sample" style={{ fontSize: `calc(16px * ${TEXT_SCALES[textIndex]})` }}>
+            Harbor lights
+          </p>
+        </div>
+      </div>
+      <div className="settings-field">
+        <h3>Transpose</h3>
+        <div className="settings-step" role="group" aria-label="Transpose">
+          <button type="button" aria-label="Transpose default down" disabled={personal.transpose <= -TRANSPOSE_LIMIT} onClick={() => onPersonal({ ...personal, transpose: personal.transpose - 1 })}>
+            −
+          </button>
+          <span className="settings-value">{signed(personal.transpose)}</span>
+          <button type="button" aria-label="Transpose default up" disabled={personal.transpose >= TRANSPOSE_LIMIT} onClick={() => onPersonal({ ...personal, transpose: personal.transpose + 1 })}>
+            +
+          </button>
+        </div>
+        <p className="settings-note">For a bass tuned down. Every song you open starts here, and Original Key comes back here.</p>
+      </div>
+      <p className="settings-note">Your settings stay yours when you join a gig.</p>
+    </section>
   );
 }

@@ -481,7 +481,7 @@ try {
     for (const end = Date.now() + ms; Date.now() < end; await settle(100)) if (await site.evaluate<boolean>(expression)) return true;
     return false;
   };
-  const TIMING = `[...document.querySelectorAll("button.teach-btn")].find((b) => b.textContent.includes("Timing:"))`;
+  const TIMING = `document.querySelector(".shell-header button.version-chip")`;
   const timingMenu = async () => {
     await until(`!!${TIMING}`);
     await site.evaluate(`${TIMING}.click()`);
@@ -524,7 +524,7 @@ try {
   const pulled = await until(`(localStorage.getItem(${JSON.stringify(SONG_ONE)}) ?? "").includes("Learned on iPad")`);
   await settle(300);
   const shown = await timingMenu();
-  check(pulled && before.includes("Mine") && shown.includes("Learned on iPad"), `an open sheet's Timing menu shows a version pulled from the other phone (${JSON.stringify(before)} then ${JSON.stringify(shown)})`);
+  check(pulled && before.includes("Mine") && shown.includes("Learned on iPad"), `an open sheet's version list shows a version pulled from the other phone (${JSON.stringify(before)} then ${JSON.stringify(shown)})`);
   const tapped = await site.evaluate<boolean>(`(() => {
     const mine = [...document.querySelectorAll("[role=menuitemradio]")].find((b) => b.textContent.includes("Mine"));
     mine?.click();
@@ -540,7 +540,7 @@ try {
   const onB = await versionsOnB();
   check(
     tapped && onA.includes("Learned on iPad") && onB.includes("Learned on iPad") && onA.includes("Mine") && onB.includes("Mine"),
-    `tapping a Timing choice on the open sheet keeps the pulled version on both phones (A ${JSON.stringify(onA)}, B ${JSON.stringify(onB)})`,
+    `tapping a version on the open sheet keeps the pulled version on both phones (A ${JSON.stringify(onA)}, B ${JSON.stringify(onB)})`,
   );
 } finally {
   globalThis.fetch = realFetch;

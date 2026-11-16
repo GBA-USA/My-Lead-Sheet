@@ -1,7 +1,7 @@
 import { writeFileSync } from "node:fs";
 import { openSite } from "./chrome.ts";
 
-/** Set SHOTS to a folder to save the teach bar and the tempo sheet at phone size. */
+/** Set SHOTS to a folder to save the chooser, the teach bar and the tempo sheet at phone size. */
 const shots = process.env.SHOTS;
 const root = new URL("..", import.meta.url).pathname;
 let failures = 0;
@@ -28,9 +28,19 @@ try {
     site.evaluate<boolean>(`(() => { const el = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === ${JSON.stringify(text)}); el?.click(); return !!el; })()`);
   const settle = () => new Promise((done) => setTimeout(done, 300));
 
-  check(await click("Customize scroll ▾"), "Customize scroll opens");
+  const tapLabel = (label: string) =>
+    site.evaluate<boolean>(`(() => { const el = document.querySelector(${JSON.stringify(`button[aria-label="${label}"]`)}); el?.click(); return !!el; })()`);
+  const box = (selector: string) =>
+    site.evaluate<{ x: number; y: number; w: number; h: number } | null>(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; })()`);
+
+  check(await tapLabel("Scroll settings"), "the Scroll caret opens the Scroll sheet");
   await settle();
-  check(await click("Learn by user (scroll it yourself)"), "Learn by user starts a take");
+  check(await click("Learn this song"), "Learn this song opens the chooser");
+  await settle();
+  const rows = await site.evaluate<{ x: number; w: number; h: number }[]>(`[...document.querySelectorAll("[role=dialog] .learn-row")].map((row) => { const r = row.getBoundingClientRect(); return { x: r.x, w: r.width, h: r.height }; })`);
+  check(rows.length === 3 && rows.every((row) => row.x >= 0 && row.x + row.w <= 390 && row.h >= 48), `the chooser's three rows fit a 390px phone and are 48px touch targets (${JSON.stringify(rows)})`);
+  await shot("learn-chooser-phone");
+  check(await site.evaluate<boolean>(`(() => { const el = [...document.querySelectorAll("[role=dialog] .learn-row button")].find((b) => b.textContent.trim().startsWith("Learn by user")); el?.click(); return !!el; })()`), "Learn by user starts a take");
   await settle();
 
   const boxes = await site.evaluate<Record<string, { x: number; y: number; w: number; h: number } | null>>(`(() => {
@@ -66,9 +76,17 @@ try {
 
   check(await click("Done"), "Done");
   await settle();
+  const save = await box(".shell-header .song-line .save-btn");
+  check(!!save && save.h >= 48 && save.w >= 48 && save.x + save.w <= 390, `Save in the header is a 48px touch target on the phone (${JSON.stringify(save)})`);
   check(await click("Save"), "Save");
   await settle();
-  check(await click("Timing: V1 ▾"), "Timing menu");
+  check(await click("Save as…"), "Save as");
+  await settle();
+  check(await site.evaluate<boolean>(`(() => { const el = [...document.querySelectorAll("[role=dialog] button")].find((b) => b.textContent.trim() === "Save"); el?.click(); return !!el; })()`), "Save in the name sheet");
+  await settle();
+  const versionChip = await box(".shell-header .song-line .version-chip");
+  check(!!versionChip && versionChip.h >= 48 && versionChip.x >= 0 && versionChip.x + versionChip.w <= 390, `the version chip in the header is a 48px touch target on the phone (${JSON.stringify(versionChip)})`);
+  check(await click("V1 ▾"), "the version chip's list");
   await settle();
   check(await click("Edit tempo…"), "Edit tempo opens");
   await settle();
@@ -88,4 +106,4 @@ if (failures) {
   console.error(`${failures} screen check(s) failed`);
   process.exit(1);
 }
-console.log("teach screen ok: BPM field beside Hold, Done and Discard at phone size, Enter and Escape with real keys, tempo sheet fits");
+console.log("teach screen ok: chooser rows, BPM field beside Hold, Done and Discard at phone size, Enter and Escape with real keys, header Save and chip, tempo sheet fits");

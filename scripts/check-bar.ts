@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { build as bundle } from "esbuild";
 import { openSite } from "./chrome.ts";
 
-/** Set SHOTS to a folder to save the bar closed, each menu open, teaching, and the metronome with its beat dot. */
+/** Set SHOTS to a folder to save the version line closed, the version list and the chooser open, teaching, and the metronome with its beat dot. */
 const shots = process.env.SHOTS;
 const PHONE = { width: 390, height: 844, deviceScaleFactor: 2, mobile: true };
 const CHAIN_BREAKER = 10;
@@ -97,9 +97,11 @@ const shoot = async (name: string) => {
 const stored = (songId: number) => evaluate<{ versions: { name: string }[]; selected: number | null }>(`JSON.parse(localStorage.getItem("${app.SCROLL_VERSIONS_KEY}.${songId}"))`);
 
 type Bar = { rows: number; height: number; controls: string[]; overflow: boolean; shortest: number };
-const bar = () =>
+const LINE = ".shell-header .song-line";
+const TAKE = ".teach-bar";
+const bar = (selector = LINE) =>
   evaluate<Bar>(`(() => {
-    const bar = document.querySelector(".teach-bar");
+    const bar = document.querySelector(${JSON.stringify(selector)});
     const controls = [...bar.querySelectorAll("button, input, select")].filter((el) => !el.closest(".menu"));
     const tops = new Set(controls.map((el) => Math.round(el.getBoundingClientRect().top)));
     const overflow = bar.scrollWidth > bar.clientWidth || controls.some((el) => { const box = el.getBoundingClientRect(); return box.left < 0 || box.right > innerWidth; });
@@ -131,15 +133,41 @@ async function openSong(id: number, versions: object | null, scale = 1, route = 
     ${versions ? [id, ...others].map((song) => `localStorage.setItem("${app.SCROLL_VERSIONS_KEY}.${song}", ${JSON.stringify(JSON.stringify(versions))});`).join("") : ""}
   })()`);
   await send("Page.navigate", { url: `${site.origin}/?load=${(loads += 1)}${route}` });
-  await until(`!!document.querySelector(".teach-bar") && !!document.querySelector(".chart-heading")`, `song ${id}`);
+  await until(`!!document.querySelector(".controls") && !!document.querySelector(".chart-heading")`, `song ${id}`);
   await evaluate(`document.fonts.ready.then(() => true)`);
   await pause(100);
 }
 
-const CHIP = "Timing: V1 · learned ▾";
-const CUSTOMIZE = "Customize scroll ▾";
-const BUTTONS = ".teach-bar button";
+const CHIP = "V1 · learned ▾";
+const BUTTONS = `${LINE} button`;
 const ITEMS = "[role=menu] button";
+const CARET = "[aria-label='Scroll settings']";
+const CHOOSER_ROWS = "[role=dialog] .learn-row";
+const chooser = () =>
+  evaluate<{ items: string[]; disabled: string[]; shortest: number; inside: boolean }>(`(() => {
+    const rows = [...document.querySelectorAll(${JSON.stringify(CHOOSER_ROWS)})];
+    const label = (row) => row.querySelector("button").getAttribute("aria-label") || row.querySelector("button").innerText.trim();
+    return {
+      items: rows.map(label),
+      disabled: rows.filter((row) => row.querySelector("button").disabled).map((row) => label(row) + " / " + row.innerText.replace(label(row), "").trim()),
+      shortest: Math.min(...rows.map((row) => row.getBoundingClientRect().height)),
+      inside: rows.every((row) => { const box = row.getBoundingClientRect(); return box.left >= 0 && box.right <= innerWidth && box.bottom <= innerHeight; }),
+    };
+  })()`);
+const openChooser = async () => {
+  await tap(CARET, "");
+  await tap("[role=dialog] button", "Learn this song");
+};
+const tapRow = async (label: string) => {
+  const box = await evaluate<{ x: number; y: number } | null>(`(() => {
+    const el = document.querySelector(${JSON.stringify(`${CHOOSER_ROWS} button[aria-label="${label}"]`)});
+    if (!el) return null;
+    const box = el.getBoundingClientRect();
+    return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+  })()`);
+  if (!box) throw new Error(`no ${label} row to tap`);
+  await tapAt(box.x, box.y);
+};
 
 async function scenario(name: string, run: () => Promise<void>) {
   try {
@@ -154,32 +182,32 @@ try {
   await send("Page.addScriptToEvaluateOnNewDocument", { source: STAND_INS });
   await send("Emulation.setDeviceMetricsOverride", PHONE);
 
-  await scenario("the closed bar", async () => {
+  await scenario("the closed version line", async () => {
     await openSong(CHAIN_BREAKER, { versions: [LEARNED, TAUGHT], selected: 0 });
     const closed = await bar();
     await shoot("bar-closed");
-    check(closed.rows === 1 && JSON.stringify(closed.controls) === JSON.stringify([CHIP, CUSTOMIZE]), `the bar is one row of two controls, ${CHIP} and ${CUSTOMIZE} (${closed.rows} rows: ${closed.controls.join(" | ")})`);
-    check(closed.height <= 46 && !closed.overflow, `the bar is ${closed.height} px tall at 390 px wide and nothing spills out of it`);
-    check(closed.shortest >= 44, `every control in the bar is a touch target at least 44 px tall (${closed.shortest} px)`);
+    check(closed.rows === 1 && JSON.stringify(closed.controls) === JSON.stringify([CHIP]), `the header's version line is one row holding ${CHIP} (${closed.rows} rows: ${closed.controls.join(" | ")})`);
+    check(closed.height <= 64 && !closed.overflow, `the version line is ${closed.height} px tall at 390 px wide and nothing spills out of it`);
+    check(closed.shortest >= 44, `every control in the version line is a touch target at least 44 px tall (${closed.shortest} px)`);
   });
 
-  await scenario("the Timing menu", async () => {
+  await scenario("the version list", async () => {
     await openSong(CHAIN_BREAKER, { versions: [LEARNED, TAUGHT], selected: 0 });
     await tap(BUTTONS, CHIP);
     const [open] = await menus();
     await shoot("menu-timing-open");
     const want = ["✓ V1 · learned", "Sunday", "Default (even pace)", "Rename V1…", "Edit tempo…", "Delete V1…"];
-    check(JSON.stringify(open?.items) === JSON.stringify(want), `the Timing menu lists ${want.join(", ")} (${open?.items.join(", ")})`);
+    check(JSON.stringify(open?.items) === JSON.stringify(want), `the version list shows ${want.join(", ")} (${open?.items.join(", ")})`);
     check(JSON.stringify(open?.checked) === '["✓ V1 · learned"]' && JSON.stringify(open?.expanded) === JSON.stringify([CHIP]), `V1 is the checked choice and the chip says it is expanded (${open?.checked}, ${open?.expanded})`);
-    check(open.shortest >= 44 && open.inside, `menu items are at least 44 px tall and the menu stays on screen (${open.shortest} px)`);
+    check(open.shortest >= 44 && open.inside, `list items are at least 44 px tall and the list stays on screen (${open.shortest} px)`);
     const divider = await evaluate<string>(`(() => { const line = document.querySelector("[role=menu] .menu-divider[role=separator]"); return line ? line.previousElementSibling.innerText.trim() + " | " + line.nextElementSibling.innerText.trim() : "none"; })()`);
     check(divider === "Default (even pace) | Rename V1…", `a divider separates the choices from Rename, Edit tempo and Delete (${divider})`);
 
     await key("Escape");
-    check((await menus()).length === 0, "Escape closes the menu");
+    check((await menus()).length === 0, "Escape closes the list");
     await tap(BUTTONS, CHIP);
     await tapAt(195, 700);
-    check((await menus()).length === 0, "a tap on the sheet closes the menu");
+    check((await menus()).length === 0, "a tap on the sheet closes the list");
 
     await evaluate(`${find(BUTTONS, CHIP)}.focus()`);
     await key("Enter");
@@ -190,12 +218,12 @@ try {
 
     await tap(BUTTONS, CHIP);
     await tap(ITEMS, "Sunday");
-    check((await bar()).controls[0] === "Timing: Sunday ▾" && (await stored(CHAIN_BREAKER)).selected === 1 && (await menus()).length === 0, "picking Sunday chooses it, saves it and closes the menu");
+    check((await bar()).controls[0] === "Sunday ▾" && (await stored(CHAIN_BREAKER)).selected === 1 && (await menus()).length === 0, "picking Sunday chooses it, saves it and closes the list");
 
-    await tap(BUTTONS, "Timing: Sunday ▾");
+    await tap(BUTTONS, "Sunday ▾");
     await tap(ITEMS, "Default (even pace)");
-    check((await bar()).controls[0] === "Timing: Default ▾" && (await stored(CHAIN_BREAKER)).selected === null, "picking Default goes back to the even pace");
-    await tap(BUTTONS, "Timing: Default ▾");
+    check((await bar()).controls[0] === "Default ▾" && (await stored(CHAIN_BREAKER)).selected === null, "picking Default goes back to the even pace");
+    await tap(BUTTONS, "Default ▾");
     const fallback = (await menus())[0];
     check(JSON.stringify(fallback.items) === '["V1 · learned","Sunday","✓ Default (even pace)"]', `with Default chosen there is nothing to rename or delete (${fallback.items.join(", ")})`);
     await tap(ITEMS, "V1 · learned");
@@ -208,57 +236,58 @@ try {
     await evaluate(`document.execCommand("selectAll")`);
     await send("Input.insertText", { text: "Gig" });
     await key("Enter");
-    check((await bar()).controls[0] === "Timing: Gig · learned ▾" && (await stored(CHAIN_BREAKER)).versions[0].name === "Gig", "Enter saves the new name");
+    check((await bar()).controls[0] === "Gig · learned ▾" && (await stored(CHAIN_BREAKER)).versions[0].name === "Gig", "Enter saves the new name");
 
-    await tap(BUTTONS, "Timing: Gig · learned ▾");
+    await tap(BUTTONS, "Gig · learned ▾");
     await tap(ITEMS, "Delete Gig…");
-    const asking = await evaluate<string>(`document.querySelector(".teach-bar").innerText.replace(/\\s+/g, " ").trim()`);
+    const asking = await evaluate<string>(`document.querySelector(${JSON.stringify(LINE)}).innerText.replace(/\\s+/g, " ").trim()`);
     check(asking === "Delete Gig? Delete Cancel", `Delete asks once (${asking})`);
     await tap(BUTTONS, "Cancel");
     check((await stored(CHAIN_BREAKER)).versions.length === 2, "Cancel keeps it");
-    await tap(BUTTONS, "Timing: Gig · learned ▾");
+    await tap(BUTTONS, "Gig · learned ▾");
     await tap(ITEMS, "Delete Gig…");
     await tap(BUTTONS, "Delete");
     const after = await stored(CHAIN_BREAKER);
-    check(JSON.stringify(after.versions.map((version) => version.name)) === '["Sunday"]' && after.selected === null && (await bar()).controls[0] === "Timing: Default ▾", `confirming deletes Gig and goes back to Default (${JSON.stringify(after)})`);
+    check(JSON.stringify(after.versions.map((version) => version.name)) === '["Sunday"]' && after.selected === null && (await bar()).controls[0] === "Default ▾", `confirming deletes Gig and goes back to Default (${JSON.stringify(after)})`);
   });
 
-  await scenario("the Customize scroll menu and Learn by user", async () => {
+  await scenario("the Scroll sheet, the Learn chooser and Learn by user", async () => {
     await openSong(CHAIN_BREAKER, { versions: [LEARNED, TAUGHT], selected: 0 });
-    await tap(BUTTONS, CUSTOMIZE);
-    const [open] = await menus();
+    await openChooser();
+    const open = await chooser();
     await shoot("menu-customize-open");
-    check(JSON.stringify(open?.items) === '["Learn by user (scroll it yourself)","Learn by listen (play the song)"]' && open.disabled.length === 0, `Customize scroll offers Learn by user and Learn by listen (${open?.items.join(", ")})`);
-    check(open.shortest >= 44 && open.inside, `its items are at least 44 px tall and on screen (${open.shortest} px)`);
+    check(JSON.stringify(open.items) === '["Learn by listen","Learn by user","Find BPM"]' && open.disabled.length === 0, `Learn this song offers Learn by listen, Learn by user and Find BPM (${open.items.join(", ")})`);
+    check(open.shortest >= 44 && open.inside, `its rows are at least 44 px tall and on screen (${open.shortest} px)`);
 
-    await tap(ITEMS, "Learn by user (scroll it yourself)");
-    const teachingBar = await bar();
+    await tapRow("Learn by user");
+    const teachingBar = await bar(TAKE);
     await shoot("teaching");
     check(JSON.stringify(teachingBar.controls) === '["Discard","Done","Hold","BPM"]' && teachingBar.rows === 1, `Learn by user starts teaching: Teaching with Discard, Done, Hold and the BPM field in one row (${teachingBar.rows} rows: ${teachingBar.controls.join(", ")})`);
     check(teachingBar.height <= 46 && !teachingBar.overflow && teachingBar.shortest >= 44, `the teaching bar is ${teachingBar.height} px tall, nothing spills out, and every control is at least 44 px tall (${teachingBar.shortest} px)`);
-    check(await evaluate<boolean>(`document.querySelector(".teach-status")?.innerText === "Teaching" && !!${find("button", "Scroll: On")}`), "the take scrolls the sheet");
-    await tap(BUTTONS, "Hold");
-    const holding = await bar();
+    await pause(600);
+    check(await evaluate<boolean>(`document.querySelector(".teach-status")?.innerText === "Teaching" && document.getElementById("sheet-scroll").scrollTop > 0`), "the take scrolls the sheet");
+    await tap(`${TAKE} button`, "Hold");
+    const holding = await bar(TAKE);
     check(holding.controls.includes("Continue") && holding.rows === 1 && !holding.overflow, `Hold still pauses the take and Continue keeps the bar on one row (${holding.rows} rows: ${holding.controls.join(", ")})`);
-    await tap(BUTTONS, "Discard");
-    await tap(BUTTONS, "Discard");
-    check((await bar()).controls[0] === CHIP, "Discard ends the take and the chip comes back");
+    await tap(`${TAKE} button`, "Discard");
+    await tap(`${TAKE} button`, "Discard");
+    check((await bar()).controls[0] === CHIP && !(await evaluate<boolean>(`!!document.querySelector(${JSON.stringify(TAKE)})`)), "Discard ends the take and the row comes back");
   });
 
   await scenario("one menu at a time", async () => {
-    await tap("[aria-label='Song actions']", "");
+    await tap("[aria-label='More']", "");
     await tap(BUTTONS, CHIP);
     const open = await menus();
-    check(open.length === 1 && open[0].items[0] === "✓ V1 · learned", `opening the chip closes the song actions menu (${open.length} open)`);
-    await tap(BUTTONS, CUSTOMIZE);
-    check((await menus()).length === 1 && (await menus())[0].items[0].startsWith("Learn by user"), "opening Customize scroll closes the Timing menu");
+    check(open.length === 1 && open[0].items[0] === "✓ V1 · learned", `opening the chip closes the More menu (${open.length} open)`);
+    await tap(CARET, "");
+    check((await menus()).length === 0 && (await evaluate<boolean>(`!!document.querySelector("[role=dialog]")`)), "opening the Scroll sheet closes the version list");
     await key("Escape");
   });
 
   await scenario("Learn by listen", async () => {
     check(await evaluate<boolean>(`!window.__mic`), "the mic is not asked for before Learn by listen");
-    await tap(BUTTONS, CUSTOMIZE);
-    await tap(ITEMS, "Learn by listen (play the song)");
+    await openChooser();
+    await tapRow("Learn by listen");
     await until(`!!window.__mic`, "the mic");
     check(await evaluate<boolean>(`document.querySelector(".learn[role=dialog]")?.innerText.includes("Play the whole song near the phone")`), "Learn by listen opens the Learn sheet and starts listening");
     check(await evaluate<boolean>(`window.__audioInTap === true`), "its audio starts inside the tap itself, where browsers allow it");
@@ -271,8 +300,9 @@ try {
 
   await scenario("a live setlist", async () => {
     await openSong(CHAIN_BREAKER, { versions: [LEARNED, TAUGHT], selected: 0 }, 1, "#/live/2/0", [EAST_TO_WEST]);
-    await tap(BUTTONS, CUSTOMIZE);
-    check(JSON.stringify((await menus())[0]?.items) === '["Learn by user (scroll it yourself)"]', "a live setlist offers Learn by user but not Learn by listen");
+    await openChooser();
+    check(JSON.stringify((await chooser()).items) === '["Learn by user","Find BPM"]', "a live setlist offers Learn by user but not Learn by listen");
+    await key("Escape");
     await tap(BUTTONS, CHIP);
     await tap(ITEMS, "Delete V1…");
     await tap("[aria-label='Next song']", "Next");
@@ -283,13 +313,11 @@ try {
 
   await scenario("a song with no tempo", async () => {
     await openSong(TAKE_ME_OUT, null);
-    const closed = await bar();
-    check(JSON.stringify(closed.controls) === JSON.stringify(["Timing: Default ▾", CUSTOMIZE]) && closed.rows === 1, `with no versions the chip reads Timing: Default (${closed.controls.join(" | ")})`);
-    await tap(BUTTONS, "Timing: Default ▾");
-    check(JSON.stringify((await menus())[0]?.items) === '["✓ Default (even pace)"]', "its menu has only the even pace, checked");
-    await tap(BUTTONS, CUSTOMIZE);
-    const [open] = await menus();
-    check(JSON.stringify(open?.disabled) === `["Learn by user (scroll it yourself) / Needs the song's length and BPM"]` && open.items[1] === "Learn by listen (play the song)", `with no tempo Learn by user is disabled with its reason, Learn by listen is not (${open?.disabled}, ${open?.items})`);
+    const chips = await evaluate<number>(`document.querySelectorAll(".version-chip").length + [...document.querySelectorAll("button")].filter((b) => /^Timing/.test(b.innerText.trim())).length`);
+    check(chips === 0, `with no versions there is no version chip and no Timing control (${chips})`);
+    await openChooser();
+    const open = await chooser();
+    check(JSON.stringify(open.disabled) === `["Learn by user / Needs the song's length and BPM"]` && open.items[0] === "Learn by listen", `with no tempo Learn by user is disabled with its reason, Learn by listen is not (${open.disabled}, ${open.items})`);
     await key("Escape");
   });
 
@@ -344,4 +372,4 @@ if (failures) {
   console.error(`${failures} bar check(s) failed`);
   process.exit(1);
 }
-console.log("bar ok: one row, a Timing chip and Customize scroll menu that open, list, pick, rename, delete, teach and listen");
+console.log("bar ok: one version line, a chip and a Learn chooser that open, list, pick, rename, delete, teach and listen");

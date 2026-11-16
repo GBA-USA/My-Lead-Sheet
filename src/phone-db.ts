@@ -98,6 +98,15 @@ export async function clearPhone(): Promise<void> {
   phoneChanged();
 }
 
+/** Whether this phone's band data is `userId`'s. Unlike `claimPhone` it writes nothing, so a reader cannot clear the phone and wake itself again. */
+export function heldFor(userId: string): boolean {
+  try {
+    return localStorage.getItem(PHONE_OWNER_KEY) === userId;
+  } catch {
+    return false;
+  }
+}
+
 /** Marks this phone's band data as `userId`'s. Anything another account left here is cleared first, so a shared phone never shows it. */
 export async function claimPhone(userId: string): Promise<void> {
   if (localStorage.getItem(PHONE_OWNER_KEY) === userId) return;

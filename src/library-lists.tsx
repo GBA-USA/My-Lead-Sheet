@@ -3,7 +3,7 @@ import { bandSongRef } from "./band-library-model";
 import { PRIVACY_HREF } from "./data-kinds";
 import { GigSong } from "./gig-plan";
 import type { useMetronome } from "./metronome-view";
-import { allOnPhone, claimPhone, onPhoneChange, phoneGeneration, type CachedBandSong } from "./phone-db";
+import { allOnPhone, heldFor, onPhoneChange, phoneGeneration, type CachedBandSong } from "./phone-db";
 import { songHref, type TabName } from "./route";
 import { groupedSongs, keyName, matchingSetlists, NO_CHIPS } from "./search";
 import { SearchBox, SearchChips } from "./search-box";
@@ -120,8 +120,9 @@ const timed = (ref: SongRef) => loadScrollVersions(ref).versions.length > 0;
 
 /**
  * This phone's songs, and while searching, the band songs this phone holds too, grouped by where they live. Nothing
- * here asks the server. Signed in, the phone is claimed first, so another account's band songs are never shown. Each
- * change to the phone's band data reads them again, so a sign-out that clears the phone empties open results too.
+ * here asks the server, and nothing here writes. Signed in, only band data this account saved shows, so another
+ * account's never does. Each change to the phone's band data reads it again, so a sign-out that clears the phone
+ * empties open results too.
  */
 export function SongList({ songs, userId }: { songs: Song[]; userId: string | null }) {
   const [query, setQuery] = useState("");
@@ -133,14 +134,12 @@ export function SongList({ songs, userId }: { songs: Song[]; userId: string | nu
   const phone = useSyncExternalStore(onPhoneChange, phoneGeneration, phoneGeneration);
 
   useEffect(() => {
-    if (!searching) return setHeld([]);
+    if (!searching || (userId && !heldFor(userId))) return setHeld([]);
     let current = true;
-    (userId ? claimPhone(userId) : Promise.resolve())
-      .then(() => allOnPhone("bandSongs"))
-      .then(
-        (rows) => current && setHeld(rows),
-        () => current && setHeld([]),
-      );
+    allOnPhone("bandSongs").then(
+      (rows) => current && setHeld(rows),
+      () => current && setHeld([]),
+    );
     return () => {
       current = false;
     };

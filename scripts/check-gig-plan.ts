@@ -139,8 +139,8 @@ try {
   };
   const reset = async () => {
     await site.evaluate(`location.hash = "#/songs"`);
-    await site.evaluate("location.reload()");
-    await app.library();
+    await site.evaluate(`window.__beforeReload = true; location.reload()`);
+    await app.until(`!window.__beforeReload && !!document.querySelector(".shell-header [aria-label=More]")`, "the library after the reload", 15000);
   };
   const openBand = async () => {
     await app.openMenu();
@@ -149,7 +149,7 @@ try {
     await app.click("Open");
     await view("band");
   };
-  const card = (gigId: string) => `document.querySelector(".bands-sheet [data-gig=${js(gigId)}]")`;
+  const card = (gigId: string) => `document.querySelector(${js(`.bands-sheet [data-gig=${js(gigId)}]`)})`;
   const cardText = (gigId: string) => site.evaluate<string>(`${card(gigId)}?.textContent ?? ""`);
   const count = (text: string, word: string) => text.split(word).length - 1;
   /** The packs in the phone's IndexedDB, read without making the database if the app has not yet. */

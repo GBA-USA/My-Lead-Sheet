@@ -1,4 +1,6 @@
-import type { SongChips } from "./search";
+import { songHref } from "./route";
+import { youHaveLine, type SongChips } from "./search";
+import type { Song } from "./types";
 import "./search.css";
 
 export function SearchBox({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
@@ -38,5 +40,20 @@ export function SearchChips({ keys, bands, chips, onChange }: { keys: string[]; 
         Has timing
       </button>
     </div>
+  );
+}
+
+/** The duplicate guard's offer, in place of an add: open the song this phone already has, or add the copy anyway. Never a refusal. */
+export function YouHaveIt({ have, onAdd }: { have: Song; onAdd: () => void }) {
+  return (
+    <span className="you-have-it" role="status">
+      <small>{youHaveLine(have)}</small>
+      <a className="account-secondary" href={songHref(have.id, "songs")}>
+        Open
+      </a>
+      <button type="button" className="account-secondary" onClick={onAdd}>
+        Add anyway
+      </button>
+    </span>
   );
 }

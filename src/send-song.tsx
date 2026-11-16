@@ -3,6 +3,8 @@ import { CHOICES, content } from "./band-library";
 import { newMsgId, type ChatMessage, type Queued } from "./chat-model";
 import { onDelivery, queueMessage, sendQueued, type Delivery } from "./chat-queue";
 import { useEscape, useStored } from "./hooks";
+import { songYouHave } from "./search";
+import { YouHaveIt } from "./search-box";
 import { applyUpdate, canSend, cardLine, received, songMessageIn, type Received, type SendPick, type SongSend, type UpdateChoice } from "./send-song-model";
 import type { ShareChoice } from "./share-rule";
 import { ApiError, api, type Account } from "./sign-in-methods";
@@ -280,6 +282,7 @@ export function useSendSong(account: Account | null, songs: Song[], open: { frie
 export function SongCard({ message, me }: { message: ChatMessage; me: string }) {
   const [library] = useStored(loadLibrary);
   const [note, setNote] = useState("");
+  const [have, setHave] = useState<Song | null>(null);
   const sent = songMessageIn(message.text);
   if (!sent) return <span className="chat-bubble">A song this app can't show.</span>;
   const mine = message.fromId === me;
@@ -287,6 +290,12 @@ export function SongCard({ message, me }: { message: ChatMessage; me: string }) 
   const earlier = holding(sent.updateOf);
 
   const keep = (kept: Received, replaceId: number | null) => setNote(keepReceived(kept, replaceId) ? `${kept.song.title} is in My Songs.` : `This phone couldn't add ${kept.song.title}.`);
+  const add = (anyway: boolean) => {
+    const kept = received(sent, message.fromName);
+    const hit = anyway ? undefined : songYouHave(loadLibrary().songs, kept.song);
+    if (hit) return setHave(hit);
+    keep(kept, null);
+  };
 
   const update = (choice: UpdateChoice) => {
     const { replace, add } = applyUpdate(sent, message.fromName, choice);
@@ -326,8 +335,10 @@ export function SongCard({ message, me }: { message: ChatMessage; me: string }) 
             Keep both
           </button>
         </span>
+      ) : have ? (
+        <YouHaveIt have={have} onAdd={() => add(true)} />
       ) : (
-        <button type="button" className="account-secondary" onClick={() => keep(received(sent, message.fromName), null)}>
+        <button type="button" className="account-secondary" onClick={() => add(false)}>
           Add to My Songs
         </button>
       )}

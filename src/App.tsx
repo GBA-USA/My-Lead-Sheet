@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AccountSheet, googleReturn, useAccount } from "./account";
 import { backupOff, backupOn, syncBackup, type BackupResult } from "./backup";
-import { BandsSheet, BandsTab, useBandDataOwner } from "./bands";
+import { BandsSheet, BandsTab } from "./bands";
 import { ChatSheet, queueOwner, type ChatTarget } from "./chat";
 import { readPayload, type CodeScreen } from "./code-link";
 import { clearLanding, landedCode } from "./codes";
@@ -76,7 +76,6 @@ export function App() {
     if (landed) clearLanding();
   }, []);
   useEffect(() => queueOwner(account?.userId ?? null), [account?.userId]);
-  useBandDataOwner(account?.userId ?? null);
 
   const landings: Record<CodeScreen, (code: string) => void> = {
     friends: (code) => setFriends({ code }),
@@ -130,7 +129,12 @@ export function App() {
     if (!window.location.hash) {
       history.replaceState(null, "", "#/songs");
     }
-    const onHash = () => setHash(window.location.hash);
+    const onHash = () => {
+      setHash(window.location.hash);
+      if (parseHash(window.location.hash).name !== "song") return;
+      setBands(null);
+      setChat(null);
+    };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);

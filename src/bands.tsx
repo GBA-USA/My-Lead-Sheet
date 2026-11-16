@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 import { BandLibraryTab, LIBRARY_MESSAGES, type LibraryTab } from "./band-library";
 import type { BandLibrary } from "./band-library-model";
 import { BandSettings } from "./band-settings";
@@ -9,7 +9,7 @@ import { downloadPack, packsOnPhone, type GigPack } from "./gig-pack";
 import { GigCard, GigPlanForm, GigSong, newGigId } from "./gig-plan";
 import type { GigDraft, GigView } from "./gig-plan-model";
 import { useEscape } from "./hooks";
-import { clearPhone, keepBandsOnPhone } from "./phone-db";
+import { keepBandsOnPhone } from "./phone-db";
 import { SETLIST_CODE_MESSAGES } from "./setlist-code";
 import { ApiError, api, type Account } from "./sign-in-methods";
 import "./friends.css";
@@ -90,15 +90,6 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
  * Bands: the list, one band's Setlists, Songs and Members tabs with Message on each bandmate, Invite and Band settings,
  * and a card for each gig not yet played. `code` is a band or gig code to open first.
  */
-/** Band data on this phone leaves with the account, whichever way it signed out (PLAN.md 10). A launch that never signed in, such as one with no signal, keeps it. */
-export function useBandDataOwner(userId: string | null) {
-  const last = useRef(userId);
-  useEffect(() => {
-    if (last.current && !userId) clearPhone().catch(() => {});
-    last.current = userId;
-  }, [userId]);
-}
-
 export function BandsSheet({
   account,
   code,

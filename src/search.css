@@ -62,3 +62,14 @@
   font: inherit;
   cursor: pointer;
 }
+
+.you-have-it {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.you-have-it a {
+  text-decoration: none;
+}

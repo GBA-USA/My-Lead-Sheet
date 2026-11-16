@@ -4,6 +4,7 @@ import { PRIVACY_HREF } from "./data-kinds";
 import { handleFromName } from "./handle";
 import { useEscape } from "./hooks";
 import { commonPasswords, MIN_PASSWORD_LENGTH, passwordProblem } from "./password";
+import { clearPhone } from "./phone-db";
 import {
   ApiError,
   SIGN_IN_METHODS,
@@ -34,18 +35,26 @@ export const googleReturn = () => new URLSearchParams(window.location.search).ge
 
 const SIGNED_IN_KEY = "leadSheetsSignedIn";
 
-/** The signed-in account. Only a phone that signed in before asks the server on load, so signed-out use calls no API. */
+/** True while this phone last knew itself signed in, including a launch whose `/api/me` has not answered, such as one with no signal. */
+export function signedInBefore(): boolean {
+  try {
+    return localStorage.getItem(SIGNED_IN_KEY) !== null;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The signed-in account. Only a phone that signed in before asks the server on load, so signed-out use calls no API.
+ * Each time the phone learns it is signed out, band data leaves with the account (PLAN.md 10), even on a launch whose
+ * session had already ended. A launch with no answer, such as one with no signal, keeps it.
+ */
 export function useAccount(): { account: Account | null; setAccount: (account: Account | null) => void; checking: boolean } {
   const [account, setAccount] = useState<Account | null>(null);
-  const [checking, setChecking] = useState(() => {
-    try {
-      return localStorage.getItem(SIGNED_IN_KEY) !== null;
-    } catch {
-      return false;
-    }
-  });
+  const [checking, setChecking] = useState(signedInBefore);
   const remember = useCallback((next: Account | null) => {
     setAccount(next);
+    if (!next) clearPhone().catch(() => {});
     try {
       if (next) localStorage.setItem(SIGNED_IN_KEY, "1");
       else localStorage.removeItem(SIGNED_IN_KEY);

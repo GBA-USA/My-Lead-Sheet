@@ -1,4 +1,5 @@
 import { useEffect, useState, type KeyboardEvent } from "react";
+import { signedInBefore } from "./account";
 import { bandSongRef } from "./band-library-model";
 import { PRIVACY_HREF } from "./data-kinds";
 import { GigSong } from "./gig-plan";
@@ -120,7 +121,8 @@ const timed = (ref: SongRef) => loadScrollVersions(ref).versions.length > 0;
 
 /**
  * This phone's songs, and while searching, the band songs this phone holds too, grouped by where they live. Nothing
- * here asks the server. Signed in, the phone is claimed first, so another account's band songs are never shown.
+ * here asks the server. Signed in, the phone is claimed first, so another account's band songs are never shown. A phone
+ * that knows it is signed out shows none.
  */
 export function SongList({ songs, userId }: { songs: Song[]; userId: string | null }) {
   const [query, setQuery] = useState("");
@@ -131,7 +133,8 @@ export function SongList({ songs, userId }: { songs: Song[]; userId: string | nu
 
   useEffect(() => {
     setHeld([]);
-    if (searching) (userId ? claimPhone(userId) : Promise.resolve()).then(() => allOnPhone("bandSongs")).then(setHeld, () => setHeld([]));
+    if (!searching || (!userId && !signedInBefore())) return;
+    (userId ? claimPhone(userId) : Promise.resolve()).then(() => allOnPhone("bandSongs")).then(setHeld, () => setHeld([]));
   }, [searching, userId]);
 
   if (open) {

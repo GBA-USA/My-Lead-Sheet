@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createServer, request as httpRequest } from "node:http";
+import { connect, type AddressInfo } from "node:net";
 import * as search from "../src/search.ts";
 import { matchingSetlists, matchingSongs } from "../src/search.ts";
 import type { LibraryFile, Setlist, Song, SongRef } from "../src/types.ts";
@@ -331,6 +333,64 @@ try {
     await settle(800);
     assert.deepEqual(await groups(), [], "no band group shows once signed out");
     assert.deepEqual(await app.errors(), [], "the page logged no errors");
+  });
+  await check("a search typed before a slow launch answers drops the band songs once the phone learns it is signed out", async () => {
+    let gate = Promise.resolve();
+    let release = () => {};
+    const proxy = createServer((request, response) =>
+      gate.then(() => {
+        const target = new URL(request.url ?? "/", base);
+        const out = httpRequest(target, { method: request.method, headers: { ...request.headers, host: target.host } }, (reply) => {
+          response.writeHead(reply.statusCode ?? 502, reply.headers);
+          reply.pipe(response);
+        });
+        out.on("error", () => {
+          response.writeHead(502);
+          response.end();
+        });
+        request.pipe(out);
+      }),
+    );
+    proxy.on("upgrade", (request, socket, head) => {
+      const target = new URL(base);
+      const upstream = connect(Number(target.port), target.hostname, () => {
+        const lines = [`${request.method} ${request.url} HTTP/1.1`];
+        for (let i = 0; i < request.rawHeaders.length; i += 2) lines.push(`${request.rawHeaders[i]}: ${request.rawHeaders[i].toLowerCase() === "host" ? target.host : request.rawHeaders[i + 1]}`);
+        upstream.write(`${lines.join("\r\n")}\r\n\r\n`);
+        if (head.length) upstream.write(head);
+        socket.pipe(upstream).pipe(socket);
+      });
+      upstream.on("error", () => socket.destroy());
+      socket.on("error", () => upstream.destroy());
+    });
+    await new Promise<void>((done) => proxy.listen(0, "127.0.0.1", done));
+    apiBase = `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`;
+    try {
+      await app.signUp("Ann Horn");
+      assert.equal((await appCalls("/api/bands/join", { code: blue.code })).status, 200, "Ann joins The Blue Notes");
+      await openBlueSongs();
+      await app.click("✕", `document.querySelector(".bands-sheet")`);
+      await site.evaluate(`location.hash = "#/songs"`);
+      await typeIn("Search songs", "mustang");
+      await app.until(`[...document.querySelectorAll(".search-group-head")].some((h) => h.textContent.trim() === "The Blue Notes")`, "Ann, signed in, finding the band's song");
+      gate = new Promise<void>((done) => (release = done));
+      await site.send("Network.clearBrowserCookies");
+      await site.evaluate(`window.__beforeReload = true; location.reload()`);
+      await app.until(`!window.__beforeReload && !!document.querySelector(".shell-header [aria-label=More]")`, "the library while every /api/ call is held", 15000);
+      await typeIn("Search songs", "mustang");
+      await settle(800);
+      assert.ok(await site.evaluate<boolean>(`localStorage.getItem("leadSheetsSignedIn") !== null`), "the search was typed while the launch check was still unanswered");
+      release();
+      await app.until(`localStorage.getItem("leadSheetsSignedIn") === null`, "the launch 401", 15000);
+      await settle(1200);
+      assert.equal(await site.evaluate<string>(`document.querySelector('input[aria-label="Search songs"]').value`), "mustang", "the box still holds the search");
+      assert.deepEqual(await groups(), [], "no band group shows once the phone learns it is signed out, without retyping");
+      assert.deepEqual(await app.errors(), [], "the page logged no errors");
+    } finally {
+      release();
+      apiBase = base;
+      proxy.close();
+    }
   });
 } finally {
   await site.close();

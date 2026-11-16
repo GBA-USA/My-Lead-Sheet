@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type KeyboardEvent } from "react";
 import { PRIVACY_HREF } from "./data-kinds";
 import type { useMetronome } from "./metronome-view";
 import { songHref, type TabName } from "./route";
@@ -10,7 +10,34 @@ import { LeadSheet } from "./sheet";
 import { songByRef, tempoText } from "./storage";
 import type { Library, Setlist, Song, SongRef } from "./types";
 
-export function Tab({ name, selected, children }: { name: TabName; selected: boolean; children: string }) {
+const TABS: [TabName, string][] = [
+  ["songs", "My Songs"],
+  ["setlists", "Setlists"],
+  ["bands", "Bands"],
+];
+
+/** The top tabs. The arrow keys move between them, as they do in any tab list. */
+export function Tabs({ tab }: { tab: TabName }) {
+  const onKey = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+    event.preventDefault();
+    const at = TABS.findIndex(([name]) => name === tab);
+    const [next] = TABS[(at + (event.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length];
+    document.getElementById(`tab-${next}`)?.focus();
+    window.location.hash = `#/${next}`;
+  };
+  return (
+    <div className="tabs" role="tablist" aria-label="Library" onKeyDown={onKey}>
+      {TABS.map(([name, label]) => (
+        <Tab key={name} name={name} selected={tab === name}>
+          {label}
+        </Tab>
+      ))}
+    </div>
+  );
+}
+
+function Tab({ name, selected, children }: { name: TabName; selected: boolean; children: string }) {
   return (
     <a
       href={`#/${name}`}

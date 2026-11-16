@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AccountSheet, googleReturn, useAccount } from "./account";
 import { backupOff, backupOn, syncBackup, type BackupResult } from "./backup";
 import { BandsSheet, BandsTab, useBandDataOwner } from "./bands";
@@ -9,7 +9,7 @@ import { BackIcon, DotsIcon, Menu, OverflowMenu, ScreenToggle, SongControls } fr
 import { LearnedCues } from "./cues";
 import { useAutoScroll, usePerformance, useStored, useWakeLock } from "./hooks";
 import { LearnSong } from "./learn-song";
-import { SetlistList, SongBody, SongList, Tab } from "./library-lists";
+import { SetlistList, SongBody, SongList, Tabs } from "./library-lists";
 import { useSendSong } from "./send-song";
 import { initialMetronomeBpm } from "./metronome";
 import { useMetronome } from "./metronome-view";
@@ -41,7 +41,6 @@ type MenuId = "shell" | "song" | BarMenu | null;
 
 type SongDataByRef = Record<SongRef, SongData>;
 
-const TABS: TabName[] = ["songs", "setlists", "bands"];
 
 /** Teach mode: the take while it plays or Learn this song while it listens, then what either taught, until Save or Discard. */
 type Teaching = { take: Take } | { learning: true } | { taught: Omit<ScrollVersion, "name">; data?: SongData | null };
@@ -217,14 +216,6 @@ export function App() {
     });
   };
 
-  const onTabKey = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
-    event.preventDefault();
-    const next = TABS[(TABS.indexOf(tab) + (event.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length];
-    document.getElementById(`tab-${next}`)?.focus();
-    window.location.hash = `#/${next}`;
-  };
-
   const goBack = () => {
     if (route.name === "song") {
       window.location.hash = route.from === "setlists" ? "#/setlists" : "#/songs";
@@ -301,19 +292,7 @@ export function App() {
         )}
       </header>
 
-      {showTabs ? (
-        <div className="tabs" role="tablist" aria-label="Library" onKeyDown={onTabKey}>
-          <Tab name="songs" selected={tab === "songs"}>
-            My Songs
-          </Tab>
-          <Tab name="setlists" selected={tab === "setlists"}>
-            Setlists
-          </Tab>
-          <Tab name="bands" selected={tab === "bands"}>
-            Bands
-          </Tab>
-        </div>
-      ) : null}
+      {showTabs ? <Tabs tab={tab} /> : null}
 
       {activeSong ? (
         <SongControls
@@ -431,10 +410,7 @@ export function App() {
           bandId={bands.bandId}
           onMessage={messageUser}
           onChat={(roomId) => openChat({ roomId })}
-          onSetlistCopy={(code) => {
-            setBands(null);
-            setSetlistCopy({ code });
-          }}
+          onSetlistCopy={(code) => { setBands(null); setSetlistCopy({ code }); }}
           onSignedOut={() => setAccount(null)}
           onClose={() => setBands(null)}
         />

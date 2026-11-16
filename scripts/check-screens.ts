@@ -65,14 +65,14 @@ const attrs = (html: string, tag: RegExp) => [...html.matchAll(tag)].map((match)
 const attr = (element: string, name: string) => element.match(new RegExp(`${name}="([^"]*)"`))?.[1];
 
 const firstSetlist = seed.setlists[0];
-const routes = ["#/songs", "#/setlists", `#/song/${seed.songs[0].id}`, "#/song/999", `#/live/${firstSetlist.id}/0`, `#/live/${firstSetlist.id}/99`, "#/live/77/0", "#/live/404/0"];
+const routes = ["#/songs", "#/setlists", "#/bands", `#/song/${seed.songs[0].id}`, "#/song/999", `#/live/${firstSetlist.id}/0`, `#/live/${firstSetlist.id}/99`, "#/live/77/0", "#/live/404/0"];
 
 for (const hash of routes) {
   const html = render(hash);
   check(count(html, /<h1[ >]/) === 1, `${hash} has exactly one h1 (found ${count(html, /<h1[ >]/)})`);
   const tabs = attrs(html, /<a [^>]*role="tab"[^>]*>/g);
   if (hash.startsWith("#/live")) continue;
-  check(tabs.length === 2, `${hash} shows two tabs`);
+  check(tabs.length === 3, `${hash} shows three tabs`);
   for (const tab of tabs) {
     const panel = attr(tab, "aria-controls");
     const panelTag = panel ? html.match(new RegExp(`<[^>]* id="${panel}"[^>]*>`))?.[0] : undefined;
@@ -82,7 +82,7 @@ for (const hash of routes) {
   }
   const focusable = tabs.filter((tab) => attr(tab, "tabindex") === "0");
   check(focusable.length === 1 && attr(focusable[0], "aria-selected") === "true", `${hash} only the selected tab is in the tab order`);
-  check(tabs.filter((tab) => attr(tab, "tabindex") === "-1").length === 1, `${hash} the other tab is out of the tab order`);
+  check(tabs.filter((tab) => attr(tab, "tabindex") === "-1").length === 2, `${hash} the other tabs are out of the tab order`);
 }
 
 const empty = render("#/live/77/0");

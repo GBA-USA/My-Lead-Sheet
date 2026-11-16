@@ -35,9 +35,9 @@ async function type(label: string, text: string) {
   await site.send("Input.insertText", { text });
 }
 async function openSheet(item: string) {
-  await site.evaluate(`document.querySelector(".shell-header [aria-label=More]").click()`);
-  await settle();
-  check(await click(item, "document.querySelector('[role=menu]')"), `the More menu offers ${item}`);
+  await site.evaluate(`document.querySelector(".shell-header [aria-label=Settings]").click()`);
+  await until(`!!document.querySelector(".settings")`, "Settings");
+  check(await click(item, `document.querySelector(".settings [role=group][aria-label=Account]")`), `Settings offers ${item}`);
   await settle();
 }
 async function fitsPhone(name: string) {
@@ -62,7 +62,7 @@ try {
   });
 
   await site.send("Page.navigate", { url: `${origin}/#/songs` });
-  await until(`!!document.querySelector(".shell-header [aria-label=More]")`, "the library", 15000);
+  await until(`!!document.querySelector(".shell-header [aria-label=Settings]")`, "the library", 15000);
   await settle(500);
   const early = await site.evaluate<string[]>(`performance.getEntriesByType("resource").map((entry) => entry.name).filter((name) => name.includes("/api/"))`);
   check(early.length === 0, `signed-out use calls no API until the sheet opens (${early.join(", ")})`);
@@ -83,35 +83,17 @@ try {
   await type("Your name (what bandmates see)", "Sam Rivera");
   await fitsPhone("create");
   check(await click("Sign in with Face ID or fingerprint"), "Face ID or fingerprint creates the account");
-  await atStep("codes");
-  const codes = await site.evaluate<string[]>(`[...document.querySelectorAll(".account-codes li")].map((li) => li.textContent)`);
-  check(codes.length === 8 && codes.every((code) => /^[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$/.test(code)), `Save your backup codes shows 8 codes (${codes.length})`);
-  const apart = await site.evaluate<boolean>(`(() => {
-    const boxes = [...document.querySelectorAll(".account-codes li")].map((li) => {
-      const range = document.createRange();
-      range.selectNodeContents(li);
-      return range.getBoundingClientRect();
-    });
-    return boxes.every((a, i) => boxes.every((b, j) => i === j || a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top));
-  })()`);
-  check(apart, "no backup code runs into another");
-  await site.send("Emulation.setEmulatedMedia", { media: "print" });
-  check((await printed(".account-codes li")) && !(await printed(".account-sheet h2")), "Print prints the codes and not the rest of the sheet");
-  await site.send("Emulation.setEmulatedMedia", { media: "" });
-  await fitsPhone("codes");
+  await atStep("account");
   const { credentials } = await site.send("WebAuthn.getCredentials", { authenticatorId });
   check(credentials.length === 1 && credentials[0].isResidentCredential && credentials[0].rpId === "localhost", "the phone holds one passkey for this site");
 
-  check(await click("I saved them"), "I saved them");
-  await atStep("account");
-  const view = await site.evaluate<{ title: string; handle: string; removeDisabled: boolean; left: string }>(`(() => {
+  const view = await site.evaluate<{ title: string; handle: string; removeDisabled: boolean }>(`(() => {
     const sheet = document.querySelector(".account-sheet");
     const remove = [...sheet.querySelectorAll(".account-ways button")].find((b) => b.textContent.trim() === "Remove");
-    return { title: sheet.querySelector("h2").textContent, handle: sheet.querySelector(".account-handle").textContent, removeDisabled: !!remove?.disabled, left: [...sheet.querySelectorAll(".account-note")].map((n) => n.textContent).join("|") };
+    return { title: sheet.querySelector("h2").textContent, handle: sheet.querySelector(".account-handle").textContent, removeDisabled: !!remove?.disabled };
   })()`);
   check(view.title === "Sam Rivera" && view.handle === "@samrivera", `the account shows the name and @handle the server made (${view.title}, ${view.handle})`);
   check(view.removeDisabled, "Remove is off while Face ID or fingerprint is the only way");
-  check(view.left.includes("8 left"), `Backup codes shows 8 left (${view.left})`);
   check(await until(`document.querySelector(".account-sheet [role=status]")?.textContent.startsWith("Backed up · ")`, "the Backed up line"), "after sign-in the account sheet says Backed up");
   await fitsPhone("account");
 
@@ -121,46 +103,32 @@ try {
   await atStep("account");
   check((await site.evaluate<string>(`document.querySelector(".account-handle").textContent`)) === "@samrivera", "the passkey signs back in to the same account");
 
+  await site.evaluate(`location.hash = "#/songs"`);
   await site.send("Page.reload");
-  await until(`!!document.querySelector(".shell-header [aria-label=More]")`, "the library after a reload");
+  await until(`!!document.querySelector(".shell-header [aria-label=Settings]")`, "the library after a reload");
   await until(`performance.getEntriesByType("resource").some((entry) => entry.name.endsWith("/api/me"))`, "the account check a signed-in phone makes on load");
   await settle();
   await openSheet("Account");
   await atStep("account");
   check((await site.evaluate<string>(`document.querySelector(".account-handle")?.textContent ?? ""`)) === "@samrivera", "after a reload the session cookie still opens the account");
 
+  const gone = await site.evaluate<number[]>(`Promise.all(["/api/me/backup-codes", "/api/auth/backup-code"].map((path) => fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ handle: "samrivera", code: "0000-0000-0000" }) }).then((r) => r.status)))`);
+  check(gone.join() === "404,404", `the backup-code routes are gone (404) (${gone.join(", ")})`);
   check(await click("Sign out"), "Sign out again");
   await atStep("start");
-  check(await click("Use a backup code"), "Use a backup code opens");
-  await atStep("backup-code");
-  await type("Your @name", "@samrivera");
-  await type("Backup code", codes[0].toLowerCase());
-  await fitsPhone("backup-code");
-  check(await click("Sign in"), "Sign in with a backup code");
-  await atStep("account");
-  check((await site.evaluate<string>(`[...document.querySelectorAll(".account-sheet .account-note")].map((n) => n.textContent).join("|")`)).includes("7 left"), "a used backup code leaves 7");
-
-  check(await click("Sign out"), "Sign out before reusing the code");
-  await atStep("start");
-  await click("Use a backup code");
-  await atStep("backup-code");
-  await type("Your @name", "samrivera");
-  await type("Backup code", codes[0]);
-  await click("Sign in");
-  await until(`!!document.querySelector(".account-sheet [role=alert]")`, "the reused code's error");
-  check((await step()) === "backup-code", "the same backup code is refused the second time");
 
   await site.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
   await settle();
   check(!(await site.evaluate<boolean>(`!!document.querySelector(".account-sheet")`)), "Escape closes the sheet");
 
   await site.send("Page.addScriptToEvaluateOnNewDocument", { source: "delete window.PublicKeyCredential;" });
+  await site.evaluate(`location.hash = "#/songs"`);
   await site.send("Page.reload");
-  await until(`!!document.querySelector(".shell-header [aria-label=More]")`, "the library without passkeys");
+  await until(`!!document.querySelector(".shell-header [aria-label=Settings]")`, "the library without passkeys");
   await openSheet("Sign in");
   await atStep("start");
   const noPasskeys = await site.evaluate<string>(`document.querySelector(".account-sheet [role=note]")?.textContent ?? ""`);
-  check(noPasskeys.includes("Open My Lead Sheet in Safari or Chrome"), `a browser without passkeys says Open in Safari or Chrome (${noPasskeys || "nothing"})`);
+  check(noPasskeys.includes("Open Groovist in Safari or Chrome"), `a browser without passkeys says Open in Safari or Chrome (${noPasskeys || "nothing"})`);
   check(!(await sheetButtons()).includes("Sign in with Face ID or fingerprint"), "and offers no Face ID button there");
   await fitsPhone("no-passkeys");
 

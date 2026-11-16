@@ -140,11 +140,10 @@ try {
   const reset = async () => {
     await site.evaluate(`location.hash = "#/songs"`);
     await site.evaluate(`window.__beforeReload = true; location.reload()`);
-    await app.until(`!window.__beforeReload && !!document.querySelector(".shell-header [aria-label=More]")`, "the library after the reload", 15000);
+    await app.until(`!window.__beforeReload && !!document.querySelector(".shell-header [aria-label=Settings]")`, "the library after the reload", 15000);
   };
   const openBand = async () => {
-    await app.openMenu();
-    await app.pick("Bands");
+    await app.openBands();
     await view("list");
     await app.click("Open");
     await view("band");

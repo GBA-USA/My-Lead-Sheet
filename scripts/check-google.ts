@@ -212,9 +212,9 @@ async function screenChecks() {
     site.evaluate<boolean>(`(() => { const el = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === ${js(text)} && !b.disabled); el?.click(); return !!el; })()`);
   const sheetText = () => site.evaluate<string>(`document.querySelector(".account-sheet")?.innerText ?? ""`);
   const openSheet = async () => {
-    await until(`!!document.querySelector(".shell-header [aria-label=More]")`, "the library");
-    await site.evaluate(`document.querySelector(".shell-header [aria-label=More]").click()`);
-    await until(`[...document.querySelectorAll("[role=menu] button")].some((b) => b.textContent.trim() === "Sign in")`, "the More menu");
+    await until(`!!document.querySelector(".shell-header [aria-label=Settings]")`, "the library");
+    await site.evaluate(`document.querySelector(".shell-header [aria-label=Settings]").click()`);
+    await until(`[...document.querySelectorAll(".settings button")].some((b) => b.textContent.trim() === "Sign in")`, "Settings");
     await click("Sign in");
     await atStep("start");
   };
@@ -229,11 +229,10 @@ async function screenChecks() {
 
     mock.signInAs(googleUser("Chrome Player"));
     assert.ok(await click("Continue with Google"), "Continue with Google");
-    await atStep("codes");
+    await atStep("nudge");
     assert.equal(await site.evaluate<string>("location.search"), "", "the app drops ?google= from the address once it has read it");
-    const codes = await site.evaluate<number>(`document.querySelectorAll(".account-codes li").length`);
-    assert.equal(codes, 8, "a new Google account ends on Save your backup codes with 8 codes");
-    assert.ok(await click("I saved them"));
+    assert.ok((await sheetText()).includes("Add a password too, so you can sign in on a new phone"), "a new Google account ends on the add-a-password nudge");
+    assert.ok(await click("Not now"));
     await atStep("account");
     const text = await sheetText();
     assert.ok(text.includes("Chrome Player") && text.includes("Google (chromeplayer@example.test)"), `Ways to sign in shows Google with the connected address (${text})`);

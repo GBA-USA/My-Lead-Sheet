@@ -68,9 +68,7 @@ try {
   assert.equal(created.body.account.handle, "samrivera", "the @handle comes from the display name");
   assert.equal(created.body.account.displayName, "Sam Rivera");
   assert.equal(created.body.account.ways.length, 1, "the account has one way to sign in");
-  const codes: string[] = created.body.backupCodes;
-  assert.equal(new Set(codes).size, 8, "8 different backup codes are shown once");
-  assert.ok(codes.every((code) => /^[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$/.test(code)), `backup codes look like XXXX-XXXX-XXXX (${codes[0]})`);
+  assert.ok(!("backupCodes" in created.body) && !("backupCodesLeft" in created.body.account), "a new account gets no backup codes");
   const setCookie = phone.lastSetCookie ?? "";
   for (const attribute of ["HttpOnly", "Secure", "SameSite=Lax", "Path=/", `Max-Age=${90 * 24 * 60 * 60}`]) {
     assert.ok(setCookie.includes(attribute), `the session cookie has ${attribute} (${setCookie})`);
@@ -156,13 +154,9 @@ try {
   assert.ok(renewed.cookie !== `mls_session=${twoDays}` && /Max-Age=7776000/.test(renewed.lastSetCookie ?? ""), "using it renews it for another 90 days");
   assert.equal((await renewed.call("/api/me")).lastSetCookie ?? null, null, "a fresh cookie is not re-sent on every call");
 
-  const codePhone = new Phone(base);
-  const code = codes[0];
-  const used = await codePhone.call("/api/auth/backup-code", { handle: "@SamRivera", code: code.toLowerCase().replace(/-/g, " ") });
-  assert.deepEqual([used.status, used.body.account?.handle, used.body.account?.backupCodesLeft], [200, "samrivera", 7], "a backup code signs in once and 7 are left");
-  const again = await new Phone(base).call("/api/auth/backup-code", { handle: "samrivera", code });
-  assert.deepEqual([again.status, again.body.error], [401, "wrong-code"], "the same backup code is refused the second time");
-  assert.equal((await new Phone(base).call("/api/auth/backup-code", { handle: "samrivera2", code: codes[1] })).status, 401, "a code only works for its own account");
+  const codeTry = await new Phone(base).call("/api/auth/backup-code", { handle: "@SamRivera", code: "0000-0000-0000" });
+  assert.deepEqual([codeTry.status, codeTry.body.error], [404, "not-found"], "the backup-code sign-in route is gone (404)");
+  assert.equal((await phone.call("/api/me/backup-codes", {})).status, 404, "signed in, the make-new-codes route is gone (404)");
 
   const secondPhone = new SoftAuthenticator();
   const addOptions = (await phone.call("/api/auth/passkey/add/options", {})).body.options;

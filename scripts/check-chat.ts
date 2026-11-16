@@ -282,17 +282,17 @@ async function appChecks() {
     if (!(await site.evaluate<boolean>("!!navigator.serviceWorker.controller"))) await site.send("Page.reload");
     await app.until("!!navigator.serviceWorker?.controller", "the service worker to take control of the page", 60000);
     await app.library();
-    assert.deepEqual(await app.openMenu(), ["Sign in"], "signed out, the More menu has no Messages");
+    assert.deepEqual(await app.openMenu(), ["Sign in"], "signed out, Settings has no Messages");
     await app.closeMenu();
     await app.signUp("Sam Rivera");
-    assert.deepEqual(await app.openMenu(), ["Account", "Friends", "Bands", "Messages"], "signed in, Messages sits after Bands");
+    assert.deepEqual(await app.openMenu(), ["Account", "Friends", "Messages"], "signed in, Messages sits after Friends");
     await app.pick("Messages");
     await view("list");
     assert.match(await app.text(".chat-sheet"), /No messages yet/, "a new player has no threads");
     await fitsPhone("Messages");
     await app.shot(shots && `${shots}/chat-empty.png`);
     await app.click("✕");
-    pass("Messages opens from the More menu");
+    pass("Messages opens from Settings");
 
     const bandId = (await terry.call("/api/bands/create", { name: "The Blue Notes" })).body.bandId as string;
     const code = (await terry.call("/api/codes", { kind: "band", bandId })).body.code as string;
@@ -354,8 +354,7 @@ async function appChecks() {
     pass("mute, unread badge and the New messages line");
 
     await app.click("✕");
-    await app.openMenu();
-    await app.pick("Bands");
+    await app.openBands();
     await app.until(`document.querySelector(".bands-sheet")?.dataset.view === "list" && document.querySelectorAll(".bands-list li").length > 0`, "the Bands list");
     await app.click("Open");
     await app.until(`document.querySelectorAll(".bands-members li").length === 2`, "the Members list");

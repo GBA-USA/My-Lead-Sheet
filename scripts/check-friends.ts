@@ -151,7 +151,7 @@ async function appChecks() {
 
     await site.send("Page.navigate", { url: `${origin}/#/songs` });
     await app.library();
-    assert.deepEqual(await app.openMenu(), ["Sign in"], "signed out, the More menu holds only Sign in");
+    assert.deepEqual(await app.openMenu(), ["Sign in"], "signed out, Settings holds only Sign in");
     await app.shot(shots && `${shots}/menu-signed-out.png`);
     await app.closeMenu();
     const early = await site.evaluate<string[]>(`performance.getEntriesByType("resource").map((entry) => entry.name).filter((name) => name.includes("/api/"))`);
@@ -159,14 +159,15 @@ async function appChecks() {
     pass("signed out, there is no Friends item and the app is unchanged");
 
     await app.signUp("Sam Rivera");
-    assert.deepEqual(await app.openMenu(), ["Account", "Friends", "Bands", "Messages"], "signed in, Friends sits next to Account");
+    assert.deepEqual(await app.openMenu(), ["Account", "Friends", "Messages"], "signed in, Friends sits next to Account");
     await app.shot(shots && `${shots}/menu-signed-in.png`);
     await app.closeMenu();
     await site.send("Page.reload");
     await app.library();
-    await app.until(`(document.querySelector(".shell-header [aria-label=More]").click(), [...document.querySelectorAll("[role=menu] [role=menuitem]")].some((b) => b.textContent === "Friends"))`, "Friends after a reload");
+    await app.openMenu();
+    await app.until(`[...document.querySelectorAll(".settings [role=group][aria-label=Account] button")].some((b) => b.textContent.trim() === "Friends")`, "Friends after a reload");
     await app.closeMenu();
-    pass("signed in, the More menu offers Friends, also after a reload");
+    pass("signed in, Settings offers Friends, also after a reload");
 
     await openFriends();
     assert.match(await app.text(".friends-sheet"), /No friends yet/, "a new player has no friends yet");

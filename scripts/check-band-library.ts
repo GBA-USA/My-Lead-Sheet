@@ -246,8 +246,7 @@ async function appChecks(site: Awaited<ReturnType<typeof openSite>>, base: strin
   await site.send("Page.navigate", { url: `${origin}/#/songs` });
   await app.library();
   await app.signUp("Sam Rivera");
-  await app.openMenu();
-  await app.pick("Bands");
+  await app.openBands();
   await view("list");
   await app.type("New band", "Porch Band");
   await app.click("Create band");
@@ -332,8 +331,7 @@ async function appChecks(site: Awaited<ReturnType<typeof openSite>>, base: strin
   await app.until(`[...document.querySelectorAll(".song-list a, .song-list li")].some((el) => el.textContent.includes("Back Porch Blues"))`, "the copy on My Songs");
   pass("Add to My Songs makes a copy that keeps the Private rule");
 
-  await app.openMenu();
-  await app.pick("Bands");
+  await app.openBands();
   await view("list");
   await app.click("Open");
   await view("band");

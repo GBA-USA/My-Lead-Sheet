@@ -233,7 +233,7 @@ try {
     await offline(true);
     try {
       await site.evaluate(`window.__beforeReload = true; location.reload()`);
-      await app.until(`!window.__beforeReload && !!document.querySelector(".shell-header [aria-label=More]")`, "the library with no signal", 15000);
+      await app.until(`!window.__beforeReload && !!document.querySelector(".shell-header [aria-label=Settings]")`, "the library with no signal", 15000);
       const before = await site.evaluate<number>("window.__api");
       await typeIn("Search songs", "mustang");
       await app.until(`document.querySelectorAll(".search-group").length > 0`, "results with no signal");
@@ -327,7 +327,7 @@ try {
     assert.deepEqual(await groups(), ["The Blue Notes: Mustang Sally"], "Sam, signed in, finds the band's song");
     await site.send("Network.clearBrowserCookies");
     await site.evaluate(`window.__beforeReload = true; location.reload()`);
-    await app.until(`!window.__beforeReload && !!document.querySelector(".shell-header [aria-label=More]")`, "the library after the session ended", 15000);
+    await app.until(`!window.__beforeReload && !!document.querySelector(".shell-header [aria-label=Settings]")`, "the library after the session ended", 15000);
     await app.until(`localStorage.getItem("leadSheetsSignedIn") === null`, "the phone to learn it is signed out", 15000);
     await typeIn("Search songs", "mustang");
     await settle(800);
@@ -376,7 +376,7 @@ try {
       gate = new Promise<void>((done) => (release = done));
       await site.send("Network.clearBrowserCookies");
       await site.evaluate(`window.__beforeReload = true; location.reload()`);
-      await app.until(`!window.__beforeReload && !!document.querySelector(".shell-header [aria-label=More]")`, "the library while every /api/ call is held", 15000);
+      await app.until(`!window.__beforeReload && !!document.querySelector(".shell-header [aria-label=Settings]")`, "the library while every /api/ call is held", 15000);
       await typeIn("Search songs", "mustang");
       await settle(800);
       assert.ok(await site.evaluate<boolean>(`localStorage.getItem("leadSheetsSignedIn") !== null`), "the search was typed while the launch check was still unanswered");

@@ -1,7 +1,7 @@
 .band-tabs {
   display: flex;
   gap: 4px;
-  border-bottom: 1px solid var(--bg-2);
+  border-bottom: 1px solid var(--surface);
 }
 
 .band-tabs [role="tab"] {
@@ -16,7 +16,7 @@
 }
 
 .band-tabs [role="tab"][aria-selected="true"] {
-  border-bottom-color: var(--gold);
+  border-bottom-color: var(--accent-text);
   color: var(--text);
 }
 
@@ -43,7 +43,7 @@
 .band-library-choice,
 .band-library-pick-row {
   min-height: 44px;
-  border: 1px solid var(--bg-2);
+  border: 1px solid var(--surface);
   border-radius: 999px;
   padding: 0 14px;
   background: transparent;
@@ -53,9 +53,9 @@
 
 .band-library-chip[aria-pressed="true"],
 .band-library-choice[aria-pressed="true"] {
-  border-color: var(--gold);
-  background: var(--gold);
-  color: var(--on-gold);
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 .band-library-pick-row {
@@ -95,7 +95,7 @@
 }
 
 .band-library-setlists li[aria-current="true"] {
-  outline: 2px solid var(--gold);
+  outline: 2px solid var(--accent-text);
   outline-offset: 2px;
 }
 
@@ -127,7 +127,7 @@
 .bands-tab-button {
   align-self: flex-start;
   margin: 0 16px 16px;
-  border: 0;
+  border: var(--control-border);
   cursor: pointer;
 }
 

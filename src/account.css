@@ -5,7 +5,7 @@
   display: grid;
   place-items: end center;
   padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--scrim);
   overflow-y: auto;
 }
 
@@ -15,9 +15,9 @@
   display: grid;
   gap: 12px;
   padding: 16px;
-  background: #322c24;
+  background: var(--surface-2);
   border-radius: 16px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 12px 32px var(--shadow);
   color: var(--text);
 }
 
@@ -43,7 +43,7 @@
   width: 44px;
   height: 44px;
   flex: none;
-  border: 0;
+  border: var(--control-border);
   border-radius: 999px;
   background: transparent;
   color: var(--text-dim);
@@ -59,7 +59,7 @@
   min-width: 0;
   height: 44px;
   padding: 0 12px;
-  border: 0;
+  border: var(--control-border);
   border-radius: 10px;
   background: var(--bg);
   color: var(--text);
@@ -75,19 +75,19 @@
 .account-secondary {
   min-height: 44px;
   padding: 0 16px;
-  border: 0;
+  border: var(--control-border);
   border-radius: 999px;
   font-weight: 700;
   font-size: 15px;
 }
 
 .account-primary {
-  background: var(--gold);
-  color: var(--on-gold);
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 .account-secondary {
-  background: var(--bg-2);
+  background: var(--surface);
   color: var(--text);
 }
 
@@ -100,7 +100,7 @@
   min-height: 44px;
   border: 0;
   background: transparent;
-  color: var(--gold);
+  color: var(--accent-text);
   font-size: 15px;
 }
 
@@ -178,7 +178,7 @@
   body .account-codes,
   body .account-codes * {
     visibility: visible;
-    color: #000;
+    color: var(--print-ink);
   }
 
   .account-codes {

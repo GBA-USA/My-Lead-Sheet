@@ -13,6 +13,11 @@
     <title>Lead Sheets</title>
     <script>
       document.addEventListener("gesturestart", (event) => event.preventDefault());
+      var themeColors = { stage: "#13120d", day: "#fff", "cb-rg": "#101418", "cb-by": "#15110f", contrast: "#000" };
+      var theme = (function () { try { return localStorage.getItem("leadSheetsTheme"); } catch (error) { return null; } })();
+      if (!Object.prototype.hasOwnProperty.call(themeColors, theme)) theme = "stage";
+      document.documentElement.dataset.theme = theme;
+      document.querySelector('meta[name="theme-color"]').setAttribute("content", themeColors[theme]);
     </script>
   </head>
   <body>

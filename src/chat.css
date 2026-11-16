@@ -51,8 +51,8 @@
   min-width: 22px;
   padding: 2px 7px;
   border-radius: 999px;
-  background: var(--gold);
-  color: var(--on-gold);
+  background: var(--accent);
+  color: var(--on-accent);
   font-size: 13px;
   font-weight: 700;
   text-align: center;
@@ -98,15 +98,15 @@
   max-width: 80%;
   padding: 8px 12px;
   border-radius: 14px;
-  background: var(--bg-2);
+  background: var(--surface);
   font-size: 16px;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
 
 .chat-line-mine .chat-bubble {
-  background: var(--gold);
-  color: var(--on-gold);
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 .chat-waiting {
@@ -117,8 +117,8 @@
 .chat-new-line {
   margin: 4px 0;
   padding-top: 4px;
-  border-top: 1px solid var(--gold);
-  color: var(--gold);
+  border-top: 1px solid var(--accent-text);
+  color: var(--accent-text);
   font-size: 12px;
   text-align: center;
 }

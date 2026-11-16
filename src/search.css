@@ -4,9 +4,9 @@
   min-height: 44px;
   margin: 10px 16px 4px;
   padding: 0 14px;
-  border: 1px solid rgba(247, 242, 232, 0.16);
+  border: 1px solid var(--border);
   border-radius: 10px;
-  background: var(--bg-2);
+  background: var(--surface);
   color: var(--text);
   font-size: 16px;
 }
@@ -16,7 +16,7 @@
 }
 
 .search-box:focus-visible {
-  outline: 2px solid var(--gold);
+  outline: 2px solid var(--accent-text);
   outline-offset: 2px;
 }
 
@@ -36,17 +36,17 @@
 .search-chip {
   min-height: 36px;
   padding: 0 12px;
-  border: 1px solid rgba(247, 242, 232, 0.16);
+  border: 1px solid var(--border);
   border-radius: 18px;
-  background: var(--bg-2);
+  background: var(--surface);
   color: var(--text);
   font: inherit;
   font-size: 14px;
 }
 
 .search-chip[aria-pressed="true"] {
-  border-color: var(--gold);
-  color: var(--gold);
+  border-color: var(--accent-text);
+  color: var(--accent-text);
 }
 
 .search-group-head {

@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -92,6 +92,22 @@ check(!empty.includes("isn&#x27;t in this library") && !empty.includes("isn't in
 check(!empty.includes("Next song"), "an empty setlist hides Prev and Next");
 check(render("#/live/404/0").includes("That setlist isn&#x27;t in this library."), "a setlist id that does not exist is still called missing");
 check(count(render("#/setlists"), /This setlist is empty\./) === 1, "the Setlists tab says the empty setlist is empty");
+
+const componentNames = readdirSync(new URL("../src", import.meta.url))
+  .filter((name) => name.endsWith(".tsx"))
+  .flatMap((name) => [...readFileSync(new URL(`../src/${name}`, import.meta.url), "utf8").matchAll(/^(?:export )?function ([A-Z]\w+)\(/gm)].map((match) => match[1]));
+const INTERNAL_NAMES = [/\bfixture\b/i, /\bscaffold\b/i, /\bcook\b/i, /\b[CL][0-9]+[a-z]?\b/, /\bTODO\b/, new RegExp(`\\b(?:${[...new Set(componentNames)].join("|")})\\b`)];
+const visibleText = (html: string) =>
+  html
+    .replace(/<div class="(?:chords|bars)"[^>]*>[\s\S]*?<\/div>/g, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&#x27;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, "&");
+for (const hash of routes) {
+  const found = INTERNAL_NAMES.flatMap((pattern) => visibleText(render(hash)).match(pattern) ?? []);
+  check(found.length === 0, `${hash} no internal names in visible text (found: ${found.join(", ") || "none"})`);
+}
 
 const pastEnd = render(`#/live/${firstSetlist.id}/99`);
 check(pastEnd.includes(`${firstSetlist.songIds.length}/${firstSetlist.songIds.length}`), "a live index past the end counts the last song");

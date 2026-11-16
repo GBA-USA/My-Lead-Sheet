@@ -279,7 +279,59 @@ try {
     assert.deepEqual(await app.texts(".setlist h2"), ["Worship Set", "Biker church"], "setlists holding Chain Breaker");
   });
 
+  const myCount = () => site.evaluate<number>(`JSON.parse(localStorage.getItem("leadSheetsLibrary")).songs.length`);
+  const bandRow = (artist: string) => `[...document.querySelectorAll(".band-library-songs li")].find((li) => li.textContent.includes(${js(artist)}))`;
+  const openBlueSongs = async () => {
+    await site.evaluate(`location.hash = "#/bands"`);
+    await app.until(`[...document.querySelectorAll(".bands-tab .song-title")].some((t) => t.textContent.trim() === "The Blue Notes")`, "The Blue Notes on the Bands tab", 15000);
+    await tapRow("The Blue Notes", `document.querySelector(".bands-tab")`);
+    await bandsSheet("band");
+    await app.click("Songs", `document.querySelector(".band-tabs")`);
+    await app.until(`!!document.querySelector(".band-library-songs")`, "The Blue Notes' songs", 15000);
+  };
+
+  await check("a same-title band song by a different artist adds with no prompt", async () => {
+    for (const [title, artist] of [["Chain Breaker", "The Other Chain Gang"], ["chain-breaker", "ZACH WILLIAMS"]]) {
+      const shared = await terry.call("/api/bands/library/share-song", { bandId: blue.bandId, song: { ...content(seedSong(10)), title, artist }, choice: "public", localId: null });
+      assert.equal(shared.status, 200, `Terry shares ${title} by ${artist} into The Blue Notes`);
+    }
+    await openBlueSongs();
+    await app.until(`!!${bandRow("ZACH WILLIAMS")} && !!${bandRow("The Other Chain Gang")}`, "both Chain Breaker rows");
+    const before = await myCount();
+    await app.click("Add to My Songs", bandRow("The Other Chain Gang"));
+    await app.until(`document.querySelector(".bands-notice")?.textContent.includes("Added Chain Breaker to My Songs.")`, "the added notice", 15000);
+    assert.equal(await myCount(), before + 1, "the song by a different artist is added");
+    assert.ok(!(await site.evaluate<string>(`document.querySelector(".bands-sheet").textContent`)).includes("You already have"), "with no duplicate prompt");
+  });
+
+  await check("the duplicate guard offers Open it when adding a band song you already have, and adds nothing until the player chooses", async () => {
+    await app.until(`!!${bandRow("ZACH WILLIAMS")}?.querySelector("button")`, "the ZACH WILLIAMS row's Add button", 15000);
+    const before = await myCount();
+    await app.click("Add to My Songs", bandRow("ZACH WILLIAMS"));
+    await app.until(`${bandRow("ZACH WILLIAMS")}?.textContent.includes("You already have Chain Breaker · Open it?")`, "the duplicate prompt on the row");
+    await settle(500);
+    assert.equal(await myCount(), before, "nothing is added before the player chooses");
+    assert.ok(await site.evaluate<boolean>(`[...${bandRow("ZACH WILLIAMS")}.querySelectorAll("button")].some((b) => b.textContent.trim() === "Add anyway")`), "Add anyway is offered");
+    await site.evaluate(`[...${bandRow("ZACH WILLIAMS")}.querySelectorAll("a")].find((a) => a.textContent.trim() === "Open").click()`);
+    await app.until(`location.hash === "#/song/10" && !document.querySelector(".bands-sheet") && document.querySelector(".sheet .sheet-name")?.textContent === "Chain Breaker"`, "Open shows the Chain Breaker already in My Songs");
+    assert.equal(await myCount(), before, "and Open adds nothing");
+  });
+
   await check("no page errors", async () => assert.deepEqual(await app.errors(), [], "the page logged no errors"));
+
+  await check("a signed-out phone shows no band songs in search after the session ends", async () => {
+    await site.evaluate(`location.hash = "#/songs"`);
+    await typeIn("Search songs", "mustang");
+    assert.deepEqual(await groups(), ["The Blue Notes: Mustang Sally"], "Sam, signed in, finds the band's song");
+    await site.send("Network.clearBrowserCookies");
+    await site.evaluate(`window.__beforeReload = true; location.reload()`);
+    await app.until(`!window.__beforeReload && !!document.querySelector(".shell-header [aria-label=More]")`, "the library after the session ended", 15000);
+    await app.until(`localStorage.getItem("leadSheetsSignedIn") === null`, "the phone to learn it is signed out", 15000);
+    await typeIn("Search songs", "mustang");
+    await settle(800);
+    assert.deepEqual(await groups(), [], "no band group shows once signed out");
+    assert.deepEqual(await app.errors(), [], "the page logged no errors");
+  });
 } finally {
   await site.close();
   await worker.dispose();

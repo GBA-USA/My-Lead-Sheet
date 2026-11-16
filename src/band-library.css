@@ -93,3 +93,44 @@
   font-weight: 700;
   font-size: 17px;
 }
+
+.band-library-setlists li[aria-current="true"] {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.setlist-code-empty {
+  opacity: 0.7;
+}
+
+.setlist-code-songs label {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.bands-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.bands-tab .song-row {
+  font: inherit;
+  cursor: pointer;
+}
+
+.bands-tab-note {
+  margin: 16px 16px 0;
+}
+
+.bands-tab-button {
+  align-self: flex-start;
+  margin: 0 16px 16px;
+  border: 0;
+  cursor: pointer;
+}
+
+.setlist-head .setlist-code-show {
+  flex: none;
+}

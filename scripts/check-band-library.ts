@@ -253,7 +253,7 @@ async function appChecks(site: Awaited<ReturnType<typeof openSite>>, base: strin
   await app.click("Create band");
   await view("band");
   const bandId = await site.evaluate<string>(`document.querySelector(".bands-sheet").dataset.band`);
-  assert.deepEqual(await app.texts(".band-tabs [role=tab]"), ["Setlists", "Songs", "Members"], "the band screen has Setlists, Songs and Members tabs");
+  assert.deepEqual(await app.texts(".band-tabs [role=tab]"), ["Songs", "Setlists", "Chat", "Gigs", "Members"], "the band screen has Songs, Setlists, Chat, Gigs and Members tabs");
 
   const fireAway = seed.songs[0].title;
   await tab("Songs");

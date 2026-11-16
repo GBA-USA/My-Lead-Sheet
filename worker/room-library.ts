@@ -2,7 +2,8 @@ import seedLibrary from "../data/library.json" with { type: "json" };
 import type { BandLibrary, BandSetlist, BandSong, CopiedSong, SongContent } from "../src/band-library-model";
 import type { ChartLine, ChartSection } from "../src/types";
 import { randomBytes, toBase64Url } from "./bytes";
-import { signedIn, type Context, type Route } from "./directory-http";
+import { liveCode } from "./codes";
+import { signedIn, type Context, type Route, type User } from "./directory-http";
 import { fromRoom, Refused, roomRefused as refused } from "./refused";
 import { selfRoomId } from "./room-backup";
 import { bandIdIn, bandIdsOf, inRoom, roomOf, shutOut, type RoomStore } from "./room-members";
@@ -32,6 +33,7 @@ export function createLibraryTables(sql: SqlStorage) {
   )`);
   sql.exec(`CREATE TABLE IF NOT EXISTS song_copies (copy_id TEXT PRIMARY KEY, print TEXT NOT NULL)`);
   sql.exec(`CREATE INDEX IF NOT EXISTS song_copies_by_print ON song_copies (print)`);
+  sql.exec(`CREATE TABLE IF NOT EXISTS setlist_sends (share_id TEXT PRIMARY KEY, name TEXT NOT NULL, songs TEXT NOT NULL, created_at INTEGER NOT NULL)`);
 }
 
 const newId = (prefix: string) => `${prefix}_${toBase64Url(randomBytes(16))}`;
@@ -46,6 +48,14 @@ export function storeOf(sql: SqlStorage) {
 const chainStore = (chain: Chain) => (id: string) => chain.find((share) => share.id === id);
 
 const allowed = (chain: Chain, senderId: string, choice: ShareChoice) => checkSend(chainStore(chain), { senderId, copyId: chain[0].id, choice });
+
+function mustAllow(chain: Chain, senderId: string, choice: ShareChoice) {
+  const result = allowed(chain, senderId, choice);
+  if (!result.ok) throw new Refused(result.code, result.status);
+}
+
+/** `userId`'s own node under the first copy in `chain`, carrying its choice. The id names them, so it never collides with another holder's. */
+const nodeFor = (chain: Chain, userId: string): Chain => [{ id: `${chain[0].id}/${userId}`, ownerId: userId, parentId: chain[0].id, choice: chain[0].choice }, ...chain];
 
 function keep(sql: SqlStorage, share: StoredShare) {
   sql.exec(`INSERT OR IGNORE INTO shares (id, owner_id, parent_id, choice) VALUES (?, ?, ?, ?)`, share.id, share.ownerId, share.parentId, share.choice);
@@ -67,9 +77,7 @@ function adopt(sql: SqlStorage, id: string, ownerId: string, from: Chain | null,
 function holding(sql: SqlStorage, row: Shared, userId: string): Chain {
   const chain = lineage(storeOf(sql), row.share_id);
   if (!chain) throw refused("lineage_broken");
-  if (userId === row.shared_by) return chain.slice(1);
-  const [band] = chain;
-  return [{ id: `${band.id}/${userId}`, ownerId: userId, parentId: band.id, choice: band.choice }, ...chain];
+  return userId === row.shared_by ? chain.slice(1) : nodeFor(chain, userId);
 }
 
 function sharedFields(sql: SqlStorage, row: Shared, userId: string, names: Map<string, string>) {
@@ -211,6 +219,20 @@ export const bandLibrary = {
     return { item: setlistOf(band.sql, setlistRow(band.sql, setlistId), userId), changed: false };
   },
 
+  /** What a member holds of a band setlist, so a code for it follows the same rule as passing it on. */
+  setlistHolding(band: RoomStore, userId: string, setlistId: string): Chain {
+    inRoom(band.sql, userId);
+    const row = setlistRow(band.sql, setlistId);
+    if (!row) throw refused("not-found");
+    return holding(band.sql, row, userId);
+  },
+
+  /** A band setlist code opens only for someone who could already see the setlist. Guests on its gig join them with C21c. */
+  openByCode(band: RoomStore, userId: string, setlistId: string) {
+    if (shutOut(band.sql, userId)) throw refused("not-in-band");
+    if (!setlistRow(band.sql, setlistId)) throw refused("not-found");
+  },
+
   copyOut(band: RoomStore, userId: string, songId: string): { song: SongContent; print: string; from: Chain } {
     inRoom(band.sql, userId);
     const row = songRow(band.sql, songId);
@@ -246,6 +268,20 @@ export function receivedCopy(shareId: string, friendId: string, senderId: string
   return { chain, reshareable: allowed(chain, friendId, "public").ok };
 }
 
+/** A copy code's setlist as its owner sent it: the chain it comes from, and each ticked chart with the chain its copy comes from. */
+export type SentSetlist = { name: string; chain: Chain; songs: { song: SongContent; print: string; chain: Chain }[] };
+export type SetlistSend = { name: string; choice: ShareChoice; from: Chain | null; songs: { song: SongContent; print: string; from: Chain | null }[] };
+
+/** A copy code as one scanner takes it: their own node under the setlist and under each song, all with the owner's choice. */
+export function setlistCopyFor(sent: SentSetlist, userId: string) {
+  const setlist = nodeFor(sent.chain, userId);
+  return {
+    setlist,
+    songs: sent.songs.map((item) => ({ song: item.song, print: item.print, chain: nodeFor(item.chain, userId) })),
+    reshareable: allowed(setlist, userId, "public").ok,
+  };
+}
+
 export const selfCopies = {
   record(sql: SqlStorage, userId: string, from: Chain, print: string): CopiedSong["copy"] {
     const id = adopt(sql, newId("copy"), userId, from, "public");
@@ -257,6 +293,32 @@ export const selfCopies = {
   receive(sql: SqlStorage, chain: Chain, print: string) {
     for (const share of chain) keep(sql, share);
     sql.exec(`INSERT OR IGNORE INTO song_copies (copy_id, print) VALUES (?, ?)`, chain[0].id, print);
+  },
+
+  /** Keeps a copy code's charts with a share row for the setlist and each song, and returns the setlist's share id. */
+  sendSetlist(sql: SqlStorage, ownerId: string, send: SetlistSend, now: number): string {
+    const id = adopt(sql, `sent_${toBase64Url(randomBytes(12))}`, ownerId, send.from, send.choice);
+    const songs = send.songs.map((item, index) => ({ song: item.song, print: item.print, shareId: adopt(sql, `${id}/${index}`, ownerId, item.from, send.choice) }));
+    sql.exec(`INSERT INTO setlist_sends (share_id, name, songs, created_at) VALUES (?, ?, ?, ?)`, id, send.name, JSON.stringify(songs), now);
+    return id;
+  },
+
+  setlistSend(sql: SqlStorage, shareId: string): SentSetlist | null {
+    const row = sql.exec<{ name: string; songs: string }>(`SELECT name, songs FROM setlist_sends WHERE share_id = ?`, shareId).toArray()[0];
+    if (!row) return null;
+    const songs = JSON.parse(row.songs) as { song: SongContent; print: string; shareId: string }[];
+    return { name: row.name, chain: selfCopies.held(sql, shareId), songs: songs.map((item) => ({ song: item.song, print: item.print, chain: selfCopies.held(sql, item.shareId) })) };
+  },
+
+  receiveSetlist(sql: SqlStorage, setlist: Chain, songs: { chain: Chain; print: string }[]) {
+    for (const share of setlist) keep(sql, share);
+    for (const song of songs) selfCopies.receive(sql, song.chain, song.print);
+  },
+
+  held(sql: SqlStorage, copyId: string): Chain {
+    const chain = lineage(storeOf(sql), copyId);
+    if (!chain) throw refused("not-found");
+    return chain;
   },
 
   /** The named copy with the chart it was made of, the copies showing this chart, and every share id the caller's copies came through. */
@@ -359,19 +421,49 @@ async function isBuiltIn(print: string) {
 export async function guardContent(c: Context, userId: string, print: string, choice: ShareChoice, copyId: string | null, except: string | null): Promise<Chain | null> {
   const mine = await fromRoom(selfRoom(c, userId).copyChains(copyId, print));
   const verdict = (chain: Chain) => allowed(chain, userId, choice);
-  const mustAllow = (chain: Chain) => {
-    const result = verdict(chain);
-    if (!result.ok) throw new Refused(result.code, result.status);
-  };
   if (copyId !== null && !mine.named) throw new Refused("not_found", 404);
-  if (mine.named) mustAllow(mine.named.chain);
+  if (mine.named) mustAllow(mine.named.chain, userId, choice);
   if (mine.named?.print === print || (await isBuiltIn(print))) return mine.named?.chain ?? null;
   const takenFrom = mine.named ? null : mine.takenFrom;
   const inBands = await Promise.all(bandIdsOf(c.sql, userId).map((bandId) => fromRoom(roomOf(c, bandId).heldByPrint(userId, print, except, takenFrom))));
   const held = [...mine.byPrint, ...inBands.flat()];
   const allowing = held.find((chain) => verdict(chain).ok);
-  if (held.length > 0 && !allowing) mustAllow(held[0]);
+  if (held.length > 0 && !allowing) mustAllow(held[0], userId, choice);
   return mine.named?.chain ?? allowing ?? null;
+}
+
+/** A band setlist code is for a member who may pass the setlist on, so a Private one stays with whoever shared it. */
+export async function bandSetlistTarget(c: Context, user: User) {
+  const bandId = bandIdIn(c.body);
+  const setlistId = idIn(c.body.setlistId);
+  mustAllow(await fromRoom(roomOf(c, bandId).bandSetlistHolding(user.user_id, setlistId)), user.user_id, "public");
+  return { targetId: `${bandId}/${setlistId}` };
+}
+
+const MAX_CODE_SONGS = 40;
+
+/**
+ * A copy code for the caller's own setlist holds only the songs they ticked, after they picked Private or Public. A
+ * named setlist copy, and each chart through `guardContent`, must be one the caller may pass on with that choice.
+ */
+export async function mySetlistTarget(c: Context, user: User) {
+  const choice = choiceIn(c.body);
+  const { name, songs, setlistCopyId } = c.body;
+  if (!isText(name, 60)) throw new Refused("bad-name");
+  if (!Array.isArray(songs) || songs.length < 1 || songs.length > MAX_CODE_SONGS) throw new Refused("bad-request");
+  const self = selfRoom(c, user.user_id);
+  const from = setlistCopyId === null || setlistCopyId === undefined ? null : await fromRoom(self.heldChain(idIn(setlistCopyId)));
+  if (from) mustAllow(from, user.user_id, choice);
+  const picked = await Promise.all(
+    songs.map(async (value) => {
+      const item = record(value);
+      if (!item) throw new Refused("bad-request");
+      const song = songIn(item.song);
+      const print = await printOf(song);
+      return { song, print, from: await guardContent(c, user.user_id, print, choice, item.copyId === null || item.copyId === undefined ? null : idIn(item.copyId), null) };
+    }),
+  );
+  return { targetId: await self.sendSetlist(user.user_id, { name: (name as string).trim(), choice, from, songs: picked }, c.now) };
 }
 
 const refusalOf = (rule: Promise<unknown>) =>
@@ -434,6 +526,13 @@ export const LIBRARY_ROUTES: Record<string, Route> = {
     const base = baseIn(c.body.base);
     const fields = setlistIn(c.body);
     return saved(await fromRoom(roomOf(c, bandId).editBandSetlist(signedIn(c).user_id, setlistId, base, fields, c.now)));
+  },
+
+  async "POST /api/bands/setlist-code"(c) {
+    const row = await liveCode(c.sql, c.env, c.body.code, c.now, { kind: "band-setlist", refusal: "not-a-setlist-code" });
+    const [bandId, setlistId] = row.target_id.split("/");
+    await fromRoom(roomOf(c, bandId).openSetlistByCode(signedIn(c).user_id, setlistId));
+    return { body: { bandId, setlistId } };
   },
 
   async "POST /api/bands/library/copy-song"(c) {

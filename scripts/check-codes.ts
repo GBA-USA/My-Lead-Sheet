@@ -75,10 +75,26 @@ async function apiChecks() {
     pass("each kind this server makes lands on its screen");
 
     const claimedReshareable = await terry.call("/api/codes", { kind: "my-setlist", setlistId: "local/3", songIds: ["local/1"], sharedAs: "public", reshareable: true });
-    assert.deepEqual([claimedReshareable.status, claimedReshareable.body.error], [400, "bad-kind"], "a setlist code is not made while the server holds no setlist lineage, whatever the phone claims");
+    assert.deepEqual([claimedReshareable.status, claimedReshareable.body.error], [400, "choice_required"], "a setlist code asks Private or Public first, whatever the phone claims");
+    assert.equal((await mike.call("/api/friends/add-by-code", { code: shared.body.code })).status, 200, "Mike adds Terry by his link");
+    const song = { title: "Code Check Song", artist: "Terry", body: [{ heading: "Verse", lines: [{ chords: "G", lyrics: "code check line" }] }] };
+    const setlistCopy = async (choice: string) => {
+      const made = await terry.call("/api/codes", { kind: "my-setlist", choice, name: `${choice} set`, songs: [{ song, copyId: null }], setlistCopyId: null });
+      assert.equal(made.status, 200, `Terry makes a ${choice} setlist code (${JSON.stringify(made.body)})`);
+      assert.equal((await land(base, made.body.code)).location, `${TEST_ORIGIN}/?open=setlists&code=${made.body.code}`, "a setlist code lands on Setlists");
+      const { roomId } = (await mike.call("/api/chat/setlist-code", { code: made.body.code })).body;
+      const card = JSON.parse((await mike.call("/api/chat/open", { roomId })).body.messages.find((m: { kind: string; text: string }) => m.kind === "setlist" && m.text.includes(`${choice} set`)).text);
+      const copy = (await mike.call("/api/chat/setlist-copy", { copyId: card.copyId })).body;
+      return mike.call("/api/codes", { kind: "my-setlist", choice: "public", name: "Passed on", songs: [{ song: copy.songs[0].song, copyId: copy.songs[0].copyId }], setlistCopyId: card.copyId, reshareable: true });
+    };
+    assert.equal((await setlistCopy("public")).status, 200, "a setlist code is made for a Public copy");
+    const fromPrivate = await setlistCopy("private");
+    assert.deepEqual([fromPrivate.status, fromPrivate.body.error], [403, "private_copy"], "and refused for a Private copy, whatever the phone claims");
     const noGig = await terry.call("/api/codes", { kind: "gig" });
     assert.deepEqual([noGig.status, noGig.body.error], [400, "bad-request"], "a gig code is made only for a named band and gig");
-    for (const kind of ["guest", "band-setlist"]) assert.deepEqual((await terry.call("/api/codes", { kind })).body.error, "bad-kind", `${kind} codes, whose screens are not built yet, are not made`);
+    const noSetlist = await terry.call("/api/codes", { kind: "band-setlist" });
+    assert.deepEqual([noSetlist.status, noSetlist.body.error], [400, "bad-request"], "a band setlist code is made only for a named band and setlist");
+    assert.deepEqual((await terry.call("/api/codes", { kind: "guest" })).body.error, "bad-kind", "guest codes, whose screen is not built yet, are not made");
     assert.equal((await new Phone(base).call("/api/codes", { kind: "friend-now" })).status, 401, "a signed-out phone gets no code");
     assert.equal((await terry.call("/api/codes", { kind: "friend-now" }, { origin: "https://evil.test" })).status, 403, "another site can't ask for a code");
 

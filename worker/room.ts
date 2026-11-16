@@ -5,7 +5,7 @@ import type { Env } from "./index";
 import { handleBackup } from "./room-backup";
 import { chatRoom, createChatTables, type Card, type Posted } from "./room-chat";
 import { exportBand, importBandFile } from "./room-export";
-import { bandLibrary, createLibraryTables, selfCopies, type SetlistFields, type SetlistShare, type SongChange, type SongShare } from "./room-library";
+import { bandLibrary, createLibraryTables, selfCopies, type SentSetlist, type SetlistFields, type SetlistSend, type SetlistShare, type SongChange, type SongShare } from "./room-library";
 import { createGigTables, gigRoom, type GigFields } from "./room-gig";
 import { bandRoom, createMemberTables, shutOut } from "./room-members";
 import type { RouteChoice } from "../src/routes";
@@ -233,6 +233,14 @@ export class Room extends DurableObject<Env> {
     return bandLibrary.editSetlist(this.band, userId, setlistId, base, fields, now);
   }
 
+  bandSetlistHolding(userId: string, setlistId: string) {
+    return bandLibrary.setlistHolding(this.band, userId, setlistId);
+  }
+
+  openSetlistByCode(userId: string, setlistId: string) {
+    bandLibrary.openByCode(this.band, userId, setlistId);
+  }
+
   copyBandSong(userId: string, songId: string) {
     return bandLibrary.copyOut(this.band, userId, songId);
   }
@@ -252,6 +260,22 @@ export class Room extends DurableObject<Env> {
 
   copyChains(copyId: string | null, print: string) {
     return selfCopies.chains(this.ctx.storage.sql, copyId, print);
+  }
+
+  sendSetlist(ownerId: string, send: SetlistSend, now: number) {
+    return selfCopies.sendSetlist(this.ctx.storage.sql, ownerId, send, now);
+  }
+
+  setlistSend(shareId: string): SentSetlist | null {
+    return selfCopies.setlistSend(this.ctx.storage.sql, shareId);
+  }
+
+  receiveSetlist(setlist: StoredShare[], songs: { chain: StoredShare[]; print: string }[]) {
+    selfCopies.receiveSetlist(this.ctx.storage.sql, setlist, songs);
+  }
+
+  heldChain(copyId: string) {
+    return selfCopies.held(this.ctx.storage.sql, copyId);
   }
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {

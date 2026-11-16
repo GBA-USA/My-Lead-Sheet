@@ -52,7 +52,8 @@ const pagesNotFound = (outDir: string, base: string): Plugin => ({
 });
 
 const LANDING_WAIT_MS = 6000;
-const CODE = "friend-link.AAAAAAAAAAAAAAAA.1999999999999.AAAAAAAA.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+const CODE_SCREENS: Record<string, string> = { "friend-link": "friends", "band-setlist": "setlists" };
+const CODES = Object.keys(CODE_SCREENS).map((kind) => `${kind}.AAAAAAAAAAAAAAAA.1999999999999.AAAAAAAA.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA`);
 
 const slowCodeLanding = (base: string): Plugin => ({
   name: "slow-code-landing",
@@ -61,7 +62,7 @@ const slowCodeLanding = (base: string): Plugin => ({
       const code = new URL(req.url ?? "/", "http://preview").pathname.match(/\/c\/([^/]+)$/)?.[1];
       if (!code) return next();
       setTimeout(() => {
-        res.writeHead(302, { Location: `${base}?open=friends&code=${code}`, "Cache-Control": "no-store" });
+        res.writeHead(302, { Location: `${base}?open=${CODE_SCREENS[code.split(".")[0]]}&code=${code}`, "Cache-Control": "no-store" });
         res.end();
       }, LANDING_WAIT_MS);
     });
@@ -147,31 +148,33 @@ try {
       );
     }
 
-    const codeLink = `http://127.0.0.1:${port}${base}c/${CODE}`;
-    const before = (await currentEntry()).id;
-    const arrived = (entry: { id: number; url: string }) => entry.id !== before && new URL(entry.url).pathname === base;
-    void chrome.send("Page.navigate", { url: codeLink });
-    let entry = await currentEntry();
-    for (const started = Date.now(); Date.now() - started < LANDING_WAIT_MS + 6000 && !arrived(entry); ) {
-      await new Promise((resolve) => setTimeout(resolve, 200));
-      entry = await currentEntry();
+    const codeLink = (code: string) => `http://127.0.0.1:${port}${base}c/${code}`;
+    for (const code of CODES) {
+      const before = (await currentEntry()).id;
+      const arrived = (entry: { id: number; url: string }) => entry.id !== before && new URL(entry.url).pathname === base;
+      void chrome.send("Page.navigate", { url: codeLink(code) });
+      let entry = await currentEntry();
+      for (const started = Date.now(); Date.now() - started < LANDING_WAIT_MS + 6000 && !arrived(entry); ) {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        entry = await currentEntry();
+      }
+      if (!arrived(entry)) {
+        throw new Error(`${base}: a code link whose landing takes ${LANDING_WAIT_MS} ms never reached ${base}, last committed page ${entry.url}`);
+      }
+      const landed = await until<{ path: string; rows: number; signIn: boolean }>(
+        "({ path: location.pathname, rows: document.querySelectorAll('.song-list .song-row').length, signIn: !!document.querySelector('.account-sheet') })",
+        (page) => page.rows === seed.songs.length && page.signIn,
+        `${base}c/ to land in the app for a ${CODE_SCREENS[code.split(".")[0]]} code`,
+      );
+      check(
+        landed?.path === base && landed.rows === seed.songs.length && landed.signIn,
+        `${base}: a ${code.split(".")[0]} link whose landing takes ${LANDING_WAIT_MS} ms still opens the app, signed out at the sign-in sheet (saw ${JSON.stringify(landed)})`,
+      );
     }
-    if (!arrived(entry)) {
-      throw new Error(`${base}: a code link whose landing takes ${LANDING_WAIT_MS} ms never reached ${base}, last committed page ${entry.url}`);
-    }
-    const landed = await until<{ path: string; rows: number; signIn: boolean }>(
-      "({ path: location.pathname, rows: document.querySelectorAll('.song-list .song-row').length, signIn: !!document.querySelector('.account-sheet') })",
-      (page) => page.rows === seed.songs.length && page.signIn,
-      `${base}c/ to land in the app`,
-    );
-    check(
-      landed?.path === base && landed.rows === seed.songs.length && landed.signIn,
-      `${base}: a code link whose landing takes ${LANDING_WAIT_MS} ms still opens the app, signed out at the sign-in sheet (saw ${JSON.stringify(landed)})`,
-    );
 
     await server.close();
     await offline(true);
-    const offlineCode = await chrome.send("Page.navigate", { url: codeLink });
+    const offlineCode = await chrome.send("Page.navigate", { url: codeLink(CODES[0]) });
     if (typeof offlineCode.errorText !== "string") {
       throw new Error(`${base}: offline, a code link got the app shell at a path its files can't load from, not the browser's own offline page (saw ${JSON.stringify(offlineCode)})`);
     }

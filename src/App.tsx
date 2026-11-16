@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AccountSheet, googleReturn, useAccount } from "./account";
 import { backupOff, backupOn, syncBackup, type BackupResult } from "./backup";
-import { BandsSheet, useBandDataOwner } from "./bands";
+import { BandsSheet, BandsTab, useBandDataOwner } from "./bands";
 import { ChatSheet, queueOwner, type ChatTarget } from "./chat";
+import { readPayload, type CodeScreen } from "./code-link";
 import { clearLanding, landedCode } from "./codes";
 import { BackIcon, DotsIcon, Menu, OverflowMenu, ScreenToggle, SongControls } from "./controls";
 import { LearnedCues } from "./cues";
 import { useAutoScroll, usePerformance, useStored, useWakeLock } from "./hooks";
 import { LearnSong } from "./learn-song";
-import { SetlistList, SongBody, SongList, Tab } from "./library-lists";
+import { SetlistList, SongBody, SongList, Tabs } from "./library-lists";
 import { useSendSong } from "./send-song";
 import { initialMetronomeBpm } from "./metronome";
 import { useMetronome } from "./metronome-view";
@@ -16,6 +17,7 @@ import { displayKeyLabel } from "./music";
 import { parseHash, type TabName } from "./route";
 import { READING_LINE, changeTempo, evenPlan, nextVersionName, scrollMotion, startTake, toggleHold, type ScrollVersion, type Take } from "./scroll-timing";
 import { FriendsSheet } from "./friends";
+import { MySetlistCodeSheet, SetlistCopySheet } from "./setlist-code";
 import { LeadSheet } from "./sheet";
 import type { Account } from "./sign-in-methods";
 import { SongDataEditor } from "./song-data-editor";
@@ -33,11 +35,12 @@ import {
   withSongData,
 } from "./storage";
 import { SaveTake, TeachBar, taughtPlan, useFollowTempo, useScrollVersions, type BarMenu } from "./teach";
-import type { Library, Song, SongData, SongRef } from "./types";
+import type { Library, Setlist, Song, SongData, SongRef } from "./types";
 
 type MenuId = "shell" | "song" | BarMenu | null;
 
 type SongDataByRef = Record<SongRef, SongData>;
+
 
 /** Teach mode: the take while it plays or Learn this song while it listens, then what either taught, until Save or Discard. */
 type Teaching = { take: Take } | { learning: true } | { taught: Omit<ScrollVersion, "name">; data?: SongData | null };
@@ -62,7 +65,9 @@ export function App() {
   const { account, setAccount, checking } = useAccount();
   const [accountOpen, setAccountOpen] = useState(() => googleReturn() !== null);
   const [friends, setFriends] = useState<{ code?: string } | null>(null);
-  const [bands, setBands] = useState<{ code?: string } | null>(null);
+  const [bands, setBands] = useState<{ code?: string; bandId?: string } | null>(null);
+  const [setlistCode, setSetlistCode] = useState<Setlist | null>(null);
+  const [setlistCopy, setSetlistCopy] = useState<{ code: string } | null>(null);
   const [chat, setChat] = useState<{ open?: ChatTarget } | null>(null);
   const [landed, setLanded] = useState(landedCode);
   const sendSong = useSendSong(account, stored.songs, { friends: () => setFriends({}), chat: (roomId) => setChat({ open: { roomId } }) });
@@ -73,12 +78,18 @@ export function App() {
   useEffect(() => queueOwner(account?.userId ?? null), [account?.userId]);
   useBandDataOwner(account?.userId ?? null);
 
+  const landings: Record<CodeScreen, (code: string) => void> = {
+    friends: (code) => setFriends({ code }),
+    bands: (code) => setBands({ code }),
+    gig: (code) => setBands({ code }),
+    setlists: (code) => (readPayload(code)?.kind === "my-setlist" ? setSetlistCopy({ code }) : setBands({ code })),
+  };
+
   useEffect(() => {
-    const open = landed?.screen === "friends" ? setFriends : landed?.screen === "bands" || landed?.screen === "gig" ? setBands : null;
-    if (!landed || !open || checking) return;
+    if (!landed || checking) return;
     if (!account) return setAccountOpen(true);
     if (accountOpen) return;
-    open({ code: landed.code });
+    landings[landed.screen](landed.code);
     setLanded(null);
   }, [landed, account, checking, accountOpen]);
 
@@ -127,9 +138,7 @@ export function App() {
   const route = parseHash(hash);
   const showTabs = route.name !== "live";
   const tab: TabName =
-    route.name === "setlists" || (route.name === "song" && route.from === "setlists")
-      ? "setlists"
-      : "songs";
+    route.name === "bands" ? "bands" : route.name === "setlists" || (route.name === "song" && route.from === "setlists") ? "setlists" : "songs";
 
   const liveSetlist = route.name === "live" ? library.setlists.find((set) => set.id === route.setlistId) : undefined;
   const liveIndex =
@@ -186,11 +195,13 @@ export function App() {
     ...(account ? ([["Friends", () => setFriends({})], ["Bands", () => setBands({})], ["Messages", () => setChat({})]] as [string, () => void][]) : []),
   ];
 
-  const messageUser = (userId: string) => {
+  const openChat = (open: ChatTarget) => {
     setFriends(null);
     setBands(null);
-    setChat({ open: { userId } });
+    setSetlistCopy(null);
+    setChat({ open });
   };
+  const messageUser = (userId: string) => openChat({ userId });
 
   const changeText = (index: number) => {
     const next = Math.max(0, Math.min(TEXT_SCALES.length - 1, index));
@@ -203,14 +214,6 @@ export function App() {
       saveAwake(!current);
       return !current;
     });
-  };
-
-  const onTabKey = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
-    event.preventDefault();
-    const next: TabName = tab === "songs" ? "setlists" : "songs";
-    document.getElementById(`tab-${next}`)?.focus();
-    window.location.hash = `#/${next}`;
   };
 
   const goBack = () => {
@@ -289,16 +292,7 @@ export function App() {
         )}
       </header>
 
-      {showTabs ? (
-        <div className="tabs" role="tablist" aria-label="Library" onKeyDown={onTabKey}>
-          <Tab name="songs" selected={tab === "songs"}>
-            My Songs
-          </Tab>
-          <Tab name="setlists" selected={tab === "setlists"}>
-            Setlists
-          </Tab>
-        </div>
-      ) : null}
+      {showTabs ? <Tabs tab={tab} /> : null}
 
       {activeSong ? (
         <SongControls
@@ -413,10 +407,17 @@ export function App() {
         <BandsSheet
           account={account}
           code={bands.code}
+          bandId={bands.bandId}
           onMessage={messageUser}
+          onChat={(roomId) => openChat({ roomId })}
+          onSetlistCopy={(code) => { setBands(null); setSetlistCopy({ code }); }}
           onSignedOut={() => setAccount(null)}
           onClose={() => setBands(null)}
         />
+      ) : null}
+      {setlistCode && account ? <MySetlistCodeSheet key={account.userId} setlist={setlistCode} onSignedOut={() => setAccount(null)} onClose={() => setSetlistCode(null)} /> : null}
+      {setlistCopy && account ? (
+        <SetlistCopySheet code={setlistCopy.code} onChat={(roomId) => openChat({ roomId })} onSignedOut={() => setAccount(null)} onClose={() => setSetlistCopy(null)} />
       ) : null}
       {sendSong.sheet}
 
@@ -462,7 +463,8 @@ export function App() {
           <LearnedCues learned={learned} clock={clock} rate={motion.rate} metronomeOn={metronome.playing} />
         ) : null}
         {route.name === "songs" ? <SongList songs={library.songs} /> : null}
-        {route.name === "setlists" ? <SetlistList setlists={library.setlists} songs={library.songs} /> : null}
+        {route.name === "setlists" ? <SetlistList setlists={library.setlists} songs={library.songs} onShowCode={account ? setSetlistCode : undefined} /> : null}
+        {route.name === "bands" ? <BandsTab account={account} onOpen={(bandId) => setBands({ bandId })} onSignIn={() => setAccountOpen(true)} onSignedOut={() => setAccount(null)} /> : null}
         {route.name === "song" ? (
           <SongBody
             library={library}

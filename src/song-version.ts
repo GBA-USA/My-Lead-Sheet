@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import type { Owner } from "./account";
 import { initialMetronomeBpm } from "./metronome";
 import { clampScrollPercent, type Notation } from "./music";
 import type { PersonalDefaults } from "./personal-settings-model";
@@ -71,6 +72,9 @@ export function loadSongVersions(ref: SongRef): { versions: SongVersion[]; selec
   return { versions: versions.map(fromStored), selected };
 }
 
+/** Whether any of the song's versions holds taught or learned timing. A version can hold only settings, such as a key. */
+export const hasTiming = (ref: SongRef): boolean => loadSongVersions(ref).versions.some((version) => version.plan !== null);
+
 /** The song as it opens with no version picked: the player's defaults and the song's own tempo and even pace. */
 export function songDefaults(song: Song, personal: PersonalDefaults): Draft {
   return {
@@ -121,13 +125,15 @@ type Patch = Partial<Draft> | ((draft: Draft) => Partial<Draft>);
  * The song's versions and the draft over the version in use. An own song keeps the draft on this phone for this
  * account until Save, Revert or a pick, so a choice the player made holds even when it matches today's default. Save
  * shows while the draft differs from the version in use. A locked song keeps the draft, and any version picked, only
- * until the player leaves it. Every change the controls make goes through `set`.
+ * until the player leaves it. A phone signed in to an account it cannot name yet keeps the draft in memory too, so
+ * the signed-out entry never takes an account's change. Every change the controls make goes through `set`.
  */
-export function useSongVersion(song: Song | null, owner: string | null, personal: PersonalDefaults) {
+export function useSongVersion(song: Song | null, owner: Owner, personal: PersonalDefaults) {
   const ref = song?.ref ?? null;
   const isLocked = song != null && locked(song);
+  const keeper = isLocked ? undefined : owner;
   const [stored, setStored] = useStored(() => (ref == null ? NONE : loadScrollVersions(ref)), ref);
-  const [kept, setKept] = useStored(() => (ref == null || isLocked ? null : loadDraft(owner, ref)), `${owner} ${ref}`);
+  const [kept, setKept] = useStored(() => (ref == null || keeper === undefined ? null : loadDraft(keeper, ref)), `${keeper} ${ref}`);
   const [moment, setMoment] = useState<{ ref: SongRef | null; selected: number | null; draft: Draft | null }>({ ref, selected: stored.selected, draft: null });
   if (moment.ref !== ref) setMoment({ ref, selected: stored.selected, draft: null });
 
@@ -136,16 +142,16 @@ export function useSongVersion(song: Song | null, owner: string | null, personal
   const version = selected == null ? null : (versions[selected] ?? null);
   const defaults = song ? songDefaults(song, personal) : null;
   const base = defaults ? baseline(version, defaults) : null;
-  const held = isLocked ? (moment.ref === ref ? moment.draft : null) : kept;
+  const held = keeper === undefined ? (moment.ref === ref ? moment.draft : null) : kept;
   const draft = held ?? base;
   const latest = useRef(draft);
   latest.current = draft;
 
   const keepDraft = (next: Draft | null) => {
     if (ref == null) return;
-    if (isLocked) setMoment((current) => ({ ...current, draft: next }));
+    if (keeper === undefined) setMoment((current) => ({ ...current, draft: next }));
     else {
-      saveDraft(owner, ref, next);
+      saveDraft(keeper, ref, next);
       setKept(next);
     }
   };

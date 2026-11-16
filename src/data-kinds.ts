@@ -33,7 +33,11 @@ export const DATA_KINDS: readonly DataKind[] = [
     place: "phone",
     what: "For each account on this phone, the changes you made to a song and have not saved yet: key, metronome speed, scroll speed, Notes or Nashville, and a timing you taught or learned. Removed when you save or revert. Never backed up.",
   },
-  { key: "leadSheetsSignedIn", place: "phone", what: "That this phone signed in before, so the app checks your account when it opens. Signing out removes it." },
+  {
+    key: "leadSheetsSignedIn",
+    place: "phone",
+    what: "Which account this phone signed in to, so the app checks your account when it opens and, with no signal, keeps your settings and unsaved changes with that account. Signing out removes it.",
+  },
   {
     key: "leadSheetsBackup",
     place: "phone",

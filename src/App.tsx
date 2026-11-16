@@ -67,9 +67,8 @@ export function App() {
   const [textIndex, setTextIndex] = useStored(loadTextScaleIndex);
   const [menu, setMenu] = useState<MenuId>(null);
   const [scrollSheet, setScrollSheet] = useState(false);
-  const { account, setAccount, checking } = useAccount();
-  const owner = account?.userId ?? null;
-  const [personal, setPersonal] = useStored(() => loadPersonal(owner), owner);
+  const { account, setAccount, checking, owner } = useAccount();
+  const [personal, setPersonal] = useStored(() => loadPersonal(owner ?? null), owner);
   const [accountOpen, setAccountOpen] = useState(() => googleReturn() !== null);
   const [friends, setFriends] = useState<{ code?: string } | null>(null);
   const [bands, setBands] = useState<{ code?: string; bandId?: string } | null>(null);
@@ -221,7 +220,7 @@ export function App() {
 
   const changePersonal = (next: PersonalDefaults) => {
     setPersonal(next);
-    return savePersonal(owner, next);
+    return savePersonal(owner ?? null, next);
   };
 
   const goBack = () => {

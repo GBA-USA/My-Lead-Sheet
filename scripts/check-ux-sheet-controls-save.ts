@@ -598,6 +598,43 @@ try {
     expect(await has("Send", CONTROLS), "the player's own song has no Send on the row while signed in");
   });
 
+  const noSignal = (on: boolean) => site.send("Network.setBlockedURLs", { urls: on ? ["*/api/*"] : [] });
+  const drafts = async () => JSON.parse((await stored(DRAFT)) ?? "{}") as Record<string, { semitones: number }>;
+
+  await test("signed in with /api/* unreachable at launch, the account's draft shows and nothing lands in the signed-out entry", async () => {
+    await freshPhone(`#/song/${CHAIN_BREAKER}`, signedIn);
+    await until(`!!${buttonIn(CONTROLS, "Send")}`, "the account to answer", 10000);
+    await tap("Transpose up", CONTROLS);
+    await tap("Transpose up", CONTROLS);
+    const moved = await keyName();
+    await noSignal(true);
+    try {
+      await load(`#/song/${CHAIN_BREAKER}`);
+      expect((await keyName()) === moved && (await saveShown()), `with no signal the song opens in ${await keyName()}, not the account's draft ${moved}, and Save shows: ${await saveShown()}`);
+      await tap("Transpose down", CONTROLS);
+      const kept = await drafts();
+      expect(Object.keys(kept).length === 1 && kept[sam.userId]?.semitones === 1, `with no signal the change was stored as ${js(kept)}, not under the account alone`);
+    } finally {
+      await noSignal(false);
+    }
+  });
+
+  await test("a phone signed in by an older build, with /api/* unreachable at launch, keeps its change off the signed-out entry", async () => {
+    await noSignal(true);
+    try {
+      await freshPhone(`#/song/${CHAIN_BREAKER}`, signedIn);
+      const original = await keyName();
+      await tap("Transpose up", CONTROLS);
+      expect((await keyName()) !== original && (await saveShown()), `with no signal Transpose up left ${await keyName()} and Save shows: ${await saveShown()}`);
+      expect((await stored(DRAFT)) === null, `with no account to name, the change was stored as ${await stored(DRAFT)}`);
+    } finally {
+      await noSignal(false);
+    }
+    await load(`#/song/${CHAIN_BREAKER}`);
+    await until(`!!${buttonIn(CONTROLS, "Send")}`, "the account to answer", 10000);
+    expect(!("" in (await drafts())), `the signed-out entry holds ${js(await drafts())} once the account answered`);
+  });
+
   for (const pixels of WIDTHS) {
     await width(pixels);
     const at = ` (${pixels} px)`;

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { AccountSheet, googleReturn, useAccount } from "./account";
 import { backupOff, backupOn, syncBackup, type BackupResult } from "./backup";
-import { BandsSheet } from "./bands";
+import { BandsSheet, useBandDataOwner } from "./bands";
 import { ChatSheet, queueOwner, type ChatTarget } from "./chat";
 import { clearLanding, landedCode } from "./codes";
 import { BackIcon, DotsIcon, Menu, OverflowMenu, ScreenToggle, SongControls } from "./controls";
@@ -71,9 +71,10 @@ export function App() {
     if (landed) clearLanding();
   }, []);
   useEffect(() => queueOwner(account?.userId ?? null), [account?.userId]);
+  useBandDataOwner(account?.userId ?? null);
 
   useEffect(() => {
-    const open = landed?.screen === "friends" ? setFriends : landed?.screen === "bands" ? setBands : null;
+    const open = landed?.screen === "friends" ? setFriends : landed?.screen === "bands" || landed?.screen === "gig" ? setBands : null;
     if (!landed || !open || checking) return;
     if (!account) return setAccountOpen(true);
     if (accountOpen) return;
@@ -413,10 +414,7 @@ export function App() {
           account={account}
           code={bands.code}
           onMessage={messageUser}
-          onSignedOut={() => {
-            setAccount(null);
-            setBands(null);
-          }}
+          onSignedOut={() => setAccount(null)}
           onClose={() => setBands(null)}
         />
       ) : null}

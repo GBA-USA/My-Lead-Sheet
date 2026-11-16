@@ -166,7 +166,7 @@ async function dmRoomFor(c: Context, me: User, other: User): Promise<string> {
 }
 
 /** Puts a stored post on every member's Messages list: the newest preview, and read up to it for the one who wrote it. */
-function deliver(c: Context, roomId: string, posted: Posted) {
+export function deliver(c: Context, roomId: string, posted: Posted) {
   const { message } = posted;
   const preview = `${message.fromName}: ${previewText(message)}`.slice(0, PREVIEW_CHARS);
   for (const member of posted.members) {

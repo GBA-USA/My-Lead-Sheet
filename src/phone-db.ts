@@ -56,3 +56,28 @@ export async function putOnPhone<S extends PhoneStore>(store: S, key: PhoneStore
 export function allOnPhone<S extends PhoneStore>(store: S): Promise<PhoneStores[S]["value"][]> {
   return inStore(store, "readonly", (objects) => objects.getAll() as IDBRequest<PhoneStores[S]["value"][]>);
 }
+
+const PHONE_OWNER_KEY = "leadSheetsPhoneOwner";
+
+/** Empties every store, so band data leaves the phone with the account that downloaded it (PLAN.md 10). */
+export async function clearPhone(): Promise<void> {
+  const db = await openPhoneDb();
+  try {
+    const clearing = db.transaction(PHONE_STORES, "readwrite");
+    for (const store of PHONE_STORES) clearing.objectStore(store).clear();
+    await new Promise<void>((resolve, reject) => {
+      clearing.oncomplete = () => resolve();
+      clearing.onerror = () => reject(clearing.error);
+    });
+  } finally {
+    db.close();
+  }
+  localStorage.removeItem(PHONE_OWNER_KEY);
+}
+
+/** Marks this phone's band data as `userId`'s. Anything another account left here is cleared first, so a shared phone never shows it. */
+export async function claimPhone(userId: string): Promise<void> {
+  if (localStorage.getItem(PHONE_OWNER_KEY) === userId) return;
+  await clearPhone();
+  localStorage.setItem(PHONE_OWNER_KEY, userId);
+}

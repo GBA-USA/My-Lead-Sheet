@@ -76,7 +76,9 @@ async function apiChecks() {
 
     const claimedReshareable = await terry.call("/api/codes", { kind: "my-setlist", setlistId: "local/3", songIds: ["local/1"], sharedAs: "public", reshareable: true });
     assert.deepEqual([claimedReshareable.status, claimedReshareable.body.error], [400, "bad-kind"], "a setlist code is not made while the server holds no setlist lineage, whatever the phone claims");
-    for (const kind of ["gig", "guest", "band-setlist"]) assert.deepEqual((await terry.call("/api/codes", { kind })).body.error, "bad-kind", `${kind} codes, whose screens are not built yet, are not made`);
+    const noGig = await terry.call("/api/codes", { kind: "gig" });
+    assert.deepEqual([noGig.status, noGig.body.error], [400, "bad-request"], "a gig code is made only for a named band and gig");
+    for (const kind of ["guest", "band-setlist"]) assert.deepEqual((await terry.call("/api/codes", { kind })).body.error, "bad-kind", `${kind} codes, whose screens are not built yet, are not made`);
     assert.equal((await new Phone(base).call("/api/codes", { kind: "friend-now" })).status, 401, "a signed-out phone gets no code");
     assert.equal((await terry.call("/api/codes", { kind: "friend-now" }, { origin: "https://evil.test" })).status, 403, "another site can't ask for a code");
 

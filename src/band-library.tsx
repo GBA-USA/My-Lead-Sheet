@@ -24,7 +24,7 @@ import "./band-library.css";
 
 export type LibraryTab = "setlists" | "songs";
 
-type Props = { band: BandView; me: string; tab: LibraryTab; busy: boolean; run: (work: () => Promise<void>) => void; notify: (text: string) => void };
+type Props = { band: BandView; me: string; tab: LibraryTab; busy: boolean; run: (work: () => Promise<void>) => void; notify: (text: string) => void; onPlanGig?: (setlist: BandSetlist) => void };
 
 type Picked = { kind: "song"; song: Song } | { kind: "setlist"; setlist: Setlist };
 type Mode = { name: "list" } | { name: "pick" } | { name: "ask"; picked: Picked } | { name: "edit"; setlist: BandSetlist };
@@ -170,7 +170,7 @@ function SetlistEditor({
   );
 }
 
-export function BandLibraryTab({ band, me, tab, busy, run, notify }: Props) {
+export function BandLibraryTab({ band, me, tab, busy, run, notify, onPlanGig }: Props) {
   const [library, setLibrary] = useState<BandLibrary | null>(null);
   const [mode, setMode] = useState<Mode>({ name: "list" });
   const [query, setQuery] = useState("");
@@ -375,6 +375,11 @@ export function BandLibraryTab({ band, me, tab, busy, run, notify }: Props) {
                 </span>
                 <span className="friends-actions">
                   {lockFor(item)}
+                  {onPlanGig ? (
+                    <button type="button" className="account-secondary" disabled={busy} onClick={() => onPlanGig(item)}>
+                      Plan a gig
+                    </button>
+                  ) : null}
                   {band.role === "admin" || item.sharedBy === me ? (
                     <button type="button" className="account-secondary" disabled={busy} onClick={() => setMode({ name: "edit", setlist: item })}>
                       Edit

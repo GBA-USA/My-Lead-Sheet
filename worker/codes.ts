@@ -3,6 +3,7 @@ import { fromBase64Url, randomBytes, toBase64Url, utf8 } from "./bytes";
 import { signedIn, type Context, type Route, type User } from "./directory-http";
 import type { Env } from "./index";
 import { Refused } from "./refused";
+import { GIG_LINK_MINUTES, gigLinkTarget } from "./room-gig";
 import { bandInviteTarget } from "./room-members";
 import { hmacKey } from "./session";
 
@@ -50,6 +51,7 @@ const MINTERS: Partial<Record<CodeKind, Minter>> = {
   "friend-now": { minutes: 10, target: (_, user) => ({ targetId: user.user_id }) },
   "friend-link": { minutes: 7 * DAY_MINUTES, reuse: true, target: (_, user) => ({ targetId: user.user_id }) },
   band: { minutes: 7 * DAY_MINUTES, reuse: true, target: bandInviteTarget },
+  gig: { minutes: GIG_LINK_MINUTES, reuse: true, target: gigLinkTarget },
 };
 
 const fieldsOf = (row: CodeRow): CodeFields => ({ kind: row.kind, codeId: row.code_id, expiresAt: row.expires_at, nonce: row.nonce });

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 import { BandLibraryTab, LIBRARY_MESSAGES, type LibraryTab } from "./band-library";
 import type { BandLibrary } from "./band-library-model";
 import { BandSettings } from "./band-settings";
@@ -8,8 +8,8 @@ import { ScanCode, ShowCode } from "./codes";
 import { downloadPack, packsOnPhone, type GigPack } from "./gig-pack";
 import { GigCard, GigPlanForm, GigSong, newGigId } from "./gig-plan";
 import type { GigDraft, GigView } from "./gig-plan-model";
-import { useEscape } from "./hooks";
-import { clearPhone } from "./phone-db";
+import { useCloseOnSong, useEscape } from "./hooks";
+import { keepBandsOnPhone } from "./phone-db";
 import { SETLIST_CODE_MESSAGES } from "./setlist-code";
 import { ApiError, api, type Account } from "./sign-in-methods";
 import "./friends.css";
@@ -78,21 +78,18 @@ const message = (error: unknown) => {
   return MESSAGES[reason] ?? "Something went wrong. Try again.";
 };
 
+/** The server's list of this account's bands. Songs of any other band leave the phone, so search stops finding them. */
+const listed = (bands: BandSummary[]) => {
+  keepBandsOnPhone(bands.map((band) => band.bandId)).catch(() => {});
+  return bands;
+};
+
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /**
  * Bands: the list, one band's Setlists, Songs and Members tabs with Message on each bandmate, Invite and Band settings,
  * and a card for each gig not yet played. `code` is a band or gig code to open first.
  */
-/** Band data on this phone leaves with the account, whichever way it signed out (PLAN.md 10). A launch that never signed in, such as one with no signal, keeps it. */
-export function useBandDataOwner(userId: string | null) {
-  const last = useRef(userId);
-  useEffect(() => {
-    if (last.current && !userId) clearPhone().catch(() => {});
-    last.current = userId;
-  }, [userId]);
-}
-
 export function BandsSheet({
   account,
   code,
@@ -170,7 +167,7 @@ export function BandsSheet({
   };
 
   useEffect(() => {
-    if (view.name === "list") api<{ bands: BandSummary[] }>("/api/bands").then((reply) => setBands(reply.bands), failed);
+    if (view.name === "list") api<{ bands: BandSummary[] }>("/api/bands").then((reply) => setBands(listed(reply.bands)), failed);
     if (view.name === "band" || view.name === "invite" || view.name === "settings" || view.name === "plan") api<BandView>("/api/bands/open", { bandId: view.bandId }).then(setBand, failed);
     if (view.name === "band") loadGigs(view.bandId).catch(failed);
     if (view.name === "code") {
@@ -225,6 +222,7 @@ export function BandsSheet({
     });
 
   useEscape(onClose);
+  useCloseOnSong(onClose);
 
   const change = (path: string, body: object, done?: string) =>
     run(async () => {
@@ -642,7 +640,7 @@ export function BandsTab({ account, onOpen, onSignIn, onSignedOut }: { account: 
   const load = () => {
     setError("");
     api<{ bands: BandSummary[] }>("/api/bands").then(
-      (reply) => setBands(reply.bands),
+      (reply) => setBands(listed(reply.bands)),
       (caught) => (caught instanceof ApiError && caught.status === 401 ? onSignedOut() : setError(message(caught))),
     );
   };

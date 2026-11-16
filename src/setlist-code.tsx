@@ -4,13 +4,15 @@ import type { BandSetlist } from "./band-library-model";
 import type { ChatMessage } from "./chat-model";
 import { CODE_REFUSED } from "./code-link";
 import { ShowCode } from "./codes";
+import { songYouHave } from "./search";
+import { YouHaveIt } from "./search-box";
 import { SEND_MESSAGES } from "./send-song";
 import { useEscape, useStored } from "./hooks";
 import { MAX_CODE_SONGS, setlistCardIn, type CodeOffer, type SetlistCard as Card, type SetlistCopy } from "./setlist-code-model";
 import type { ShareChoice } from "./share-rule";
 import { ApiError, api } from "./sign-in-methods";
 import { addOwnSetlist, addOwnSong, loadLibrary, songByRef } from "./storage";
-import type { Setlist, SongRef } from "./types";
+import type { Setlist, Song, SongRef } from "./types";
 import "./friends.css";
 import "./band-library.css";
 
@@ -218,15 +220,24 @@ export function SetlistCard({ message, me }: { message: ChatMessage; me: string 
   const [library] = useStored(loadLibrary);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
+  const [asking, setAsking] = useState<{ copy: SetlistCopy; have: Song } | null>(null);
   if (!card) return <span className="chat-bubble">📋 A setlist</span>;
   if (message.fromId === me) return <span className="chat-bubble">📋 Shared a copy of {card.name} ({card.titles.length === 1 ? "1 song" : `${card.titles.length} songs`})</span>;
   const held = library.setlists.some((setlist) => setlist.copy?.id === card.copyId);
+
+  const keep = (copy: SetlistCopy) => {
+    setAsking(null);
+    if (!keepCopy(card, copy, message.fromName)) setNote(`This phone couldn't add ${card.name}.`);
+  };
 
   const add = async () => {
     setBusy(true);
     try {
       const copy = await api<SetlistCopy>("/api/chat/setlist-copy", { copyId: card.copyId });
-      if (!keepCopy(card, copy, message.fromName)) setNote(`This phone couldn't add ${card.name}.`);
+      const songs = loadLibrary().songs;
+      const have = copy.songs.filter((item) => !songs.some((song) => song.copy?.id === item.copyId)).map((item) => songYouHave(songs, item.song)).find((hit) => hit !== undefined);
+      if (have) setAsking({ copy, have });
+      else keep(copy);
     } catch (caught) {
       setNote(setlistCodeMessage(caught));
     } finally {
@@ -249,6 +260,8 @@ export function SetlistCard({ message, me }: { message: ChatMessage; me: string 
         <small>In your Setlists</small>
       ) : note ? (
         <small role="status">{note}</small>
+      ) : asking ? (
+        <YouHaveIt have={asking.have} onAdd={() => keep(asking.copy)} />
       ) : (
         <button type="button" className="account-secondary" disabled={busy} onClick={add}>
           Add to My Songs

@@ -1,13 +1,16 @@
-import { useState, type KeyboardEvent } from "react";
+import { useEffect, useState, useSyncExternalStore, type KeyboardEvent } from "react";
+import { bandSongRef } from "./band-library-model";
 import { PRIVACY_HREF } from "./data-kinds";
+import { GigSong } from "./gig-plan";
 import type { useMetronome } from "./metronome-view";
+import { allOnPhone, heldFor, onPhoneChange, phoneGeneration, type CachedBandSong } from "./phone-db";
 import { songHref, type TabName } from "./route";
-import { matchingSetlists, matchingSongs } from "./search";
-import { SearchBox } from "./search-box";
+import { groupedSongs, keyName, matchingSetlists, NO_CHIPS } from "./search";
+import { SearchBox, SearchChips } from "./search-box";
 import { CodeOfferButton } from "./setlist-code";
 import { codeOffer } from "./setlist-code-model";
 import { LeadSheet } from "./sheet";
-import { songByRef, tempoText } from "./storage";
+import { loadScrollVersions, songByRef, tempoText } from "./storage";
 import type { Library, Setlist, Song, SongRef } from "./types";
 
 const TABS: [TabName, string][] = [
@@ -99,30 +102,95 @@ export function SongBody({
   );
 }
 
-export function SongList({ songs }: { songs: Song[] }) {
+function SongRowText({ song }: { song: Song }) {
+  return (
+    <>
+      <span className="song-title">{song.title}</span>
+      <span className="song-artist">{song.artist}</span>
+      <CopyNote song={song} />
+      <span className="song-meta">
+        <span className="song-key">{song.keyLabel}</span>
+        <span> · {song.tempo == null ? "Tempo —" : tempoText(song.tempo)}</span>
+      </span>
+    </>
+  );
+}
+
+const timed = (ref: SongRef) => loadScrollVersions(ref).versions.length > 0;
+
+/**
+ * This phone's songs, and while searching, the band songs this phone holds too, grouped by where they live. Nothing
+ * here asks the server, and nothing here writes. Signed in, only band data this account saved shows, so another
+ * account's never does. Each change to the phone's band data reads it again, so a sign-out that clears the phone
+ * empties open results too.
+ */
+export function SongList({ songs, userId }: { songs: Song[]; userId: string | null }) {
   const [query, setQuery] = useState("");
-  const shown = matchingSongs(songs, query);
+  const [chips, setChips] = useState(NO_CHIPS);
+  const [held, setHeld] = useState<CachedBandSong[]>([]);
+  const [open, setOpen] = useState<CachedBandSong | null>(null);
+  const searching = query !== "" || chips.key !== null || chips.band !== null || chips.timed;
+
+  const phone = useSyncExternalStore(onPhoneChange, phoneGeneration, phoneGeneration);
+
+  useEffect(() => {
+    if (!searching || (userId && !heldFor(userId))) return setHeld([]);
+    let current = true;
+    allOnPhone("bandSongs").then(
+      (rows) => current && setHeld(rows),
+      () => current && setHeld([]),
+    );
+    return () => {
+      current = false;
+    };
+  }, [searching, userId, phone]);
+
+  if (open) {
+    return (
+      <div className="search-open" data-ref={bandSongRef(open.bandId, open.songId)}>
+        <GigSong bandId={open.bandId} item={{ ...open, bandTiming: null }} onBack={() => setOpen(null)} />
+      </div>
+    );
+  }
+
+  const heldByRef = new Map(held.map((item) => [bandSongRef(item.bandId, item.songId), item]));
+  const bandSongs = held.map((item): Song => ({ ...item.song, ref: bandSongRef(item.bandId, item.songId), id: 0 }));
+  const bands = new Map(held.map((item) => [item.bandId, item.bandName]));
+  const keys = [...new Set([...songs, ...bandSongs].map(keyName))].sort();
+  const row = (song: Song) => {
+    const band = heldByRef.get(song.ref);
+    return (
+      <li key={song.ref}>
+        {band ? (
+          <button type="button" className="song-row" onClick={() => setOpen(band)}>
+            <SongRowText song={song} />
+          </button>
+        ) : (
+          <a className="song-row" href={songHref(song.id, "songs")}>
+            <SongRowText song={song} />
+          </a>
+        )}
+      </li>
+    );
+  };
+  const groups = searching ? groupedSongs([...songs, ...bandSongs], bands, query, chips, timed) : [];
   return (
     <>
       <SearchBox label="Search songs" value={query} onChange={setQuery} />
-      {query && shown.length === 0 ? (
-        <p className="search-empty" role="status">No songs match.</p>
+      {searching ? <SearchChips keys={keys} bands={bands} chips={chips} onChange={setChips} /> : null}
+      {!searching ? (
+        <ul className="song-list">{songs.map(row)}</ul>
+      ) : groups.length === 0 ? (
+        <p className="search-empty" role="status">
+          Nothing matches
+        </p>
       ) : (
-        <ul className="song-list">
-          {shown.map((song) => (
-            <li key={song.ref}>
-              <a className="song-row" href={songHref(song.id, "songs")}>
-                <span className="song-title">{song.title}</span>
-                <span className="song-artist">{song.artist}</span>
-                <CopyNote song={song} />
-                <span className="song-meta">
-                  <span className="song-key">{song.keyLabel}</span>
-                  <span> · {song.tempo == null ? "Tempo —" : tempoText(song.tempo)}</span>
-                </span>
-              </a>
-            </li>
-          ))}
-        </ul>
+        groups.map((group, index) => (
+          <section key={index} className="search-group" aria-label={group.label}>
+            <h2 className="search-group-head">{group.label}</h2>
+            <ul className="song-list">{group.songs.map(row)}</ul>
+          </section>
+        ))
       )}
       <a className="privacy-link" href={PRIVACY_HREF}>
         Privacy

@@ -19,7 +19,7 @@ import {
 } from "./chat-model";
 import { onDelivery, onQueueChange, queueMessage, queuedMessages, sendQueued, type Delivery } from "./chat-queue";
 export { queueOwner } from "./chat-queue";
-import { useEscape } from "./hooks";
+import { useCloseOnSong, useEscape } from "./hooks";
 import { SEND_MESSAGES, SongCard } from "./send-song";
 import { SetlistCard } from "./setlist-code";
 import { ApiError, api, type Account } from "./sign-in-methods";
@@ -82,6 +82,7 @@ export function ChatSheet({ account, open, onSignedOut, onClose }: { account: Ac
   };
 
   useEscape(onClose);
+  useCloseOnSong(onClose);
 
   useEffect(() => {
     if (view.name !== "dm") return;

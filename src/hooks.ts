@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type Dispatch, type SetStateAction } from "react";
 import { clampScrollPercent, type Notation } from "./music";
+import { parseHash } from "./route";
 import { READING_LINE, runScroll, type Motion, type Section, type TimeSource } from "./scroll-timing";
 import { loadNotation, loadScrollPercent, onStorageChange, saveNotation, saveScrollPercent, storageGeneration } from "./storage";
 import type { SongRef } from "./types";
@@ -176,4 +177,21 @@ export function useEscape(onClose: () => void) {
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
+}
+
+/**
+ * Closes a sheet when the page goes to a song, so a song link inside it, such as Open on the duplicate offer, shows the
+ * song. It subscribes once: App's own hashchange listener re-renders the sheet during the same event, and a listener
+ * removed and re-added mid-dispatch is never called for that event.
+ */
+export function useCloseOnSong(onClose: () => void) {
+  const close = useRef(onClose);
+  close.current = onClose;
+  useEffect(() => {
+    const onHash = () => {
+      if (parseHash(window.location.hash).name === "song") close.current();
+    };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
 }

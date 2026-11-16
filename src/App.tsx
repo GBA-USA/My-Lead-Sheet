@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AccountSheet, googleReturn, useAccount } from "./account";
 import { backupOff, backupOn, syncBackup, type BackupResult } from "./backup";
-import { BandsSheet, BandsTab, useBandDataOwner } from "./bands";
+import { BandsSheet, BandsTab } from "./bands";
 import { ChatSheet, queueOwner, type ChatTarget } from "./chat";
 import { readPayload, type CodeScreen } from "./code-link";
 import { clearLanding, landedCode } from "./codes";
@@ -76,7 +76,6 @@ export function App() {
     if (landed) clearLanding();
   }, []);
   useEffect(() => queueOwner(account?.userId ?? null), [account?.userId]);
-  useBandDataOwner(account?.userId ?? null);
 
   const landings: Record<CodeScreen, (code: string) => void> = {
     friends: (code) => setFriends({ code }),
@@ -462,7 +461,7 @@ export function App() {
         {performance.scrolling && learned && motion.kind === "learned" ? (
           <LearnedCues learned={learned} clock={clock} rate={motion.rate} metronomeOn={metronome.playing} />
         ) : null}
-        {route.name === "songs" ? <SongList songs={library.songs} /> : null}
+        {route.name === "songs" ? <SongList songs={library.songs} userId={account?.userId ?? null} /> : null}
         {route.name === "setlists" ? <SetlistList setlists={library.setlists} songs={library.songs} onShowCode={account ? setSetlistCode : undefined} /> : null}
         {route.name === "bands" ? <BandsTab account={account} onOpen={(bandId) => setBands({ bandId })} onSignIn={() => setAccountOpen(true)} onSignedOut={() => setAccount(null)} /> : null}
         {route.name === "song" ? (

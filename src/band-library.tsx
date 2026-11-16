@@ -15,7 +15,9 @@ import {
   type SongSort,
 } from "./band-library-model";
 import type { BandView } from "./bands-model";
-import { matchingSongs } from "./search";
+import { holdBandSongs } from "./phone-db";
+import { matchingSongs, songYouHave } from "./search";
+import { YouHaveIt } from "./search-box";
 import type { ShareChoice } from "./share-rule";
 import { BandSetlistCode, CodeOfferButton } from "./setlist-code";
 import { codeOffer } from "./setlist-code-model";
@@ -195,8 +197,13 @@ export function BandLibraryTab({ band, me, tab, busy, run, notify, onPlanGig, la
   const [mine, setMine] = useState(false);
   const [tag, setTag] = useState<string | null>(null);
   const [myLibrary, setMyLibrary] = useState(() => loadLibrary());
+  const [asking, setAsking] = useState<{ songId: string; have: Song } | null>(null);
 
-  const reload = () => api<BandLibrary>("/api/bands/library", { bandId: band.bandId }).then(setLibrary);
+  const reload = () =>
+    api<BandLibrary>("/api/bands/library", { bandId: band.bandId }).then((next) => {
+      setLibrary(next);
+      holdBandSongs(me, band.bandId, band.name, next.songs).catch(() => {});
+    });
   const landedRow = useCallback((row: HTMLLIElement | null) => row?.scrollIntoView({ block: "nearest" }), []);
 
   useEffect(() => {
@@ -246,11 +253,15 @@ export function BandLibraryTab({ band, me, tab, busy, run, notify, onPlanGig, la
       notify(`Shared ${picked.setlist.name} as ${CHOICES[choice].label}.`);
     });
 
-  const addToMySongs = (item: BandSong) =>
+  const addToMySongs = (item: BandSong, anyway = false) => {
+    const have = anyway ? undefined : songYouHave(loadLibrary().songs, item.song);
+    setAsking(have ? { songId: item.songId, have } : null);
+    if (have) return;
     act(async () => {
       const copied = await api<CopiedSong>("/api/bands/library/copy-song", { bandId: band.bandId, songId: item.songId });
       notify(addOwnSong({ ...copied.song, copy: copied.copy }) === null ? `This phone couldn't add ${item.song.title}.` : `Added ${item.song.title} to My Songs.`);
     });
+  };
 
   const saveSetlist = (setlist: BandSetlist, fields: SetlistFields) =>
     act(async () => {
@@ -369,9 +380,13 @@ export function BandLibraryTab({ band, me, tab, busy, run, notify, onPlanGig, la
                   </span>
                   <span className="friends-actions">
                     {lockFor(item)}
-                    <button type="button" className="account-secondary" disabled={busy} onClick={() => addToMySongs(item)}>
-                      Add to My Songs
-                    </button>
+                    {asking?.songId === item.songId ? (
+                      <YouHaveIt have={asking.have} onAdd={() => addToMySongs(item, true)} />
+                    ) : (
+                      <button type="button" className="account-secondary" disabled={busy} onClick={() => addToMySongs(item)}>
+                        Add to My Songs
+                      </button>
+                    )}
                   </span>
                 </li>
               ))}

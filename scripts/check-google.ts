@@ -256,7 +256,7 @@ async function screenChecks() {
     await openSheet();
     await until(`!!document.querySelector(".account-sheet [role=note]")`, "the in-app browser note");
     const note = await site.evaluate<string>(`document.querySelector(".account-sheet [role=note]").textContent`);
-    assert.ok(note.includes("Google sign-in") && note.includes("Open My Lead Sheet in Safari or Chrome"), `an in-app browser says Open in Safari or Chrome (${note})`);
+    assert.ok(note.includes("Google sign-in") && note.includes("Open Groovist in Safari or Chrome"), `an in-app browser says Open in Safari or Chrome (${note})`);
     assert.ok(!(await sheetText()).includes("Continue with Google"), "and shows no Google button there");
   } finally {
     await site.close();

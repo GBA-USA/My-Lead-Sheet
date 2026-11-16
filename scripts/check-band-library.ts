@@ -328,6 +328,7 @@ async function appChecks(site: Awaited<ReturnType<typeof openSite>>, base: strin
   );
   await app.click("Cancel");
   await app.click("✕");
+  await site.evaluate(`document.getElementById("tab-songs").click()`);
   await app.until(`[...document.querySelectorAll(".song-list a, .song-list li")].some((el) => el.textContent.includes("Back Porch Blues"))`, "the copy on My Songs");
   pass("Add to My Songs makes a copy that keeps the Private rule");
 

@@ -157,6 +157,8 @@ try {
   const codeTry = await new Phone(base).call("/api/auth/backup-code", { handle: "@SamRivera", code: "0000-0000-0000" });
   assert.deepEqual([codeTry.status, codeTry.body.error], [404, "not-found"], "the backup-code sign-in route is gone (404)");
   assert.equal((await phone.call("/api/me/backup-codes", {})).status, 404, "signed in, the make-new-codes route is gone (404)");
+  const samePhone = new Phone(base);
+  samePhone.cookie = phone.cookie;
 
   const secondPhone = new SoftAuthenticator();
   const addOptions = (await phone.call("/api/auth/passkey/add/options", {})).body.options;
@@ -182,9 +184,9 @@ try {
   assert.ok(otherUser.opened, "another account joins the same room");
 
   const oldPhoneCookie = phone.cookie;
-  const everywhere = await codePhone.call("/api/auth/sign-out-everywhere", {});
+  const everywhere = await samePhone.call("/api/auth/sign-out-everywhere", {});
   assert.equal(everywhere.status, 200, "Sign out everywhere succeeds");
-  assert.equal(codePhone.cookie, "", "Sign out everywhere clears this phone's cookie");
+  assert.equal(samePhone.cookie, "", "Sign out everywhere clears this phone's cookie");
   assert.equal(await serverClose(inA, "band-a"), 4401, "Sign out everywhere closes the account's socket in band-a");
   assert.equal(await serverClose(inB, "band-b"), 4401, "Sign out everywhere closes the account's socket in band-b");
   assert.equal(otherUser.ws.readyState, WebSocket.OPEN, "another account's socket in the same room stays open");

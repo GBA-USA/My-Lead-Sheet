@@ -203,9 +203,9 @@ async function appChecks() {
     await app.click("New here? Create an account");
     await app.type("Your name (what bandmates see)", "Sam Rivera");
     await app.click("Sign in with Face ID or fingerprint");
-    await app.until(`document.querySelector(".account-sheet")?.dataset.step === "codes"`, "the backup codes");
-    assert.ok(!(await site.evaluate<boolean>(`!!document.querySelector(".bands-sheet")`)), "a new player sees their backup codes before the band opens");
-    await app.click("I saved them");
+    await app.until(`document.querySelector(".account-sheet")?.dataset.step === "nudge"`, "the add-a-password nudge");
+    assert.ok(!(await site.evaluate<boolean>(`!!document.querySelector(".bands-sheet")`)), "a new player sees the add-a-password nudge before the band opens");
+    await app.click("Not now");
     await app.click("✕");
     await view("code");
     assert.equal(await app.text(".bands-sheet .codes-words"), "The Blue Notes Invited by Terry Bass", "after sign-up the code shows the band and who invited you");

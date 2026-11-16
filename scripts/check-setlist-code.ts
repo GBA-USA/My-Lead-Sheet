@@ -159,8 +159,8 @@ try {
     await app.click("New here? Create an account");
     await app.type("Your name (what bandmates see)", name);
     await app.click("Sign in with Face ID or fingerprint");
-    await atStep("codes");
-    await app.click("I saved them");
+    await atStep("nudge");
+    await app.click("Not now");
     await atStep("account");
     await app.click("✕");
   };
@@ -396,7 +396,7 @@ try {
         assert.equal(page.status, 404, `${kind}: ${what} is refused at the link`);
         assert.match(page.type, /^text\/html/, `${kind}: ${what} gets a page`);
         assert.match(page.text, /This code doesn't work/, `${kind}: ${what} says it doesn't work`);
-        assert.match(page.text, /Open My Lead Sheet/, `${kind}: ${what} links back to the app`);
+        assert.match(page.text, /Open Groovist/, `${kind}: ${what} links back to the app`);
         for (const secret of ["Blue Notes", "Friday", "Sunday", "Terry"]) assert.ok(!page.text.includes(secret), `${kind}: ${what} shows no ${secret}`);
         assert.deepEqual(refusal(await open(bad)), [404, "bad-code"], `${kind}: ${what} is refused in the app`);
       }
@@ -420,7 +420,7 @@ try {
     const ended = await land(apiBase, ending);
     assert.equal(ended.status, 410, "an ended copy code is refused at the link");
     assert.match(ended.text, /This code has ended/, "and says it has ended");
-    assert.match(ended.text, /Open My Lead Sheet/, "with the way back to the app");
+    assert.match(ended.text, /Open Groovist/, "with the way back to the app");
     assert.deepEqual(refusal(await scan(ann, ending)), [410, "code-ended"], "and gives no copy in the app");
 
     const pStopped = ok(await pTerry.call("/api/codes", { kind: "band-setlist", bandId: pBand, setlistId: pFriday }), "Terry's code on the phone's server").link as string;

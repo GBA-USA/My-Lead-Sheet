@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type Dispatch, type SetStateAction } from "react";
 import { clampScrollPercent, type Notation } from "./music";
+import type { PersonalDefaults } from "./personal-settings-model";
 import { parseHash } from "./route";
 import { READING_LINE, runScroll, type Motion, type Section, type TimeSource } from "./scroll-timing";
 import { loadNotation, loadScrollPercent, onStorageChange, saveNotation, saveScrollPercent, storageGeneration } from "./storage";
@@ -20,17 +21,21 @@ export function useStored<T>(load: () => T, key: unknown = null): [T, Dispatch<S
   return [fresh.value, set];
 }
 
-export function usePerformance(songRef: SongRef | null) {
-  const [semitones, setSemitones] = useState(0);
-  const [notation, setNotation] = useStored<Notation>(() => (songRef == null ? "notes" : loadNotation(songRef)), songRef);
+/** A song opens at the player's Transpose default and, unless the song was switched, their Chords default. */
+export function usePerformance(songRef: SongRef | null, defaults: PersonalDefaults) {
+  const [semitones, setSemitones] = useState(defaults.transpose);
+  const [notation, setNotation] = useStored<Notation>(
+    () => (songRef == null ? defaults.chordStyle : loadNotation(songRef, defaults.chordStyle)),
+    `${songRef} ${defaults.chordStyle}`,
+  );
   const [percent, setPercent] = useStored(() => (songRef == null ? 100 : loadScrollPercent(songRef)), songRef);
   const [scrolling, setScrolling] = useState(false);
-  const [boundRef, setBoundRef] = useState<SongRef | null>(null);
+  const [bound, setBound] = useState({ songRef, transpose: defaults.transpose });
 
-  if (songRef !== boundRef) {
-    setBoundRef(songRef);
-    setSemitones(0);
-    setScrolling(false);
+  if (songRef !== bound.songRef || defaults.transpose !== bound.transpose) {
+    setBound({ songRef, transpose: defaults.transpose });
+    setSemitones(defaults.transpose);
+    if (songRef !== bound.songRef) setScrolling(false);
   }
 
   useEffect(() => {
@@ -54,6 +59,7 @@ export function usePerformance(songRef: SongRef | null) {
   return {
     semitones,
     setSemitones,
+    originalKey: () => setSemitones(defaults.transpose),
     notation,
     changeNotation,
     percent,
@@ -131,21 +137,15 @@ export function scrollChart(
   };
 }
 
-/** Screen Wake Lock. Missing support and rejected requests are silent. The OS drops the lock when the page hides, so it is requested again on return. */
-export function useWakeLock(enabled: boolean) {
+/** Screen Wake Lock, held while the app is open. Missing support and rejected requests are silent. The OS drops the lock when the page hides, so it is requested again on return. */
+export function useWakeLock() {
   const sentinel = useRef<WakeLockSentinel | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
-    const release = () => {
-      const current = sentinel.current;
-      sentinel.current = null;
-      if (current) void current.release().catch(() => {});
-    };
-
     const acquire = async () => {
-      if (!enabled || cancelled || document.visibilityState !== "visible") return;
+      if (cancelled || document.visibilityState !== "visible") return;
       if (!("wakeLock" in navigator)) return;
       try {
         sentinel.current = await navigator.wakeLock.request("screen");
@@ -154,9 +154,7 @@ export function useWakeLock(enabled: boolean) {
       }
     };
 
-    if (enabled) void acquire();
-    else release();
-
+    void acquire();
     const onVisibility = () => {
       if (document.visibilityState === "visible") void acquire();
     };
@@ -164,9 +162,11 @@ export function useWakeLock(enabled: boolean) {
     return () => {
       cancelled = true;
       document.removeEventListener("visibilitychange", onVisibility);
-      release();
+      const current = sentinel.current;
+      sentinel.current = null;
+      if (current) void current.release().catch(() => {});
     };
-  }, [enabled]);
+  }, []);
 }
 
 export function useEscape(onClose: () => void) {

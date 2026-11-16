@@ -8,12 +8,17 @@ export interface DataKind {
 }
 
 export const PRIVACY_HREF = "privacy.html";
+export const APP_NAME = "Groovist";
 
 export const DATA_KINDS: readonly DataKind[] = [
   { key: "leadSheetsLibrary", place: "phone", what: "Your songs and setlists, including any changes you make to them." },
-  { key: "leadSheetsKeepAwake", place: "phone", what: "Whether the Screen on switch is on." },
   { key: "leadSheetsTheme", place: "phone", what: "The look you picked: stage, day, one of the two colorblind-safe looks, or high contrast." },
   { key: "leadSheetsTextScale", place: "phone", what: "The text size you picked for sheets." },
+  {
+    key: "leadSheetsPersonal",
+    place: "phone",
+    what: "For each account on this phone, the Chords and Transpose defaults you set in Settings, so each account opens songs its own way.",
+  },
   { key: "leadSheetsScrollPercent", place: "phone", what: "The scroll speed you set for each song." },
   { key: "leadSheetsNotation", place: "phone", what: "Whether each song shows note names or Nashville numbers." },
   { key: "leadSheetsMetronome", place: "phone", what: "Your metronome settings: sound, the beat dot, and the delay nudge for Bluetooth speakers." },
@@ -35,7 +40,7 @@ export const DATA_KINDS: readonly DataKind[] = [
     place: "server",
     what: "One row per phone you sign in with Face ID or fingerprint: the passkey id and public key, a use counter, and when it was added and last used. Your face and fingerprint never leave your phone.",
   },
-  { key: "backup_codes", place: "server", what: "Your 8 backup codes, kept only as one-way hashes, and when each was used." },
+  { key: "backup_codes", place: "server", what: "Backup codes made by an older version of the app, kept only as one-way hashes. No new ones are made and none are read." },
   { key: "challenges", place: "server", what: "A random value for a sign-in in progress, with the name you typed, deleted when you finish or after 5 minutes." },
   { key: "open_rooms", place: "server", what: "Which bands and chats you have opened since you last signed out everywhere, so signing out everywhere can close them." },
   { key: "room_closes", place: "server", what: "Rooms still to be told you signed out everywhere, deleted once each one is told." },
@@ -67,7 +72,7 @@ export const DATA_KINDS: readonly DataKind[] = [
   {
     key: "backup_items",
     place: "server",
-    what: "Your backup, in a room only your account can open: the songs and setlists you added or changed, your timing versions, the runtime, tempo and time signature you entered, the scroll speed and Notes or Nashville choice for each song, and your text size and Screen on choice. Your phones sync it when you are signed in.",
+    what: "Your backup, in a room only your account can open: the songs and setlists you added or changed, your timing versions, the runtime, tempo and time signature you entered, the scroll speed and Notes or Nashville choice for each song, and your text size, plus the Screen on choice an older version of the app kept. Your phones sync it when you are signed in.",
   },
   { key: "session_floors", place: "server", what: "In each band or chat room, the oldest sign-in it still lets in for each person, after they signed out everywhere." },
   { key: "meta", place: "server", what: "For each band: its name, who made it and when, and whether Scroll with the leader is on." },

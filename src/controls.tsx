@@ -3,19 +3,6 @@ import { SCROLL_MAX, SCROLL_MIN, SCROLL_STEP, type Notation } from "./music";
 
 /** The song header keeps the Phase 1 phone and tablet arrangement. */
 
-export function ScreenToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
-  return (
-    <button
-      type="button"
-      className={on ? "screen-toggle is-on" : "screen-toggle"}
-      aria-pressed={on}
-      onClick={onToggle}
-    >
-      Screen on: {on ? "On" : "Off"}
-    </button>
-  );
-}
-
 export function TextSizeButtons({
   index,
   count,
@@ -257,8 +244,6 @@ export function SongControls({
   textIndex,
   textCount,
   onTextIndex,
-  awake,
-  onAwake,
   menuOpen,
   onMenuToggle,
   onMenuClose,
@@ -277,8 +262,6 @@ export function SongControls({
   textIndex: number;
   textCount: number;
   onTextIndex: (index: number) => void;
-  awake: boolean;
-  onAwake: () => void;
   menuOpen: boolean;
   onMenuToggle: () => void;
   onMenuClose: () => void;
@@ -298,7 +281,6 @@ export function SongControls({
     <div className="controls">
       <div className="tools">
         <TextSizeButtons index={textIndex} count={textCount} onChange={onTextIndex} />
-        <ScreenToggle on={awake} onToggle={onAwake} />
         <OverflowMenu
           label="Song actions"
           open={menuOpen}

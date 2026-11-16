@@ -1,5 +1,5 @@
 import type { Plugin } from "vite";
-import { DATA_KINDS, PRIVACY_HREF, type DataPlace } from "../src/data-kinds.ts";
+import { APP_NAME, DATA_KINDS, PRIVACY_HREF, type DataPlace } from "../src/data-kinds.ts";
 
 export const CONTACT_PLACEHOLDER = "No contact has been set for this copy of the app yet.";
 
@@ -19,7 +19,7 @@ export function privacyHtml(contact: string | undefined): string {
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Privacy · Lead Sheets</title>
+    <title>Privacy · ${APP_NAME}</title>
     <style>
       body { margin: 0 auto; max-width: 40rem; padding: 1.5rem 1.25rem 3rem; font: 1rem/1.55 system-ui, sans-serif; background: #13120d; color: #f2efe6; }
       h1 { font-size: 1.6rem; }
@@ -30,7 +30,7 @@ export function privacyHtml(contact: string | undefined): string {
   </head>
   <body>
     <h1>Privacy</h1>
-    <p><a href="./">Back to Lead Sheets</a></p>
+    <p><a href="./">Back to ${APP_NAME}</a></p>
 
     <h2>What the app keeps on this phone</h2>
     <p>These stay in this browser on this phone. Signed out, they are not sent anywhere. Signed in, the phone also sends a copy of your songs, setlists, timings and settings to your own backup on the server (listed below), so your other phones get them. The metronome settings stay on this phone. Nobody else can read your backup.</p>

@@ -1,6 +1,6 @@
 {
-  "name": "Lead Sheets",
-  "short_name": "Lead Sheets",
+  "name": "Groovist",
+  "short_name": "Groovist",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

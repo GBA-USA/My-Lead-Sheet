@@ -144,7 +144,7 @@ try {
   app.saveSongData(ref(900), { officialRuntimeSec: 212, tempo: 104, timeSignature: "6/8" });
   app.saveScrollVersions(ref(edited.id), { versions: [taught, learned], selected: 1 });
   app.saveTextScaleIndex(3);
-  app.saveAwake(false);
+  a.store.setItem("leadSheetsKeepAwake", "false");
   a.store.setItem(app.METRONOME_PREFS_KEY, JSON.stringify({ sound: "wood", nudgeMs: 140 }));
   a.store.setItem("someOtherSite", "not ours");
   const aLibrary = a.boot();

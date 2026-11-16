@@ -405,15 +405,6 @@ a:focus-visible {
   color: var(--on-accent);
 }
 
-.list-tools {
-  position: relative;
-  z-index: 3;
-  flex: none;
-  display: flex;
-  justify-content: flex-end;
-  padding: 8px 12px 4px;
-}
-
 .scroll {
   position: relative;
   z-index: 1;
@@ -489,8 +480,7 @@ a:focus-visible {
 .text-size button,
 .notes-switch button,
 .scroll-pill,
-.more-btn,
-.screen-toggle {
+.more-btn {
   border: var(--control-border);
   background: transparent;
   color: var(--text);
@@ -508,19 +498,6 @@ a:focus-visible {
 
 .text-size button:disabled {
   opacity: 0.35;
-}
-
-.screen-toggle {
-  height: 32px;
-  padding: 0 4px;
-  border-radius: 999px;
-  white-space: nowrap;
-}
-
-.screen-toggle.is-on {
-  background: var(--accent);
-  color: var(--on-accent);
-  padding: 0 12px;
 }
 
 .notes-switch button {
@@ -1055,8 +1032,7 @@ a:focus-visible {
   .text-size button,
   .notes-switch button,
   .scroll-pill,
-  .more-btn,
-  .screen-toggle {
+  .more-btn {
     height: 36px;
     min-height: 36px;
   }
@@ -1072,8 +1048,7 @@ a:focus-visible {
   }
 
   .notes-switch button,
-  .scroll-pill,
-  .screen-toggle {
+  .scroll-pill {
     font-size: 14px;
   }
 

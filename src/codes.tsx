@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { CODE_SCREEN, readPayload, type CodeKind, type CodeScreen } from "./code-link";
+import { APP_NAME } from "./data-kinds";
 import { scanCamera } from "./qr-scan";
 import { qrSvg } from "./qr-svg";
 import { api } from "./sign-in-methods";
@@ -98,7 +99,7 @@ export function ScanCode({ onCode }: { onCode: (payload: string) => void }) {
     <>
       <video ref={video} className="codes-camera" muted playsInline />
       <p className="account-note" role={problem ? "alert" : undefined}>
-        {problem || "Point the camera at a My Lead Sheet code."}
+        {problem || `Point the camera at a ${APP_NAME} code.`}
       </p>
     </>
   );

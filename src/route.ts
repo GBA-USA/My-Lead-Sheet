@@ -1,11 +1,13 @@
-export type TabName = "songs" | "setlists" | "bands";
+const TABS = ["songs", "setlists", "bands"] as const;
+export type TabName = (typeof TABS)[number];
 
 export type Route =
   | { name: "songs" }
   | { name: "setlists" }
   | { name: "bands" }
   | { name: "song"; id: number; from: TabName }
-  | { name: "live"; setlistId: number; index: number };
+  | { name: "live"; setlistId: number; index: number }
+  | { name: "settings"; from: TabName };
 
 export function parseHash(hash: string): Route {
   const raw = hash.replace(/^#/, "");
@@ -18,9 +20,14 @@ export function parseHash(hash: string): Route {
     const from = new URLSearchParams(query).get("from") === "setlists" ? "setlists" : "songs";
     return { name: "song", id: Number(match[1]), from };
   }
+  if (path === "/settings") return { name: "settings", from: TABS.find((tab) => tab === new URLSearchParams(query).get("from")) ?? "songs" };
   if (path === "/setlists") return { name: "setlists" };
   if (path === "/bands") return { name: "bands" };
   return { name: "songs" };
+}
+
+export function settingsHref(from: TabName): string {
+  return from === "songs" ? "#/settings" : `#/settings?from=${from}`;
 }
 
 export function songHref(id: number, from: TabName): string {

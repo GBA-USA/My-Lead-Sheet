@@ -1,126 +1,74 @@
-import { defaultPersonalSettings, savePersonal, loadPersonal, setSetting, joinGig, type FixtureStore, type PersonalSettings } from "../src/personal-settings-model.ts";
+import { build } from "esbuild";
+import { joinGig, type PersonalSettings } from "../src/personal-settings-model.ts";
 
-function assert(condition: boolean, message: string) {
-  if (!condition) throw new Error(message);
-}
+type Storage = typeof import("../src/storage.ts");
 
-function deepEqual(a: unknown, b: unknown): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
-}
-
-let testCount = 0;
-
-function test(name: string, fn: () => void) {
+let failures = 0;
+function test(name: string, run: () => string[]) {
+  let problems: string[];
   try {
-    fn();
-    console.log(`ok ${name}`);
-    testCount++;
-  } catch (e) {
-    console.error(`FAIL ${name}:`, e instanceof Error ? e.message : e);
-    process.exit(1);
+    problems = run();
+  } catch (error) {
+    problems = [error instanceof Error ? error.message : String(error)];
   }
+  if (problems.length) failures += 1;
+  console.log(problems.length ? `FAIL ${name}: ${problems.join("; ")}` : `ok   ${name}`);
 }
 
-test("load from empty store returns defaults", () => {
-  const store: FixtureStore = { saved: null };
-  const loaded = loadPersonal(store);
-  assert(deepEqual(loaded, defaultPersonalSettings), "should match defaults");
+const store = new Map<string, string>();
+Object.assign(globalThis, {
+  localStorage: {
+    getItem: (key: string) => store.get(key) ?? null,
+    setItem: (key: string, value: string) => void store.set(key, String(value)),
+    removeItem: (key: string) => void store.delete(key),
+    clear: () => store.clear(),
+    key: (index: number) => [...store.keys()][index] ?? null,
+    get length() {
+      return store.size;
+    },
+  },
 });
 
-test("click setting round-trips", () => {
-  let store: FixtureStore = { saved: null };
-  let settings = loadPersonal(store);
-  settings = setSetting(settings, "click", "dot-only");
-  store = savePersonal(store, settings);
-  const reloaded = loadPersonal(store);
-  assert(reloaded.click === "dot-only", "should be dot-only");
+const bundled = await build({ entryPoints: [new URL("../src/storage.ts", import.meta.url).pathname], bundle: true, write: false, format: "esm", platform: "neutral", loader: { ".json": "json" } });
+const app: Storage = await import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString("base64")}`);
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+test("settings persist per account on a shared phone", () => {
+  const problems: string[] = [];
+  const expect = (ok: boolean, detail: string) => ok || problems.push(detail);
+  store.clear();
+  const fresh = app.loadPersonal(null);
+  expect(same(fresh, { chordStyle: "notes", transpose: 0 }), `a phone that never saved starts at Notes and 0 (${JSON.stringify(fresh)})`);
+  expect(app.savePersonal("user-a", { chordStyle: "nashville", transpose: -2 }), "Terry's save is kept");
+  expect(same(app.loadPersonal("user-b"), fresh), `Mike signing in on the same phone does not get Terry's settings (${JSON.stringify(app.loadPersonal("user-b"))})`);
+  app.savePersonal("user-b", { chordStyle: "notes", transpose: 1 });
+  expect(same(app.loadPersonal("user-a"), { chordStyle: "nashville", transpose: -2 }), `Terry's settings come back after Mike's (${JSON.stringify(app.loadPersonal("user-a"))})`);
+  expect(same(app.loadPersonal(null), fresh), `signed out, the phone shows neither account's settings (${JSON.stringify(app.loadPersonal(null))})`);
+  app.savePersonal(null, { chordStyle: "nashville", transpose: -1 });
+  expect(same(app.loadPersonal("user-c"), { chordStyle: "nashville", transpose: -1 }), "a first sign-in keeps what the player set while signed out");
+  expect(same(app.loadPersonal("user-a"), { chordStyle: "nashville", transpose: -2 }), "a signed-out change does not touch Terry's settings");
+  const raw = store.get(app.PERSONAL_KEY) ?? "";
+  expect(raw.includes("user-a") && raw.includes("user-b"), `both accounts' settings are stored under ${app.PERSONAL_KEY}`);
+  store.set(app.PERSONAL_KEY, JSON.stringify({ "user-a": { chordStyle: "roman", transpose: 40 } }));
+  expect(same(app.loadPersonal("user-a"), { chordStyle: "notes", transpose: 11 }), `a bad stored value reads as the default chords and the nearest transpose (${JSON.stringify(app.loadPersonal("user-a"))})`);
+  store.set(app.PERSONAL_KEY, "{not json");
+  expect(same(app.loadPersonal("user-a"), fresh), "unreadable stored settings read as the defaults");
+  return problems;
 });
 
-test("textSize setting round-trips", () => {
-  let store: FixtureStore = { saved: null };
-  let settings = loadPersonal(store);
-  settings = setSetting(settings, "textSize", 24);
-  store = savePersonal(store, settings);
-  const reloaded = loadPersonal(store);
-  assert(reloaded.textSize === 24, "should be 24");
+test("joinGig keeps the player's own click and text size", () => {
+  const mine: PersonalSettings = { click: "dot-only", textSize: 4, chordStyle: "nashville", transpose: -1 };
+  const before = JSON.stringify(mine);
+  const joined = joinGig(mine, { gigId: "gig-1", imposed: { connectionRoute: "hotspot", scrollWithLeader: true }, attempted: { click: "out-loud", textSize: 0 } });
+  const problems: string[] = [];
+  if (!same(joined.personal, mine)) problems.push(`the gig changed the player's settings to ${JSON.stringify(joined.personal)}`);
+  if (JSON.stringify(mine) !== before) problems.push("joinGig changed the settings it was given");
+  if (!same(joined.imposed, { connectionRoute: "hotspot", scrollWithLeader: true })) problems.push(`the gig's own rules came back as ${JSON.stringify(joined.imposed)}`);
+  return problems;
 });
 
-test("chordStyle setting round-trips", () => {
-  let store: FixtureStore = { saved: null };
-  let settings = loadPersonal(store);
-  settings = setSetting(settings, "chordStyle", "nashville");
-  store = savePersonal(store, settings);
-  const reloaded = loadPersonal(store);
-  assert(reloaded.chordStyle === "nashville", "should be nashville");
-});
-
-test("transpose setting round-trips", () => {
-  let store: FixtureStore = { saved: null };
-  let settings = loadPersonal(store);
-  settings = setSetting(settings, "transpose", 5);
-  store = savePersonal(store, settings);
-  const reloaded = loadPersonal(store);
-  assert(reloaded.transpose === 5, "should be 5");
-});
-
-test("textSize 99 clamps to 32", () => {
-  let settings: PersonalSettings = { ...defaultPersonalSettings };
-  settings = setSetting(settings, "textSize", 99);
-  assert(settings.textSize === 32, "should be clamped to 32");
-});
-
-test("textSize 3 clamps to 12", () => {
-  let settings: PersonalSettings = { ...defaultPersonalSettings };
-  settings = setSetting(settings, "textSize", 3);
-  assert(settings.textSize === 12, "should be clamped to 12");
-});
-
-test("transpose 20 clamps to 11", () => {
-  let settings: PersonalSettings = { ...defaultPersonalSettings };
-  settings = setSetting(settings, "transpose", 20);
-  assert(settings.transpose === 11, "should be clamped to 11");
-});
-
-test("transpose -20 clamps to -11", () => {
-  let settings: PersonalSettings = { ...defaultPersonalSettings };
-  settings = setSetting(settings, "transpose", -20);
-  assert(settings.transpose === -11, "should be clamped to -11");
-});
-
-test("transpose 2.6 rounds to 3", () => {
-  let settings: PersonalSettings = { ...defaultPersonalSettings };
-  settings = setSetting(settings, "transpose", 2.6);
-  assert(settings.transpose === 3, "should be rounded to 3");
-});
-
-test("bad JSON defaults", () => {
-  const store: FixtureStore = { saved: "{invalid json" };
-  const loaded = loadPersonal(store);
-  assert(deepEqual(loaded, defaultPersonalSettings), "should return defaults");
-});
-
-test("partial JSON keeps other defaults", () => {
-  const store: FixtureStore = { saved: JSON.stringify({ click: "dot-only" }) };
-  const loaded = loadPersonal(store);
-  assert(loaded.click === "dot-only", "click should be dot-only");
-  assert(loaded.textSize === defaultPersonalSettings.textSize, "textSize should be default");
-  assert(loaded.chordStyle === defaultPersonalSettings.chordStyle, "chordStyle should be default");
-  assert(loaded.transpose === defaultPersonalSettings.transpose, "transpose should be default");
-});
-
-test("joinGig ignores attempted and returns imposed", () => {
-  const personal: PersonalSettings = { ...defaultPersonalSettings };
-  const originalPersonal = JSON.stringify(personal);
-  const result = joinGig(personal, {
-    gigId: "gig1",
-    imposed: { connectionRoute: "wifi", scrollWithLeader: true },
-    attempted: { textSize: 30, chordStyle: "nashville" }
-  });
-  assert(deepEqual(result.personal, personal), "personal should be unchanged");
-  assert(JSON.stringify(personal) === originalPersonal, "personal should not be mutated");
-  assert(result.imposed.connectionRoute === "wifi", "imposed.connectionRoute should be wifi");
-  assert(result.imposed.scrollWithLeader === true, "imposed.scrollWithLeader should be true");
-  assert(!("attempted" in result.imposed), "imposed should not have attempted");
-});
-
-console.log("personal-settings: all checks passed");
+if (failures) {
+  console.log(`${failures} failed`);
+  process.exit(1);
+}
+console.log("check:personal-settings passed");

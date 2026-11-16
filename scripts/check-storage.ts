@@ -171,7 +171,7 @@ freshStorage();
 storage.failWrites = true;
 check(app.saveScrollPercent("local/10", 150) === false, "a failed scroll save is reported to the caller");
 check(app.saveNotation("local/10", "nashville") === false, "a failed notation save is reported to the caller");
-check(app.saveTextScaleIndex(2) === false && app.saveAwake(false) === false, "failed text size and wake saves are reported");
+check(app.saveTextScaleIndex(2) === false, "a failed text size save is reported");
 check(app.loadLibrary().songs.length === seed.songs.length, "the library still loads in memory when storage is full");
 storage.failWrites = false;
 check(app.saveScrollPercent("local/10", 150) === true, "a stored scroll save is reported as saved");

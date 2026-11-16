@@ -186,7 +186,7 @@ async function appChecks() {
     const terrysLink = (await terry.call("/api/codes", { kind: "band", bandId: blueNotes })).body.link as string;
     await site.send("Page.navigate", { url: `${origin}/#/songs` });
     await app.library();
-    assert.deepEqual(await app.openMenu(), ["Sign in"], "signed out, the More menu has no Bands");
+    assert.deepEqual(await app.openMenu(), ["Sign in"], "signed out, Settings has no Bands");
     await app.closeMenu();
 
     await site.send("Page.navigate", { url: terrysLink });
@@ -203,9 +203,9 @@ async function appChecks() {
     await app.click("New here? Create an account");
     await app.type("Your name (what bandmates see)", "Sam Rivera");
     await app.click("Sign in with Face ID or fingerprint");
-    await app.until(`document.querySelector(".account-sheet")?.dataset.step === "codes"`, "the backup codes");
-    assert.ok(!(await site.evaluate<boolean>(`!!document.querySelector(".bands-sheet")`)), "a new player sees their backup codes before the band opens");
-    await app.click("I saved them");
+    await app.until(`document.querySelector(".account-sheet")?.dataset.step === "nudge"`, "the add-a-password nudge");
+    assert.ok(!(await site.evaluate<boolean>(`!!document.querySelector(".bands-sheet")`)), "a new player sees the add-a-password nudge before the band opens");
+    await app.click("Not now");
     await app.click("✕");
     await view("code");
     assert.equal(await app.text(".bands-sheet .codes-words"), "The Blue Notes Invited by Terry Bass", "after sign-up the code shows the band and who invited you");
@@ -220,8 +220,8 @@ async function appChecks() {
     pass("a band link opened signed out joins after sign-up, in the app");
 
     await app.click("✕");
-    assert.deepEqual(await app.openMenu(), ["Account", "Friends", "Bands", "Messages"], "signed in, Bands sits after Friends");
-    await app.pick("Bands");
+    assert.deepEqual(await app.openMenu(), ["Account", "Friends", "Messages"], "signed in, Settings has no Bands row: the Bands tab is the one way in");
+    await app.openBands();
     await view("list");
     assert.deepEqual(await app.texts(".bands-list li > span:first-child"), ["The Blue Notes2 members"],"the Bands list shows The Blue Notes");
     await app.type("New band", "Sam's Trio");

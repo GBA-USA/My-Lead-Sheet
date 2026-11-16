@@ -212,8 +212,7 @@ async function appChecks() {
     await site.send("Page.reload");
     await app.library();
     await app.signUp("Sam Rivera");
-    await app.openMenu();
-    await app.pick("Bands");
+    await app.openBands();
     await view("list");
     await app.type("New band", "Sam's Trio");
     await app.click("Create band");

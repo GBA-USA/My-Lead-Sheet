@@ -39,18 +39,29 @@ export async function appPage(site: Site) {
   };
   const text = (selector: string) => site.evaluate<string>(`document.querySelector(${js(selector)})?.textContent ?? ""`);
   const texts = (selector: string) => site.evaluate<string[]>(`[...document.querySelectorAll(${js(selector)})].map((el) => el.textContent.trim())`);
-  const library = () => until(`!!document.querySelector(".shell-header [aria-label=More]")`, "the library", 15000);
+  const library = () => until(`!!document.querySelector(".shell-header [aria-label=Settings]") || !!document.querySelector(".settings")`, "the library", 15000);
 
+  const ACCOUNT_ROWS = `.settings [role=group][aria-label=Account]`;
   const openMenu = async () => {
-    await site.evaluate(`document.querySelector(".shell-header [aria-label=More]").click()`);
-    await until(`!!document.querySelector("[role=menu]")`, "the More menu");
-    return texts("[role=menu] [role=menuitem]");
+    if (!(await site.evaluate<boolean>(`!!document.querySelector(".settings")`))) {
+      await until(`!!document.querySelector(".shell-header [aria-label=Settings]")`, "the gear");
+      await site.evaluate(`document.querySelector(".shell-header [aria-label=Settings]").click()`);
+    }
+    await until(`!!document.querySelector(${js(ACCOUNT_ROWS)})`, "Settings");
+    return texts(`${ACCOUNT_ROWS} button`);
   };
   const closeMenu = async () => {
-    await site.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+    await site.evaluate(`document.querySelector(".settings") && document.querySelector(".shell-header [aria-label=Back]").click()`);
     await settle();
   };
-  const pick = (item: string) => click(item, "document.querySelector('[role=menu]')");
+  const pick = (item: string) => click(item, `document.querySelector(${js(ACCOUNT_ROWS)})`);
+  const openBands = async () => {
+    await closeMenu();
+    await site.evaluate(`location.hash = "#/bands"`);
+    await until(`[...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "+ New band")`, "the Bands tab");
+    await click("+ New band");
+    await until(`!!document.querySelector(".bands-sheet")`, "the band sheet");
+  };
 
   const shot = async (path: string | undefined) => {
     if (path) writeFileSync(path, Buffer.from((await site.send("Page.captureScreenshot", { format: "png" })).data, "base64"));
@@ -61,7 +72,7 @@ export async function appPage(site: Site) {
       return { page: document.documentElement.scrollWidth, left: sheet.left, right: sheet.right };
     })()`);
 
-  /** Create an account with Face ID or fingerprint from the More menu, as a new player does. */
+  /** Create an account with Face ID or fingerprint from Settings, as a new player does, then go back to the list. */
   const signUp = async (name: string) => {
     await openMenu();
     await pick("Sign in");
@@ -70,13 +81,14 @@ export async function appPage(site: Site) {
     await click("New here? Create an account");
     await type("Your name (what bandmates see)", name);
     await click("Sign in with Face ID or fingerprint");
-    await atStep("codes");
-    await click("I saved them");
+    await until(`["nudge", "account"].includes(document.querySelector(".account-sheet")?.dataset.step)`, "the end of Create account");
+    if ((await site.evaluate<string>(`document.querySelector(".account-sheet").dataset.step`)) === "nudge") await click("Not now");
     await atStep("account");
     await click("✕");
+    await closeMenu();
   };
 
-  return { until, click, type, text, texts, library, openMenu, closeMenu, pick, shot, fits, signUp, errors: () => site.evaluate<string[]>("window.__errors") };
+  return { until, click, type, text, texts, library, openMenu, closeMenu, pick, openBands, shot, fits, signUp, errors: () => site.evaluate<string[]>("window.__errors") };
 }
 
 /** Another player on their own phone, signed up with a password straight to the API, sending the app's Origin. */

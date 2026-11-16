@@ -140,11 +140,10 @@ try {
   const reset = async () => {
     await site.evaluate(`location.hash = "#/songs"`);
     await site.evaluate(`window.__beforeReload = true; location.reload()`);
-    await app.until(`!window.__beforeReload && !!document.querySelector(".shell-header [aria-label=More]")`, "the library after the reload", 15000);
+    await app.until(`!window.__beforeReload && !!document.querySelector(".shell-header [aria-label=Settings]")`, "the library after the reload", 15000);
   };
   const openBand = async () => {
-    await app.openMenu();
-    await app.pick("Bands");
+    await app.openBands();
     await view("list");
     await app.click("Open");
     await view("band");
@@ -408,8 +407,8 @@ try {
     await app.click("New here? Create an account");
     await app.type("Your name (what bandmates see)", "Pat Lee");
     await app.click("Sign in with Face ID or fingerprint");
-    await app.until(`document.querySelector(".account-sheet")?.dataset.step === "codes"`, "the backup codes");
-    await app.click("I saved them");
+    await app.until(`document.querySelector(".account-sheet")?.dataset.step === "nudge"`, "the add-a-password nudge");
+    await app.click("Not now");
     await app.click("✕");
     await app.until(`document.body.textContent.includes("This gig is for tonight's lineup")`, "the words for someone not on the lineup", 15000);
     assert.ok(!(await site.evaluate<boolean>(`!!${card(g1)}`)), "and no gig card for Pat");

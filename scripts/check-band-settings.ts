@@ -108,8 +108,7 @@ async function appChecks() {
     pass("Sam's phone holds a private timing version the app loads");
 
     await app.signUp("Sam Rivera");
-    await app.openMenu();
-    await app.pick("Bands");
+    await app.openBands();
     await view("list");
     await app.type("New band", "Sam's Trio");
     await app.click("Create band");
@@ -142,9 +141,7 @@ async function appChecks() {
     assert.equal(tried.body.error, "not-admin", "Mike, a member, can't change it");
     await site.evaluate(`location.reload()`);
     await app.library();
-    await app.openMenu();
-    await app.until(`[...document.querySelectorAll("[role=menu] [role=menuitem]")].some((item) => item.textContent === "Bands")`, "Bands in the More menu after the reload");
-    await app.pick("Bands");
+    await app.openBands();
     await view("list");
     await app.click("Open");
     await view("band");

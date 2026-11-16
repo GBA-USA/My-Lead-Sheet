@@ -1,10 +1,10 @@
 import seedLibrary from "../data/library.json";
 import { clampScrollPercent, pitchClass, type Notation } from "./music";
+import { parsePersonal, type PersonalDefaults } from "./personal-settings-model";
 import type { Learned, Mark, ScrollVersion, Span, Tempo } from "./scroll-timing";
 import type { BassNote, ChartLine, ChartSection, CopyMark, Library, LibraryFile, Song, SongData, SongRef } from "./types";
 
 export const LIBRARY_KEY = "leadSheetsLibrary";
-export const AWAKE_KEY = "leadSheetsKeepAwake";
 export const TEXT_SCALE_KEY = "leadSheetsTextScale";
 /** Per-song scroll percentage, stored under `leadSheetsScrollPercent.<ref key>`. */
 export const SCROLL_PERCENT_KEY = "leadSheetsScrollPercent";
@@ -305,16 +305,6 @@ export function setlistWithSongMoved(value: string, from: number, to: number): s
   return JSON.stringify({ ...entry, item: { ...entry.item, songIds: entry.item.songIds.map((id) => (id === from ? to : id)) } });
 }
 
-export function loadAwake(): boolean {
-  const raw = readRaw(AWAKE_KEY);
-  if (raw === null) return true;
-  return raw === "true";
-}
-
-export function saveAwake(on: boolean): boolean {
-  return writeRaw(AWAKE_KEY, on ? "true" : "false");
-}
-
 /** The five themes. `index.html` applies the saved one before the bundle loads, so its own list must agree with this one. */
 export const THEMES = ["stage", "day", "cb-rg", "cb-by", "contrast"] as const;
 export type Theme = (typeof THEMES)[number];
@@ -338,6 +328,19 @@ export function loadTextScaleIndex(): number {
 
 export function saveTextScaleIndex(index: number): boolean {
   return writeRaw(TEXT_SCALE_KEY, String(index));
+}
+
+/** The Chords and Transpose defaults from Settings, one entry per account on this phone and "" for signed out. */
+export const PERSONAL_KEY = "leadSheetsPersonal";
+
+/** An account with no entry yet starts from what the player set while signed out, never from another account's. */
+export function loadPersonal(owner: string | null): PersonalDefaults {
+  const entries = readObject(PERSONAL_KEY);
+  return parsePersonal(entries[owner ?? ""] ?? entries[""]);
+}
+
+export function savePersonal(owner: string | null, next: PersonalDefaults): boolean {
+  return writeRaw(PERSONAL_KEY, JSON.stringify({ ...readObject(PERSONAL_KEY), [owner ?? ""]: parsePersonal(next) }));
 }
 
 /** Device-wide metronome settings. The metronome module parses what comes back. */
@@ -366,7 +369,7 @@ export function songByRef(songs: Song[], ref: SongRef): Song | undefined {
 /** One key per song, so a save never rewrites another song's value from a stale copy in another tab. */
 function readSongPref(key: string, ref: SongRef): unknown {
   const raw = readRaw(`${key}.${refKey(ref)}`);
-  if (raw === null) return readLegacyMap(key)[refKey(ref)];
+  if (raw === null) return readObject(key)[refKey(ref)];
   try {
     return JSON.parse(raw);
   } catch {
@@ -378,8 +381,8 @@ function writeSongPref(key: string, ref: SongRef, value: number | Notation): boo
   return writeRaw(`${key}.${refKey(ref)}`, JSON.stringify(value));
 }
 
-/** Before per-song keys, each setting was one JSON map of song id to value. Read it so old saves still load. */
-function readLegacyMap(key: string): Record<string, unknown> {
+/** A stored JSON object, or {} when it is missing or unreadable. Before per-song keys, each song setting was one such map of song id to value, so old saves still load through it. */
+function readObject(key: string): Record<string, unknown> {
   const raw = readRaw(key);
   if (!raw) return {};
   try {
@@ -402,8 +405,9 @@ export function saveScrollPercent(ref: SongRef, percent: number): boolean {
   return writeSongPref(SCROLL_PERCENT_KEY, ref, clampScrollPercent(percent));
 }
 
-export function loadNotation(ref: SongRef): Notation {
-  return readSongPref(NOTATION_KEY, ref) === "nashville" ? "nashville" : "notes";
+export function loadNotation(ref: SongRef, fallback: Notation = "notes"): Notation {
+  const value = readSongPref(NOTATION_KEY, ref);
+  return value === "nashville" || value === "notes" ? value : fallback;
 }
 
 export function saveNotation(ref: SongRef, notation: Notation): boolean {

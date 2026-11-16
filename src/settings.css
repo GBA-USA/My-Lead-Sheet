@@ -1,0 +1,181 @@
+.settings {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 4px 16px 40px;
+  color: var(--text);
+}
+
+.settings-group {
+  margin-top: 20px;
+}
+
+.settings-group h2 {
+  margin: 0 0 10px;
+  color: var(--text-kicker);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.settings-field {
+  margin-bottom: 18px;
+}
+
+.settings-field h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.settings-chips,
+.settings-choice {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.settings-chips button,
+.settings-choice button,
+.settings-step > button,
+.settings-step .text-size button,
+.settings-row {
+  min-height: 48px;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.settings-chips button[aria-pressed="true"],
+.settings-choice button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.settings button:disabled {
+  opacity: 0.4;
+}
+
+.settings-sample {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+}
+
+.settings-sample-chords {
+  display: flex;
+  gap: 10px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-weight: 500;
+}
+
+.settings-sample-chords > span {
+  padding: 0 6px;
+  border-radius: 6px;
+}
+
+.settings-sample .is-sure {
+  background: var(--chord-sure-bg);
+  color: var(--chord-sure);
+}
+
+.settings-sample .is-check {
+  background: var(--chord-check-bg);
+  color: var(--chord-check);
+  text-decoration: underline var(--chord-check-line);
+}
+
+.settings-sample .is-unsure {
+  background: var(--chord-unsure-bg);
+  color: var(--chord-unsure);
+  text-decoration: underline var(--chord-unsure-line);
+}
+
+.settings-sample .is-unsure::after {
+  content: var(--chord-unsure-mark);
+  margin-left: 3px;
+  font-size: 0.7em;
+}
+
+.settings-sample-words {
+  color: var(--text);
+}
+
+.settings-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.settings-step .text-size {
+  display: flex;
+  gap: 8px;
+}
+
+.settings-step > button,
+.settings-step .text-size button {
+  min-width: 48px;
+  padding: 0 12px;
+}
+
+.settings-value {
+  min-width: 40px;
+  font-size: 18px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.settings-text-sample {
+  margin: 0;
+  font-weight: 600;
+}
+
+.settings-rows {
+  display: grid;
+  gap: 8px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0 16px;
+  text-align: left;
+  text-decoration: none;
+}
+
+.settings-note {
+  margin: 6px 0 0;
+  color: var(--text-dim);
+  font-size: 14px;
+}
+
+.settings-error {
+  margin: 12px 0 0;
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.sheet-gear {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  margin-left: auto;
+  border: var(--control-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-dim);
+}

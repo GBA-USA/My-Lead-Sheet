@@ -24,6 +24,7 @@ const ONE_COPY: { what: string; pattern: RegExp; home: string; dir?: string }[] 
   { what: "the request body size cap", pattern: /Refused\("too-large", 413\)/, home: "worker/refused.ts" },
   { what: "what counts as the same @name", pattern: /replace\(\/\^@\/, ""\)\.toLowerCase\(\)/, home: "src/handle.ts" },
   { what: "the @name made from a display name", pattern: /normalize\("NFKD"\)/, home: "src/handle.ts" },
+  { what: "the app's name", pattern: /"Groovist"/, home: "src/data-kinds.ts", dir: "src/" },
 ];
 
 for (const { what, pattern, home, dir } of ONE_COPY) {

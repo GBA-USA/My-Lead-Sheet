@@ -1,4 +1,5 @@
 import { CODE_KINDS, CODE_REFUSED, CODE_SCREEN, readPayload, signedText, type CodeFields, type CodeKind } from "../src/code-link";
+import { APP_NAME } from "../src/data-kinds";
 import { fromBase64Url, randomBytes, toBase64Url, utf8 } from "./bytes";
 import { signedIn, type Context, type Reply, type Route, type User } from "./directory-http";
 import type { Env } from "./index";
@@ -152,7 +153,7 @@ export async function codeLanding(sql: SqlStorage, env: Env, payload: string): P
   } catch (error) {
     if (!(error instanceof Refused) || !(error.reason in CODE_REFUSED)) throw error;
     const text = CODE_REFUSED[error.reason as keyof typeof CODE_REFUSED];
-    const page = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>My Lead Sheet</title><p>${escapeHtml(text)}</p><p><a href="${escapeHtml(origin)}/">Open My Lead Sheet</a></p></html>`;
+    const page = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${APP_NAME}</title><p>${escapeHtml(text)}</p><p><a href="${escapeHtml(origin)}/">Open ${APP_NAME}</a></p></html>`;
     return new Response(page, { status: error.status, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
   }
 }

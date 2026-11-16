@@ -76,7 +76,7 @@ async function apiChecks() {
     assert.equal(made.status, 200, `Make a password creates the account (${JSON.stringify(made.body)})`);
     assert.deepEqual([made.body.account.handle, made.body.account.displayName], ["patbass", "Pat Password"], "the username is the public @name");
     assert.deepEqual(made.body.account.ways.map((way: { kind: string }) => way.kind), ["password"], "the account's one way is a password");
-    assert.equal(made.body.backupCodes.length, 8, "a password account gets 8 backup codes");
+    assert.ok(!("backupCodes" in made.body), "a password account gets no backup codes");
     assert.deepEqual((await createWithPassword(phoneOnNewAddress(base), "Other Pat", "patbass", "violet tram 42 lantern")).body.error, "handle-taken", "a taken @name is refused");
     assert.deepEqual((await createWithPassword(phoneOnNewAddress(base), "Bad", "no spaces!", "violet tram 42 lantern")).body.error, "bad-handle", "an @name with other characters is refused");
     const shortKey = await phoneOnNewAddress(base).call("/api/auth/password/create", { name: "Short", handle: "shortkey", salt: newSalt(), key: "AAAA" });
@@ -154,11 +154,9 @@ async function apiChecks() {
     await sleep(blocked.body.waitMs + 20);
     assert.equal((await signInWithPassword(crowd, "patbass", "violet tram 42 lantern")).status, 200, "after 15 minutes the address can sign in again");
 
+    assert.equal((await phoneOnNewAddress(base).call("/api/auth/backup-code", { handle: "patbass", code: "0000-0000-0000" })).status, 404, "Forgot password: the backup-code route is gone (404)");
     const recover = phoneOnNewAddress(base);
-    const codes: string[] = made.body.backupCodes;
-    const used = await recover.call("/api/auth/backup-code", { handle: "patbass", code: codes[0] });
-    assert.deepEqual([used.status, used.body.account.backupCodesLeft], [200, 7], "Forgot password: a backup code signs in and 7 are left");
-    assert.equal((await phoneOnNewAddress(base).call("/api/auth/backup-code", { handle: "patbass", code: codes[0] })).status, 401, "the same code is refused the second time");
+    assert.equal((await signInWithPassword(recover, "patbass", "violet tram 42 lantern")).status, 200, "Pat signs in on another phone");
     const resetSalt = newSalt();
     const reset = await recover.call("/api/me/password", { salt: resetSalt, key: await phoneKey("a brand new passphrase", resetSalt) });
     assert.equal(reset.status, 200, "then sets a new password");
@@ -268,10 +266,10 @@ async function screenChecks() {
     await site.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
     await site.send("Page.enable");
     await site.send("Page.navigate", { url: `${origin}/#/songs` });
-    await until(`!!document.querySelector(".shell-header [aria-label=More]")`, "the library", 15000);
-    await site.evaluate(`document.querySelector(".shell-header [aria-label=More]").click()`);
-    await until(`[...document.querySelectorAll("[role=menu] button")].some((b) => b.textContent.trim() === "Sign in")`, "the More menu");
-    await site.evaluate(`[...document.querySelectorAll("[role=menu] button")].find((b) => b.textContent.trim() === "Sign in").click()`);
+    await until(`!!document.querySelector(".shell-header [aria-label=Settings]")`, "the library", 15000);
+    await site.evaluate(`document.querySelector(".shell-header [aria-label=Settings]").click()`);
+    await until(`[...document.querySelectorAll(".settings button")].some((b) => b.textContent.trim() === "Sign in")`, "Settings");
+    await site.evaluate(`[...document.querySelectorAll(".settings button")].find((b) => b.textContent.trim() === "Sign in").click()`);
     await atStep("start");
     assert.ok((await sheetText()).includes("Sign in with a password"), "the sign-in screen offers a password");
 
@@ -287,11 +285,8 @@ async function screenChecks() {
     assert.equal(await step(), "make-password", "and no account is made");
     await type("Password", "violet tram 42 lantern");
     assert.ok(await click("Make account"));
-    await atStep("codes");
-    const codes = await site.evaluate<string[]>(`[...document.querySelectorAll(".account-codes li")].map((li) => li.textContent)`);
-    assert.equal(codes.length, 8, "a password account ends on Save your backup codes");
-    assert.ok(await click("I saved them"));
     await atStep("account");
+    assert.ok(!/backup code/i.test(await sheetText()), "a password account ends on its account, with no backup codes");
     let text = await sheetText();
     assert.ok(text.includes("@patchrome") && text.includes("Password") && text.includes("Change password"), `Ways to sign in lists the password and Change password (${text})`);
 
@@ -323,24 +318,10 @@ async function screenChecks() {
     await signOut();
     assert.ok(await click("Sign in with a password"));
     await atStep("password");
-    assert.ok(await click("Forgot password? Use a backup code"));
-    await atStep("backup-code");
-    await type("Your @name", "patchrome");
-    await type("Backup code", codes[0]);
-    assert.ok(await click("Sign in"));
-    await atStep("set-password");
-    text = await sheetText();
-    assert.ok(text.includes("Set a new password") && text.includes("Backup code used. 7 left."), `a backup code leads to Set a new password and says how many are left (${text})`);
-    await type("New password", "reset by backup code");
-    assert.ok(await click("Save password"));
-    await atStep("account");
-    await signOut();
-    assert.ok(await click("Sign in with a password"));
+    assert.ok(await click("Forgot your login?"), "the password screen offers Forgot your login?");
+    await atStep("forgot");
+    assert.ok(await click("Back"));
     await atStep("password");
-    await type("Your @name", "patchrome");
-    await type("Password", "reset by backup code");
-    assert.ok(await click("Sign in"));
-    await atStep("account");
   } finally {
     await site.close();
     await worker.dispose();

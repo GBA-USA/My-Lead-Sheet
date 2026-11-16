@@ -17,13 +17,10 @@ export interface Account {
   handle: string;
   displayName: string;
   ways: Way[];
-  backupCodesLeft: number;
 }
 
-/** What a create or sign-in reply carries. A new account also gets its 8 backup codes, shown once. */
 export interface SignedIn {
   account: Account;
-  backupCodes?: string[];
 }
 
 /** A refusal from the API (`{error}` with its status), or `offline` when the request never got an answer. `waitMs` comes with password waits. */

@@ -55,6 +55,7 @@ const text = (selector: string) => evaluate<string>(`document.querySelector(${js
 
 async function load(hash: string) {
   await site.send("Page.navigate", { url: `${origin}/${hash}` });
+  await until(`location.hash === ${js(hash)}`, `the address to show ${hash}`);
   await site.send("Page.reload");
   await until(`!!document.querySelector(".shell-header") && document.readyState === "complete"`, `${hash} to load`, 15000);
   await settle(400);
@@ -110,7 +111,7 @@ try {
     const manifest = await evaluate<{ name: string; short_name: string }>(`fetch(document.querySelector("link[rel=manifest]").href).then((r) => r.json())`);
     expect(manifest.name === "Groovist" && manifest.short_name === "Groovist", `the manifest says ${manifest.name} / ${manifest.short_name}`);
     const built = await evaluate<string>(`fetch("/").then((r) => r.text())`);
-    expect(/<title>Groovist<\/title>/.test(built), "index.html's <title> says Groovist");
+    expect(/<title>Groovist<\/title>/.test(built), "index.html's <title> does not say Groovist");
     for (const hash of ROUTES) {
       await load(hash);
       const shown = await evaluate<string>("document.body.innerText");

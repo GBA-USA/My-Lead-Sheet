@@ -5,7 +5,7 @@
   display: grid;
   place-items: end center;
   padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--scrim);
 }
 
 .learn {
@@ -15,9 +15,9 @@
   display: grid;
   gap: 12px;
   padding: 16px;
-  background: #322c24;
+  background: var(--surface-2);
   border-radius: 16px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 12px 32px var(--shadow);
   color: var(--text);
   font-size: 15px;
 }
@@ -40,7 +40,7 @@
 
 .learn-progress progress {
   flex: 1;
-  accent-color: var(--gold);
+  accent-color: var(--accent);
 }
 
 .learn-sections {
@@ -80,9 +80,9 @@
 .learn-nudge button,
 .learn-actions button {
   height: 40px;
-  border: 0;
+  border: var(--control-border);
   border-radius: 999px;
-  background: var(--bg-2);
+  background: var(--surface);
   color: var(--text);
   font-weight: 700;
   font-size: 14px;
@@ -155,7 +155,7 @@
 .learn input[type="checkbox"] {
   width: 20px;
   height: 20px;
-  accent-color: var(--gold);
+  accent-color: var(--accent);
 }
 
 .learn-actions {
@@ -173,8 +173,8 @@
 }
 
 .learn-actions .is-primary {
-  background: var(--gold);
-  color: var(--on-gold);
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 .cue-anchor {
@@ -192,19 +192,19 @@
   padding: 6px 14px;
   transform: translateX(-50%);
   border-radius: 999px;
-  background: var(--gold);
-  color: var(--on-gold);
+  background: var(--accent);
+  color: var(--on-accent);
   font-weight: 700;
   font-size: 14px;
   white-space: nowrap;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 4px 12px var(--shadow-soft);
 }
 
 .chart-section[data-next] > .chart-heading {
   border-radius: 2px;
-  background: var(--gold);
-  color: var(--on-gold);
-  box-shadow: 0 0 0 0.25em var(--gold);
+  background: var(--accent);
+  color: var(--on-accent);
+  box-shadow: 0 0 0 0.25em var(--accent);
 }
 
 /* With a version picked, Learn this song no longer fits beside the picker on a phone. */

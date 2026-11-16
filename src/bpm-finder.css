@@ -13,9 +13,9 @@
 .bpm-finder button {
   min-height: 40px;
   padding: 0 14px;
-  border: 0;
+  border: var(--control-border);
   border-radius: 999px;
-  background: var(--bg-2);
+  background: var(--surface);
   color: var(--text);
   font-weight: 700;
   font-size: 14px;
@@ -60,7 +60,7 @@
 .bpm-finder progress {
   width: 100%;
   height: 8px;
-  accent-color: var(--gold);
+  accent-color: var(--accent);
 }
 
 .bpm-finder .bpm-tap {
@@ -71,8 +71,8 @@
 }
 
 .bpm-finder .bpm-tap:active {
-  background: var(--gold);
-  color: var(--on-gold);
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 .bpm-choices button {
@@ -96,12 +96,12 @@
 }
 
 .bpm-choices .is-suggested {
-  background: var(--gold);
-  color: var(--on-gold);
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 .bpm-choices .is-suggested span {
-  color: var(--on-gold);
+  color: var(--on-accent);
 }
 
 .bpm-finder .bpm-cancel {

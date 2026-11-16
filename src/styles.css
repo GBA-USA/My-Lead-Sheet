@@ -1,17 +1,277 @@
-:root {
+:root,
+.gig-stage {
   --bg: #13120d;
-  --bg-2: #2a2620;
-  --gold: #e1a01e;
-  --on-gold: #1a140c;
+  --surface: #2a2620;
+  --surface-2: #322c24;
+  --surface-tabs: #2c2822;
+  --accent: #e1a01e;
+  --accent-text: #e1a01e;
+  --on-accent: #1a140c;
+  --accent-wash: rgba(225, 160, 30, 0.1);
+  --text: #f7f2e8;
+  --text-strong: #fff;
+  --text-dim: #c9c0b2;
+  --text-kicker: #cbbfa8;
+  --text-tab: #f3ecdf;
+  --danger: #ffb4a2;
+  --danger-solid: #d7263d;
+  --border: rgba(247, 242, 232, 0.16);
+  --control-border: 0;
+  --row-rule: rgba(247, 242, 232, 0.08);
+  --divider: rgba(255, 255, 255, 0.12);
+  --hover: rgba(255, 255, 255, 0.06);
+  --scrim: rgba(0, 0, 0, 0.5);
+  --shadow: rgba(0, 0, 0, 0.45);
+  --shadow-soft: rgba(0, 0, 0, 0.35);
+  --video-bg: #000;
+  --print-ink: #000;
   --paper: #f8f4e9;
+  --paper-2: #fffdf8;
+  --paper-bright: #fff;
+  --paper-accent: #f6e7c4;
+  --paper-rule: #e4d9c6;
+  --paper-border: #e0d3bc;
+  --paper-border-strong: #c4b396;
   --ink: #1c140f;
   --ink-soft: #5c584c;
-  --olive: #8a6c28;
-  --text: #f7f2e8;
-  --text-dim: #c9c0b2;
-  --danger: #ffb4a2;
+  --on-paper-dim: #8a8172;
+  --heading: #8a6c28;
+  --lamp-off: #c4b396;
+  --chord-sure: #8fd3a0;
+  --chord-sure-bg: #1f3a26;
+  --chord-check: #f2c94c;
+  --chord-check-bg: #3d3110;
+  --chord-check-line: dotted;
+  --chord-unsure: #ff9b8a;
+  --chord-unsure-bg: #4a1f19;
+  --chord-unsure-line: dashed;
+  --chord-unsure-mark: "▲";
+  --chord-set: #1a140c;
+  --chord-set-fill: #f7f2e8;
+  --battery-ok: #d7263d;
+  --battery-low: #ff8c42;
+  --battery-low-mark: "";
   color-scheme: dark;
-  font-family: Inter, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+html[data-theme="day"] {
+  --bg: #fff;
+  --surface: #f3efe6;
+  --surface-2: #fbf9f4;
+  --surface-tabs: #ece7dc;
+  --accent: #e1a01e;
+  --accent-text: #946a0c;
+  --on-accent: #1a140c;
+  --accent-wash: rgba(148, 106, 12, 0.1);
+  --text: #141414;
+  --text-strong: #000;
+  --text-dim: #5c584c;
+  --text-kicker: #6b6557;
+  --text-tab: #3a352c;
+  --danger: #b42318;
+  --danger-solid: #d7263d;
+  --border: rgba(20, 20, 20, 0.16);
+  --control-border: 0;
+  --row-rule: rgba(20, 20, 20, 0.08);
+  --divider: rgba(20, 20, 20, 0.12);
+  --hover: rgba(0, 0, 0, 0.05);
+  --scrim: rgba(0, 0, 0, 0.35);
+  --shadow: rgba(0, 0, 0, 0.18);
+  --shadow-soft: rgba(0, 0, 0, 0.14);
+  --video-bg: #000;
+  --print-ink: #000;
+  --paper: #f8f4e9;
+  --paper-2: #fffdf8;
+  --paper-bright: #fff;
+  --paper-accent: #f6e7c4;
+  --paper-rule: #e4d9c6;
+  --paper-border: #e0d3bc;
+  --paper-border-strong: #c4b396;
+  --ink: #1c140f;
+  --ink-soft: #5c584c;
+  --on-paper-dim: #8a8172;
+  --heading: #8a6c28;
+  --lamp-off: #c4b396;
+  --chord-sure: #18794e;
+  --chord-sure-bg: #e6f4ec;
+  --chord-check: #8a5a00;
+  --chord-check-bg: #fdf1cf;
+  --chord-check-line: dotted;
+  --chord-unsure: #b42318;
+  --chord-unsure-bg: #fde4e1;
+  --chord-unsure-line: dashed;
+  --chord-unsure-mark: "▲";
+  --chord-set: #fff;
+  --chord-set-fill: #141414;
+  --battery-ok: #d7263d;
+  --battery-low: #b45309;
+  --battery-low-mark: "";
+  color-scheme: light;
+}
+
+html[data-theme="cb-rg"] {
+  --bg: #101418;
+  --surface: #242a31;
+  --surface-2: #2b323a;
+  --surface-tabs: #262c33;
+  --accent: #e1a01e;
+  --accent-text: #e1a01e;
+  --on-accent: #1a140c;
+  --accent-wash: rgba(225, 160, 30, 0.1);
+  --text: #f3f4f6;
+  --text-strong: #fff;
+  --text-dim: #bcc3cc;
+  --text-kicker: #aeb6c0;
+  --text-tab: #eef0f3;
+  --danger: #ffb866;
+  --danger-solid: #f28c28;
+  --border: rgba(243, 244, 246, 0.16);
+  --control-border: 0;
+  --row-rule: rgba(243, 244, 246, 0.08);
+  --divider: rgba(255, 255, 255, 0.12);
+  --hover: rgba(255, 255, 255, 0.06);
+  --scrim: rgba(0, 0, 0, 0.5);
+  --shadow: rgba(0, 0, 0, 0.45);
+  --shadow-soft: rgba(0, 0, 0, 0.35);
+  --video-bg: #000;
+  --print-ink: #000;
+  --paper: #f8f4e9;
+  --paper-2: #fffdf8;
+  --paper-bright: #fff;
+  --paper-accent: #f6e7c4;
+  --paper-rule: #e4d9c6;
+  --paper-border: #e0d3bc;
+  --paper-border-strong: #c4b396;
+  --ink: #1c140f;
+  --ink-soft: #5c584c;
+  --on-paper-dim: #8a8172;
+  --heading: #8a6c28;
+  --lamp-off: #c4b396;
+  --chord-sure: #9ecbff;
+  --chord-sure-bg: #15304a;
+  --chord-check: #ffb866;
+  --chord-check-bg: #4a2e0f;
+  --chord-check-line: dotted;
+  --chord-unsure: #ff8c7a;
+  --chord-unsure-bg: #4d1d14;
+  --chord-unsure-line: dashed;
+  --chord-unsure-mark: "▲";
+  --chord-set: #111;
+  --chord-set-fill: #fff;
+  --battery-ok: #4ea3ff;
+  --battery-low: #f28c28;
+  --battery-low-mark: "!";
+  color-scheme: dark;
+}
+
+html[data-theme="cb-by"] {
+  --bg: #15110f;
+  --surface: #2b2522;
+  --surface-2: #332c28;
+  --surface-tabs: #2d2724;
+  --accent: #f3e9d8;
+  --accent-text: #f3e9d8;
+  --on-accent: #1a140c;
+  --accent-wash: rgba(243, 233, 216, 0.1);
+  --text: #f7f2e8;
+  --text-strong: #fff;
+  --text-dim: #c9c0b2;
+  --text-kicker: #cbbfa8;
+  --text-tab: #f3ecdf;
+  --danger: #ff8a8a;
+  --danger-solid: #e05252;
+  --border: rgba(247, 242, 232, 0.16);
+  --control-border: 0;
+  --row-rule: rgba(247, 242, 232, 0.08);
+  --divider: rgba(255, 255, 255, 0.12);
+  --hover: rgba(255, 255, 255, 0.06);
+  --scrim: rgba(0, 0, 0, 0.5);
+  --shadow: rgba(0, 0, 0, 0.45);
+  --shadow-soft: rgba(0, 0, 0, 0.35);
+  --video-bg: #000;
+  --print-ink: #000;
+  --paper: #f8f4e9;
+  --paper-2: #fffdf8;
+  --paper-bright: #fff;
+  --paper-accent: #f6e7c4;
+  --paper-rule: #e4d9c6;
+  --paper-border: #e0d3bc;
+  --paper-border-strong: #c4b396;
+  --ink: #1c140f;
+  --ink-soft: #5c584c;
+  --on-paper-dim: #8a8172;
+  --heading: #8a6c28;
+  --lamp-off: #c4b396;
+  --chord-sure: #5fd3c7;
+  --chord-sure-bg: #0f3b37;
+  --chord-check: #ff7ad9;
+  --chord-check-bg: #4a1040;
+  --chord-check-line: dotted;
+  --chord-unsure: #ff6b6b;
+  --chord-unsure-bg: #4a1212;
+  --chord-unsure-line: dashed;
+  --chord-unsure-mark: "▲";
+  --chord-set: #111;
+  --chord-set-fill: #fff;
+  --battery-ok: #5fd3c7;
+  --battery-low: #ff6b6b;
+  --battery-low-mark: "!";
+  color-scheme: dark;
+}
+
+html[data-theme="contrast"] {
+  --bg: #000;
+  --surface: #000;
+  --surface-2: #000;
+  --surface-tabs: #000;
+  --accent: #ff0;
+  --accent-text: #ff0;
+  --on-accent: #000;
+  --accent-wash: rgba(255, 255, 0, 0.15);
+  --text: #fff;
+  --text-strong: #fff;
+  --text-dim: #fff;
+  --text-kicker: #fff;
+  --text-tab: #fff;
+  --danger: #ff8080;
+  --danger-solid: #ff4040;
+  --border: #fff;
+  --control-border: 2px solid #fff;
+  --row-rule: #fff;
+  --divider: #fff;
+  --hover: rgba(255, 255, 255, 0.2);
+  --scrim: rgba(0, 0, 0, 0.8);
+  --shadow: rgba(0, 0, 0, 0);
+  --shadow-soft: rgba(0, 0, 0, 0);
+  --video-bg: #000;
+  --print-ink: #000;
+  --paper: #f8f4e9;
+  --paper-2: #fff;
+  --paper-bright: #fff;
+  --paper-accent: #ff0;
+  --paper-rule: #000;
+  --paper-border: #000;
+  --paper-border-strong: #000;
+  --ink: #000;
+  --ink-soft: #000;
+  --on-paper-dim: #333;
+  --heading: #000;
+  --lamp-off: #777;
+  --chord-sure: #fff;
+  --chord-sure-bg: #000;
+  --chord-check: #ff0;
+  --chord-check-bg: #000;
+  --chord-check-line: dotted;
+  --chord-unsure: #fff;
+  --chord-unsure-bg: #000;
+  --chord-unsure-line: dashed;
+  --chord-unsure-mark: "▲";
+  --chord-set: #000;
+  --chord-set-fill: #ff0;
+  --battery-ok: #ff0;
+  --battery-low: #ff4040;
+  --battery-low-mark: "!";
+  color-scheme: dark;
 }
 
 *,
@@ -29,7 +289,12 @@ body,
 }
 
 html {
+  --touch: 48px;
+  --touch-stage: 64px;
+  --gap: 8px;
+  --radius: 14px;
   touch-action: pan-x pan-y;
+  font-family: Inter, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
 body {
@@ -57,7 +322,7 @@ button:disabled {
 
 button:focus-visible,
 a:focus-visible {
-  outline: 2px solid var(--gold);
+  outline: 2px solid var(--accent-text);
   outline-offset: 2px;
 }
 
@@ -97,9 +362,9 @@ a:focus-visible {
   width: 40px;
   height: 40px;
   min-width: 40px;
-  border: 0;
+  border: var(--control-border);
   border-radius: 50%;
-  background: var(--bg-2);
+  background: var(--surface);
   color: var(--text);
   display: grid;
   place-items: center;
@@ -119,7 +384,7 @@ a:focus-visible {
   gap: 4px;
   margin: 6px 12px 2px;
   padding: 4px;
-  background: #2c2822;
+  background: var(--surface-tabs);
   border-radius: 999px;
 }
 
@@ -129,15 +394,15 @@ a:focus-visible {
   display: grid;
   place-items: center;
   text-decoration: none;
-  color: #f3ecdf;
+  color: var(--text-tab);
   font-weight: 700;
   font-size: 15px;
   line-height: 1;
 }
 
 .tab.is-selected {
-  background: var(--gold);
-  color: var(--on-gold);
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 .list-tools {
@@ -226,7 +491,7 @@ a:focus-visible {
 .scroll-pill,
 .more-btn,
 .screen-toggle {
-  border: 0;
+  border: var(--control-border);
   background: transparent;
   color: var(--text);
   font-weight: 700;
@@ -253,8 +518,8 @@ a:focus-visible {
 }
 
 .screen-toggle.is-on {
-  background: var(--gold);
-  color: var(--on-gold);
+  background: var(--accent);
+  color: var(--on-accent);
   padding: 0 12px;
 }
 
@@ -266,15 +531,15 @@ a:focus-visible {
 }
 
 .notes-switch button[aria-pressed="true"] {
-  background: var(--gold);
-  color: var(--on-gold);
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 .scroll-pill {
   height: 32px;
   padding: 0 10px 0 8px;
   border-radius: 999px;
-  background: var(--bg-2);
+  background: var(--surface);
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -282,8 +547,8 @@ a:focus-visible {
 }
 
 .scroll-pill.is-on {
-  background: var(--gold);
-  color: var(--on-gold);
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 .step {
@@ -291,10 +556,10 @@ a:focus-visible {
   height: 32px;
   min-width: 32px;
   min-height: 32px;
-  border: 0;
+  border: var(--control-border);
   border-radius: 50%;
-  background: var(--gold);
-  color: var(--on-gold);
+  background: var(--accent);
+  color: var(--on-accent);
   display: grid;
   place-items: center;
   padding: 0;
@@ -317,7 +582,7 @@ a:focus-visible {
   height: 32px;
   min-width: 32px;
   border-radius: 50%;
-  background: var(--bg-2);
+  background: var(--surface);
   display: grid;
   place-items: center;
   padding: 0;
@@ -334,9 +599,9 @@ a:focus-visible {
   right: 0;
   min-width: 168px;
   padding: 6px;
-  background: #322c24;
+  background: var(--surface-2);
   border-radius: 14px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 12px 32px var(--shadow);
 }
 
 .menu button {
@@ -355,7 +620,7 @@ a:focus-visible {
 
 .menu button:hover,
 .menu button:focus-visible {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--hover);
 }
 
 .menu button.danger {
@@ -381,13 +646,13 @@ a:focus-visible {
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.14em;
-  color: #cbbfa8;
+  color: var(--text-kicker);
 }
 
 .key-name {
   font-size: 15px;
   font-weight: 700;
-  color: white;
+  color: var(--text-strong);
   text-align: center;
 }
 
@@ -403,9 +668,9 @@ a:focus-visible {
   min-height: 32px;
   padding: 0 12px;
   border-radius: 999px;
-  border: 1.5px solid var(--gold);
+  border: 1.5px solid var(--accent-text);
   background: transparent;
-  color: var(--gold);
+  color: var(--accent-text);
   font-size: 13px;
   font-weight: 700;
   white-space: nowrap;
@@ -436,11 +701,11 @@ a:focus-visible {
   color: inherit;
   background: transparent;
   border: 0;
-  border-bottom: 1px solid rgba(247, 242, 232, 0.08);
+  border-bottom: 1px solid var(--row-rule);
 }
 
 .song-row:active {
-  background: rgba(225, 160, 30, 0.1);
+  background: var(--accent-wash);
 }
 
 .song-title {
@@ -456,7 +721,7 @@ a:focus-visible {
 }
 
 .song-key {
-  color: var(--gold);
+  color: var(--accent-text);
   font-weight: 600;
 }
 
@@ -498,8 +763,8 @@ a:focus-visible {
   height: 32px;
   padding: 0 14px;
   border-radius: 999px;
-  background: var(--gold);
-  color: var(--on-gold);
+  background: var(--accent);
+  color: var(--on-accent);
   font-weight: 700;
   font-size: 14px;
   display: inline-flex;
@@ -523,9 +788,9 @@ a:focus-visible {
   height: 32px;
   min-width: 64px;
   padding: 0 10px;
-  border: 0;
+  border: var(--control-border);
   border-radius: 999px;
-  background: var(--bg-2);
+  background: var(--surface);
   color: var(--text);
   font-weight: 700;
   font-size: 14px;
@@ -567,7 +832,7 @@ a:focus-visible {
 .setlist-num {
   width: 1.4rem;
   flex: none;
-  color: var(--gold);
+  color: var(--accent-text);
   font-weight: 700;
   font-size: 15px;
 }
@@ -578,7 +843,7 @@ a:focus-visible {
 }
 
 .missing a {
-  color: var(--gold);
+  color: var(--accent-text);
   font-weight: 700;
 }
 
@@ -606,7 +871,7 @@ a:focus-visible {
 }
 
 .sheet-artist {
-  color: var(--olive);
+  color: var(--heading);
 }
 
 .source,
@@ -650,7 +915,7 @@ a:focus-visible {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--olive);
+  color: var(--heading);
 }
 
 .prose,
@@ -690,7 +955,7 @@ a:focus-visible {
 .bass td {
   overflow-wrap: break-word;
   font-size: 0.94em;
-  border-bottom: 1px solid #e4d9c6;
+  border-bottom: 1px solid var(--paper-rule);
   line-height: 1.35;
 }
 
@@ -727,7 +992,7 @@ a:focus-visible {
   margin: 0 0 0.4em;
   font-size: 0.82em;
   font-weight: 700;
-  color: var(--olive);
+  color: var(--heading);
   letter-spacing: 0.01em;
 }
 
@@ -747,7 +1012,7 @@ a:focus-visible {
 
 .chords,
 .bars {
-  color: var(--olive);
+  color: var(--heading);
   font-weight: 500;
 }
 
@@ -827,9 +1092,9 @@ a:focus-visible {
   margin: 0.75em 0 0;
   max-width: 100%;
   padding: 8px;
-  border: 1.5px solid #e0d3bc;
+  border: 1.5px solid var(--paper-border);
   border-radius: 14px;
-  background: #fffdf8;
+  background: var(--paper-2);
   touch-action: manipulation;
 }
 
@@ -837,9 +1102,9 @@ a:focus-visible {
   width: 100%;
   min-height: 44px;
   padding: 0 12px;
-  border: 1.5px solid #c4b396;
+  border: 1.5px solid var(--paper-border-strong);
   border-radius: 12px;
-  background: #fff;
+  background: var(--paper-bright);
   color: var(--ink);
   display: flex;
   align-items: center;
@@ -849,8 +1114,8 @@ a:focus-visible {
 }
 
 .metro-pad.is-on {
-  border-color: #8a6c28;
-  background: #f6e7c4;
+  border-color: var(--heading);
+  background: var(--paper-accent);
 }
 
 .metro-name {
@@ -858,7 +1123,7 @@ a:focus-visible {
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--olive);
+  color: var(--heading);
 }
 
 .metro-status {
@@ -874,12 +1139,12 @@ a:focus-visible {
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: #c4b396;
+  background: var(--lamp-off);
   flex: none;
 }
 
 .metro-pad.is-on .metro-lamp {
-  background: #d7263d;
+  background: var(--danger-solid);
   animation: metro-blink calc(60s / var(--metro-bpm, 60)) linear infinite;
 }
 
@@ -915,8 +1180,8 @@ a:focus-visible {
 .metro-input {
   min-height: 40px;
   border-radius: 10px;
-  border: 1.5px solid #c4b396;
-  background: #fff;
+  border: 1.5px solid var(--paper-border-strong);
+  background: var(--paper-bright);
   color: var(--ink);
   font-weight: 800;
   touch-action: manipulation;
@@ -945,7 +1210,7 @@ a:focus-visible {
 }
 
 .metro-input::placeholder {
-  color: #8a8172;
+  color: var(--on-paper-dim);
   font-weight: 700;
 }
 
@@ -1002,7 +1267,7 @@ a:focus-visible {
   padding: 0;
   border: 0;
   background: none;
-  color: var(--gold);
+  color: var(--accent-text);
   font: inherit;
   font-weight: 700;
   text-decoration: underline;
@@ -1022,7 +1287,7 @@ a:focus-visible {
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: #d7263d;
+  background: var(--battery-ok);
 }
 
 .beat-dot[data-beat="off"] {

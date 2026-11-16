@@ -12,9 +12,9 @@
 .metro-segments button {
   min-height: 44px;
   padding: 0 12px;
-  border: 1.5px solid #c4b396;
+  border: 1.5px solid var(--paper-border-strong);
   border-radius: 12px;
-  background: #fff;
+  background: var(--paper-bright);
   color: var(--ink);
   font-size: 13px;
   font-weight: 800;
@@ -46,7 +46,7 @@
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--olive);
+  color: var(--heading);
 }
 
 .metro-sync-value {
@@ -60,7 +60,7 @@
 .metro-panel {
   margin-top: 8px;
   padding-top: 2px;
-  border-top: 1.5px solid #e0d3bc;
+  border-top: 1.5px solid var(--paper-border);
 }
 
 .metro-segments {

@@ -12,6 +12,7 @@ export const PRIVACY_HREF = "privacy.html";
 export const DATA_KINDS: readonly DataKind[] = [
   { key: "leadSheetsLibrary", place: "phone", what: "Your songs and setlists, including any changes you make to them." },
   { key: "leadSheetsKeepAwake", place: "phone", what: "Whether the Screen on switch is on." },
+  { key: "leadSheetsTheme", place: "phone", what: "The look you picked: stage, day, one of the two colorblind-safe looks, or high contrast." },
   { key: "leadSheetsTextScale", place: "phone", what: "The text size you picked for sheets." },
   { key: "leadSheetsScrollPercent", place: "phone", what: "The scroll speed you set for each song." },
   { key: "leadSheetsNotation", place: "phone", what: "Whether each song shows note names or Nashville numbers." },

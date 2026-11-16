@@ -17,7 +17,7 @@
   height: 44px;
   border: 6px solid transparent;
   border-radius: 999px;
-  background: var(--bg-2) padding-box;
+  background: var(--surface) padding-box;
   color: var(--text);
   font-weight: 700;
   font-size: 13px;
@@ -59,12 +59,12 @@
 .menu-divider {
   height: 1px;
   margin: 6px;
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--divider);
 }
 
 .teach-btn.is-on {
-  background: var(--gold);
-  color: var(--on-gold);
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 .teach-btn:disabled {
@@ -89,7 +89,7 @@
 }
 
 .teach-status {
-  color: var(--gold);
+  color: var(--accent-text);
 }
 
 .teach-backdrop {
@@ -99,7 +99,7 @@
   display: grid;
   place-items: end center;
   padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--scrim);
 }
 
 .teach-sheet {
@@ -107,9 +107,9 @@
   display: grid;
   gap: 12px;
   padding: 16px;
-  background: #322c24;
+  background: var(--surface-2);
   border-radius: 16px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 12px 32px var(--shadow);
   color: var(--text);
 }
 
@@ -122,7 +122,7 @@
   min-width: 0;
   height: 40px;
   padding: 0 12px;
-  border: 0;
+  border: var(--control-border);
   border-radius: 10px;
   background: var(--bg);
   color: var(--text);
@@ -138,17 +138,17 @@
 .teach-actions button {
   height: 40px;
   padding: 0 14px;
-  border: 0;
+  border: var(--control-border);
   border-radius: 999px;
-  background: var(--bg-2);
+  background: var(--surface);
   color: var(--text);
   font-weight: 700;
   font-size: 14px;
 }
 
 .teach-actions .is-primary {
-  background: var(--gold);
-  color: var(--on-gold);
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 @media (min-width: 768px) {
@@ -216,9 +216,9 @@
 .teach-tempo-row button {
   height: 40px;
   padding: 0 10px;
-  border: 0;
+  border: var(--control-border);
   border-radius: 999px;
-  background: var(--bg-2);
+  background: var(--surface);
   color: var(--text);
   font-weight: 700;
   font-size: 14px;

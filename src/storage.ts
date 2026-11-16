@@ -315,6 +315,20 @@ export function saveAwake(on: boolean): boolean {
   return writeRaw(AWAKE_KEY, on ? "true" : "false");
 }
 
+/** The five themes. `index.html` applies the saved one before the bundle loads, so its own list must agree with this one. */
+export const THEMES = ["stage", "day", "cb-rg", "cb-by", "contrast"] as const;
+export type Theme = (typeof THEMES)[number];
+export const THEME_KEY = "leadSheetsTheme";
+
+export function loadTheme(): Theme {
+  const raw = readRaw(THEME_KEY);
+  return THEMES.find((theme) => theme === raw) ?? "stage";
+}
+
+export function saveTheme(theme: Theme): boolean {
+  return writeRaw(THEME_KEY, theme);
+}
+
 export function loadTextScaleIndex(): number {
   const raw = readRaw(TEXT_SCALE_KEY);
   const index = raw === null ? 1 : Number(raw);

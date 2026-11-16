@@ -40,7 +40,7 @@
 .codes-qr {
   justify-self: center;
   width: min(100%, 280px);
-  background: #fff;
+  background: var(--paper-bright);
   border-radius: 8px;
   line-height: 0;
 }
@@ -72,5 +72,5 @@
   aspect-ratio: 1;
   object-fit: cover;
   border-radius: 12px;
-  background: #000;
+  background: var(--video-bg);
 }

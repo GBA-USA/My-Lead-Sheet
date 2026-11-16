@@ -56,7 +56,8 @@
     "check:spike-links": "node --experimental-strip-types scripts/check-spike-links.ts",
     "check:share-guard": "node --experimental-strip-types scripts/check-share-guard.ts",
     "check:spend-guard": "node --experimental-strip-types scripts/check-spend-guard.ts",
-    "check:one-copy": "node --experimental-strip-types scripts/check-one-copy.ts"
+    "check:one-copy": "node --experimental-strip-types scripts/check-one-copy.ts",
+    "check:ux-theme-tokens": "node --experimental-strip-types scripts/check-ux-theme-tokens.ts"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.5",

@@ -57,7 +57,7 @@ export function allOnPhone<S extends PhoneStore>(store: S): Promise<PhoneStores[
   return inStore(store, "readonly", (objects) => objects.getAll() as IDBRequest<PhoneStores[S]["value"][]>);
 }
 
-async function written(stores: PhoneStore[], work: (transaction: IDBTransaction) => void): Promise<void> {
+async function written(stores: readonly PhoneStore[], work: (transaction: IDBTransaction) => void): Promise<void> {
   const db = await openPhoneDb();
   try {
     const writing = db.transaction(stores, "readwrite");
@@ -75,7 +75,7 @@ const PHONE_OWNER_KEY = "leadSheetsPhoneOwner";
 
 /** Empties every store, so band data leaves the phone with the account that downloaded it (PLAN.md 10). */
 export async function clearPhone(): Promise<void> {
-  await written([...PHONE_STORES], (clearing) => {
+  await written(PHONE_STORES, (clearing) => {
     for (const store of PHONE_STORES) clearing.objectStore(store).clear();
   });
   localStorage.removeItem(PHONE_OWNER_KEY);

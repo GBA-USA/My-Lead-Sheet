@@ -3,10 +3,10 @@ import { bandSongRef } from "./band-library-model";
 import { PRIVACY_HREF } from "./data-kinds";
 import { GigSong } from "./gig-plan";
 import type { useMetronome } from "./metronome-view";
-import { allOnPhone, type CachedBandSong } from "./phone-db";
+import { allOnPhone, claimPhone, type CachedBandSong } from "./phone-db";
 import { songHref, type TabName } from "./route";
-import { groupedSongs, keyName, matchingSetlists, NO_CHIPS, type SongChips } from "./search";
-import { SearchBox } from "./search-box";
+import { groupedSongs, keyName, matchingSetlists, NO_CHIPS } from "./search";
+import { SearchBox, SearchChips } from "./search-box";
 import { CodeOfferButton } from "./setlist-code";
 import { codeOffer } from "./setlist-code-model";
 import { LeadSheet } from "./sheet";
@@ -118,8 +118,11 @@ function SongRowText({ song }: { song: Song }) {
 
 const timed = (ref: SongRef) => loadScrollVersions(ref).versions.length > 0;
 
-/** This phone's songs, and while searching, the band songs this phone holds too, grouped by where they live. Nothing here asks the server. */
-export function SongList({ songs }: { songs: Song[] }) {
+/**
+ * This phone's songs, and while searching, the band songs this phone holds too, grouped by where they live. Nothing
+ * here asks the server. Signed in, the phone is claimed first, so another account's band songs are never shown.
+ */
+export function SongList({ songs, userId }: { songs: Song[]; userId: string | null }) {
   const [query, setQuery] = useState("");
   const [chips, setChips] = useState(NO_CHIPS);
   const [held, setHeld] = useState<CachedBandSong[]>([]);
@@ -127,8 +130,9 @@ export function SongList({ songs }: { songs: Song[] }) {
   const searching = query !== "" || chips.key !== null || chips.band !== null || chips.timed;
 
   useEffect(() => {
-    if (searching) allOnPhone("bandSongs").then(setHeld, () => setHeld([]));
-  }, [searching]);
+    setHeld([]);
+    if (searching) (userId ? claimPhone(userId) : Promise.resolve()).then(() => allOnPhone("bandSongs")).then(setHeld, () => setHeld([]));
+  }, [searching, userId]);
 
   if (open) {
     return (
@@ -142,7 +146,6 @@ export function SongList({ songs }: { songs: Song[] }) {
   const bandSongs = held.map((item): Song => ({ ...item.song, ref: bandSongRef(item.bandId, item.songId), id: 0 }));
   const bands = new Map(held.map((item) => [item.bandId, item.bandName]));
   const keys = [...new Set([...songs, ...bandSongs].map(keyName))].sort();
-  const toggle = (change: Partial<SongChips>) => setChips((now) => ({ ...now, ...change }));
   const row = (song: Song) => {
     const band = heldByRef.get(song.ref);
     return (
@@ -163,26 +166,7 @@ export function SongList({ songs }: { songs: Song[] }) {
   return (
     <>
       <SearchBox label="Search songs" value={query} onChange={setQuery} />
-      {searching ? (
-        <div className="search-chips" role="group" aria-label="Filter songs">
-          <select className="search-chip" aria-label="Key" value={chips.key ?? ""} onChange={(event) => toggle({ key: event.target.value || null })}>
-            <option value="">Any key</option>
-            {keys.map((key) => (
-              <option key={key} value={key}>
-                {key}
-              </option>
-            ))}
-          </select>
-          {[...bands].map(([bandId, name]) => (
-            <button key={bandId} type="button" className="search-chip" aria-pressed={chips.band === bandId} onClick={() => toggle({ band: chips.band === bandId ? null : bandId })}>
-              {name}
-            </button>
-          ))}
-          <button type="button" className="search-chip" aria-pressed={chips.timed} onClick={() => toggle({ timed: !chips.timed })}>
-            Has timing
-          </button>
-        </div>
-      ) : null}
+      {searching ? <SearchChips keys={keys} bands={bands} chips={chips} onChange={setChips} /> : null}
       {!searching ? (
         <ul className="song-list">{songs.map(row)}</ul>
       ) : groups.length === 0 ? (

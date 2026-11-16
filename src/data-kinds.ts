@@ -26,7 +26,7 @@ export const DATA_KINDS: readonly DataKind[] = [
   {
     key: "leadSheetsScrollVersions",
     place: "phone",
-    what: "The versions you saved of each song, and which one is in use: each one's name, key, metronome speed, scroll speed, Notes or Nashville, and the scroll timing you taught or learned (tap times, beat times, section times and chord names heard). No sound is kept.",
+    what: "The versions you saved of each song, and which one is in use: for each, its name, key, metronome speed, scroll speed, Notes or Nashville, and the scroll timing you taught or learned (tap times, beat times, section times and chord names heard). No sound is kept.",
   },
   {
     key: "leadSheetsSongDraft",

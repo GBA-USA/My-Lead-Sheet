@@ -103,7 +103,6 @@ export function Menu({
   open: boolean;
   onToggle: () => void;
   onClose: () => void;
-  /** Which edge of the button the menu lines up with. */
   align?: "start" | "end";
   children: ReactNode;
 }) {

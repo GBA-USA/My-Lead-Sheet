@@ -239,11 +239,24 @@ export const bandLibrary = {
   },
 };
 
+/** The friend's copy of a song sent in a DM: a node under what the sender holds, or under the sender's own original. */
+export function receivedCopy(shareId: string, friendId: string, senderId: string, from: Chain | null, choice: ShareChoice): { chain: Chain; reshareable: boolean } {
+  const parent = from ?? [{ id: `orig_${shareId}`, ownerId: senderId, parentId: null, choice: "public" as const }];
+  const chain = [{ id: shareId, ownerId: friendId, parentId: parent[0].id, choice }, ...parent];
+  return { chain, reshareable: allowed(chain, friendId, "public").ok };
+}
+
 export const selfCopies = {
   record(sql: SqlStorage, userId: string, from: Chain, print: string): CopiedSong["copy"] {
     const id = adopt(sql, newId("copy"), userId, from, "public");
     sql.exec(`INSERT INTO song_copies (copy_id, print) VALUES (?, ?)`, id, print);
     return { id, canSendOn: allowed([storeOf(sql)(id)!, ...from], userId, "public").ok };
+  },
+
+  /** Keeps a copy that arrived from a friend. A node already under this id stays as it was, so a reused id can only fail closed. */
+  receive(sql: SqlStorage, chain: Chain, print: string) {
+    for (const share of chain) keep(sql, share);
+    sql.exec(`INSERT OR IGNORE INTO song_copies (copy_id, print) VALUES (?, ?)`, chain[0].id, print);
   },
 
   /** The named copy with the chart it was made of, the copies showing this chart, and every share id the caller's copies came through. */
@@ -271,7 +284,7 @@ const MAX_SONG_CHARS = 12_000;
 const MAX_SETLIST_SONGS = 200;
 export const isText = (value: unknown, max: number) => typeof value === "string" && value.trim().length > 0 && value.length <= max;
 
-function choiceIn(body: Record<string, unknown>): ShareChoice {
+export function choiceIn(body: Record<string, unknown>): ShareChoice {
   if (body.choice !== "public" && body.choice !== "private") throw new Refused("choice_required");
   return body.choice;
 }
@@ -325,7 +338,7 @@ export async function printOf(song: SongContent): Promise<string> {
   return toBase64Url(new Uint8Array(digest));
 }
 
-const selfRoom = (c: Context, userId: string) => c.env.ROOM.getByName(selfRoomId(userId));
+export const selfRoom = (c: Context, userId: string) => c.env.ROOM.getByName(selfRoomId(userId));
 
 let builtInPrints: Promise<Set<string>> | undefined;
 
@@ -343,7 +356,7 @@ async function isBuiltIn(print: string) {
  * the caller can see with that chart counts. A built-in chart is only ever judged by a named copy. Returns the chain the
  * new copy comes from, or null for the caller's own original.
  */
-async function guardContent(c: Context, userId: string, print: string, choice: ShareChoice, copyId: string | null, except: string | null): Promise<Chain | null> {
+export async function guardContent(c: Context, userId: string, print: string, choice: ShareChoice, copyId: string | null, except: string | null): Promise<Chain | null> {
   const mine = await fromRoom(selfRoom(c, userId).copyChains(copyId, print));
   const verdict = (chain: Chain) => allowed(chain, userId, choice);
   const mustAllow = (chain: Chain) => {

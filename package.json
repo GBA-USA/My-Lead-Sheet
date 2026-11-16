@@ -42,7 +42,7 @@
     "check:bands": "tsc -p worker && node --experimental-strip-types scripts/check-bands.ts",
     "check:band-settings": "tsc -p worker && node --experimental-strip-types scripts/check-band-settings.ts",
     "check:band-move": "tsc -p worker && node --experimental-strip-types scripts/check-band-move.ts",
-    "check:send-song": "node --experimental-strip-types scripts/check-send-song.ts",
+    "check:send-song": "tsc -p worker && node --experimental-strip-types scripts/check-send-song.ts",
     "check:gig-plan": "tsc -p worker && node --experimental-strip-types scripts/check-gig-plan.ts",
     "check:personal-settings": "node --experimental-strip-types scripts/check-personal-settings.ts",
     "check:band-library": "node --experimental-strip-types scripts/check-band-library.ts",

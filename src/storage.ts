@@ -110,7 +110,7 @@ const isSong = shaped<StoredSong>({
       ),
     }),
   ),
-  copy: optional(shaped<NonNullable<Song["copy"]>>({ id: isString, canSendOn: (value) => typeof value === "boolean" })),
+  copy: optional(shaped<NonNullable<Song["copy"]>>({ id: isString, canSendOn: (value) => typeof value === "boolean", from: optional(shaped<{ name: string }>({ name: isString })) })),
 });
 const isSetlist = shaped<StoredSetlist>({ id: isId, name: isString, songIds: listOf(isId) });
 
@@ -263,14 +263,22 @@ export function freeOwnId(raw: string | null, key: typeof SONG_ROW | typeof SETL
   return Math.max(0, ...items.map((item) => item.id), ...taken) + 1;
 }
 
+/** False when the browser refused the write or the song isn't one this phone can show. */
+function writeOwnSong(raw: string | null, id: number, song: Omit<Song, "ref" | "id">): boolean {
+  if (!writeRaw(LIBRARY_KEY, withOwnLibraryItems(raw, new Map([[`${SONG_ROW}.${id}`, JSON.stringify({ item: { ...song, id } })]])))) return false;
+  storageChanged();
+  return loadLibrary().songs.some((stored) => stored.id === id);
+}
+
 /** Adds a song to My Songs under a new id. Null when the browser refused the write or the song isn't one this phone can show. */
 export function addOwnSong(song: Omit<Song, "ref" | "id">): number | null {
   const raw = readRaw(LIBRARY_KEY);
   const id = freeOwnId(raw, SONG_ROW, []);
-  if (!writeRaw(LIBRARY_KEY, withOwnLibraryItems(raw, new Map([[`${SONG_ROW}.${id}`, JSON.stringify({ item: { ...song, id } })]])))) return null;
-  storageChanged();
-  return loadLibrary().songs.some((stored) => stored.id === id) ? id : null;
+  return writeOwnSong(raw, id, song) ? id : null;
 }
+
+/** Puts a new chart in an own song's place, read from what is stored now. */
+export const replaceOwnSong = (id: number, song: Omit<Song, "ref" | "id">) => writeOwnSong(readRaw(LIBRARY_KEY), id, song);
 
 /** An own song or setlist entry copied to a new id, named "<name> · from <phone>". It is an added item, so it has no seed print. */
 export function copiedOwnItem(value: string, id: number, phone: string): string {

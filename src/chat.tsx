@@ -8,6 +8,7 @@ import {
   mutedUntilFor,
   nameAbove,
   newMsgId,
+  previewText,
   side,
   sortChats,
   unread,
@@ -19,6 +20,7 @@ import {
 import { onDelivery, onQueueChange, queueMessage, queuedMessages, sendQueued, type Delivery } from "./chat-queue";
 export { queueOwner } from "./chat-queue";
 import { useEscape } from "./hooks";
+import { SEND_MESSAGES, SongCard } from "./send-song";
 import { ApiError, api, type Account } from "./sign-in-methods";
 import "./friends.css";
 import "./chat.css";
@@ -29,6 +31,7 @@ type View = { name: "list" } | { name: "thread"; roomId: string } | { name: "dm"
 export type ChatTarget = { roomId: string } | { userId: string };
 
 const MESSAGES: Record<string, string> = {
+  ...SEND_MESSAGES,
   offline: "Can't reach the server. Check your connection and try again.",
   "not-a-member": "You're not in this band any more.",
   "no-band": "This thread isn't there any more.",
@@ -97,7 +100,7 @@ export function ChatSheet({ account, open, onSignedOut, onClose }: { account: Ac
     if (more.length === 0) return;
     const last = more[more.length - 1];
     setChats((current) =>
-      current?.map((c) => (c.roomId === room && c.lastSeq < last.seq ? { ...c, lastSeq: last.seq, lastAt: last.at, preview: `${last.fromName}: ${last.text}` } : c)) ?? null,
+      current?.map((c) => (c.roomId === room && c.lastSeq < last.seq ? { ...c, lastSeq: last.seq, lastAt: last.at, preview: `${last.fromName}: ${previewText(last)}` } : c)) ?? null,
     );
     if (room !== roomRef.current) return;
     setMessages((current) => withMessages(current, more));
@@ -251,13 +254,13 @@ export function ChatSheet({ account, open, onSignedOut, onClose }: { account: Ac
                 <li key={m.seq} className={`chat-line chat-line-${side(m, account.userId)}`}>
                   {newLineAt === m.seq ? <div className="chat-new-line">New messages</div> : null}
                   <span className="chat-name">{nameAbove(m, account.userId)}</span>
-                  <span className="chat-bubble">{m.text}</span>
+                  {m.kind === "song" ? <SongCard message={m} me={account.userId} /> : <span className="chat-bubble">{m.text}</span>}
                 </li>
               ))}
               {waiting.map((item) => (
                 <li key={item.msgId} className="chat-line chat-line-mine">
                   <span className="chat-name">You</span>
-                  <span className="chat-bubble">{item.text}</span>
+                  <span className="chat-bubble">{item.song ? `🎵 ${item.text}` : item.text}</span>
                   <span className="chat-waiting">⏱ Waiting for signal</span>
                 </li>
               ))}

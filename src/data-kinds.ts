@@ -87,7 +87,16 @@ export const DATA_KINDS: readonly DataKind[] = [
     place: "server",
     what: "For every song or setlist copy, in the band or your own room that holds it: who it came from and whether it was shared Private or Public, so the server can refuse to pass on a Private copy.",
   },
-  { key: "song_copies", place: "server", what: "In a room only your account can open: each band song you added to My Songs, with a one-way code of its chart, so its Private or Public rule goes with your copy." },
+  {
+    key: "song_copies",
+    place: "server",
+    what: "In a room only your account can open: each band song you added to My Songs and each song a friend sent you, with a one-way code of its chart, so its Private or Public rule goes with your copy.",
+  },
+  {
+    key: "leadSheetsSentSongs",
+    place: "phone",
+    what: "For each account on this phone, which send of each song went to which friend last, so sending it again shows them an update. No chart is kept here.",
+  },
   {
     key: "leadSheetsChatQueue",
     place: "phone",
@@ -96,7 +105,7 @@ export const DATA_KINDS: readonly DataKind[] = [
   {
     key: "messages",
     place: "server",
-    what: "In each band or DM room: every message posted, with who wrote it, their name at the time, the text, when it was sent, the id your phone gave it so a resend is stored once, what kind of message it is (words, a note from the app, or a song, setlist or gig card), and which song share, setlist or gig a card points at.",
+    what: "In each band or DM room: every message posted, with who wrote it, their name at the time, the text, when it was sent, the id your phone gave it so a resend is stored once, what kind of message it is (words, a note from the app, or a song, setlist or gig card), and which song share, setlist or gig a card points at. A song card holds the chart and only the timing versions and song data the sender ticked.",
   },
   {
     key: "mls-phone",

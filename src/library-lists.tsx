@@ -24,6 +24,21 @@ export function Tab({ name, selected, children }: { name: TabName; selected: boo
   );
 }
 
+/** Where a copy came from, and the lock when it was shared Private, so it can't be passed on. Nothing for the player's own songs. */
+function CopyNote({ song }: { song: Song }) {
+  if (!song.copy) return null;
+  return (
+    <span className="song-copy-note">
+      {song.copy.from ? `From ${song.copy.from.name}` : "From a band"}
+      {song.copy.canSendOn ? null : (
+        <span role="img" aria-label="Private">
+          {" "}🔒
+        </span>
+      )}
+    </span>
+  );
+}
+
 export function SongBody({
   library,
   songRef,
@@ -48,7 +63,12 @@ export function SongBody({
       </div>
     );
   }
-  return <LeadSheet song={song} scale={scale} semitones={semitones} notation={notation} metronome={metronome} />;
+  return (
+    <>
+      <CopyNote song={song} />
+      <LeadSheet song={song} scale={scale} semitones={semitones} notation={notation} metronome={metronome} />
+    </>
+  );
 }
 
 export function SongList({ songs }: { songs: Song[] }) {
@@ -66,6 +86,7 @@ export function SongList({ songs }: { songs: Song[] }) {
               <a className="song-row" href={songHref(song.id, "songs")}>
                 <span className="song-title">{song.title}</span>
                 <span className="song-artist">{song.artist}</span>
+                <CopyNote song={song} />
                 <span className="song-meta">
                   <span className="song-key">{song.keyLabel}</span>
                   <span> · {song.tempo == null ? "Tempo —" : tempoText(song.tempo)}</span>

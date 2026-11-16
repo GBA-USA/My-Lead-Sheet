@@ -279,8 +279,9 @@ try {
     await tap(BUTTONS, CHIP);
     const open = await menus();
     check(open.length === 1 && open[0].items[0] === "✓ V1 · learned", `opening the chip closes the More menu (${open.length} open)`);
-    await tap(CARET, "");
-    check((await menus()).length === 0 && (await evaluate<boolean>(`!!document.querySelector("[role=dialog]")`)), "opening the Scroll sheet closes the version list");
+    await evaluate(`document.querySelector(${JSON.stringify(CARET)}).click()`);
+    await pause(60);
+    check((await menus()).length === 0 && (await evaluate<boolean>(`!!document.querySelector("[role=dialog]")`)), "opening the Scroll sheet from the keyboard closes the version list, which covers the caret");
     await key("Escape");
   });
 

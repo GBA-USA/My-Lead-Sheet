@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type Dispatch, type SetStateAction } from "react";
 import { clampScrollPercent, type Notation } from "./music";
+import { parseHash } from "./route";
 import { READING_LINE, runScroll, type Motion, type Section, type TimeSource } from "./scroll-timing";
 import { loadNotation, loadScrollPercent, onStorageChange, saveNotation, saveScrollPercent, storageGeneration } from "./storage";
 import type { SongRef } from "./types";
@@ -175,5 +176,16 @@ export function useEscape(onClose: () => void) {
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+}
+
+/** Closes a sheet when the page goes to a song, so a song link inside it, such as Open on the duplicate offer, shows the song. */
+export function useCloseOnSong(onClose: () => void) {
+  useEffect(() => {
+    const onHash = () => {
+      if (parseHash(window.location.hash).name === "song") onClose();
+    };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
   }, [onClose]);
 }

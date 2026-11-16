@@ -8,7 +8,7 @@ import { ScanCode, ShowCode } from "./codes";
 import { downloadPack, packsOnPhone, type GigPack } from "./gig-pack";
 import { GigCard, GigPlanForm, GigSong, newGigId } from "./gig-plan";
 import type { GigDraft, GigView } from "./gig-plan-model";
-import { useEscape } from "./hooks";
+import { useCloseOnSong, useEscape } from "./hooks";
 import { keepBandsOnPhone } from "./phone-db";
 import { SETLIST_CODE_MESSAGES } from "./setlist-code";
 import { ApiError, api, type Account } from "./sign-in-methods";
@@ -222,6 +222,7 @@ export function BandsSheet({
     });
 
   useEscape(onClose);
+  useCloseOnSong(onClose);
 
   const change = (path: string, body: object, done?: string) =>
     run(async () => {

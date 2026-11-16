@@ -129,12 +129,7 @@ export function App() {
     if (!window.location.hash) {
       history.replaceState(null, "", "#/songs");
     }
-    const onHash = () => {
-      setHash(window.location.hash);
-      if (parseHash(window.location.hash).name !== "song") return;
-      setBands(null);
-      setChat(null);
-    };
+    const onHash = () => setHash(window.location.hash);
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);

@@ -5,25 +5,27 @@ import { BandsSheet, BandsTab } from "./bands";
 import { ChatSheet, queueOwner, type ChatTarget } from "./chat";
 import { readPayload, type CodeScreen } from "./code-link";
 import { clearLanding, landedCode } from "./codes";
-import { BackIcon, OverflowMenu, SongControls } from "./controls";
+import { BackIcon, OverflowMenu, SongControls, TextSizeButtons } from "./controls";
 import { LearnedCues } from "./cues";
 import { APP_NAME } from "./data-kinds";
-import { useAutoScroll, usePerformance, useStored, useWakeLock } from "./hooks";
+import { useAutoScroll, useScrolling, useStored, useWakeLock } from "./hooks";
 import { LearnSong } from "./learn-song";
 import { SetlistList, SongBody, SongList, Tabs } from "./library-lists";
 import { useSendSong } from "./send-song";
 import { initialMetronomeBpm } from "./metronome";
 import { useMetronome } from "./metronome-view";
-import { displayKeyLabel } from "./music";
+import { clampScrollPercent, displayKeyLabel } from "./music";
 import type { PersonalDefaults } from "./personal-settings-model";
 import { parseHash, settingsHref, type TabName } from "./route";
-import { READING_LINE, changeTempo, evenPlan, nextVersionName, scrollMotion, startTake, toggleHold, type ScrollVersion, type Take } from "./scroll-timing";
+import { READING_LINE, changeTempo, evenPlan, scrollMotion, startTake, toggleHold, type ScrollVersion, type Take } from "./scroll-timing";
+import { ScrollSheet } from "./scroll-sheet";
 import { FriendsSheet } from "./friends";
 import { MySetlistCodeSheet, SetlistCopySheet } from "./setlist-code";
 import { GearIcon, SettingsScreen } from "./settings";
 import { LeadSheet } from "./sheet";
 import type { Account } from "./sign-in-methods";
 import { SongDataEditor } from "./song-data-editor";
+import { useSongVersion } from "./song-version";
 import {
   TEXT_SCALES,
   loadLibrary,
@@ -37,16 +39,16 @@ import {
   songByRef,
   withSongData,
 } from "./storage";
-import { SaveTake, TeachBar, taughtPlan, useFollowTempo, useScrollVersions, type BarMenu } from "./teach";
+import { SongLine, TakeBar, taughtPlan, useFollowTempo, type LineMenu } from "./teach";
 import type { Library, Setlist, Song, SongData, SongRef } from "./types";
 
-type MenuId = "shell" | "song" | BarMenu | null;
+type MenuId = "shell" | LineMenu | null;
 
 type SongDataByRef = Record<SongRef, SongData>;
 
 
-/** Teach mode: the take while it plays or Learn this song while it listens, then what either taught, until Save or Discard. */
-type Teaching = { take: Take } | { learning: true } | { taught: Omit<ScrollVersion, "name">; data?: SongData | null };
+/** Teach mode: the take while it plays, or Learn this song while it listens. What either taught goes into the song's draft. */
+type Teaching = { take: Take } | { learning: true };
 
 const BACKUP_EVERY_MS = 60_000;
 
@@ -64,6 +66,7 @@ export function App() {
   const [hash, setHash] = useState(() => window.location.hash);
   const [textIndex, setTextIndex] = useStored(loadTextScaleIndex);
   const [menu, setMenu] = useState<MenuId>(null);
+  const [scrollSheet, setScrollSheet] = useState(false);
   const { account, setAccount, checking } = useAccount();
   const owner = account?.userId ?? null;
   const [personal, setPersonal] = useStored(() => loadPersonal(owner), owner);
@@ -153,25 +156,33 @@ export function App() {
   const activeSong =
     route.name === "song" ? songByRef(library.songs, localRef(route.id)) : route.name === "live" ? liveSong : undefined;
 
-  const performance = usePerformance(activeSong?.ref ?? null, personal);
-  const metronome = useMetronome(activeSong?.id ?? null, activeSong ? activeSong.tempo : null);
-  const versions = useScrollVersions(activeSong?.ref ?? null);
+  const performance = useScrolling(activeSong?.ref ?? null);
+  const song = useSongVersion(activeSong ?? null, owner, personal);
+  const draft = song.draft;
+  const shownSong = activeSong && draft?.data ? withSongData(activeSong, draft.data) : activeSong;
+  const shownLibrary = shownSong && draft?.data ? { ...library, songs: library.songs.map((each) => (each.ref === shownSong.ref ? shownSong : each)) } : library;
+  const [followed, setFollowed] = useState<{ ref: SongRef; bpm: number } | null>(null);
+  const metronome = useMetronome(activeSong?.id ?? null, activeSong ? activeSong.tempo : null, {
+    bpm: (followed && followed.ref === activeSong?.ref ? followed.bpm : null) ?? draft?.bpm ?? null,
+    setBpm: (bpm) => { setFollowed(null); song.set({ bpm }); },
+  });
   const take = teaching && "take" in teaching ? teaching.take : null;
-  const version = versions.selected == null ? null : versions.versions[versions.selected];
-  const learned = take ? undefined : version?.learned;
-  const even = activeSong ? evenPlan(activeSong) : null;
+  const playing: ScrollVersion | null = draft?.plan ? { name: "", ...draft.plan, ...(draft.learned ? { learned: draft.learned } : {}) } : null;
+  const learned = take ? undefined : playing?.learned;
+  const even = shownSong ? evenPlan(shownSong) : null;
   // The metronome's speed against the plan's BPM scales the timed scroll, so a tempo change applies at once.
-  const motion = activeSong
-    ? scrollMotion(activeSong, version, take, metronome.bpm, performance.percent)
-    : ({ kind: "pace", pxPerSec: 0 } as const);
+  const motion =
+    shownSong && draft
+      ? scrollMotion(shownSong, playing, take, metronome.bpm, draft.scrollPercent)
+      : ({ kind: "pace", pxPerSec: 0 } as const);
   const clock = useAutoScroll(
     performance.scrolling && activeSong != null,
     motion,
-    take ? "take" : version ? `version ${versions.selected}` : `even ${activeSong?.officialRuntimeSec} ${activeSong?.tempo}`,
+    take ? "take" : playing ? `version ${JSON.stringify(draft?.plan)}` : `even ${shownSong?.officialRuntimeSec} ${shownSong?.tempo}`,
     (reason) => (take ? (reason === "end" ? finishTake(take) : stopTake(take)) : performance.stopScroll()),
   );
   useWakeLock();
-  useFollowTempo(performance.scrolling && !take ? version?.tempo : undefined, clock, metronome.setBpm);
+  useFollowTempo(performance.scrolling && !take ? playing?.tempo : undefined, clock, (bpm) => activeSong && setFollowed({ ref: activeSong.ref, bpm }));
 
   useEffect(() => {
     if (!take || metronome.bpm == null) return;
@@ -182,6 +193,7 @@ export function App() {
   useEffect(() => {
     document.getElementById("sheet-scroll")?.scrollTo(0, 0);
     setMenu(null);
+    setScrollSheet(false);
     setEditing(false);
     setTeaching(null);
   }, [hash]);
@@ -230,7 +242,8 @@ export function App() {
 
   const finishTake = (current: Take) => {
     performance.stopScroll();
-    setTeaching({ taught: taughtPlan(current, clock.current) });
+    setTeaching(null);
+    song.set({ plan: taughtPlan(current, clock.current), learned: undefined });
   };
 
   const discardTake = () => {
@@ -238,7 +251,7 @@ export function App() {
     setTeaching(null);
   };
 
-  /** A stop mid-take offers to save it, unless nothing was taught yet. */
+  /** A stop mid-take keeps it in the draft, unless nothing was taught yet. */
   const stopTake = (current: Take) => (current.marks.length > 1 ? finishTake(current) : discardTake());
 
   const saveData = (song: Song, data: SongData) => {
@@ -256,7 +269,7 @@ export function App() {
 
   return (
     <div className="app">
-      <header className="shell-header">
+      <header className={activeSong ? "shell-header song-header" : "shell-header"}>
         <button
           type="button"
           className="icon-btn"
@@ -267,8 +280,9 @@ export function App() {
           <BackIcon />
         </button>
         {activeSong ? <p className="shell-title">{APP_NAME}</p> : <h1 className="shell-title">{route.name === "settings" ? "Settings" : APP_NAME}</h1>}
+        {activeSong ? <TextSizeButtons index={textIndex} count={TEXT_SCALES.length} onChange={changeText} /> : null}
         {activeSong ? (
-          <OverflowMenu label="More" size="shell" open={menu === "shell"} onToggle={() => toggleMenu("shell")} onClose={closeMenu}>
+          <OverflowMenu label="More" size="shell" open={menu === "shell"} onToggle={() => toggleMenu("shell")} onClose={closeMenu} onSongData={() => setEditing(true)}>
             {sendSong.item(activeSong, closeMenu)}
           </OverflowMenu>
         ) : route.name === "settings" ? null : (
@@ -276,76 +290,65 @@ export function App() {
             <GearIcon />
           </button>
         )}
+        {activeSong ? <SongLine key={activeSong.ref} state={song} menu={menu} onToggleMenu={toggleMenu} onCloseMenu={closeMenu} /> : null}
       </header>
 
       {showTabs ? <Tabs tab={tab} /> : null}
 
-      {activeSong ? (
+      {activeSong && shownSong && draft ? (
         <SongControls
-          textIndex={textIndex}
-          textCount={TEXT_SCALES.length}
-          onTextIndex={changeText}
-          menuOpen={menu === "song"}
-          onMenuToggle={() => toggleMenu("song")}
-          onMenuClose={closeMenu}
-          onSongData={() => setEditing(true)}
-          notation={performance.notation}
-          onNotation={performance.changeNotation}
+          keyLabel={displayKeyLabel(shownSong, draft.semitones)}
+          onTransposeDown={() => song.set((current) => ({ semitones: current.semitones - 1 }))}
+          onTransposeUp={() => song.set((current) => ({ semitones: current.semitones + 1 }))}
+          onOriginalKey={() => song.set({ semitones: personal.transpose })}
+          notation={draft.notation}
+          onNotation={(notation) => song.set({ notation })}
           scrolling={performance.scrolling}
           onToggleScroll={() => (take ? stopTake(take) : performance.setScrolling((on) => !on))}
-          percent={performance.percent}
-          onPercent={performance.changePercent}
-          keyLabel={displayKeyLabel(activeSong, performance.semitones)}
-          onTransposeDown={() => performance.setSemitones((value) => value - 1)}
-          onTransposeUp={() => performance.setSemitones((value) => value + 1)}
-          onOriginalKey={performance.originalKey}
-        />
-      ) : null}
-
-      {activeSong && (even || versions.versions.length > 0 || route.name === "song") ? (
-        <TeachBar
-          key={activeSong.ref}
-          versions={versions.versions}
-          selected={versions.selected}
-          canTeach={even != null}
-          teaching={take != null}
-          holding={take?.holding ?? false}
-          bpm={metronome.bpm}
-          menu={menu}
-          onToggleMenu={toggleMenu}
-          onCloseMenu={closeMenu}
-          onSelect={versions.select}
-          onRename={versions.rename}
-          onRetime={versions.retime}
-          onDelete={versions.remove}
-          onTeach={teach}
-          onListen={route.name === "song" ? () => setTeaching({ learning: true }) : undefined}
-          onHold={() => take && setTeaching({ take: toggleHold(take, clock.current) })}
-          onBpm={metronome.setBpm}
-          onDone={() => take && finishTake(take)}
-          onDiscard={discardTake}
-        />
-      ) : null}
-
-      {activeSong && teaching && "learning" in teaching ? (
-        <LearnSong
-          song={activeSong}
-          original={withSongData(songByRef(stored.songs, activeSong.ref)!, {})}
-          metronomeBpm={metronome.bpm}
-          onSave={(taught, data) => setTeaching({ taught, data })}
-          onClose={() => setTeaching(null)}
-        />
-      ) : null}
-
-      {activeSong && teaching && "taught" in teaching ? (
-        <SaveTake
-          name={nextVersionName(versions.versions)}
-          onSave={(name) => {
-            versions.add(teaching.taught, name);
-            if (teaching.data) saveData(activeSong, teaching.data);
-            setTeaching(null);
+          onScrollSheet={() => {
+            closeMenu();
+            setScrollSheet(true);
           }}
-          onDiscard={() => setTeaching(null)}
+          onMetronome={() => document.querySelector(".sheet .metronome")?.scrollIntoView({ block: "nearest" })}
+          onSend={route.name === "song" ? sendSong.onSend(activeSong) : undefined}
+          take={
+            take ? (
+              <TakeBar
+                holding={take.holding}
+                bpm={metronome.bpm}
+                onHold={() => setTeaching({ take: toggleHold(take, clock.current) })}
+                onBpm={metronome.setBpm}
+                onDone={() => finishTake(take)}
+                onDiscard={discardTake}
+              />
+            ) : undefined
+          }
+        />
+      ) : null}
+
+      {activeSong && draft && scrollSheet ? (
+        <ScrollSheet
+          percent={draft.scrollPercent}
+          onPercent={(next) => song.set({ scrollPercent: clampScrollPercent(next) })}
+          canTeach={even != null}
+          onListen={route.name === "song" ? () => setTeaching({ learning: true }) : undefined}
+          onTeach={teach}
+          onBpm={metronome.setBpm}
+          onClose={() => setScrollSheet(false)}
+        />
+      ) : null}
+
+      {shownSong && teaching && "learning" in teaching ? (
+        <LearnSong
+          song={shownSong}
+          original={withSongData(songByRef(stored.songs, shownSong.ref)!, {})}
+          metronomeBpm={metronome.bpm}
+          onSave={({ learned: heard, ...plan }, data) => {
+            setTeaching(null);
+            const retempo = data?.tempo != null && data.tempo !== shownSong.tempo ? { bpm: initialMetronomeBpm(data.tempo) } : {};
+            song.set({ plan, learned: heard, ...(data ? { data } : {}), ...retempo });
+          }}
+          onClose={() => setTeaching(null)}
         />
       ) : null}
 
@@ -462,21 +465,21 @@ export function App() {
         {route.name === "bands" ? <BandsTab account={account} onOpen={(bandId) => setBands({ bandId })} onSignIn={() => setAccountOpen(true)} onSignedOut={() => setAccount(null)} /> : null}
         {route.name === "song" ? (
           <SongBody
-            library={library}
+            library={shownLibrary}
             songRef={localRef(route.id)}
             scale={TEXT_SCALES[textIndex]}
-            semitones={performance.semitones}
-            notation={performance.notation}
+            semitones={draft?.semitones ?? 0}
+            notation={draft?.notation ?? "notes"}
             metronome={metronome}
           />
         ) : null}
         {route.name === "live" ? (
-          liveSong ? (
+          shownSong ? (
             <LeadSheet
-              song={liveSong}
+              song={shownSong}
               scale={TEXT_SCALES[textIndex]}
-              semitones={performance.semitones}
-              notation={performance.notation}
+              semitones={draft?.semitones ?? 0}
+              notation={draft?.notation ?? "notes"}
               metronome={metronome}
             />
           ) : (

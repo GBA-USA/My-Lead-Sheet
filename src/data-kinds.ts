@@ -26,7 +26,12 @@ export const DATA_KINDS: readonly DataKind[] = [
   {
     key: "leadSheetsScrollVersions",
     place: "phone",
-    what: "The scroll timings you taught or learned for each song: tap times, beat times, section times and chord names heard. No sound is kept.",
+    what: "The versions you saved of each song, and which one is in use: each one's name, key, metronome speed, scroll speed, Notes or Nashville, and the scroll timing you taught or learned (tap times, beat times, section times and chord names heard). No sound is kept.",
+  },
+  {
+    key: "leadSheetsSongDraft",
+    place: "phone",
+    what: "For each account on this phone, the changes you made to a song and have not saved yet: key, metronome speed, scroll speed, Notes or Nashville, and a timing you taught or learned. Removed when you save or revert. Never backed up.",
   },
   { key: "leadSheetsSignedIn", place: "phone", what: "That this phone signed in before, so the app checks your account when it opens. Signing out removes it." },
   {

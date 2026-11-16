@@ -27,10 +27,12 @@ import "./metronome.css";
 /**
  * Performance tempo for the current song. A song change restores song.tempo
  * (or leaves the metronome unset when that tempo is null). Nothing here is
- * written back to the song, and nothing here feeds auto-scroll.
+ * written back to the song, and nothing here feeds auto-scroll. With `held`,
+ * the bpm is the song's draft (`src/song-version.ts`) instead.
  */
-export function useMetronome(songId: number | null, tempo: number | null) {
-  const [bpm, setBpmState] = useState<number | null>(() => initialMetronomeBpm(tempo));
+export function useMetronome(songId: number | null, tempo: number | null, held?: { bpm: number | null; setBpm: (bpm: number | null) => void }) {
+  const own = useState<number | null>(() => initialMetronomeBpm(tempo));
+  const [bpm, setBpmState] = held ? [held.bpm, held.setBpm] : own;
   const [playing, setPlaying] = useState(false);
   const [boundId, setBoundId] = useState<number | null>(songId);
   const [prefs, setPrefsState] = useState(() => parseMetronomePrefs(loadMetronomePrefs()));
@@ -40,11 +42,11 @@ export function useMetronome(songId: number | null, tempo: number | null) {
   playingRef.current = playing;
 
   if (songId !== boundId) {
-    const next = initialMetronomeBpm(tempo);
+    const next = held ? held.bpm : initialMetronomeBpm(tempo);
     bpmRef.current = next;
     playingRef.current = false;
     setBoundId(songId);
-    setBpmState(next);
+    if (!held) setBpmState(next);
     setPlaying(false);
   }
 

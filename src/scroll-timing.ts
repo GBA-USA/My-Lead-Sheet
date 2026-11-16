@@ -198,7 +198,7 @@ export function scrollMotion(song: Song, version: ScrollVersion | null, take: Ta
 }
 
 /** V1, V2, V3 … skipping a name already taken by a rename. */
-export function nextVersionName(versions: ScrollVersion[]): string {
+export function nextVersionName(versions: { name: string }[]): string {
   const names = new Set(versions.map((version) => version.name));
   let n = versions.length + 1;
   while (names.has(`V${n}`)) n += 1;

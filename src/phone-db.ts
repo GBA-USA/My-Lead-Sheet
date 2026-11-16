@@ -1,4 +1,4 @@
-import type { SongContent } from "./band-library-model";
+import { bandSongRef, type BandSong, type SongContent } from "./band-library-model";
 import type { GigPack } from "./gig-pack";
 import type { ShareChoice } from "./share-rule";
 import type { SongRef } from "./types";
@@ -57,21 +57,27 @@ export function allOnPhone<S extends PhoneStore>(store: S): Promise<PhoneStores[
   return inStore(store, "readonly", (objects) => objects.getAll() as IDBRequest<PhoneStores[S]["value"][]>);
 }
 
-const PHONE_OWNER_KEY = "leadSheetsPhoneOwner";
-
-/** Empties every store, so band data leaves the phone with the account that downloaded it (PLAN.md 10). */
-export async function clearPhone(): Promise<void> {
+async function written(stores: PhoneStore[], work: (transaction: IDBTransaction) => void): Promise<void> {
   const db = await openPhoneDb();
   try {
-    const clearing = db.transaction(PHONE_STORES, "readwrite");
-    for (const store of PHONE_STORES) clearing.objectStore(store).clear();
+    const writing = db.transaction(stores, "readwrite");
+    work(writing);
     await new Promise<void>((resolve, reject) => {
-      clearing.oncomplete = () => resolve();
-      clearing.onerror = () => reject(clearing.error);
+      writing.oncomplete = () => resolve();
+      writing.onerror = () => reject(writing.error);
     });
   } finally {
     db.close();
   }
+}
+
+const PHONE_OWNER_KEY = "leadSheetsPhoneOwner";
+
+/** Empties every store, so band data leaves the phone with the account that downloaded it (PLAN.md 10). */
+export async function clearPhone(): Promise<void> {
+  await written([...PHONE_STORES], (clearing) => {
+    for (const store of PHONE_STORES) clearing.objectStore(store).clear();
+  });
   localStorage.removeItem(PHONE_OWNER_KEY);
 }
 
@@ -80,4 +86,25 @@ export async function claimPhone(userId: string): Promise<void> {
   if (localStorage.getItem(PHONE_OWNER_KEY) === userId) return;
   await clearPhone();
   localStorage.setItem(PHONE_OWNER_KEY, userId);
+}
+
+/** Replaces one band's songs on this phone with the list its band screen just loaded, so search finds them with no signal (PLAN.md 9.2). */
+export async function holdBandSongs(userId: string, bandId: string, bandName: string, songs: BandSong[]): Promise<void> {
+  await claimPhone(userId);
+  await written(["bandSongs"], (writing) => {
+    const store = writing.objectStore("bandSongs");
+    store.delete(IDBKeyRange.bound(`${bandId}/`, `${bandId}/\uffff`));
+    for (const { songId, song, sharedAs, updatedAt } of songs) store.put({ bandId, bandName, songId, song, sharedAs, updatedAt }, bandSongRef(bandId, songId));
+  });
+}
+
+/** Drops the songs of every band missing from `bandIds`, the list the server just gave this account, so a band left or removed from leaves search too. */
+export async function keepBandsOnPhone(bandIds: string[]): Promise<void> {
+  await written(["bandSongs"], (writing) => {
+    const store = writing.objectStore("bandSongs");
+    const keys = store.getAllKeys();
+    keys.onsuccess = () => {
+      for (const key of keys.result) if (!bandIds.includes(String(key).split("/")[0])) store.delete(key);
+    };
+  });
 }

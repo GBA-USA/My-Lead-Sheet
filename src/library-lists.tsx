@@ -1,13 +1,16 @@
-import { useState, type KeyboardEvent } from "react";
+import { useEffect, useState, type KeyboardEvent } from "react";
+import { bandSongRef } from "./band-library-model";
 import { PRIVACY_HREF } from "./data-kinds";
+import { GigSong } from "./gig-plan";
 import type { useMetronome } from "./metronome-view";
+import { allOnPhone, type CachedBandSong } from "./phone-db";
 import { songHref, type TabName } from "./route";
-import { matchingSetlists, matchingSongs } from "./search";
+import { groupedSongs, keyName, matchingSetlists, NO_CHIPS, type SongChips } from "./search";
 import { SearchBox } from "./search-box";
 import { CodeOfferButton } from "./setlist-code";
 import { codeOffer } from "./setlist-code-model";
 import { LeadSheet } from "./sheet";
-import { songByRef, tempoText } from "./storage";
+import { loadScrollVersions, songByRef, tempoText } from "./storage";
 import type { Library, Setlist, Song, SongRef } from "./types";
 
 const TABS: [TabName, string][] = [
@@ -99,30 +102,100 @@ export function SongBody({
   );
 }
 
+function SongRowText({ song }: { song: Song }) {
+  return (
+    <>
+      <span className="song-title">{song.title}</span>
+      <span className="song-artist">{song.artist}</span>
+      <CopyNote song={song} />
+      <span className="song-meta">
+        <span className="song-key">{song.keyLabel}</span>
+        <span> · {song.tempo == null ? "Tempo —" : tempoText(song.tempo)}</span>
+      </span>
+    </>
+  );
+}
+
+const timed = (ref: SongRef) => loadScrollVersions(ref).versions.length > 0;
+
+/** This phone's songs, and while searching, the band songs this phone holds too, grouped by where they live. Nothing here asks the server. */
 export function SongList({ songs }: { songs: Song[] }) {
   const [query, setQuery] = useState("");
-  const shown = matchingSongs(songs, query);
+  const [chips, setChips] = useState(NO_CHIPS);
+  const [held, setHeld] = useState<CachedBandSong[]>([]);
+  const [open, setOpen] = useState<CachedBandSong | null>(null);
+  const searching = query !== "" || chips.key !== null || chips.band !== null || chips.timed;
+
+  useEffect(() => {
+    if (searching) allOnPhone("bandSongs").then(setHeld, () => setHeld([]));
+  }, [searching]);
+
+  if (open) {
+    return (
+      <div className="search-open" data-ref={bandSongRef(open.bandId, open.songId)}>
+        <GigSong bandId={open.bandId} item={{ ...open, bandTiming: null }} onBack={() => setOpen(null)} />
+      </div>
+    );
+  }
+
+  const heldByRef = new Map(held.map((item) => [bandSongRef(item.bandId, item.songId), item]));
+  const bandSongs = held.map((item): Song => ({ ...item.song, ref: bandSongRef(item.bandId, item.songId), id: 0 }));
+  const bands = new Map(held.map((item) => [item.bandId, item.bandName]));
+  const keys = [...new Set([...songs, ...bandSongs].map(keyName))].sort();
+  const toggle = (change: Partial<SongChips>) => setChips((now) => ({ ...now, ...change }));
+  const row = (song: Song) => {
+    const band = heldByRef.get(song.ref);
+    return (
+      <li key={song.ref}>
+        {band ? (
+          <button type="button" className="song-row" onClick={() => setOpen(band)}>
+            <SongRowText song={song} />
+          </button>
+        ) : (
+          <a className="song-row" href={songHref(song.id, "songs")}>
+            <SongRowText song={song} />
+          </a>
+        )}
+      </li>
+    );
+  };
+  const groups = searching ? groupedSongs([...songs, ...bandSongs], bands, query, chips, timed) : [];
   return (
     <>
       <SearchBox label="Search songs" value={query} onChange={setQuery} />
-      {query && shown.length === 0 ? (
-        <p className="search-empty" role="status">No songs match.</p>
-      ) : (
-        <ul className="song-list">
-          {shown.map((song) => (
-            <li key={song.ref}>
-              <a className="song-row" href={songHref(song.id, "songs")}>
-                <span className="song-title">{song.title}</span>
-                <span className="song-artist">{song.artist}</span>
-                <CopyNote song={song} />
-                <span className="song-meta">
-                  <span className="song-key">{song.keyLabel}</span>
-                  <span> · {song.tempo == null ? "Tempo —" : tempoText(song.tempo)}</span>
-                </span>
-              </a>
-            </li>
+      {searching ? (
+        <div className="search-chips" role="group" aria-label="Filter songs">
+          <select className="search-chip" aria-label="Key" value={chips.key ?? ""} onChange={(event) => toggle({ key: event.target.value || null })}>
+            <option value="">Any key</option>
+            {keys.map((key) => (
+              <option key={key} value={key}>
+                {key}
+              </option>
+            ))}
+          </select>
+          {[...bands].map(([bandId, name]) => (
+            <button key={bandId} type="button" className="search-chip" aria-pressed={chips.band === bandId} onClick={() => toggle({ band: chips.band === bandId ? null : bandId })}>
+              {name}
+            </button>
           ))}
-        </ul>
+          <button type="button" className="search-chip" aria-pressed={chips.timed} onClick={() => toggle({ timed: !chips.timed })}>
+            Has timing
+          </button>
+        </div>
+      ) : null}
+      {!searching ? (
+        <ul className="song-list">{songs.map(row)}</ul>
+      ) : groups.length === 0 ? (
+        <p className="search-empty" role="status">
+          Nothing matches
+        </p>
+      ) : (
+        groups.map((group, index) => (
+          <section key={index} className="search-group" aria-label={group.label}>
+            <h2 className="search-group-head">{group.label}</h2>
+            <ul className="song-list">{group.songs.map(row)}</ul>
+          </section>
+        ))
       )}
       <a className="privacy-link" href={PRIVACY_HREF}>
         Privacy

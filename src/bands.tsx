@@ -9,7 +9,7 @@ import { downloadPack, packsOnPhone, type GigPack } from "./gig-pack";
 import { GigCard, GigPlanForm, GigSong, newGigId } from "./gig-plan";
 import type { GigDraft, GigView } from "./gig-plan-model";
 import { useEscape } from "./hooks";
-import { clearPhone } from "./phone-db";
+import { clearPhone, keepBandsOnPhone } from "./phone-db";
 import { SETLIST_CODE_MESSAGES } from "./setlist-code";
 import { ApiError, api, type Account } from "./sign-in-methods";
 import "./friends.css";
@@ -76,6 +76,12 @@ const firstView = (code: string | undefined, bandId: string | undefined): View =
 const message = (error: unknown) => {
   const reason = error instanceof ApiError ? (error.status >= 500 ? "offline" : error.reason) : "";
   return MESSAGES[reason] ?? "Something went wrong. Try again.";
+};
+
+/** The server's list of this account's bands. Songs of any other band leave the phone, so search stops finding them. */
+const listed = (bands: BandSummary[]) => {
+  keepBandsOnPhone(bands.map((band) => band.bandId)).catch(() => {});
+  return bands;
 };
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
@@ -170,7 +176,7 @@ export function BandsSheet({
   };
 
   useEffect(() => {
-    if (view.name === "list") api<{ bands: BandSummary[] }>("/api/bands").then((reply) => setBands(reply.bands), failed);
+    if (view.name === "list") api<{ bands: BandSummary[] }>("/api/bands").then((reply) => setBands(listed(reply.bands)), failed);
     if (view.name === "band" || view.name === "invite" || view.name === "settings" || view.name === "plan") api<BandView>("/api/bands/open", { bandId: view.bandId }).then(setBand, failed);
     if (view.name === "band") loadGigs(view.bandId).catch(failed);
     if (view.name === "code") {
@@ -642,7 +648,7 @@ export function BandsTab({ account, onOpen, onSignIn, onSignedOut }: { account: 
   const load = () => {
     setError("");
     api<{ bands: BandSummary[] }>("/api/bands").then(
-      (reply) => setBands(reply.bands),
+      (reply) => setBands(listed(reply.bands)),
       (caught) => (caught instanceof ApiError && caught.status === 401 ? onSignedOut() : setError(message(caught))),
     );
   };

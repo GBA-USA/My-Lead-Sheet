@@ -25,3 +25,40 @@
   padding: 16px;
   color: var(--text-dim);
 }
+
+.search-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 6px 16px 4px;
+}
+
+.search-chip {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid rgba(247, 242, 232, 0.16);
+  border-radius: 18px;
+  background: var(--bg-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+
+.search-chip[aria-pressed="true"] {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+.search-group-head {
+  margin: 14px 16px 0;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.search-group button.song-row {
+  font: inherit;
+  cursor: pointer;
+}

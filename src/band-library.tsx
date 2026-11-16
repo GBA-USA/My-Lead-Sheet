@@ -15,6 +15,7 @@ import {
   type SongSort,
 } from "./band-library-model";
 import type { BandView } from "./bands-model";
+import { holdBandSongs } from "./phone-db";
 import { matchingSongs } from "./search";
 import type { ShareChoice } from "./share-rule";
 import { BandSetlistCode, CodeOfferButton } from "./setlist-code";
@@ -196,7 +197,11 @@ export function BandLibraryTab({ band, me, tab, busy, run, notify, onPlanGig, la
   const [tag, setTag] = useState<string | null>(null);
   const [myLibrary, setMyLibrary] = useState(() => loadLibrary());
 
-  const reload = () => api<BandLibrary>("/api/bands/library", { bandId: band.bandId }).then(setLibrary);
+  const reload = () =>
+    api<BandLibrary>("/api/bands/library", { bandId: band.bandId }).then((next) => {
+      setLibrary(next);
+      holdBandSongs(me, band.bandId, band.name, next.songs).catch(() => {});
+    });
   const landedRow = useCallback((row: HTMLLIElement | null) => row?.scrollIntoView({ block: "nearest" }), []);
 
   useEffect(() => {

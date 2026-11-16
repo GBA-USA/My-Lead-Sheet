@@ -35,15 +35,6 @@ export const googleReturn = () => new URLSearchParams(window.location.search).ge
 
 const SIGNED_IN_KEY = "leadSheetsSignedIn";
 
-/** True while this phone last knew itself signed in, including a launch whose `/api/me` has not answered, such as one with no signal. */
-export function signedInBefore(): boolean {
-  try {
-    return localStorage.getItem(SIGNED_IN_KEY) !== null;
-  } catch {
-    return false;
-  }
-}
-
 /**
  * The signed-in account. Only a phone that signed in before asks the server on load, so signed-out use calls no API.
  * Each time the phone learns it is signed out, band data leaves with the account (PLAN.md 10), even on a launch whose
@@ -51,7 +42,13 @@ export function signedInBefore(): boolean {
  */
 export function useAccount(): { account: Account | null; setAccount: (account: Account | null) => void; checking: boolean } {
   const [account, setAccount] = useState<Account | null>(null);
-  const [checking, setChecking] = useState(signedInBefore);
+  const [checking, setChecking] = useState(() => {
+    try {
+      return localStorage.getItem(SIGNED_IN_KEY) !== null;
+    } catch {
+      return false;
+    }
+  });
   const remember = useCallback((next: Account | null) => {
     setAccount(next);
     if (!next) clearPhone().catch(() => {});

@@ -1,10 +1,9 @@
-import { useEffect, useState, type KeyboardEvent } from "react";
-import { signedInBefore } from "./account";
+import { useEffect, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import { bandSongRef } from "./band-library-model";
 import { PRIVACY_HREF } from "./data-kinds";
 import { GigSong } from "./gig-plan";
 import type { useMetronome } from "./metronome-view";
-import { allOnPhone, claimPhone, type CachedBandSong } from "./phone-db";
+import { allOnPhone, claimPhone, onPhoneChange, phoneGeneration, type CachedBandSong } from "./phone-db";
 import { songHref, type TabName } from "./route";
 import { groupedSongs, keyName, matchingSetlists, NO_CHIPS } from "./search";
 import { SearchBox, SearchChips } from "./search-box";
@@ -121,8 +120,8 @@ const timed = (ref: SongRef) => loadScrollVersions(ref).versions.length > 0;
 
 /**
  * This phone's songs, and while searching, the band songs this phone holds too, grouped by where they live. Nothing
- * here asks the server. Signed in, the phone is claimed first, so another account's band songs are never shown. A phone
- * that knows it is signed out shows none.
+ * here asks the server. Signed in, the phone is claimed first, so another account's band songs are never shown. Each
+ * change to the phone's band data reads them again, so a sign-out that clears the phone empties open results too.
  */
 export function SongList({ songs, userId }: { songs: Song[]; userId: string | null }) {
   const [query, setQuery] = useState("");
@@ -131,11 +130,21 @@ export function SongList({ songs, userId }: { songs: Song[]; userId: string | nu
   const [open, setOpen] = useState<CachedBandSong | null>(null);
   const searching = query !== "" || chips.key !== null || chips.band !== null || chips.timed;
 
+  const phone = useSyncExternalStore(onPhoneChange, phoneGeneration, phoneGeneration);
+
   useEffect(() => {
-    setHeld([]);
-    if (!searching || (!userId && !signedInBefore())) return;
-    (userId ? claimPhone(userId) : Promise.resolve()).then(() => allOnPhone("bandSongs")).then(setHeld, () => setHeld([]));
-  }, [searching, userId]);
+    if (!searching) return setHeld([]);
+    let current = true;
+    (userId ? claimPhone(userId) : Promise.resolve())
+      .then(() => allOnPhone("bandSongs"))
+      .then(
+        (rows) => current && setHeld(rows),
+        () => current && setHeld([]),
+      );
+    return () => {
+      current = false;
+    };
+  }, [searching, userId, phone]);
 
   if (open) {
     return (

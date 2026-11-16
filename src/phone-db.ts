@@ -71,6 +71,22 @@ async function written(stores: readonly PhoneStore[], work: (transaction: IDBTra
   }
 }
 
+let generation = 0;
+const listeners = new Set<() => void>();
+
+/** Goes up each time this phone's band data is cleared or written, so a screen holding a copy reads it again. */
+export const phoneGeneration = () => generation;
+
+export function onPhoneChange(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+function phoneChanged() {
+  generation += 1;
+  for (const listener of listeners) listener();
+}
+
 const PHONE_OWNER_KEY = "leadSheetsPhoneOwner";
 
 /** Empties every store, so band data leaves the phone with the account that downloaded it (PLAN.md 10). */
@@ -79,6 +95,7 @@ export async function clearPhone(): Promise<void> {
     for (const store of PHONE_STORES) clearing.objectStore(store).clear();
   });
   localStorage.removeItem(PHONE_OWNER_KEY);
+  phoneChanged();
 }
 
 /** Marks this phone's band data as `userId`'s. Anything another account left here is cleared first, so a shared phone never shows it. */
@@ -96,6 +113,7 @@ export async function holdBandSongs(userId: string, bandId: string, bandName: st
     store.delete(IDBKeyRange.bound(`${bandId}/`, `${bandId}/\uffff`));
     for (const { songId, song, sharedAs, updatedAt } of songs) store.put({ bandId, bandName, songId, song, sharedAs, updatedAt }, bandSongRef(bandId, songId));
   });
+  phoneChanged();
 }
 
 /** Drops the songs of every band missing from `bandIds`, the list the server just gave this account, so a band left or removed from leaves search too. */
@@ -107,4 +125,5 @@ export async function keepBandsOnPhone(bandIds: string[]): Promise<void> {
       for (const key of keys.result) if (!bandIds.includes(String(key).split("/")[0])) store.delete(key);
     };
   });
+  phoneChanged();
 }

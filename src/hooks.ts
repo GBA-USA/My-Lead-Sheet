@@ -131,21 +131,15 @@ export function scrollChart(
   };
 }
 
-/** Screen Wake Lock. Missing support and rejected requests are silent. The OS drops the lock when the page hides, so it is requested again on return. */
-export function useWakeLock(enabled: boolean) {
+/** Screen Wake Lock, held while the app is open. Missing support and rejected requests are silent. The OS drops the lock when the page hides, so it is requested again on return. */
+export function useWakeLock() {
   const sentinel = useRef<WakeLockSentinel | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
-    const release = () => {
-      const current = sentinel.current;
-      sentinel.current = null;
-      if (current) void current.release().catch(() => {});
-    };
-
     const acquire = async () => {
-      if (!enabled || cancelled || document.visibilityState !== "visible") return;
+      if (cancelled || document.visibilityState !== "visible") return;
       if (!("wakeLock" in navigator)) return;
       try {
         sentinel.current = await navigator.wakeLock.request("screen");
@@ -154,9 +148,7 @@ export function useWakeLock(enabled: boolean) {
       }
     };
 
-    if (enabled) void acquire();
-    else release();
-
+    void acquire();
     const onVisibility = () => {
       if (document.visibilityState === "visible") void acquire();
     };
@@ -164,9 +156,11 @@ export function useWakeLock(enabled: boolean) {
     return () => {
       cancelled = true;
       document.removeEventListener("visibilitychange", onVisibility);
-      release();
+      const current = sentinel.current;
+      sentinel.current = null;
+      if (current) void current.release().catch(() => {});
     };
-  }, [enabled]);
+  }, []);
 }
 
 export function useEscape(onClose: () => void) {

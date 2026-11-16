@@ -4,7 +4,6 @@ import type { Learned, Mark, ScrollVersion, Span, Tempo } from "./scroll-timing"
 import type { BassNote, ChartLine, ChartSection, CopyMark, Library, LibraryFile, Song, SongData, SongRef } from "./types";
 
 export const LIBRARY_KEY = "leadSheetsLibrary";
-export const AWAKE_KEY = "leadSheetsKeepAwake";
 export const TEXT_SCALE_KEY = "leadSheetsTextScale";
 /** Per-song scroll percentage, stored under `leadSheetsScrollPercent.<ref key>`. */
 export const SCROLL_PERCENT_KEY = "leadSheetsScrollPercent";
@@ -303,16 +302,6 @@ export function setlistWithSongMoved(value: string, from: number, to: number): s
   const entry = JSON.parse(value) as OwnEntry<StoredSetlist>;
   if (!entry.item.songIds.includes(from)) return value;
   return JSON.stringify({ ...entry, item: { ...entry.item, songIds: entry.item.songIds.map((id) => (id === from ? to : id)) } });
-}
-
-export function loadAwake(): boolean {
-  const raw = readRaw(AWAKE_KEY);
-  if (raw === null) return true;
-  return raw === "true";
-}
-
-export function saveAwake(on: boolean): boolean {
-  return writeRaw(AWAKE_KEY, on ? "true" : "false");
 }
 
 /** The five themes. `index.html` applies the saved one before the bundle loads, so its own list must agree with this one. */

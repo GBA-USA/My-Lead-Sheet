@@ -5,7 +5,7 @@ import { BandsSheet, BandsTab } from "./bands";
 import { ChatSheet, queueOwner, type ChatTarget } from "./chat";
 import { readPayload, type CodeScreen } from "./code-link";
 import { clearLanding, landedCode } from "./codes";
-import { BackIcon, DotsIcon, Menu, OverflowMenu, ScreenToggle, SongControls } from "./controls";
+import { BackIcon, DotsIcon, Menu, OverflowMenu, SongControls } from "./controls";
 import { LearnedCues } from "./cues";
 import { useAutoScroll, usePerformance, useStored, useWakeLock } from "./hooks";
 import { LearnSong } from "./learn-song";
@@ -23,12 +23,10 @@ import type { Account } from "./sign-in-methods";
 import { SongDataEditor } from "./song-data-editor";
 import {
   TEXT_SCALES,
-  loadAwake,
   loadLibrary,
   loadSongData,
   loadTextScaleIndex,
   localRef,
-  saveAwake,
   saveSongData,
   saveTextScaleIndex,
   songByRef,
@@ -60,7 +58,6 @@ export function App() {
   const [teaching, setTeaching] = useState<Teaching | null>(null);
   const [hash, setHash] = useState(() => window.location.hash);
   const [textIndex, setTextIndex] = useStored(loadTextScaleIndex);
-  const [awake, setAwake] = useStored(loadAwake);
   const [menu, setMenu] = useState<MenuId>(null);
   const { account, setAccount, checking } = useAccount();
   const [accountOpen, setAccountOpen] = useState(() => googleReturn() !== null);
@@ -166,7 +163,7 @@ export function App() {
     take ? "take" : version ? `version ${versions.selected}` : `even ${activeSong?.officialRuntimeSec} ${activeSong?.tempo}`,
     (reason) => (take ? (reason === "end" ? finishTake(take) : stopTake(take)) : performance.stopScroll()),
   );
-  useWakeLock(awake);
+  useWakeLock();
   useFollowTempo(performance.scrolling && !take ? version?.tempo : undefined, clock, metronome.setBpm);
 
   useEffect(() => {
@@ -206,13 +203,6 @@ export function App() {
     const next = Math.max(0, Math.min(TEXT_SCALES.length - 1, index));
     setTextIndex(next);
     saveTextScaleIndex(next);
-  };
-
-  const toggleAwake = () => {
-    setAwake((current) => {
-      saveAwake(!current);
-      return !current;
-    });
   };
 
   const goBack = () => {
@@ -298,8 +288,6 @@ export function App() {
           textIndex={textIndex}
           textCount={TEXT_SCALES.length}
           onTextIndex={changeText}
-          awake={awake}
-          onAwake={toggleAwake}
           menuOpen={menu === "song"}
           onMenuToggle={() => toggleMenu("song")}
           onMenuClose={closeMenu}
@@ -315,11 +303,7 @@ export function App() {
           onTransposeUp={() => performance.setSemitones((value) => value + 1)}
           onOriginalKey={() => performance.setSemitones(0)}
         />
-      ) : (
-        <div className="list-tools">
-          <ScreenToggle on={awake} onToggle={toggleAwake} />
-        </div>
-      )}
+      ) : null}
 
       {activeSong && (even || versions.versions.length > 0 || route.name === "song") ? (
         <TeachBar

@@ -11,7 +11,6 @@ export const PRIVACY_HREF = "privacy.html";
 
 export const DATA_KINDS: readonly DataKind[] = [
   { key: "leadSheetsLibrary", place: "phone", what: "Your songs and setlists, including any changes you make to them." },
-  { key: "leadSheetsKeepAwake", place: "phone", what: "Whether the Screen on switch is on." },
   { key: "leadSheetsTheme", place: "phone", what: "The look you picked: stage, day, one of the two colorblind-safe looks, or high contrast." },
   { key: "leadSheetsTextScale", place: "phone", what: "The text size you picked for sheets." },
   { key: "leadSheetsScrollPercent", place: "phone", what: "The scroll speed you set for each song." },
@@ -67,7 +66,7 @@ export const DATA_KINDS: readonly DataKind[] = [
   {
     key: "backup_items",
     place: "server",
-    what: "Your backup, in a room only your account can open: the songs and setlists you added or changed, your timing versions, the runtime, tempo and time signature you entered, the scroll speed and Notes or Nashville choice for each song, and your text size and Screen on choice. Your phones sync it when you are signed in.",
+    what: "Your backup, in a room only your account can open: the songs and setlists you added or changed, your timing versions, the runtime, tempo and time signature you entered, the scroll speed and Notes or Nashville choice for each song, and your text size, plus the Screen on choice an older version of the app kept. Your phones sync it when you are signed in.",
   },
   { key: "session_floors", place: "server", what: "In each band or chat room, the oldest sign-in it still lets in for each person, after they signed out everywhere." },
   { key: "meta", place: "server", what: "For each band: its name, who made it and when, and whether Scroll with the leader is on." },

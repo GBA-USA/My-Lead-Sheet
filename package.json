@@ -46,7 +46,7 @@
     "check:gig-plan": "tsc -p worker && node --experimental-strip-types scripts/check-gig-plan.ts",
     "check:personal-settings": "node --experimental-strip-types scripts/check-personal-settings.ts",
     "check:band-library": "node --experimental-strip-types scripts/check-band-library.ts",
-    "check:setlist-code": "node --experimental-strip-types scripts/check-setlist-code.ts",
+    "check:setlist-code": "tsc -p worker && node --experimental-strip-types scripts/check-setlist-code.ts",
     "check:codes": "tsc -p worker && node --experimental-strip-types scripts/check-codes.ts",
     "check:sync-rating": "node --experimental-strip-types scripts/check-sync-rating.ts",
     "check:chat": "tsc -p worker && node --experimental-strip-types scripts/check-chat.ts",

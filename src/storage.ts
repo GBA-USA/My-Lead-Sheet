@@ -1,7 +1,7 @@
 import seedLibrary from "../data/library.json";
 import { clampScrollPercent, pitchClass, type Notation } from "./music";
 import type { Learned, Mark, ScrollVersion, Span, Tempo } from "./scroll-timing";
-import type { BassNote, ChartLine, ChartSection, Library, LibraryFile, Song, SongData, SongRef } from "./types";
+import type { BassNote, ChartLine, ChartSection, CopyMark, Library, LibraryFile, Song, SongData, SongRef } from "./types";
 
 export const LIBRARY_KEY = "leadSheetsLibrary";
 export const AWAKE_KEY = "leadSheetsKeepAwake";
@@ -79,6 +79,8 @@ const isNote: Check = (value) => {
 type StoredSong = LibraryFile["songs"][number];
 type StoredSetlist = LibraryFile["setlists"][number];
 
+const isCopy = shaped<CopyMark>({ id: isString, canSendOn: (value) => typeof value === "boolean", from: optional(shaped<{ name: string }>({ name: isString })) });
+
 const isSong = shaped<StoredSong>({
   id: isId,
   title: isString,
@@ -110,9 +112,9 @@ const isSong = shaped<StoredSong>({
       ),
     }),
   ),
-  copy: optional(shaped<NonNullable<Song["copy"]>>({ id: isString, canSendOn: (value) => typeof value === "boolean", from: optional(shaped<{ name: string }>({ name: isString })) })),
+  copy: optional(isCopy),
 });
-const isSetlist = shaped<StoredSetlist>({ id: isId, name: isString, songIds: listOf(isId) });
+const isSetlist = shaped<StoredSetlist>({ id: isId, name: isString, songIds: listOf(isId), copy: optional(isCopy) });
 
 /** Fingerprint of each seed item as it was stored, by id. An item whose stored copy no longer matches was edited. */
 type SeedPrints = Record<string, string>;
@@ -275,6 +277,15 @@ export function addOwnSong(song: Omit<Song, "ref" | "id">): number | null {
   const raw = readRaw(LIBRARY_KEY);
   const id = freeOwnId(raw, SONG_ROW, []);
   return writeOwnSong(raw, id, song) ? id : null;
+}
+
+/** Adds a setlist of own songs under a new id. Null when the browser refused the write. */
+export function addOwnSetlist(setlist: Omit<StoredSetlist, "id">): number | null {
+  const raw = readRaw(LIBRARY_KEY);
+  const id = freeOwnId(raw, SETLIST_ROW, []);
+  if (!writeRaw(LIBRARY_KEY, withOwnLibraryItems(raw, new Map([[`${SETLIST_ROW}.${id}`, JSON.stringify({ item: { ...setlist, id } })]])))) return null;
+  storageChanged();
+  return id;
 }
 
 /** Puts a new chart in an own song's place, read from what is stored now. */

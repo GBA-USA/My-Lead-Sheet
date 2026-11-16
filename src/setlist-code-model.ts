@@ -1,52 +1,25 @@
-export type Viewer = { handle: string; bandIds: string[]; guestGigIds: string[] };
-export type BandSetlist = { id: string; bandId: string; gigId: string; title: string; songIds: string[] };
-export type MySetlistSong = { songId: string; title: string; ticked: boolean };
+import type { SongContent } from "./band-library-model";
+import type { ShareChoice } from "./share-rule";
 
-export const fixtureSetlist: BandSetlist = {
-  id: "sl1",
-  bandId: "b1",
-  gigId: "g1",
-  title: "Friday set",
-  songIds: ["s1", "s2", "s3"],
-};
+/** A setlist card's text in a DM: the setlist's name, the ticked songs' titles, and the scanner's copy. No chart travels in a card. */
+export type SetlistCard = { name: string; titles: string[]; copyId: string; sharedAs: ShareChoice; reshareable: boolean };
 
-export const fixtureViewers = {
-  member: {
-    handle: "Alex",
-    bandIds: ["b1"],
-    guestGigIds: [],
-  },
-  guest: {
-    handle: "Mike",
-    bandIds: [],
-    guestGigIds: ["g1"],
-  },
-  stranger: {
-    handle: "Dana",
-    bandIds: [],
-    guestGigIds: [],
-  },
-};
+/** The copy behind a card, which only the scanner holding it can fetch: each ticked chart with the id of their copy of it. */
+export type SetlistCopy = { name: string; songs: { song: SongContent; copyId: string }[]; reshareable: boolean };
 
-export const fixtureMySetlist: MySetlistSong[] = [
-  { songId: "s1", title: "First Song", ticked: true },
-  { songId: "s2", title: "Second Song", ticked: false },
-  { songId: "s3", title: "Third Song", ticked: true },
-  { songId: "s4", title: "Fourth Song", ticked: false },
-];
-
-export function canShowBandCode(v: Viewer, s: BandSetlist): boolean {
-  return v.bandIds.includes(s.bandId) || v.guestGigIds.includes(s.gigId);
-}
-
-export function bandSetlistPayload(s: BandSetlist): string {
-  return JSON.stringify({ kind: "setlist", id: s.id });
-}
-
-export function mySetlistPayload(songs: MySetlistSong[]): string | null {
-  const tickedIds = songs.filter((song) => song.ticked).map((song) => song.songId);
-  if (tickedIds.length === 0) {
+export function setlistCardIn(text: string): SetlistCard | null {
+  try {
+    const card = JSON.parse(text);
+    return typeof card?.name === "string" && Array.isArray(card.titles) && typeof card.copyId === "string" ? card : null;
+  } catch {
     return null;
   }
-  return JSON.stringify({ kind: "my-setlist", songs: tickedIds });
 }
+
+/** What a setlist row offers: a code, a note that an empty setlist needs a song first, or nothing for a copy that can't be passed on. */
+export type CodeOffer = "show" | "add-a-song" | "none";
+
+export const codeOffer = (songCount: number, canSendOn: boolean): CodeOffer => (!canSendOn ? "none" : songCount === 0 ? "add-a-song" : "show");
+
+/** The most songs one copy code carries, the same cap the server keeps. */
+export const MAX_CODE_SONGS = 40;

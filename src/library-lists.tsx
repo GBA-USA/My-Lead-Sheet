@@ -4,6 +4,8 @@ import type { useMetronome } from "./metronome-view";
 import { songHref, type TabName } from "./route";
 import { matchingSetlists, matchingSongs } from "./search";
 import { SearchBox } from "./search-box";
+import { CodeOfferButton } from "./setlist-code";
+import { codeOffer } from "./setlist-code-model";
 import { LeadSheet } from "./sheet";
 import { songByRef, tempoText } from "./storage";
 import type { Library, Setlist, Song, SongRef } from "./types";
@@ -103,7 +105,8 @@ export function SongList({ songs }: { songs: Song[] }) {
   );
 }
 
-export function SetlistList({ setlists, songs }: { setlists: Setlist[]; songs: Song[] }) {
+/** `onShowCode` is there only while signed in, since a code is made on the server. */
+export function SetlistList({ setlists, songs, onShowCode }: { setlists: Setlist[]; songs: Song[]; onShowCode?: (setlist: Setlist) => void }) {
   const [query, setQuery] = useState("");
   const shown = matchingSetlists(setlists, songs, query);
   return (
@@ -117,6 +120,7 @@ export function SetlistList({ setlists, songs }: { setlists: Setlist[]; songs: S
             <section key={setlist.id} className="setlist" aria-label={setlist.name}>
               <div className="setlist-head">
                 <h2>{setlist.name}</h2>
+                {onShowCode ? <CodeOfferButton offer={codeOffer(setlist.songRefs.length, setlist.copy?.canSendOn !== false)} onShow={() => onShowCode(setlist)} /> : null}
                 <a className="live-launch" href={`#/live/${setlist.id}/0`}>
                   Live
                 </a>

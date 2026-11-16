@@ -93,6 +93,11 @@ export const DATA_KINDS: readonly DataKind[] = [
     what: "In a room only your account can open: each band song you added to My Songs and each song a friend sent you, with a one-way code of its chart, so its Private or Public rule goes with your copy.",
   },
   {
+    key: "setlist_sends",
+    place: "server",
+    what: "In a room only your account can open: each setlist copy code you made, with the setlist name and a copy of each song you ticked, so a friend who scans it gets those songs and nothing else.",
+  },
+  {
     key: "leadSheetsSentSongs",
     place: "phone",
     what: "For each account on this phone, which send of each song went to which friend last, so sending it again shows them an update. No chart is kept here.",

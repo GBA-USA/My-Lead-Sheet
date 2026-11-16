@@ -41,7 +41,8 @@ export function signedIn(c: Context): User {
   return user;
 }
 
-export type Route = (c: Context) => Promise<Reply>;
+/** `maxBody` is for the one route whose body carries whole charts. Every other body is capped at 16 KB. */
+export type Route = ((c: Context) => Promise<Reply>) & { maxBody?: number };
 
 /** The cookie a reply sets: a new session on sign-in, a cleared one on sign-out, or a renewed one for a session older than a day. */
 async function replyCookie(env: Env, sql: SqlStorage, reply: Reply, session: Session | null, now: number): Promise<string | null> {
@@ -59,7 +60,7 @@ export async function handleDirectoryRequest(request: Request, storage: DurableO
   try {
     const now = Date.now();
     const session = await readSession(env.SESSION_SECRET, request.headers.get("Cookie"), now);
-    const reply = await route({ storage, sql: storage.sql, env, now, request, body: request.method === "POST" ? await readJsonObject(request, MAX_BODY_BYTES) : {}, session });
+    const reply = await route({ storage, sql: storage.sql, env, now, request, body: request.method === "POST" ? await readJsonObject(request, route.maxBody ?? MAX_BODY_BYTES) : {}, session });
     const cookie = await replyCookie(env, storage.sql, reply, session, now);
     for (const value of [...(cookie ? [cookie] : []), ...(reply.cookies ?? [])]) headers.append("Set-Cookie", value);
     if (reply.googleReturn === undefined) return Response.json(reply.body, { headers });

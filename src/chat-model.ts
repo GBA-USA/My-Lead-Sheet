@@ -18,6 +18,13 @@ export type Queued = { msgId: string; roomId: string; text: string; at: number; 
 
 /** A message as one line, for the Messages list: a card shows what it holds, never its JSON. */
 export function previewText(m: Pick<ChatMessage, "kind" | "text">): string {
+  if (m.kind === "setlist") {
+    try {
+      return `📋 ${String(JSON.parse(m.text).name)}`;
+    } catch {
+      return "📋 A setlist";
+    }
+  }
   if (m.kind !== "song") return m.text;
   try {
     return `🎵 ${String(JSON.parse(m.text).song.title)}`;

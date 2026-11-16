@@ -21,6 +21,7 @@ import { onDelivery, onQueueChange, queueMessage, queuedMessages, sendQueued, ty
 export { queueOwner } from "./chat-queue";
 import { useEscape } from "./hooks";
 import { SEND_MESSAGES, SongCard } from "./send-song";
+import { SetlistCard } from "./setlist-code";
 import { ApiError, api, type Account } from "./sign-in-methods";
 import "./friends.css";
 import "./chat.css";
@@ -254,7 +255,7 @@ export function ChatSheet({ account, open, onSignedOut, onClose }: { account: Ac
                 <li key={m.seq} className={`chat-line chat-line-${side(m, account.userId)}`}>
                   {newLineAt === m.seq ? <div className="chat-new-line">New messages</div> : null}
                   <span className="chat-name">{nameAbove(m, account.userId)}</span>
-                  {m.kind === "song" ? <SongCard message={m} me={account.userId} /> : <span className="chat-bubble">{m.text}</span>}
+                  {m.kind === "song" ? <SongCard message={m} me={account.userId} /> : m.kind === "setlist" ? <SetlistCard message={m} me={account.userId} /> : <span className="chat-bubble">{m.text}</span>}
                 </li>
               ))}
               {waiting.map((item) => (

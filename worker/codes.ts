@@ -1,14 +1,19 @@
 import { CODE_KINDS, CODE_REFUSED, CODE_SCREEN, readPayload, signedText, type CodeFields, type CodeKind } from "../src/code-link";
 import { fromBase64Url, randomBytes, toBase64Url, utf8 } from "./bytes";
-import { signedIn, type Context, type Route, type User } from "./directory-http";
+import { signedIn, type Context, type Reply, type Route, type User } from "./directory-http";
 import type { Env } from "./index";
 import { Refused } from "./refused";
 import { GIG_LINK_MINUTES, gigLinkTarget } from "./room-gig";
+import { bandSetlistTarget, mySetlistTarget } from "./room-library";
 import { bandInviteTarget } from "./room-members";
 import { hmacKey } from "./session";
 
 const MINUTE_MS = 60 * 1000;
 const DAY_MINUTES = 24 * 60;
+/** A band setlist code never ends (PLAN.md 9.3), because each opening is checked against the band. */
+const NEVER_MINUTES = 10 * 365 * DAY_MINUTES;
+/** A copy code carries up to 40 charts of 12,000 characters each. */
+const MAX_CODE_BODY = 512 * 1024;
 
 export const LANDING_PATH = /^\/c\/([^/]+)$/;
 
@@ -52,6 +57,8 @@ const MINTERS: Partial<Record<CodeKind, Minter>> = {
   "friend-link": { minutes: 7 * DAY_MINUTES, reuse: true, target: (_, user) => ({ targetId: user.user_id }) },
   band: { minutes: 7 * DAY_MINUTES, reuse: true, target: bandInviteTarget },
   gig: { minutes: GIG_LINK_MINUTES, reuse: true, target: gigLinkTarget },
+  "band-setlist": { minutes: NEVER_MINUTES, reuse: true, target: bandSetlistTarget },
+  "my-setlist": { minutes: 7 * DAY_MINUTES, target: mySetlistTarget },
 };
 
 const fieldsOf = (row: CodeRow): CodeFields => ({ kind: row.kind, codeId: row.code_id, expiresAt: row.expires_at, nonce: row.nonce });
@@ -69,13 +76,15 @@ async function codeView(env: Env, row: CodeRow) {
 
 /**
  * The row of a code that is real, not past its end time, and not stopped.
- * The signature is checked first, so a made-up code never reaches the table.
+ * The signature is checked first, so a made-up code never reaches the table. With `expect`, a real code of another
+ * kind is refused with its word before its end time is read, so an old code scanned in the wrong place says so.
  */
-export async function liveCode(sql: SqlStorage, env: Env, payload: unknown, now: number): Promise<CodeRow> {
+export async function liveCode(sql: SqlStorage, env: Env, payload: unknown, now: number, expect?: { kind: CodeKind; refusal: string }): Promise<CodeRow> {
   const fields = typeof payload === "string" ? readPayload(payload) : null;
   const mac = fields && fromBase64Url(fields.mac);
   const key = await hmacKey(env.SESSION_SECRET);
   if (!fields || !mac || !(await crypto.subtle.verify("HMAC", key, mac, utf8(`code:${signedText(fields)}`)))) throw new Refused("bad-code", 404);
+  if (expect && fields.kind !== expect.kind) throw new Refused(expect.refusal);
   if (fields.expiresAt <= now) throw new Refused("code-ended", 410);
   const row = sql.exec<CodeRow>(`SELECT * FROM codes WHERE code_id = ?`, fields.codeId).toArray()[0];
   if (!row || row.kind !== fields.kind || row.expires_at !== fields.expiresAt) throw new Refused("bad-code", 404);
@@ -84,7 +93,7 @@ export async function liveCode(sql: SqlStorage, env: Env, payload: unknown, now:
 }
 
 export const CODE_ROUTES: Record<string, Route> = {
-  async "POST /api/codes"(c) {
+  "POST /api/codes": Object.assign(async (c: Context): Promise<Reply> => {
     const kind = c.body.kind;
     const minter = typeof kind === "string" && (CODE_KINDS as readonly string[]).includes(kind) ? MINTERS[kind as CodeKind] : undefined;
     if (!minter) throw new Refused("bad-kind");
@@ -118,7 +127,7 @@ export const CODE_ROUTES: Record<string, Route> = {
       c.now,
     );
     return { body: await codeView(c.env, row) };
-  },
+  }, { maxBody: MAX_CODE_BODY }),
 
   async "POST /api/codes/stop"(c) {
     const fields = typeof c.body.code === "string" ? readPayload(c.body.code) : null;

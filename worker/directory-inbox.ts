@@ -7,7 +7,8 @@ import { pairOf } from "./directory-friends";
 import { signedIn, userById, who, type Context, type Route, type User } from "./directory-http";
 import { fromRoom, Refused } from "./refused";
 import type { Posted } from "./room-chat";
-import { choiceIn, guardContent, printOf, receivedCopy, record, selfRoom, songIn } from "./room-library";
+import { liveCode } from "./codes";
+import { choiceIn, guardContent, printOf, receivedCopy, record, selfRoom, setlistCopyFor, songIn } from "./room-library";
 
 const ROOM_ID = /^(band|dm)_[A-Za-z0-9_-]{22}$/;
 const MSG_ID = /^[A-Za-z0-9_-]{8,64}$/;
@@ -239,6 +240,38 @@ export const CHAT_ROUTES: Record<string, Route> = {
     await fromRoom(selfRoom(c, other.user_id).receiveCopy(copyFor(posted.message.ref ?? send.shareId).chain, print));
     deliver(c, roomId, posted);
     return { body: { roomId, message: posted.message } };
+  },
+
+  /** A friend scans a copy code. The copy arrives as a setlist card from the code's owner in their DM, once however often they scan. */
+  async "POST /api/chat/setlist-code"(c) {
+    const row = await liveCode(c.sql, c.env, c.body.code, c.now, { kind: "my-setlist", refusal: "not-a-setlist-code" });
+    const me = signedIn(c);
+    const owner = userById(c.sql, row.created_by);
+    if (!owner) throw new Refused("code-stopped", 410);
+    if (owner.user_id === me.user_id) throw new Refused("yourself");
+    await allowDm(c, me, owner);
+    const sent = await fromRoom(selfRoom(c, owner.user_id).setlistSend(row.target_id));
+    if (!sent) throw new Refused("code-stopped", 410);
+    const { setlist, songs, reshareable } = setlistCopyFor(sent, me.user_id);
+    const roomId = await dmRoomFor(c, me, owner);
+    const copyId = setlist[0].id;
+    const card = { name: sent.name, titles: sent.songs.map((item) => item.song.title), copyId, sharedAs: setlist[0].choice, reshareable };
+    const posted = await fromRoom(c.env.ROOM.getByName(roomId).chatPost(who(owner), copyId, JSON.stringify(card), c.now, { kind: "setlist", ref: copyId }));
+    await fromRoom(selfRoom(c, me.user_id).receiveSetlist(setlist, songs));
+    deliver(c, roomId, posted);
+    return { body: { roomId } };
+  },
+
+  /** Add to My Songs on a setlist card: only the scanner, whose own room holds the copy under the owner's code, gets the charts. */
+  async "POST /api/chat/setlist-copy"(c) {
+    if (typeof c.body.copyId !== "string" || c.body.copyId.length > 64) throw new Refused("bad-request");
+    const me = signedIn(c);
+    const [mine, code] = await fromRoom(selfRoom(c, me.user_id).heldChain(c.body.copyId));
+    const sent = mine.ownerId === me.user_id && code ? await fromRoom(selfRoom(c, code.ownerId).setlistSend(code.id)) : null;
+    if (!sent) throw new Refused("not-found", 404);
+    const copy = setlistCopyFor(sent, me.user_id);
+    if (copy.setlist[0].id !== mine.id) throw new Refused("not-found", 404);
+    return { body: { name: sent.name, songs: copy.songs.map((item) => ({ song: item.song, copyId: item.chain[0].id })), reshareable: copy.reshareable } };
   },
 
   async "POST /api/chat/read"(c) {

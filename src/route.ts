@@ -1,8 +1,9 @@
-export type TabName = "songs" | "setlists";
+export type TabName = "songs" | "setlists" | "bands";
 
 export type Route =
   | { name: "songs" }
   | { name: "setlists" }
+  | { name: "bands" }
   | { name: "song"; id: number; from: TabName }
   | { name: "live"; setlistId: number; index: number };
 
@@ -18,6 +19,7 @@ export function parseHash(hash: string): Route {
     return { name: "song", id: Number(match[1]), from };
   }
   if (path === "/setlists") return { name: "setlists" };
+  if (path === "/bands") return { name: "bands" };
   return { name: "songs" };
 }
 

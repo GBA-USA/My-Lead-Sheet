@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useState, type ReactNode } from "react";
 import {
   SETLIST_SORTS,
   SONG_SORTS,
@@ -17,6 +17,8 @@ import {
 import type { BandView } from "./bands-model";
 import { matchingSongs } from "./search";
 import type { ShareChoice } from "./share-rule";
+import { BandSetlistCode, CodeOfferButton } from "./setlist-code";
+import { codeOffer } from "./setlist-code-model";
 import { api } from "./sign-in-methods";
 import { addOwnSong, loadLibrary, songByRef } from "./storage";
 import type { Setlist, Song } from "./types";
@@ -24,10 +26,24 @@ import "./band-library.css";
 
 export type LibraryTab = "setlists" | "songs";
 
-type Props = { band: BandView; me: string; tab: LibraryTab; busy: boolean; run: (work: () => Promise<void>) => void; notify: (text: string) => void; onPlanGig?: (setlist: BandSetlist) => void };
+/** `landed` is the setlist a code opened, marked on its row. `onCodeError` hears why a code could not be made. */
+type Props = {
+  band: BandView;
+  me: string;
+  tab: LibraryTab;
+  busy: boolean;
+  run: (work: () => Promise<void>) => void;
+  notify: (text: string) => void;
+  onPlanGig?: (setlist: BandSetlist) => void;
+  landed?: string;
+  onCodeError: (error: unknown) => void;
+};
 
-type Picked = { kind: "song"; song: Song } | { kind: "setlist"; setlist: Setlist };
-type Mode = { name: "list" } | { name: "pick" } | { name: "ask"; picked: Picked } | { name: "edit"; setlist: BandSetlist };
+type SetlistFields = Pick<BandSetlist, "name" | "songIds" | "tags">;
+type Picked = { kind: "song"; song: Song } | { kind: "setlist"; setlist: Setlist } | { kind: "new"; fields: SetlistFields };
+type Mode = { name: "list" } | { name: "pick" } | { name: "ask"; picked: Picked } | { name: "edit"; setlist?: BandSetlist } | { name: "code"; setlist: BandSetlist };
+
+const NEW_SETLIST: SetlistFields = { name: "", songIds: [], tags: [] };
 
 export const CHOICES: Record<ShareChoice, { label: string; line: string }> = {
   private: { label: "Private", line: "They can use it, but can't pass it on." },
@@ -104,10 +120,10 @@ function SetlistEditor({
   onSave,
   onCancel,
 }: {
-  setlist: BandSetlist;
+  setlist: SetlistFields;
   songs: BandSong[];
   busy: boolean;
-  onSave: (fields: Pick<BandSetlist, "name" | "songIds" | "tags">) => void;
+  onSave: (fields: SetlistFields) => void;
   onCancel: () => void;
 }) {
   const [name, setName] = useState(setlist.name);
@@ -170,7 +186,7 @@ function SetlistEditor({
   );
 }
 
-export function BandLibraryTab({ band, me, tab, busy, run, notify, onPlanGig }: Props) {
+export function BandLibraryTab({ band, me, tab, busy, run, notify, onPlanGig, landed, onCodeError }: Props) {
   const [library, setLibrary] = useState<BandLibrary | null>(null);
   const [mode, setMode] = useState<Mode>({ name: "list" });
   const [query, setQuery] = useState("");
@@ -181,6 +197,7 @@ export function BandLibraryTab({ band, me, tab, busy, run, notify, onPlanGig }: 
   const [myLibrary, setMyLibrary] = useState(() => loadLibrary());
 
   const reload = () => api<BandLibrary>("/api/bands/library", { bandId: band.bandId }).then(setLibrary);
+  const landedRow = useCallback((row: HTMLLIElement | null) => row?.scrollIntoView({ block: "nearest" }), []);
 
   useEffect(() => {
     setMode({ name: "list" });
@@ -213,6 +230,10 @@ export function BandLibraryTab({ band, me, tab, busy, run, notify, onPlanGig }: 
         await shareSong(picked.song, choice);
         return notify(`Shared ${picked.song.title} as ${CHOICES[choice].label}.`);
       }
+      if (picked.kind === "new") {
+        await api<BandSetlist>("/api/bands/library/share-setlist", { bandId: band.bandId, ...picked.fields, choice, localId: null });
+        return notify(`Shared ${picked.fields.name} as ${CHOICES[choice].label}.`);
+      }
       const inBand = new Map(library?.songs.filter((item) => item.sharedBy === me && item.localId !== null).map((item) => [item.localId, item.songId]));
       const songIds: string[] = [];
       for (const ref of picked.setlist.songRefs) {
@@ -231,7 +252,7 @@ export function BandLibraryTab({ band, me, tab, busy, run, notify, onPlanGig }: 
       notify(addOwnSong({ ...copied.song, copy: copied.copy }) === null ? `This phone couldn't add ${item.song.title}.` : `Added ${item.song.title} to My Songs.`);
     });
 
-  const saveSetlist = (setlist: BandSetlist, fields: Pick<BandSetlist, "name" | "songIds" | "tags">) =>
+  const saveSetlist = (setlist: BandSetlist, fields: SetlistFields) =>
     act(async () => {
       await api<BandSetlist>("/api/bands/library/edit-setlist", { bandId: band.bandId, setlistId: setlist.setlistId, base: setlist.rev, ...fields });
       notify(`Saved ${fields.name}.`);
@@ -240,12 +261,29 @@ export function BandLibraryTab({ band, me, tab, busy, run, notify, onPlanGig }: 
   if (!library) return <p className="account-note">Loading…</p>;
 
   if (mode.name === "ask") {
-    const what = mode.picked.kind === "song" ? mode.picked.song.title : mode.picked.setlist.name;
+    const what = mode.picked.kind === "song" ? mode.picked.song.title : mode.picked.kind === "new" ? mode.picked.fields.name : mode.picked.setlist.name;
     return <ShareQuestion what={what} band={band.name} busy={busy} onShare={(choice) => share(mode.picked, choice)} onCancel={back} />;
   }
 
   if (mode.name === "edit") {
-    return <SetlistEditor setlist={mode.setlist} songs={library.songs} busy={busy} onSave={(fields) => saveSetlist(mode.setlist, fields)} onCancel={back} />;
+    const { setlist } = mode;
+    const onSave = (fields: SetlistFields) => (setlist ? saveSetlist(setlist, fields) : setMode({ name: "ask", picked: { kind: "new", fields } }));
+    return <SetlistEditor setlist={setlist ?? NEW_SETLIST} songs={library.songs} busy={busy} onSave={onSave} onCancel={back} />;
+  }
+
+  if (mode.name === "code") {
+    return (
+      <BandSetlistCode
+        bandId={band.bandId}
+        bandName={band.name}
+        setlist={mode.setlist}
+        onBack={back}
+        onError={(error) => {
+          back();
+          onCodeError(error);
+        }}
+      />
+    );
   }
 
   if (mode.name === "pick") {
@@ -348,9 +386,14 @@ export function BandLibraryTab({ band, me, tab, busy, run, notify, onPlanGig }: 
   const songsById = new Map(library.songs.map((item) => [item.songId, item]));
   return (
     <>
-      <button type="button" className="account-primary" onClick={openPicker}>
-        + Share a setlist
-      </button>
+      <div className="account-row">
+        <button type="button" className="account-primary" onClick={openPicker}>
+          + Share a setlist
+        </button>
+        <button type="button" className="account-secondary" onClick={() => setMode({ name: "edit" })}>
+          + New setlist
+        </button>
+      </div>
       {library.setlists.length === 0 ? (
         <p className="account-note">No setlists yet. Share one from your Setlists.</p>
       ) : (
@@ -367,7 +410,7 @@ export function BandLibraryTab({ band, me, tab, busy, run, notify, onPlanGig }: 
           </div>
           <ul className="friends-list band-library-setlists">
             {shown.map((item) => (
-              <li key={item.setlistId}>
+              <li key={item.setlistId} data-setlist={item.setlistId} aria-current={item.setlistId === landed ? "true" : undefined} ref={item.setlistId === landed ? landedRow : undefined}>
                 <span>
                   <span className="band-library-name">{item.name}</span>
                   {byline(item, `${item.songIds.length} songs · `)}
@@ -375,6 +418,7 @@ export function BandLibraryTab({ band, me, tab, busy, run, notify, onPlanGig }: 
                 </span>
                 <span className="friends-actions">
                   {lockFor(item)}
+                  <CodeOfferButton offer={codeOffer(item.songIds.length, item.canSendOn)} busy={busy} onShow={() => run(async () => setMode({ name: "code", setlist: item }))} />
                   {onPlanGig ? (
                     <button type="button" className="account-secondary" disabled={busy} onClick={() => onPlanGig(item)}>
                       Plan a gig

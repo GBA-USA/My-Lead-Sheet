@@ -13,6 +13,7 @@ export class Refused extends Error {
 const ROOM_REFUSALS = {
   "no-band": 404,
   "not-a-member": 403,
+  "not-in-band": 403,
   "not-admin": 403,
   "not-found": 404,
   "last-admin": 409,

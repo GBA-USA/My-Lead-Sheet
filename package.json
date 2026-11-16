@@ -21,7 +21,7 @@
     "check:chords": "node --experimental-strip-types scripts/check-chords.ts",
     "check:headers": "node --experimental-strip-types scripts/check-headers.ts",
     "check:screens": "node --experimental-strip-types scripts/check-screens.ts",
-    "check:search": "node --experimental-strip-types scripts/check-search.ts",
+    "check:search": "tsc -p worker && node --experimental-strip-types scripts/check-search.ts",
     "check:metronome": "node --experimental-strip-types scripts/check-metronome.ts",
     "check:beat-red": "node --experimental-strip-types scripts/check-beat-red.ts",
     "check:bar": "node --experimental-strip-types scripts/check-bar.ts",

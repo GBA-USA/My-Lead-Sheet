@@ -21,8 +21,8 @@ export function taughtPlan(take: Take, at: number): ScrollPlan {
   return finishTake(moving, at + (1 - takeProgress(moving, at)) / take.slope);
 }
 
-/** While a version with a tempo map plays, the metronome moves to each change as the clock reaches it. */
-export function useFollowTempo(tempo: Tempo[] | undefined, clock: { current: number }, setBpm: (bpm: number) => void) {
+/** While a version with a tempo map plays, the metronome follows each change as the clock reaches it, and lets go when it stops. */
+export function useFollowTempo(tempo: Tempo[] | undefined, clock: { current: number }, setBpm: (bpm: number | null) => void) {
   const set = useRef(setBpm);
   set.current = setBpm;
 
@@ -37,7 +37,10 @@ export function useFollowTempo(tempo: Tempo[] | undefined, clock: { current: num
       frame = requestAnimationFrame(follow);
     };
     frame = requestAnimationFrame(follow);
-    return () => cancelAnimationFrame(frame);
+    return () => {
+      cancelAnimationFrame(frame);
+      set.current(null);
+    };
   }, [tempo, clock]);
 }
 

@@ -157,14 +157,14 @@ export function App() {
     route.name === "song" ? songByRef(library.songs, localRef(route.id)) : route.name === "live" ? liveSong : undefined;
 
   const performance = useScrolling(activeSong?.ref ?? null);
-  const song = useSongVersion(activeSong ?? null, owner, personal);
-  const draft = song.draft;
+  const songVersion = useSongVersion(activeSong ?? null, owner, personal);
+  const draft = songVersion.draft;
   const shownSong = activeSong && draft?.data ? withSongData(activeSong, draft.data) : activeSong;
   const shownLibrary = shownSong && draft?.data ? { ...library, songs: library.songs.map((each) => (each.ref === shownSong.ref ? shownSong : each)) } : library;
-  const [followed, setFollowed] = useState<{ ref: SongRef; bpm: number } | null>(null);
+  const [followed, setFollowed] = useState<number | null>(null);
   const metronome = useMetronome(activeSong?.id ?? null, activeSong ? activeSong.tempo : null, {
-    bpm: (followed && followed.ref === activeSong?.ref ? followed.bpm : null) ?? draft?.bpm ?? null,
-    setBpm: (bpm) => { setFollowed(null); song.set({ bpm }); },
+    bpm: followed ?? draft?.bpm ?? null,
+    setBpm: (bpm) => { setFollowed(null); songVersion.set({ bpm }); },
   });
   const take = teaching && "take" in teaching ? teaching.take : null;
   const playing: ScrollVersion | null = draft?.plan ? { name: "", ...draft.plan, ...(draft.learned ? { learned: draft.learned } : {}) } : null;
@@ -182,7 +182,7 @@ export function App() {
     (reason) => (take ? (reason === "end" ? finishTake(take) : stopTake(take)) : performance.stopScroll()),
   );
   useWakeLock();
-  useFollowTempo(performance.scrolling && !take ? playing?.tempo : undefined, clock, (bpm) => activeSong && setFollowed({ ref: activeSong.ref, bpm }));
+  useFollowTempo(performance.scrolling && !take ? playing?.tempo : undefined, clock, setFollowed);
 
   useEffect(() => {
     if (!take || metronome.bpm == null) return;
@@ -243,7 +243,7 @@ export function App() {
   const finishTake = (current: Take) => {
     performance.stopScroll();
     setTeaching(null);
-    song.set({ plan: taughtPlan(current, clock.current), learned: undefined });
+    songVersion.set({ plan: taughtPlan(current, clock.current), learned: undefined });
   };
 
   const discardTake = () => {
@@ -290,7 +290,7 @@ export function App() {
             <GearIcon />
           </button>
         )}
-        {activeSong ? <SongLine key={activeSong.ref} state={song} menu={menu} onToggleMenu={toggleMenu} onCloseMenu={closeMenu} /> : null}
+        {activeSong ? <SongLine key={activeSong.ref} state={songVersion} menu={menu} onToggleMenu={toggleMenu} onCloseMenu={closeMenu} /> : null}
       </header>
 
       {showTabs ? <Tabs tab={tab} /> : null}
@@ -298,11 +298,11 @@ export function App() {
       {activeSong && shownSong && draft ? (
         <SongControls
           keyLabel={displayKeyLabel(shownSong, draft.semitones)}
-          onTransposeDown={() => song.set((current) => ({ semitones: current.semitones - 1 }))}
-          onTransposeUp={() => song.set((current) => ({ semitones: current.semitones + 1 }))}
-          onOriginalKey={() => song.set({ semitones: personal.transpose })}
+          onTransposeDown={() => songVersion.set((current) => ({ semitones: current.semitones - 1 }))}
+          onTransposeUp={() => songVersion.set((current) => ({ semitones: current.semitones + 1 }))}
+          onOriginalKey={() => songVersion.set({ semitones: personal.transpose })}
           notation={draft.notation}
-          onNotation={(notation) => song.set({ notation })}
+          onNotation={(notation) => songVersion.set({ notation })}
           scrolling={performance.scrolling}
           onToggleScroll={() => (take ? stopTake(take) : performance.setScrolling((on) => !on))}
           onScrollSheet={() => {
@@ -329,7 +329,7 @@ export function App() {
       {activeSong && draft && scrollSheet ? (
         <ScrollSheet
           percent={draft.scrollPercent}
-          onPercent={(next) => song.set({ scrollPercent: clampScrollPercent(next) })}
+          onPercent={(next) => songVersion.set({ scrollPercent: clampScrollPercent(next) })}
           canTeach={even != null}
           onListen={route.name === "song" ? () => setTeaching({ learning: true }) : undefined}
           onTeach={teach}
@@ -346,7 +346,7 @@ export function App() {
           onSave={({ learned: heard, ...plan }, data) => {
             setTeaching(null);
             const retempo = data?.tempo != null && data.tempo !== shownSong.tempo ? { bpm: initialMetronomeBpm(data.tempo) } : {};
-            song.set({ plan, learned: heard, ...(data ? { data } : {}), ...retempo });
+            songVersion.set({ plan, learned: heard, ...(data ? { data } : {}), ...retempo });
           }}
           onClose={() => setTeaching(null)}
         />

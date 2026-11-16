@@ -21,7 +21,7 @@ const MESSAGES: Record<string, string> = {
   "not-saved": "This phone did not keep that change. It lasts until you close the app.",
 };
 
-/** Sets the look at once. The browser bar takes the theme's background, the same color `index.html` gives it at launch. */
+/** The browser bar takes the theme's background, the same color `index.html` gives it at launch. */
 function applyTheme(theme: Theme) {
   const root = document.documentElement;
   root.dataset.theme = theme;

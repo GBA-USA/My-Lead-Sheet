@@ -112,7 +112,7 @@ export const backupLine = (backup: BackupResult | null) => {
   return "Backing up this phone…";
 };
 
-/** A new account with no password ends on the nudge to add one, when this server offers passwords: with no codes, a lost phone is otherwise a lost account. */
+/** A new account with no password ends on the nudge to add one when this server offers passwords. With no backup codes, a lost phone is otherwise a lost account. */
 const afterCreate = (account: Account, config: AuthConfig | null): Step =>
   config?.password && !account.ways.some((way) => way.kind === "password") ? { name: "nudge" } : { name: "account" };
 

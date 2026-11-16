@@ -333,23 +333,14 @@ export function saveTextScaleIndex(index: number): boolean {
 /** The Chords and Transpose defaults from Settings, one entry per account on this phone and "" for signed out. */
 export const PERSONAL_KEY = "leadSheetsPersonal";
 
-function readPersonalEntries(): Record<string, unknown> {
-  try {
-    const value: unknown = JSON.parse(readRaw(PERSONAL_KEY) ?? "{}");
-    return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-  } catch {
-    return {};
-  }
-}
-
 /** An account with no entry yet starts from what the player set while signed out, never from another account's. */
 export function loadPersonal(owner: string | null): PersonalDefaults {
-  const entries = readPersonalEntries();
+  const entries = readObject(PERSONAL_KEY);
   return parsePersonal(entries[owner ?? ""] ?? entries[""]);
 }
 
 export function savePersonal(owner: string | null, next: PersonalDefaults): boolean {
-  return writeRaw(PERSONAL_KEY, JSON.stringify({ ...readPersonalEntries(), [owner ?? ""]: parsePersonal(next) }));
+  return writeRaw(PERSONAL_KEY, JSON.stringify({ ...readObject(PERSONAL_KEY), [owner ?? ""]: parsePersonal(next) }));
 }
 
 /** Device-wide metronome settings. The metronome module parses what comes back. */
@@ -378,7 +369,7 @@ export function songByRef(songs: Song[], ref: SongRef): Song | undefined {
 /** One key per song, so a save never rewrites another song's value from a stale copy in another tab. */
 function readSongPref(key: string, ref: SongRef): unknown {
   const raw = readRaw(`${key}.${refKey(ref)}`);
-  if (raw === null) return readLegacyMap(key)[refKey(ref)];
+  if (raw === null) return readObject(key)[refKey(ref)];
   try {
     return JSON.parse(raw);
   } catch {
@@ -390,8 +381,8 @@ function writeSongPref(key: string, ref: SongRef, value: number | Notation): boo
   return writeRaw(`${key}.${refKey(ref)}`, JSON.stringify(value));
 }
 
-/** Before per-song keys, each setting was one JSON map of song id to value. Read it so old saves still load. */
-function readLegacyMap(key: string): Record<string, unknown> {
+/** A stored JSON object, or {} when it is missing or unreadable. Before per-song keys, each song setting was one such map of song id to value, so old saves still load through it. */
+function readObject(key: string): Record<string, unknown> {
   const raw = readRaw(key);
   if (!raw) return {};
   try {
@@ -414,7 +405,6 @@ export function saveScrollPercent(ref: SongRef, percent: number): boolean {
   return writeSongPref(SCROLL_PERCENT_KEY, ref, clampScrollPercent(percent));
 }
 
-/** The song's own Notes or Nashville choice, or `fallback` for a song the player never switched. */
 export function loadNotation(ref: SongRef, fallback: Notation = "notes"): Notation {
   const value = readSongPref(NOTATION_KEY, ref);
   return value === "nashville" || value === "notes" ? value : fallback;

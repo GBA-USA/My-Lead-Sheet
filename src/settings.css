@@ -166,3 +166,16 @@
   color: var(--danger);
   font-weight: 700;
 }
+
+.sheet-gear {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  margin-left: auto;
+  border: var(--control-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-dim);
+}

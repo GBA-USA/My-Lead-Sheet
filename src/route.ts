@@ -1,4 +1,5 @@
-export type TabName = "songs" | "setlists" | "bands";
+const TABS = ["songs", "setlists", "bands"] as const;
+export type TabName = (typeof TABS)[number];
 
 export type Route =
   | { name: "songs" }
@@ -7,8 +8,6 @@ export type Route =
   | { name: "song"; id: number; from: TabName }
   | { name: "live"; setlistId: number; index: number }
   | { name: "settings"; from: TabName };
-
-const TABS: readonly TabName[] = ["songs", "setlists", "bands"];
 
 export function parseHash(hash: string): Route {
   const raw = hash.replace(/^#/, "");

@@ -619,7 +619,7 @@ export function BandsSheet({
         <header className="account-top">
           <h2 id={titleId}>{screen.title}</h2>
           {view.name === "band" && onSettings ? (
-            <button type="button" className="account-close" style={{ marginLeft: "auto" }} aria-label="Settings" onClick={onSettings}>
+            <button type="button" className="sheet-gear" aria-label="Settings" onClick={onSettings}>
               <GearIcon />
             </button>
           ) : null}

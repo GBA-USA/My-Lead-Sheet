@@ -19,7 +19,6 @@ export interface Account {
   ways: Way[];
 }
 
-/** What a create or sign-in reply carries. */
 export interface SignedIn {
   account: Account;
 }

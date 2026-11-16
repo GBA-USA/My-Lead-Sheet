@@ -4,6 +4,7 @@ import type { BandSetlist } from "./band-library-model";
 import type { ChatMessage } from "./chat-model";
 import { CODE_REFUSED } from "./code-link";
 import { ShowCode } from "./codes";
+import { SEND_MESSAGES } from "./send-song";
 import { useEscape, useStored } from "./hooks";
 import { MAX_CODE_SONGS, setlistCardIn, type CodeOffer, type SetlistCard as Card, type SetlistCopy } from "./setlist-code-model";
 import type { ShareChoice } from "./share-rule";
@@ -15,19 +16,13 @@ import "./band-library.css";
 
 export const SETLIST_CODE_MESSAGES: Record<string, string> = {
   ...CODE_REFUSED,
-  offline: "Can't reach the server. Check your connection and try again.",
+  ...SEND_MESSAGES,
   "signed-out": "Sign in again to share setlists.",
   "not-in-band": "This setlist belongs to a band you're not in.",
   "not-a-setlist-code": "That isn't a setlist code.",
   "not-friends": "You can get a setlist copy only from a friend or a bandmate. Add them as a friend first.",
   yourself: "This is the code for your own setlist.",
-  private_copy: "This was shared with you privately, so it can't be passed on.",
-  private_ancestor: "This was shared with you privately, so it can't be passed on.",
-  not_found: "This copy belongs to another account on this phone.",
-  not_yours: "This copy belongs to another account on this phone.",
-  "not-found": "This copy belongs to another account on this phone.",
-  lineage_broken: "The server can't tell where this copy came from, so it can't be passed on.",
-  choice_required: "Pick Private or Public first.",
+  "not-found": SEND_MESSAGES.not_found,
   "too-large": "That is too much for one code. Tick fewer songs.",
 };
 
@@ -38,7 +33,6 @@ export const setlistCodeMessage = (error: unknown) => {
 
 const signedOut = (error: unknown) => error instanceof ApiError && error.status === 401;
 
-/** Show code on a setlist row, or the note that an empty setlist needs a song first. */
 export function CodeOfferButton({ offer, busy, onShow }: { offer: CodeOffer; busy?: boolean; onShow: () => void }) {
   if (offer === "none") return null;
   if (offer === "add-a-song") return <small className="setlist-code-empty">Add a song first</small>;

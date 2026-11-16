@@ -1,5 +1,6 @@
 import { MAX_MESSAGE_CHARS, previewText, type ChatEntry, type ChatKind } from "../src/chat-model";
 import type { SongContent } from "../src/band-library-model";
+import type { SetlistCard, SetlistCopy } from "../src/setlist-code-model";
 import type { ShareChoice } from "../src/share-rule";
 import type { SongData } from "../src/types";
 import { randomBytes, toBase64Url } from "./bytes";
@@ -255,7 +256,7 @@ export const CHAT_ROUTES: Record<string, Route> = {
     const { setlist, songs, reshareable } = setlistCopyFor(sent, me.user_id);
     const roomId = await dmRoomFor(c, me, owner);
     const copyId = setlist[0].id;
-    const card = { name: sent.name, titles: sent.songs.map((item) => item.song.title), copyId, sharedAs: setlist[0].choice, reshareable };
+    const card: SetlistCard = { name: sent.name, titles: sent.songs.map((item) => item.song.title), copyId, sharedAs: setlist[0].choice, reshareable };
     const posted = await fromRoom(c.env.ROOM.getByName(roomId).chatPost(who(owner), copyId, JSON.stringify(card), c.now, { kind: "setlist", ref: copyId }));
     await fromRoom(selfRoom(c, me.user_id).receiveSetlist(setlist, songs));
     deliver(c, roomId, posted);
@@ -271,7 +272,7 @@ export const CHAT_ROUTES: Record<string, Route> = {
     if (!sent) throw new Refused("not-found", 404);
     const copy = setlistCopyFor(sent, me.user_id);
     if (copy.setlist[0].id !== mine.id) throw new Refused("not-found", 404);
-    return { body: { name: sent.name, songs: copy.songs.map((item) => ({ song: item.song, copyId: item.chain[0].id })), reshareable: copy.reshareable } };
+    return { body: { name: sent.name, songs: copy.songs.map((item) => ({ song: item.song, copyId: item.chain[0].id })), reshareable: copy.reshareable } satisfies SetlistCopy };
   },
 
   async "POST /api/chat/read"(c) {

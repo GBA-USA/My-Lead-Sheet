@@ -464,7 +464,7 @@ export function App() {
         ) : null}
         {route.name === "songs" ? <SongList songs={library.songs} /> : null}
         {route.name === "setlists" ? <SetlistList setlists={library.setlists} songs={library.songs} onShowCode={account ? setSetlistCode : undefined} /> : null}
-        {route.name === "bands" ? <BandsTab account={account} onOpen={(bandId) => setBands({ bandId })} onSignIn={() => setAccountOpen(true)} /> : null}
+        {route.name === "bands" ? <BandsTab account={account} onOpen={(bandId) => setBands({ bandId })} onSignIn={() => setAccountOpen(true)} onSignedOut={() => setAccount(null)} /> : null}
         {route.name === "song" ? (
           <SongBody
             library={library}

@@ -636,13 +636,15 @@ export function BandsSheet({
   );
 }
 
-/** The Bands tab: the player's bands, each opening its band page, and + New band for making, joining or scanning. */
-export function BandsTab({ account, onOpen, onSignIn }: { account: Account | null; onOpen: (bandId?: string) => void; onSignIn: () => void }) {
+export function BandsTab({ account, onOpen, onSignIn, onSignedOut }: { account: Account | null; onOpen: (bandId?: string) => void; onSignIn: () => void; onSignedOut: () => void }) {
   const [bands, setBands] = useState<BandSummary[] | null>(null);
   const [error, setError] = useState("");
   const load = () => {
     setError("");
-    api<{ bands: BandSummary[] }>("/api/bands").then((reply) => setBands(reply.bands), (caught) => setError(message(caught)));
+    api<{ bands: BandSummary[] }>("/api/bands").then(
+      (reply) => setBands(reply.bands),
+      (caught) => (caught instanceof ApiError && caught.status === 401 ? onSignedOut() : setError(message(caught))),
+    );
   };
   useEffect(() => {
     setBands(null);

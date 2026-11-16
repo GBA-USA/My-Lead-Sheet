@@ -16,7 +16,6 @@ const TABS: [TabName, string][] = [
   ["bands", "Bands"],
 ];
 
-/** The top tabs. The arrow keys move between them, as they do in any tab list. */
 export function Tabs({ tab }: { tab: TabName }) {
   const onKey = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;

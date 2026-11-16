@@ -270,7 +270,7 @@ export function receivedCopy(shareId: string, friendId: string, senderId: string
 
 /** A copy code's setlist as its owner sent it: the chain it comes from, and each ticked chart with the chain its copy comes from. */
 export type SentSetlist = { name: string; chain: Chain; songs: { song: SongContent; print: string; chain: Chain }[] };
-type SetlistSend = { name: string; choice: ShareChoice; from: Chain | null; songs: { song: SongContent; print: string; from: Chain | null }[] };
+export type SetlistSend = { name: string; choice: ShareChoice; from: Chain | null; songs: { song: SongContent; print: string; from: Chain | null }[] };
 
 /** A copy code as one scanner takes it: their own node under the setlist and under each song, all with the owner's choice. */
 export function setlistCopyFor(sent: SentSetlist, userId: string) {
@@ -454,14 +454,15 @@ export async function mySetlistTarget(c: Context, user: User) {
   const self = selfRoom(c, user.user_id);
   const from = setlistCopyId === null || setlistCopyId === undefined ? null : await fromRoom(self.heldChain(idIn(setlistCopyId)));
   if (from) mustAllow(from, user.user_id, choice);
-  const picked = [];
-  for (const value of songs) {
-    const item = record(value);
-    if (!item) throw new Refused("bad-request");
-    const song = songIn(item.song);
-    const print = await printOf(song);
-    picked.push({ song, print, from: await guardContent(c, user.user_id, print, choice, item.copyId === null || item.copyId === undefined ? null : idIn(item.copyId), null) });
-  }
+  const picked = await Promise.all(
+    songs.map(async (value) => {
+      const item = record(value);
+      if (!item) throw new Refused("bad-request");
+      const song = songIn(item.song);
+      const print = await printOf(song);
+      return { song, print, from: await guardContent(c, user.user_id, print, choice, item.copyId === null || item.copyId === undefined ? null : idIn(item.copyId), null) };
+    }),
+  );
   return { targetId: await self.sendSetlist(user.user_id, { name: (name as string).trim(), choice, from, songs: picked }, c.now) };
 }
 

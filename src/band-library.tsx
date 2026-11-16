@@ -41,7 +41,7 @@ type Props = {
 
 type SetlistFields = Pick<BandSetlist, "name" | "songIds" | "tags">;
 type Picked = { kind: "song"; song: Song } | { kind: "setlist"; setlist: Setlist } | { kind: "new"; fields: SetlistFields };
-type Mode = { name: "list" } | { name: "pick" } | { name: "ask"; picked: Picked } | { name: "edit"; setlist?: BandSetlist } | { name: "code"; setlist: BandSetlist };
+type Mode = { name: "list" } | { name: "pick" } | { name: "ask"; picked: Picked } | { name: "edit"; setlist: BandSetlist } | { name: "new" } | { name: "code"; setlist: BandSetlist };
 
 const NEW_SETLIST: SetlistFields = { name: "", songIds: [], tags: [] };
 
@@ -266,9 +266,11 @@ export function BandLibraryTab({ band, me, tab, busy, run, notify, onPlanGig, la
   }
 
   if (mode.name === "edit") {
-    const { setlist } = mode;
-    const onSave = (fields: SetlistFields) => (setlist ? saveSetlist(setlist, fields) : setMode({ name: "ask", picked: { kind: "new", fields } }));
-    return <SetlistEditor setlist={setlist ?? NEW_SETLIST} songs={library.songs} busy={busy} onSave={onSave} onCancel={back} />;
+    return <SetlistEditor setlist={mode.setlist} songs={library.songs} busy={busy} onSave={(fields) => saveSetlist(mode.setlist, fields)} onCancel={back} />;
+  }
+
+  if (mode.name === "new") {
+    return <SetlistEditor setlist={NEW_SETLIST} songs={library.songs} busy={busy} onSave={(fields) => setMode({ name: "ask", picked: { kind: "new", fields } })} onCancel={back} />;
   }
 
   if (mode.name === "code") {
@@ -390,7 +392,7 @@ export function BandLibraryTab({ band, me, tab, busy, run, notify, onPlanGig, la
         <button type="button" className="account-primary" onClick={openPicker}>
           + Share a setlist
         </button>
-        <button type="button" className="account-secondary" onClick={() => setMode({ name: "edit" })}>
+        <button type="button" className="account-secondary" onClick={() => setMode({ name: "new" })}>
           + New setlist
         </button>
       </div>

@@ -5,7 +5,7 @@ import type { Env } from "./index";
 import { handleBackup } from "./room-backup";
 import { chatRoom, createChatTables, type Card, type Posted } from "./room-chat";
 import { exportBand, importBandFile } from "./room-export";
-import { bandLibrary, createLibraryTables, selfCopies, type SentSetlist, type SetlistFields, type SetlistShare, type SongChange, type SongShare } from "./room-library";
+import { bandLibrary, createLibraryTables, selfCopies, type SentSetlist, type SetlistFields, type SetlistSend, type SetlistShare, type SongChange, type SongShare } from "./room-library";
 import { createGigTables, gigRoom, type GigFields } from "./room-gig";
 import { bandRoom, createMemberTables, shutOut } from "./room-members";
 import type { RouteChoice } from "../src/routes";
@@ -262,7 +262,7 @@ export class Room extends DurableObject<Env> {
     return selfCopies.chains(this.ctx.storage.sql, copyId, print);
   }
 
-  sendSetlist(ownerId: string, send: Parameters<typeof selfCopies.sendSetlist>[2], now: number) {
+  sendSetlist(ownerId: string, send: SetlistSend, now: number) {
     return selfCopies.sendSetlist(this.ctx.storage.sql, ownerId, send, now);
   }
 

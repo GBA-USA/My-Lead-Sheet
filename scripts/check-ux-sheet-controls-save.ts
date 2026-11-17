@@ -756,45 +756,87 @@ try {
   });
 
   /**
-   * Signed in with one saved version, transpose up, open Save as, then let the 401 sign the phone out while the dialog
-   * stands. If it still stands, press its Save, and Cancel whatever remains. Returns what the player ends with.
+   * Signed in under `mark` with one saved version and `seed` already on the phone, transpose up, open Save as, then let
+   * the 401 sign the phone out while the dialog stands. If it still stands, press its Save, and Cancel whatever remains.
+   * Returns what the player ends with.
    */
-  async function signOutWithSaveAsOpen(fullPhone: boolean) {
+  async function signOutWithSaveAsOpen({ fullPhone = false, mark = sam.userId, seed = "" } = {}) {
     const dialogOpen = () => evaluate<boolean>(`!!${DIALOG}`);
     const versions = async () => (JSON.parse((await stored(VERSIONS)) ?? "null") as { versions: { name: string; semitones?: number }[]; selected: number | null } | null)?.versions ?? [];
     const api = await gatedApi(401, { error: "signed-out" });
     try {
-      await freshPhone(`#/song/${CHAIN_BREAKER}`, `localStorage.setItem("leadSheetsSignedIn", ${js(sam.userId)})`);
+      await freshPhone(`#/song/${CHAIN_BREAKER}`, `localStorage.setItem("leadSheetsSignedIn", ${js(mark)}); ${seed}`);
       await evaluate(`localStorage.setItem(${js(VERSIONS)}, ${js(js({ versions: [TAUGHT], selected: null }))})`);
       await load(`#/song/${CHAIN_BREAKER}`);
+      const original = await keyName();
       await tap("Transpose up", CONTROLS);
       const raised = await keyName();
       await tap("Save", HEADER);
       await tap("Save as…");
       await until(`!!${DIALOG}?.querySelector("input[aria-label='Version name']")`, "the Save as name field");
-      if ((await stored("leadSheetsSignedIn")) !== sam.userId) throw new Failed(`the account answered before Save as opened (mark ${await stored("leadSheetsSignedIn")})`);
+      if ((await stored("leadSheetsSignedIn")) !== mark) throw new Failed(`the account answered before Save as opened (mark ${await stored("leadSheetsSignedIn")})`);
       api.release();
       await until(`localStorage.getItem("leadSheetsSignedIn") === null`, "the 401 to sign the phone out", 10000);
       await settle(400);
       if (fullPhone) await evaluate(FULL_FOR_VERSIONS);
+      const standing = await dialogOpen();
       const before = await versions();
-      if (await dialogOpen()) await tap("Save", DIALOG);
+      if (standing) await tap("Save", DIALOG);
       if (await dialogOpen()) await tap("Cancel", DIALOG);
-      return { raised, before, after: await versions(), alerts: await alerts(), save: await saveShown(), revert: await revertShown(), key: await keyName() };
+      const added = (await versions()).slice(before.length).map((each) => [each.name, each.semitones ?? null]);
+      return { original, raised, standing, before, added, after: await versions(), alerts: await alerts(), save: await saveShown(), revert: await revertShown(), key: await keyName(), draft: await stored(DRAFT) };
     } finally {
       api.close();
     }
   }
 
   await test("a 401 that signs the phone out while Save as is open leaves no Couldn't save without Save or Revert when the phone is full", async () => {
-    const end = await signOutWithSaveAsOpen(true);
+    const end = await signOutWithSaveAsOpen({ fullPhone: true });
     expect(!(end.alerts.includes(REFUSAL) && !end.save && !end.revert), `signed out with no draft, Save shows: ${end.save}, Revert shows: ${end.revert}, the line reads ${js(end.alerts)}`);
   });
 
   await test("a 401 that signs the phone out while Save as is open saves no version other than the one the player opened Save as for", async () => {
-    const end = await signOutWithSaveAsOpen(false);
-    const added = end.after.slice(end.before.length).map((each) => [each.name, each.semitones ?? null]);
-    expect(added.length === 0, `the dialog saved ${js(added)} after the draft (key ${end.raised}) left with the 401, and the sheet reads ${end.key}`);
+    const end = await signOutWithSaveAsOpen();
+    expect(end.added.length === 0, `the dialog saved ${js(end.added)} after the draft (key ${end.raised}) left with the 401, and the sheet reads ${end.key}`);
+  });
+
+  /** Signed out, makes the given key changes and returns the draft the phone stores for them, and whether Save shows over it. */
+  async function signedOutDraft(...taps: string[]) {
+    await freshPhone();
+    for (const label of taps) await tap(label, CONTROLS);
+    const draft = await stored(DRAFT);
+    if (!draft) throw new Failed("a signed-out change stores no draft");
+    return { draft, key: await keyName(), save: await saveShown(), seed: `localStorage.setItem(${js(DRAFT)}, ${js(draft)})` };
+  }
+  const ended = (end: Awaited<ReturnType<typeof signOutWithSaveAsOpen>>) =>
+    `the dialog stood: ${end.standing}, it wrote ${js(end.added)}, the key reads ${end.key}, Save shows: ${end.save}, the line reads ${js(end.alerts)}`;
+
+  await test("a 401 sign-out with Save as open and no signed-out draft closes the dialog, writes nothing and shows the song's own key", async () => {
+    const end = await signOutWithSaveAsOpen();
+    expect(!end.standing && end.added.length === 0, ended(end));
+    expect(end.key === end.original && !end.save && end.draft === null, `signed out with no draft, ${ended(end)}, stored draft ${js(end.draft)}`);
+  });
+
+  await test("a 401 sign-out with Save as open and a signed-out draft that differs closes the dialog, writes nothing and shows that draft with its Save", async () => {
+    const theirs = await signedOutDraft("Transpose up", "Transpose up");
+    const end = await signOutWithSaveAsOpen({ seed: theirs.seed });
+    expect(!end.standing && end.added.length === 0, ended(end));
+    expect(end.key === theirs.key && end.save && end.draft === theirs.draft, `signed out over the +2 draft, ${ended(end)} (want ${theirs.key})`);
+  });
+
+  await test("a 401 sign-out with Save as open and a signed-out draft equal to the defaults closes the dialog, writes nothing and shows no Save", async () => {
+    const theirs = await signedOutDraft("Transpose up", "Transpose down");
+    if (theirs.save) throw new Failed(`an up-and-down draft shows Save at ${theirs.key}`);
+    const end = await signOutWithSaveAsOpen({ seed: theirs.seed });
+    expect(!end.standing && end.added.length === 0, ended(end));
+    expect(end.key === theirs.key && !end.save && end.draft === theirs.draft, `signed out over the unchanged draft, ${ended(end)} (want ${theirs.key})`);
+  });
+
+  await test("a 401 sign-out with Save as open on a change made before the phone could name its account closes the dialog, writes nothing and keeps the change as the signed-out draft", async () => {
+    const end = await signOutWithSaveAsOpen({ mark: "1" });
+    expect(!end.standing && end.added.length === 0, ended(end));
+    const kept = (JSON.parse(end.draft ?? "null") as { semitones?: number } | null)?.semitones ?? null;
+    expect(end.key === end.raised && end.save && kept === 1, `signed out, the change made before the account answered reads ${end.key} (want ${end.raised}), Save shows: ${end.save}, stored signed-out draft semitones ${kept}`);
   });
 
   await test("with a signed-out draft on the same song, a 401 while Save as is open closes the dialog and shows that draft with its own Save", async () => {

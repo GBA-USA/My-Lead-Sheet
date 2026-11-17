@@ -142,12 +142,15 @@ const opened = (ref: SongRef | null, keeper: Owner, selected: number | null): Vi
   refused: false,
 });
 
-/** The owner changed on the same song. A change made before the phone could name its account becomes that account's draft. Otherwise the new owner's own draft shows. */
+/**
+ * The owner changed on the same song. A change made before the phone could name its account becomes that account's
+ * draft, and a refusal of it comes along. Otherwise the new owner's own draft shows, and the old draft's refusal goes with it.
+ */
 function renamed(visit: Visit, keeper: Owner): Visit {
-  if (visit.ref == null || keeper === undefined) return { ...visit, keeper, draft: null };
+  if (visit.ref == null || keeper === undefined) return { ...visit, keeper, draft: null, refused: false };
   const carried = visit.keeper === undefined ? visit.draft : null;
   if (carried) saveDraft(keeper, visit.ref, carried);
-  return { ...visit, keeper, draft: carried ?? loadDraft(keeper, visit.ref) };
+  return { ...visit, keeper, draft: carried ?? loadDraft(keeper, visit.ref), refused: carried !== null && visit.refused };
 }
 
 /**

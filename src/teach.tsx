@@ -67,8 +67,7 @@ export function SongLine({
   const [deleting, setDeleting] = useState(false);
   const [retiming, setRetiming] = useState(false);
   const [savingAs, setSavingAs] = useState(false);
-  const [refused, setRefused] = useState(false);
-  const { versions, selected, version } = state;
+  const { versions, selected, version, refused } = state;
 
   if (!state.locked && versions.length === 0 && !state.changed && !refused) return null;
 
@@ -87,8 +86,6 @@ export function SongLine({
       {label}
     </button>
   );
-  const saved = (ok: boolean) => setRefused(!ok);
-
   if (deleting && version && selected != null) {
     return (
       <div className="song-line">
@@ -176,7 +173,7 @@ export function SongLine({
               Revert
             </button>
             <Menu button="Save" className="save-btn" open={menu === "save"} onToggle={() => onToggleMenu("save")} onClose={onCloseMenu}>
-              <button type="button" role="menuitem" disabled={version == null} onClick={pick(() => saved(state.saveToVersion()))}>
+              <button type="button" role="menuitem" disabled={version == null} onClick={pick(state.saveToVersion)}>
                 Save to this version
               </button>
               <button type="button" role="menuitem" onClick={pick(() => setSavingAs(true))}>
@@ -196,9 +193,7 @@ export function SongLine({
           name={state.nextName}
           refused={refused}
           onSave={(name) => {
-            const ok = state.saveAs(name);
-            saved(ok);
-            if (ok) setSavingAs(false);
+            if (state.saveAs(name)) setSavingAs(false);
           }}
           onCancel={() => setSavingAs(false)}
         />

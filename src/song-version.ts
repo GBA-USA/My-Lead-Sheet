@@ -122,38 +122,64 @@ const NONE: ScrollVersions = { versions: [], selected: null };
 type Patch = Partial<Draft> | ((draft: Draft) => Partial<Draft>);
 
 /**
+ * One visit to a song: the draft over the version in use, a locked song's pick, and whether the phone refused the last
+ * Save of this draft. The keeper is the owner whose stored draft this is, or undefined on a locked song or while the
+ * phone cannot name its account, when the draft lives here only.
+ */
+interface Visit {
+  ref: SongRef | null;
+  keeper: Owner;
+  draft: Draft | null;
+  selected: number | null;
+  refused: boolean;
+}
+
+const opened = (ref: SongRef | null, keeper: Owner, selected: number | null): Visit => ({
+  ref,
+  keeper,
+  draft: ref != null && keeper !== undefined ? loadDraft(keeper, ref) : null,
+  selected,
+  refused: false,
+});
+
+/** The owner changed on the same song. A change made before the phone could name its account becomes that account's draft. Otherwise the new owner's own draft shows. */
+function renamed(visit: Visit, keeper: Owner): Visit {
+  if (visit.ref == null || keeper === undefined) return { ...visit, keeper, draft: null };
+  const carried = visit.keeper === undefined ? visit.draft : null;
+  if (carried) saveDraft(keeper, visit.ref, carried);
+  return { ...visit, keeper, draft: carried ?? loadDraft(keeper, visit.ref) };
+}
+
+/**
  * The song's versions and the draft over the version in use. An own song keeps the draft on this phone for this
  * account until Save, Revert or a pick, so a choice the player made holds even when it matches today's default. Save
  * shows while the draft differs from the version in use. A locked song keeps the draft, and any version picked, only
- * until the player leaves it. A phone signed in to an account it cannot name yet keeps the draft in memory too, so
- * the signed-out entry never takes an account's change. Every change the controls make goes through `set`.
+ * until the player leaves it. A phone signed in to an account it cannot name yet keeps the draft in memory until the
+ * account answers, then hands it to that account. A refused Save shows until the draft goes. Every change the controls
+ * make goes through `set`.
  */
 export function useSongVersion(song: Song | null, owner: Owner, personal: PersonalDefaults) {
   const ref = song?.ref ?? null;
   const isLocked = song != null && locked(song);
   const keeper = isLocked ? undefined : owner;
   const [stored, setStored] = useStored(() => (ref == null ? NONE : loadScrollVersions(ref)), ref);
-  const [kept, setKept] = useStored(() => (ref == null || keeper === undefined ? null : loadDraft(keeper, ref)), `${keeper} ${ref}`);
-  const [moment, setMoment] = useState<{ ref: SongRef | null; selected: number | null; draft: Draft | null }>({ ref, selected: stored.selected, draft: null });
-  if (moment.ref !== ref) setMoment({ ref, selected: stored.selected, draft: null });
+  const [slot, setVisit] = useState(() => opened(ref, keeper, stored.selected));
+  const visit = slot.ref !== ref ? opened(ref, keeper, stored.selected) : slot.keeper !== keeper ? renamed(slot, keeper) : slot;
+  if (visit !== slot) setVisit(visit);
 
   const versions = stored.versions.map(fromStored);
-  const selected = isLocked && moment.ref === ref ? moment.selected : stored.selected;
+  const selected = isLocked ? visit.selected : stored.selected;
   const version = selected == null ? null : (versions[selected] ?? null);
   const defaults = song ? songDefaults(song, personal) : null;
   const base = defaults ? baseline(version, defaults) : null;
-  const held = keeper === undefined ? (moment.ref === ref ? moment.draft : null) : kept;
-  const draft = held ?? base;
+  const draft = visit.draft ?? base;
   const latest = useRef(draft);
   latest.current = draft;
 
   const keepDraft = (next: Draft | null) => {
     if (ref == null) return;
-    if (keeper === undefined) setMoment((current) => ({ ...current, draft: next }));
-    else {
-      saveDraft(keeper, ref, next);
-      setKept(next);
-    }
+    if (keeper !== undefined) saveDraft(keeper, ref, next);
+    setVisit((current) => ({ ...current, draft: next, refused: next !== null && current.refused }));
   };
 
   const set = (patch: Patch) => {
@@ -172,7 +198,10 @@ export function useSongVersion(song: Song | null, owner: Owner, personal: Person
 
   const commit = (change: (current: ScrollVersions) => ScrollVersions): boolean => {
     if (!draft || ref == null) return false;
-    if (!write(change)) return false;
+    if (!write(change)) {
+      setVisit((current) => ({ ...current, refused: true }));
+      return false;
+    }
     if (draft.data) saveSongData(ref, { ...loadSongData(ref), ...draft.data });
     keepDraft(null);
     return true;
@@ -188,13 +217,14 @@ export function useSongVersion(song: Song | null, owner: Owner, personal: Person
     draft,
     locked: isLocked,
     changed: !isLocked && draft != null && base != null && differs(draft, base),
+    refused: visit.refused,
     nextName: nextVersionName(versions),
     set,
     revert: () => keepDraft(null),
     saveAs: (name: string) => commit((current) => ({ versions: [...current.versions, toStored(name, draft!)], selected: current.versions.length })),
     saveToVersion: () => selected != null && commit((current) => ({ ...current, versions: current.versions.map((each, i) => (i === selected ? toStored(each.name, draft!) : each)) })),
     select: (index: number | null) => {
-      if (isLocked) return setMoment({ ref, selected: index, draft: null });
+      if (isLocked) return setVisit((current) => ({ ...current, selected: index, draft: null }));
       if (write((current) => ({ ...current, selected: index }))) keepDraft(null);
     },
     rename: (index: number, name: string) => edit(index, (each) => ({ ...each, name })),

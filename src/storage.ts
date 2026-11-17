@@ -418,7 +418,7 @@ export function saveNotation(ref: SongRef, notation: Notation): boolean {
 export const SONG_DATA_KEY = "leadSheetsSongData";
 /** Per-song saved versions and which one is in use, under `leadSheetsScrollVersions.<ref key>`. */
 export const SCROLL_VERSIONS_KEY = "leadSheetsScrollVersions";
-/** Per-song changes not yet saved, under `leadSheetsSongDraft.<ref key>`, one entry per account on this phone and "" for signed out. */
+/** Per-song changes not yet saved: the signed-out player's under `leadSheetsSongDraft.<ref key>`, an account's under `leadSheetsSongDraft.<ref key>.<account id>`. */
 export const SONG_DRAFT_KEY = "leadSheetsSongDraft";
 
 function isPositive(value: unknown): boolean {
@@ -550,15 +550,21 @@ export function updateScrollVersions(ref: SongRef, change: (current: ScrollVersi
   return saveScrollVersions(ref, next) ? next : null;
 }
 
-/** This account's unsaved changes to one song, as stored. The Save model parses what comes back. */
+const draftKey = (owner: string | null, ref: SongRef) => `${SONG_DRAFT_KEY}.${refKey(ref)}${owner === null ? "" : `.${owner}`}`;
+
+/** This account's unsaved changes to one song, as stored, or undefined when it has none. The Save model parses what comes back. */
 export function loadSongDraft(owner: string | null, ref: SongRef): unknown {
-  return readObject(`${SONG_DRAFT_KEY}.${refKey(ref)}`)[owner ?? ""];
+  const raw = readRaw(draftKey(owner, ref));
+  if (raw === null) return undefined;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
 }
 
-/** A null `draft` removes this account's entry, and the key goes with the last entry. */
+/** A null `draft` removes this account's key. Each account has its own, so a drop never rewrites another account's draft and a full phone cannot refuse it. */
 export function saveSongDraft(owner: string | null, ref: SongRef, draft: object | null): boolean {
-  const key = `${SONG_DRAFT_KEY}.${refKey(ref)}`;
-  const { [owner ?? ""]: _mine, ...others } = readObject(key);
-  const next = draft === null ? others : { ...others, [owner ?? ""]: draft };
-  return Object.keys(next).length === 0 ? removeRaw(key) : writeRaw(key, JSON.stringify(next));
+  const key = draftKey(owner, ref);
+  return draft === null ? removeRaw(key) : writeRaw(key, JSON.stringify(draft));
 }

@@ -241,17 +241,8 @@ export class Room extends DurableObject<Env> {
     bandLibrary.openByCode(this.band, userId, setlistId);
   }
 
-  copyBandSong(userId: string, songId: string) {
-    return bandLibrary.copyOut(this.band, userId, songId);
-  }
-
   heldByPrint(userId: string, print: string, except: string | null, takenFrom: string[] | null) {
     return bandLibrary.heldByPrint(this.band, userId, print, except, takenFrom);
-  }
-
-  /** Self room only: the Directory names it from the session, so the copies here are always the caller's. */
-  recordCopy(userId: string, from: StoredShare[], print: string) {
-    return selfCopies.record(this.ctx.storage.sql, userId, from, print);
   }
 
   receiveCopy(from: StoredShare[], print: string) {

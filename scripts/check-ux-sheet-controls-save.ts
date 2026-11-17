@@ -755,6 +755,48 @@ try {
     }
   });
 
+  /**
+   * Signed in with one saved version, transpose up, open Save as, then let the 401 sign the phone out while the dialog
+   * stands. If it still stands, press its Save, and Cancel whatever remains. Returns what the player ends with.
+   */
+  async function signOutWithSaveAsOpen(fullPhone: boolean) {
+    const dialogOpen = () => evaluate<boolean>(`!!${DIALOG}`);
+    const versions = async () => (JSON.parse((await stored(VERSIONS)) ?? "null") as { versions: { name: string; semitones?: number }[]; selected: number | null } | null)?.versions ?? [];
+    const api = await gatedApi(401, { error: "signed-out" });
+    try {
+      await freshPhone(`#/song/${CHAIN_BREAKER}`, `localStorage.setItem("leadSheetsSignedIn", ${js(sam.userId)})`);
+      await evaluate(`localStorage.setItem(${js(VERSIONS)}, ${js(js({ versions: [TAUGHT], selected: null }))})`);
+      await load(`#/song/${CHAIN_BREAKER}`);
+      await tap("Transpose up", CONTROLS);
+      const raised = await keyName();
+      await tap("Save", HEADER);
+      await tap("Save as…");
+      await until(`!!${DIALOG}?.querySelector("input[aria-label='Version name']")`, "the Save as name field");
+      if ((await stored("leadSheetsSignedIn")) !== sam.userId) throw new Failed(`the account answered before Save as opened (mark ${await stored("leadSheetsSignedIn")})`);
+      api.release();
+      await until(`localStorage.getItem("leadSheetsSignedIn") === null`, "the 401 to sign the phone out", 10000);
+      await settle(400);
+      if (fullPhone) await evaluate(FULL_FOR_VERSIONS);
+      const before = await versions();
+      if (await dialogOpen()) await tap("Save", DIALOG);
+      if (await dialogOpen()) await tap("Cancel", DIALOG);
+      return { raised, before, after: await versions(), alerts: await alerts(), save: await saveShown(), revert: await revertShown(), key: await keyName() };
+    } finally {
+      api.close();
+    }
+  }
+
+  await test("a 401 that signs the phone out while Save as is open leaves no Couldn't save without Save or Revert when the phone is full", async () => {
+    const end = await signOutWithSaveAsOpen(true);
+    expect(!(end.alerts.includes(REFUSAL) && !end.save && !end.revert), `signed out with no draft, Save shows: ${end.save}, Revert shows: ${end.revert}, the line reads ${js(end.alerts)}`);
+  });
+
+  await test("a 401 that signs the phone out while Save as is open saves no version other than the one the player opened Save as for", async () => {
+    const end = await signOutWithSaveAsOpen(false);
+    const added = end.after.slice(end.before.length).map((each) => [each.name, each.semitones ?? null]);
+    expect(added.length === 0, `the dialog saved ${js(added)} after the draft (key ${end.raised}) left with the 401, and the sheet reads ${end.key}`);
+  });
+
   await test("a phone signed in by an older build keeps a change made before /api/me answers", async () => {
     const slow = createServer((request, response) => {
       const path = new URL(request.url ?? "/", "http://localhost").pathname;

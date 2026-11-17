@@ -712,6 +712,49 @@ try {
     expect(!(await alerts()).includes(REFUSAL) && !(await saveShown()), `after Revert the line reads ${js(await alerts())} and Save shows: ${await saveShown()}`);
   });
 
+  /** An API that holds every request until `release`, then answers each the same way. It stands in for the Worker through `apiBase` until `close`. */
+  async function gatedApi(status: number, body: unknown) {
+    let release = () => {};
+    const gate = new Promise<void>((open) => (release = open));
+    const api = createServer((_request, response) => {
+      gate.then(() => {
+        response.writeHead(status, { "content-type": "application/json" });
+        response.end(js(body));
+      });
+    });
+    await new Promise<void>((done) => api.listen(0, "127.0.0.1", done));
+    apiBase = `http://127.0.0.1:${(api.address() as AddressInfo).port}`;
+    return {
+      release,
+      close: () => {
+        apiBase = base;
+        api.close();
+        api.closeAllConnections();
+      },
+    };
+  }
+
+  await test("after a refused Save, a 401 that signs the phone out on the same song takes Couldn't save away with the draft", async () => {
+    const api = await gatedApi(401, { error: "signed-out" });
+    try {
+      await freshPhone(`#/song/${CHAIN_BREAKER}`, `localStorage.setItem("leadSheetsSignedIn", ${js(sam.userId)})`);
+      await tap("Transpose up", CONTROLS);
+      await evaluate(FULL_FOR_VERSIONS);
+      await saveAs("Full");
+      await tap("Cancel", DIALOG);
+      if (!(await alerts()).includes(REFUSAL) || !(await saveShown()) || (await stored("leadSheetsSignedIn")) !== sam.userId) {
+        throw new Failed(`before the answer the line reads ${js(await alerts())}, Save shows: ${await saveShown()}, mark ${await stored("leadSheetsSignedIn")}`);
+      }
+      api.release();
+      await until(`localStorage.getItem("leadSheetsSignedIn") === null`, "the 401 to sign the phone out", 10000);
+      await settle(400);
+      expect(!(await saveShown()) && !(await revertShown()), `signed out, Save shows: ${await saveShown()} and Revert shows: ${await revertShown()}`);
+      expect(!(await alerts()).includes(REFUSAL), `signed out with no draft, the line still reads ${js(await alerts())}`);
+    } finally {
+      api.close();
+    }
+  });
+
   await test("a phone signed in by an older build keeps a change made before /api/me answers", async () => {
     const slow = createServer((request, response) => {
       const path = new URL(request.url ?? "/", "http://localhost").pathname;

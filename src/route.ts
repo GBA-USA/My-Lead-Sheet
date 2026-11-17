@@ -1,7 +1,6 @@
 const TABS = ["songs", "setlists", "bands"] as const;
 export type TabName = (typeof TABS)[number];
 
-/** The band page's sections, in the order its tabs show them. */
 export const BAND_SECTIONS = ["songs", "setlists", "chat", "gigs", "members"] as const;
 export type BandSection = (typeof BAND_SECTIONS)[number];
 

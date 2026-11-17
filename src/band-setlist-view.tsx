@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { titleOf } from "./band-library";
+import { plural, titleOf } from "./band-library";
 import { bandSongRef, type BandLibrary, type BandSetlist, type BandSong } from "./band-library-model";
 import type { GigPack } from "./gig-pack";
 import { getFromPhone, heldFor, onPhoneChange, phoneGeneration } from "./phone-db";
@@ -105,7 +105,7 @@ export function BandSetlistView({
         <CodeOfferButton offer={codeOffer(count, setlist.canSendOn)} onShow={() => setShowing(true)} />
       </div>
       <p className="account-note">
-        {bandName} · {count} song{count === 1 ? "" : "s"} · from {setlist.sharedByName}
+        {bandName} · {plural(count, "song")} · from {setlist.sharedByName}
       </p>
       <p className="account-note band-setlist-lock">
         <span aria-hidden="true">🔒 </span>Band songs stay in {bandName}. They don't go into My Songs.

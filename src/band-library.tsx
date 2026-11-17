@@ -58,6 +58,7 @@ export const CHOICES: Record<ShareChoice, { label: string; line: string }> = {
 };
 
 export const content = ({ ref: _ref, id: _id, copy: _copy, ...song }: Song): SongContent => song;
+export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 export const titleOf = (song: BandSong | undefined) => song?.song.title ?? "A song no longer in the band";
 const lockFor = (item: { sharedAs: ShareChoice }) =>
   item.sharedAs === "private" ? (

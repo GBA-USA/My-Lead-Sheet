@@ -98,7 +98,6 @@ export async function clearPhone(): Promise<void> {
   phoneChanged();
 }
 
-/** Every `bandSongs` key of one band: `bandId/songId`. */
 const bandKeys = (bandId: string) => IDBKeyRange.bound(`${bandId}/`, `${bandId}/\uffff`);
 
 /** Empties one band's songs and gig packs, so nothing of a band stays on this phone once the player is out of it (SCREEN-MAP 4, band-only rule). */

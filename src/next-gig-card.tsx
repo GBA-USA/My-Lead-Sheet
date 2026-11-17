@@ -1,3 +1,4 @@
+import { plural } from "./band-library";
 import type { BandLibrary } from "./band-library-model";
 import type { BandView } from "./bands-model";
 import type { GigPack } from "./gig-pack";
@@ -9,8 +10,6 @@ export function nextGig(gigs: GigView[]): GigView | undefined {
   const live = gigs.find((item) => item.gig.status === "live");
   return live ?? gigs.filter((item) => item.gig.status === "planned").sort((a, b) => a.gig.date.localeCompare(b.gig.date))[0];
 }
-
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /**
  * The next gig on the band page: its name and day, how many songs and how much of its pack this phone holds, Start gig

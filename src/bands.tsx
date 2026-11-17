@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { BandLibraryTab, LIBRARY_MESSAGES } from "./band-library";
+import { BandLibraryTab, LIBRARY_MESSAGES, plural } from "./band-library";
 import type { BandLibrary, BandSetlist } from "./band-library-model";
 import { BandSetlistView, dropSetlists, holdSetlists } from "./band-setlist-view";
 import { BandSettings } from "./band-settings";
@@ -84,8 +84,6 @@ const listed = (bands: BandSummary[]) => {
   keepBandsOnPhone(bands.map((band) => band.bandId)).catch(() => {});
   return bands;
 };
-
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 function Status({ notice, error }: { notice: string; error: string }) {
   return (

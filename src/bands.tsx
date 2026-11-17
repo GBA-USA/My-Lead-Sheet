@@ -1,45 +1,46 @@
-import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
-import { BandLibraryTab, LIBRARY_MESSAGES, type LibraryTab } from "./band-library";
-import type { BandLibrary } from "./band-library-model";
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { BandLibraryTab, LIBRARY_MESSAGES } from "./band-library";
+import type { BandLibrary, BandSetlist } from "./band-library-model";
+import { BandSetlistView, dropSetlists, holdSetlists } from "./band-setlist-view";
 import { BandSettings } from "./band-settings";
 import type { BandPreview, BandSummary, BandView } from "./bands-model";
+import { ChatThread, MuteButton } from "./chat";
+import { unread, type ChatEntry } from "./chat-model";
 import { CODE_REFUSED, codeInText, readPayload, type CodeKind } from "./code-link";
-import { ScanCode, ShowCode } from "./codes";
+import { ScanCode, ShowCode, shareLink, useCode } from "./codes";
 import { APP_NAME } from "./data-kinds";
 import { downloadPack, packsOnPhone, type GigPack } from "./gig-pack";
 import { GigCard, GigPlanForm, GigSong, newGigId } from "./gig-plan";
 import type { GigDraft, GigView } from "./gig-plan-model";
 import { useCloseOnSong, useEscape } from "./hooks";
-import { keepBandsOnPhone } from "./phone-db";
+import { NextGigCard } from "./next-gig-card";
+import { allOnPhone, clearBand, heldFor, holdBandSongs, keepBandsOnPhone, type CachedBandSong } from "./phone-db";
+import { BAND_SECTIONS, bandHref, bandSongHref, sectionOf, type BandSection } from "./route";
 import { SETLIST_CODE_MESSAGES } from "./setlist-code";
-import { GearIcon } from "./settings";
-import { ApiError, api, type Account } from "./sign-in-methods";
+import { ApiError, api } from "./sign-in-methods";
 import "./friends.css";
 
-type InBand = "band" | "invite" | "settings";
-type BandTab = LibraryTab | "chat" | "gigs" | "members";
-type View =
-  | { name: "list" }
-  | { name: InBand; bandId: string }
-  | { name: "plan"; bandId: string; setlistId: string; setlistName: string; gigId: string }
-  | { name: "gig-song"; bandId: string; gigId: string; index: number }
-  | { name: "scan" }
-  | { name: "code"; code: string }
-  | { name: "gig-code"; code: string }
-  | { name: "setlist-code"; code: string };
+/** Where a sheet sends the player once a code or a new band leads to a band: the section, a notice, a setlist to mark. */
+export type BandLanding = { bandId: string; section?: BandSection; notice?: string; setlistId?: string };
 
-const BAND_TABS: [BandTab, string][] = [
-  ["songs", "Songs"],
-  ["setlists", "Setlists"],
-  ["chat", "Chat"],
-  ["gigs", "Gigs"],
-  ["members", "Members"],
-];
+type SheetView = { name: "list" } | { name: "scan" } | { name: "code"; code: string } | { name: "gig-code"; code: string } | { name: "setlist-code"; code: string };
+
+type PageView =
+  | { name: "band" }
+  | { name: "invite" }
+  | { name: "settings" }
+  | { name: "plan"; setlistId: string; setlistName: string; gigId: string }
+  | { name: "gig-song"; gigId: string; index: number }
+  | { name: "setlist"; setlistId: string };
+
+const SECTION_LABELS: Record<BandSection, string> = { songs: "Songs", setlists: "Setlists", chat: "Chat", gigs: "Gigs", members: "Members" };
+
+const OFFLINE = "Can't reach the server. Check your connection and try again.";
 
 const MESSAGES: Record<string, string> = {
   ...CODE_REFUSED,
   ...LIBRARY_MESSAGES,
-  offline: "Can't reach the server. Check your connection and try again.",
+  offline: OFFLINE,
   "bad-name": "Give the band a name of up to 40 letters.",
   "not-a-band-code": "That isn't a band code.",
   "not-a-member": "You're not in this band any more.",
@@ -62,18 +63,16 @@ const PACK_OFFLINE = "Can't download now · try on Wi-Fi";
 
 const unreachable = (error: unknown) => error instanceof ApiError && (error.reason === "offline" || error.status >= 500);
 
-const CODE_VIEWS: Partial<Record<CodeKind, (code: string) => View>> = {
+const CODE_VIEWS: Partial<Record<CodeKind, (code: string) => SheetView>> = {
   band: (code) => ({ name: "code", code }),
   gig: (code) => ({ name: "gig-code", code }),
   "band-setlist": (code) => ({ name: "setlist-code", code }),
 };
 
-const codeView = (code: string): View | null => {
+const codeView = (code: string): SheetView | null => {
   const kind = readPayload(code)?.kind;
   return kind ? (CODE_VIEWS[kind]?.(code) ?? null) : null;
 };
-
-const firstView = (code: string | undefined, bandId: string | undefined): View => (code ? (codeView(code) ?? { name: "list" }) : bandId ? { name: "band", bandId } : { name: "list" });
 
 const message = (error: unknown) => {
   const reason = error instanceof ApiError ? (error.status >= 500 ? "offline" : error.reason) : "";
@@ -88,54 +87,53 @@ const listed = (bands: BandSummary[]) => {
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
+function Status({ notice, error }: { notice: string; error: string }) {
+  return (
+    <>
+      {notice ? (
+        <p className="account-note bands-notice" role="status">
+          {notice}
+        </p>
+      ) : null}
+      {error ? (
+        <p className="account-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
 /**
- * Bands: the list, one band's Setlists, Songs and Members tabs with Message on each bandmate, Invite and Band settings,
- * and a card for each gig not yet played. `code` is a band or gig code to open first.
+ * The Bands sheet, for what comes before a band page: New band, join by link, Scan a code, and a band, gig or setlist
+ * code opened from a link. `code` is the code to open first. `onBand` goes to the band page the code or new band leads to.
  */
 export function BandsSheet({
-  account,
   code,
-  bandId,
-  onMessage,
-  onChat,
+  onBand,
   onSetlistCopy,
-  onSettings,
   onSignedOut,
   onClose,
 }: {
-  account: Account;
   code?: string;
-  bandId?: string;
-  onMessage: (userId: string) => void;
-  onChat: (roomId: string) => void;
+  onBand: (landing: BandLanding) => void;
   onSetlistCopy: (code: string) => void;
-  onSettings?: () => void;
   onSignedOut: () => void;
   onClose: () => void;
 }) {
   const titleId = useId();
   const nameId = useId();
   const linkId = useId();
-  const [view, setView] = useState<View>(() => firstView(code, bandId));
-  const [landedSetlist, setLandedSetlist] = useState<string | undefined>(undefined);
+  const [view, setView] = useState<SheetView>(() => (code ? (codeView(code) ?? { name: "list" }) : { name: "list" }));
   const [bands, setBands] = useState<BandSummary[] | null>(null);
-  const [band, setBand] = useState<BandView | null>(null);
   const [preview, setPreview] = useState<BandPreview | null>(null);
-  const [gigs, setGigs] = useState<{ bandId: string; list: GigView[] } | null>(null);
-  const [packs, setPacks] = useState<Record<string, GigPack>>({});
   const [newName, setNewName] = useState("");
   const [link, setLink] = useState("");
-  const [confirming, setConfirming] = useState<string | null>(null);
-  const [inviteRound, setInviteRound] = useState(0);
-  const [bandTab, setBandTab] = useState<BandTab>("members");
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
-  const go = (next: View) => {
+  const go = (next: SheetView) => {
     setError("");
-    setNotice("");
-    setConfirming(null);
     setView(next);
   };
 
@@ -151,88 +149,28 @@ export function BandsSheet({
   const run = async (work: () => Promise<void>) => {
     setBusy(true);
     setError("");
-    setNotice("");
     try {
       await work();
     } catch (caught) {
       failed(caught);
     } finally {
       setBusy(false);
-      setConfirming(null);
     }
-  };
-
-  /** The band's gigs and the packs this phone holds for them, set together so the card never pairs a gig with a pack it lacks. */
-  const loadGigs = async (bandId: string) => {
-    const { gigs: list } = await api<{ gigs: GigView[] }>("/api/bands/gig/list", { bandId });
-    const onPhone = await packsOnPhone(account.userId, list.map((item) => item.gig.gigId));
-    setPacks(onPhone);
-    setGigs({ bandId, list });
   };
 
   useEffect(() => {
     if (view.name === "list") api<{ bands: BandSummary[] }>("/api/bands").then((reply) => setBands(listed(reply.bands)), failed);
-    if (view.name === "band" || view.name === "invite" || view.name === "settings" || view.name === "plan") api<BandView>("/api/bands/open", { bandId: view.bandId }).then(setBand, failed);
-    if (view.name === "band") loadGigs(view.bandId).catch(failed);
     if (view.name === "code") {
       setPreview(null);
       api<BandPreview>("/api/bands/code", { code: view.code }).then(setPreview, failed);
     }
-    if (view.name === "gig-code") api<GigView>("/api/bands/gig/code", { code: view.code }).then((opened) => setView({ name: "band", bandId: opened.gig.bandId }), failed);
+    if (view.name === "gig-code") api<GigView>("/api/bands/gig/code", { code: view.code }).then((opened) => onBand({ bandId: opened.gig.bandId, section: "gigs" }), failed);
     if (view.name === "setlist-code")
-      api<{ bandId: string; setlistId: string }>("/api/bands/setlist-code", { code: view.code }).then((opened) => {
-        setBandTab("setlists");
-        setLandedSetlist(opened.setlistId);
-        setView({ name: "band", bandId: opened.bandId });
-      }, failed);
+      api<{ bandId: string; setlistId: string }>("/api/bands/setlist-code", { code: view.code }).then((opened) => onBand({ bandId: opened.bandId, section: "setlists", setlistId: opened.setlistId }), failed);
   }, [view]);
-
-  /** A lineup phone fetches a pack it lacks, or one older than the plan, as soon as it sees the card. A failure waits for Get ready. */
-  useEffect(() => {
-    for (const item of gigs?.list ?? []) {
-      if (!item.gig.lineup.includes(account.userId) || (packs[item.gig.gigId]?.packRev ?? 0) >= item.packRev) continue;
-      downloadPack(account.userId, item.gig.bandId, item.gig.gigId).then(
-        () => loadGigs(item.gig.bandId),
-        () => {},
-      );
-    }
-  }, [gigs]);
-
-  const getReady = (item: GigView) =>
-    run(async () => {
-      try {
-        const pack = await downloadPack(account.userId, item.gig.bandId, item.gig.gigId);
-        setPacks((held) => ({ ...held, [pack.gig.gigId]: pack }));
-      } catch (caught) {
-        if (!unreachable(caught)) throw caught;
-        return setError(PACK_OFFLINE);
-      }
-      await loadGigs(item.gig.bandId);
-    });
-
-  const sendPlan = (plan: Extract<View, { name: "plan" }>, draft: GigDraft) =>
-    run(async () => {
-      const made = await api<GigView>("/api/bands/gig/plan", { bandId: plan.bandId, setlistId: plan.setlistId, gigId: plan.gigId, ...draft });
-      setView({ name: "band", bandId: plan.bandId });
-      setNotice(`Sent ${made.gig.name} to the band.`);
-    });
-
-  const planFromTop = (bandId: string) =>
-    run(async () => {
-      const library = await api<BandLibrary>("/api/bands/library", { bandId });
-      if (library.setlists.length === 0) return setNotice("Share a setlist first. Then tap Plan a gig on it.");
-      setBandTab("setlists");
-      setNotice("Pick a setlist below, then tap Plan a gig.");
-    });
 
   useEscape(onClose);
   useCloseOnSong(onClose);
-
-  const change = (path: string, body: object, done?: string) =>
-    run(async () => {
-      setBand(await api<BandView>(path, body));
-      if (done) setNotice(done);
-    });
 
   const opened = (payload: string) => {
     const next = codeView(payload);
@@ -246,8 +184,7 @@ export function BandsSheet({
     run(async () => {
       const made = await api<BandView>("/api/bands/create", { name: newName });
       setNewName("");
-      setBand(made);
-      setView({ name: "band", bandId: made.bandId });
+      onBand({ bandId: made.bandId });
     });
   };
 
@@ -259,39 +196,25 @@ export function BandsSheet({
     else setError(`That link isn't a ${APP_NAME} code.`);
   };
 
-  const shown = band && "bandId" in view && band.bandId === view.bandId ? band : null;
-  const isAdmin = shown?.role === "admin";
-
-  const gigCards =
-    shown && gigs?.bandId === shown.bandId
-      ? gigs.list.map((item) => (
-          <GigCard
-            key={item.gig.gigId}
-            view={item}
-            band={shown}
-            me={account.userId}
-            pack={packs[item.gig.gigId]}
-            busy={busy}
-            onGetReady={() => getReady(item)}
-            onSong={(index) => go({ name: "gig-song", bandId: shown.bandId, gigId: item.gig.gigId, index })}
-          />
-        ))
-      : null;
-
-  const backTo = (next: View, label = "Back") => (
-    <button type="button" className="account-link" onClick={() => go(next)}>
-      {label}
+  const backToList = (
+    <button type="button" className="account-link" onClick={() => go({ name: "list" })}>
+      Back
     </button>
   );
-  const loading = <p className="account-note">Loading…</p>;
+  const waiting = (words: string) => (
+    <>
+      {error ? null : <p className="account-note">{words}</p>}
+      {backToList}
+    </>
+  );
 
-  const screens: Record<View["name"], () => { title: string; body: ReactNode }> = {
+  const screens: Record<SheetView["name"], () => { title: string; body: ReactNode }> = {
     list: () => ({
       title: "Bands",
       body: (
         <>
           {!bands ? (
-            loading
+            <p className="account-note">Loading…</p>
           ) : bands.length === 0 ? (
             <p className="account-note">No bands yet. Make one, or scan a bandmate's code.</p>
           ) : (
@@ -305,7 +228,7 @@ export function BandsSheet({
                       {plural(item.members, "member")}
                     </small>
                   </span>
-                  <button type="button" className="account-secondary" onClick={() => go({ name: "band", bandId: item.bandId })}>
+                  <button type="button" className="account-secondary" onClick={() => onBand({ bandId: item.bandId })}>
                     Open
                   </button>
                 </li>
@@ -336,240 +259,17 @@ export function BandsSheet({
         </>
       ),
     }),
-
-    band: () => ({
-      title: shown?.name ?? "Band",
-      body: !shown ? (
-        loading
-      ) : (
-        <>
-          {isAdmin ? (
-            <div className="account-row">
-              <button type="button" className="account-primary" onClick={() => go({ name: "invite", bandId: shown.bandId })}>
-                Invite
-              </button>
-              <button type="button" className="account-secondary" onClick={() => go({ name: "settings", bandId: shown.bandId })}>
-                Band settings
-              </button>
-              <button type="button" className="account-secondary" disabled={busy} onClick={() => planFromTop(shown.bandId)}>
-                Plan a gig
-              </button>
-            </div>
-          ) : null}
-          {bandTab === "gigs" ? null : gigCards}
-          <div className="band-tabs" role="tablist" aria-label={shown.name}>
-            {BAND_TABS.map(([key, label]) => (
-              <button key={key} type="button" role="tab" aria-selected={bandTab === key} onClick={() => setBandTab(key)}>
-                {label}
-              </button>
-            ))}
-          </div>
-          {bandTab === "chat" ? (
-            <>
-              <p className="account-note">The band&apos;s messages, with its gig, song and setlist cards.</p>
-              <button type="button" className="account-primary" onClick={() => onChat(shown.bandId)}>
-                Open band chat
-              </button>
-            </>
-          ) : bandTab === "gigs" ? (
-            <>
-              {!gigCards ? loading : gigCards.length === 0 ? <p className="account-note">No gigs planned yet.</p> : gigCards}
-              {isAdmin ? (
-                <button type="button" className="account-secondary" disabled={busy} onClick={() => planFromTop(shown.bandId)}>
-                  Plan a gig
-                </button>
-              ) : null}
-            </>
-          ) : bandTab === "members" ? (
-            <>
-              <ul className="friends-list bands-members">
-                {shown.members.map((member) => (
-                  <li key={member.userId}>
-                    <span>
-                      {member.name}
-                      {member.role === "admin" ? <small>Admin</small> : null}
-                    </span>
-                    {member.userId !== account.userId ? (
-                      <button type="button" className="account-link" onClick={() => onMessage(member.userId)}>
-                        Message
-                      </button>
-                    ) : null}
-                    {isAdmin && member.userId !== account.userId ? (
-                      <span className="friends-actions">
-                        {member.role === "member" ? (
-                          <button
-                            type="button"
-                            className="account-link"
-                            disabled={busy}
-                            onClick={() => change("/api/bands/make-admin", { bandId: shown.bandId, userId: member.userId }, `${member.name} is now an admin.`)}
-                          >
-                            Make admin
-                          </button>
-                        ) : null}
-                        {confirming === member.userId ? (
-                          <button
-                            type="button"
-                            className="account-secondary"
-                            disabled={busy}
-                            onClick={() => change("/api/bands/remove", { bandId: shown.bandId, userId: member.userId }, `Removed ${member.name}.`)}
-                          >
-                            Yes, remove
-                          </button>
-                        ) : (
-                          <button type="button" className="account-link" onClick={() => setConfirming(member.userId)}>
-                            Remove
-                          </button>
-                        )}
-                      </span>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-              {confirming === "leave" ? (
-                <button
-                  type="button"
-                  className="account-secondary"
-                  disabled={busy}
-                  onClick={() =>
-                    run(async () => {
-                      await api("/api/bands/leave", { bandId: shown.bandId });
-                      setView({ name: "list" });
-                      setNotice(`You left ${shown.name}.`);
-                    })
-                  }
-                >
-                  Yes, leave {shown.name}
-                </button>
-              ) : (
-                <button type="button" className="account-link" onClick={() => setConfirming("leave")}>
-                  Leave band
-                </button>
-              )}
-            </>
-          ) : (
-            <BandLibraryTab
-              band={shown}
-              me={account.userId}
-              tab={bandTab}
-              busy={busy}
-              run={run}
-              notify={setNotice}
-              onPlanGig={isAdmin ? (setlist) => go({ name: "plan", bandId: shown.bandId, setlistId: setlist.setlistId, setlistName: setlist.name, gigId: newGigId() }) : undefined}
-              landed={landedSetlist}
-              onCodeError={failed}
-            />
-          )}
-          {backTo({ name: "list" }, "All bands")}
-        </>
-      ),
-    }),
-
-    plan: () => ({
-      title: "Plan a gig",
-      body:
-        !shown || view.name !== "plan" ? (
-          loading
-        ) : (
-          <GigPlanForm band={shown} me={account.userId} setlistName={view.setlistName} busy={busy} onSend={(draft) => sendPlan(view, draft)} onCancel={() => go({ name: "band", bandId: shown.bandId })} />
-        ),
-    }),
-
-    "gig-song": () => {
-      if (view.name !== "gig-song") return { title: "Song", body: null };
-      const item = packs[view.gigId]?.songs[view.index];
-      const back = () => go({ name: "band", bandId: view.bandId });
-      return {
-        title: item?.song.title ?? "Song",
-        body: item ? (
-          <GigSong bandId={view.bandId} item={item} onBack={back} />
-        ) : (
-          <>
-            <p className="account-note">This song isn't on this phone. Tap Get ready on the gig card.</p>
-            {backTo({ name: "band", bandId: view.bandId })}
-          </>
-        ),
-      };
-    },
-
-    "setlist-code": () => ({
-      title: "Setlist",
-      body: (
-        <>
-          {error ? null : <p className="account-note">Opening the setlist…</p>}
-          {backTo({ name: "list" }, "All bands")}
-        </>
-      ),
-    }),
-
-    "gig-code": () => ({
-      title: "Gig",
-      body: (
-        <>
-          {error ? null : <p className="account-note">Opening the gig…</p>}
-          {backTo({ name: "list" }, "All bands")}
-        </>
-      ),
-    }),
-
-    invite: () => ({
-      title: "Invite",
-      body: !shown ? (
-        loading
-      ) : (
-        <>
-          <ShowCode
-            key={inviteRound}
-            request={{ kind: "band", bandId: shown.bandId }}
-            words={`Join ${shown.name}`}
-            share
-            onStopped={() => {
-              go({ name: "band", bandId: shown.bandId });
-              setNotice("Code stopped. Nobody can use it now.");
-            }}
-            onError={failed}
-          />
-          <p className="account-note">Whoever scans this or opens the link can join after they sign in.</p>
-          <button
-            type="button"
-            className="account-secondary"
-            disabled={busy}
-            onClick={() =>
-              run(async () => {
-                await api("/api/bands/reset-link", { bandId: shown.bandId });
-                setInviteRound((round) => round + 1);
-                setNotice("Link reset. Old codes and links don't work any more.");
-              })
-            }
-          >
-            Reset link
-          </button>
-          {backTo({ name: "band", bandId: shown.bandId })}
-        </>
-      ),
-    }),
-
-    settings: () => ({
-      title: "Band settings",
-      body: !shown ? (
-        loading
-      ) : (
-        <>
-          <BandSettings band={shown} busy={busy || !isAdmin} onScrollWithLeader={(on) => change("/api/bands/settings", { bandId: shown.bandId, scrollWithLeader: on })} />
-          {backTo({ name: "band", bandId: shown.bandId })}
-        </>
-      ),
-    }),
-
+    "setlist-code": () => ({ title: "Setlist", body: waiting("Opening the setlist…") }),
+    "gig-code": () => ({ title: "Gig", body: waiting("Opening the gig…") }),
     scan: () => ({
       title: "Scan a code",
       body: (
         <>
           <ScanCode onCode={opened} />
-          {backTo({ name: "list" })}
+          {backToList}
         </>
       ),
     }),
-
     code: () => ({
       title: "Join a band",
       body: preview ? (
@@ -585,21 +285,16 @@ export function BandsSheet({
               view.name === "code" &&
               run(async () => {
                 const joined = await api<BandView>("/api/bands/join", { code: view.code });
-                setBand(joined);
-                setView({ name: "band", bandId: joined.bandId });
-                setNotice(preview.member ? `You're already in ${joined.name}.` : `You joined ${joined.name}.`);
+                onBand({ bandId: joined.bandId, notice: preview.member ? `You're already in ${joined.name}.` : `You joined ${joined.name}.` });
               })
             }
           >
             {preview.member ? "Open band" : "Join"}
           </button>
-          {backTo({ name: "list" })}
+          {backToList}
         </>
       ) : (
-        <>
-          {error ? null : <p className="account-note">Checking the code…</p>}
-          {backTo({ name: "list" })}
-        </>
+        waiting("Checking the code…")
       ),
     }),
   };
@@ -607,75 +302,548 @@ export function BandsSheet({
   const screen = screens[view.name]();
   return (
     <div className="account-backdrop" onClick={onClose}>
-      <section
-        className="account-sheet bands-sheet"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        data-view={view.name}
-        data-band={"bandId" in view ? view.bandId : undefined}
-        onClick={(event) => event.stopPropagation()}
-      >
+      <section className="account-sheet bands-sheet" role="dialog" aria-modal="true" aria-labelledby={titleId} data-view={view.name} onClick={(event) => event.stopPropagation()}>
         <header className="account-top">
           <h2 id={titleId}>{screen.title}</h2>
-          {view.name === "band" && onSettings ? (
-            <button type="button" className="sheet-gear" aria-label="Settings" onClick={onSettings}>
-              <GearIcon />
-            </button>
-          ) : null}
           <button type="button" className="account-close" aria-label="Close" onClick={onClose}>
             ✕
           </button>
         </header>
-        {notice ? (
-          <p className="account-note bands-notice" role="status">
-            {notice}
-          </p>
-        ) : null}
-        {error ? (
-          <p className="account-error" role="alert">
-            {error}
-          </p>
-        ) : null}
+        <Status notice="" error={error} />
         {screen.body}
       </section>
     </div>
   );
 }
 
-export function BandsTab({ account, onOpen, onSignIn, onSignedOut }: { account: Account | null; onOpen: (bandId?: string) => void; onSignIn: () => void; onSignedOut: () => void }) {
+function SignInToBands({ onSignIn }: { onSignIn: () => void }) {
+  return (
+    <div className="bands-tab">
+      <p className="bands-tab-note">Sign in to see your bands.</p>
+      <button type="button" className="live-launch bands-tab-button" onClick={onSignIn}>
+        Sign in
+      </button>
+    </div>
+  );
+}
+
+/** `me` is the signed-in player, known from this phone while the server can't be reached; null when signed out. */
+type PageProps = {
+  me: string | null;
+  bandId: string;
+  section: BandSection | null;
+  landing?: BandLanding;
+  onMessage: (userId: string) => void;
+  onSignIn: () => void;
+  onSignedOut: () => void;
+  onGone: (words: string) => void;
+};
+
+/**
+ * One band's page at `#/band/:bandId`: Invite, the next gig, the status strip's slot, and the sections Songs, Setlists,
+ * Chat, Gigs and Members, the open one kept in the hash. `onGone` lands on Bands with the words once the player is out.
+ */
+export function BandPage(props: PageProps) {
+  return props.me ? <BandScreen {...props} me={props.me} /> : <SignInToBands onSignIn={props.onSignIn} />;
+}
+
+function BandScreen({ me, bandId, section: asked, landing, onMessage, onSignedOut, onGone }: PageProps & { me: string }) {
+  const titleId = useId();
+  const section = sectionOf(bandId, asked);
+  const [view, setView] = useState<PageView>({ name: "band" });
+  const [band, setBand] = useState<BandView | null>(null);
+  const [library, setLibrary] = useState<BandLibrary | null>(null);
+  const [gigs, setGigs] = useState<GigView[] | null>(null);
+  const [packs, setPacks] = useState<Record<string, GigPack>>({});
+  const [chat, setChat] = useState<ChatEntry | undefined>(undefined);
+  const [muting, setMuting] = useState(false);
+  const [cached, setCached] = useState<CachedBandSong[] | null>(null);
+  const [editing, setEditing] = useState<BandSetlist | undefined>(undefined);
+  const [confirming, setConfirming] = useState<string | null>(null);
+  const [inviteRound, setInviteRound] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState(landing?.notice ?? "");
+  const [error, setError] = useState("");
+  const invite = useCode({ kind: "band", bandId });
+
+  const toSection = (next: BandSection) => {
+    setEditing(undefined);
+    window.location.replace(bandHref(bandId, next));
+  };
+
+  const go = (next: PageView) => {
+    setError("");
+    setNotice("");
+    setConfirming(null);
+    setView(next);
+  };
+
+  const left = useRef(false);
+  const gone = async (words: string) => {
+    if (left.current) return;
+    left.current = true;
+    dropSetlists(me, bandId);
+    await clearBand(bandId).catch(() => {});
+    onGone(words);
+  };
+
+  const failed = (caught: unknown) => {
+    if (caught instanceof ApiError && caught.status === 401) return onSignedOut();
+    if (caught instanceof ApiError && (caught.reason === "not-a-member" || caught.reason === "no-band")) return void gone(MESSAGES[caught.reason]);
+    setError(message(caught));
+  };
+
+  /** With no signal the page shows the band songs this phone holds, and the live sections say so. */
+  const loaded = (caught: unknown) => {
+    if (!unreachable(caught)) return failed(caught);
+    const mine = heldFor(me) ? allOnPhone("bandSongs") : Promise.resolve([]);
+    mine.then((all) => setCached(all.filter((item) => item.bandId === bandId)), () => setCached([]));
+  };
+
+  const run = async (work: () => Promise<void>) => {
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await work();
+    } catch (caught) {
+      failed(caught);
+    } finally {
+      setBusy(false);
+      setConfirming(null);
+    }
+  };
+
+  const reloadLibrary = async () => {
+    const next = await api<BandLibrary>("/api/bands/library", { bandId });
+    setLibrary(next);
+    holdSetlists(me, bandId, next);
+    return next;
+  };
+
+  /** The band's gigs and the packs this phone holds for them, set together so a card never pairs a gig with a pack it lacks. */
+  const loadGigs = async () => {
+    const { gigs: list } = await api<{ gigs: GigView[] }>("/api/bands/gig/list", { bandId });
+    setPacks(await packsOnPhone(me, list.map((item) => item.gig.gigId)));
+    setGigs(list);
+  };
+
+  useEffect(() => {
+    if (asked === null) window.location.replace(bandHref(bandId, section));
+  }, [asked]);
+
+  useEffect(() => {
+    api<BandView>("/api/bands/open", { bandId }).then(setBand, loaded);
+    reloadLibrary().catch(loaded);
+    loadGigs().catch(loaded);
+    api<{ chats: ChatEntry[] }>("/api/chat").then((reply) => setChat(reply.chats.find((c) => c.roomId === bandId)), () => {});
+  }, []);
+
+  useEffect(() => {
+    if (band && library) holdBandSongs(me, bandId, band.name, library.songs).catch(() => {});
+  }, [band?.name, library]);
+
+  /** On the Chat section every message that arrives is read, so the tab's badge waits for the player to leave it. */
+  useEffect(() => {
+    if (section === "chat") setChat((entry) => entry && { ...entry, lastReadSeq: entry.lastSeq });
+  }, [section, chat?.lastSeq]);
+
+  /** A lineup phone fetches a pack it lacks, or one older than the plan, as soon as it sees the gig. A failure waits for Get ready. */
+  useEffect(() => {
+    for (const item of gigs ?? []) {
+      if (!item.gig.lineup.includes(me) || (packs[item.gig.gigId]?.packRev ?? 0) >= item.packRev) continue;
+      downloadPack(me, bandId, item.gig.gigId).then(
+        () => loadGigs(),
+        () => {},
+      );
+    }
+  }, [gigs]);
+
+  const getReady = (item: GigView) =>
+    run(async () => {
+      try {
+        const pack = await downloadPack(me, bandId, item.gig.gigId);
+        setPacks((held) => ({ ...held, [pack.gig.gigId]: pack }));
+      } catch (caught) {
+        if (!unreachable(caught)) throw caught;
+        return setError(PACK_OFFLINE);
+      }
+      await loadGigs();
+    });
+
+  const sendPlan = (plan: Extract<PageView, { name: "plan" }>, draft: GigDraft) =>
+    run(async () => {
+      const made = await api<GigView>("/api/bands/gig/plan", { bandId, setlistId: plan.setlistId, gigId: plan.gigId, ...draft });
+      await loadGigs();
+      setView({ name: "band" });
+      toSection("gigs");
+      setNotice(`Sent ${made.gig.name} to the band.`);
+    });
+
+  const planFromTop = () =>
+    run(async () => {
+      if ((library ?? (await reloadLibrary())).setlists.length === 0) return setNotice("Share a setlist first. Then tap Plan a gig on it.");
+      toSection("setlists");
+      setNotice("Pick a setlist below, then tap Plan a gig.");
+    });
+
+  const planFrom = (setlist: BandSetlist) => go({ name: "plan", setlistId: setlist.setlistId, setlistName: setlist.name, gigId: newGigId() });
+
+  const change = (path: string, body: object, done?: string) =>
+    run(async () => {
+      setBand(await api<BandView>(path, body));
+      if (done) setNotice(done);
+    });
+
+  const shareInvite = () => {
+    setError("");
+    setNotice("");
+    if (!invite.shown) {
+      setError(invite.problem ? message(invite.problem) : "Making the link. Try again in a moment.");
+      return invite.retry();
+    }
+    shareLink(invite.shown.link, `Join ${band?.name ?? "the band"}`).then((copied) => copied && setNotice("Link copied"));
+  };
+
+  const name = band?.name ?? cached?.[0]?.bandName ?? "Band";
+  const isAdmin = band?.role === "admin";
+  const loading = <p className="account-note">Loading…</p>;
+  const cannotReach = <p className="account-note">{OFFLINE}</p>;
+  const backToBand = (
+    <button type="button" className="account-link" onClick={() => go({ name: "band" })}>
+      Back
+    </button>
+  );
+
+  const gigCards = (shown: BandView, list: GigView[]) =>
+    list.map((item) => (
+      <GigCard
+        key={item.gig.gigId}
+        view={item}
+        band={shown}
+        me={me}
+        pack={packs[item.gig.gigId]}
+        busy={busy}
+        onGetReady={() => getReady(item)}
+        onSong={(index) => go({ name: "gig-song", gigId: item.gig.gigId, index })}
+      />
+    ));
+
+  const members = (shown: BandView) => (
+    <>
+      <ul className="friends-list bands-members">
+        {shown.members.map((member) => (
+          <li key={member.userId}>
+            <span>
+              {member.name}
+              {member.role === "admin" ? <small>Admin</small> : null}
+            </span>
+            {member.userId !== me ? (
+              <button type="button" className="account-link" onClick={() => onMessage(member.userId)}>
+                Message
+              </button>
+            ) : null}
+            {isAdmin && member.userId !== me ? (
+              <span className="friends-actions">
+                {member.role === "member" ? (
+                  <button type="button" className="account-link" disabled={busy} onClick={() => change("/api/bands/make-admin", { bandId, userId: member.userId }, `${member.name} is now an admin.`)}>
+                    Make admin
+                  </button>
+                ) : null}
+                {confirming === member.userId ? (
+                  <button type="button" className="account-secondary" disabled={busy} onClick={() => change("/api/bands/remove", { bandId, userId: member.userId }, `Removed ${member.name}.`)}>
+                    Yes, remove
+                  </button>
+                ) : (
+                  <button type="button" className="account-link" onClick={() => setConfirming(member.userId)}>
+                    Remove
+                  </button>
+                )}
+              </span>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+      {isAdmin ? (
+        <button type="button" className="account-secondary" onClick={() => go({ name: "settings" })}>
+          Band settings
+        </button>
+      ) : null}
+      {confirming === "leave" ? (
+        <button
+          type="button"
+          className="account-secondary"
+          disabled={busy}
+          onClick={() =>
+            run(async () => {
+              await api("/api/bands/leave", { bandId });
+              await gone(`You left ${shown.name}.`);
+            })
+          }
+        >
+          Yes, leave {shown.name}
+        </button>
+      ) : (
+        <button type="button" className="account-link" onClick={() => setConfirming("leave")}>
+          Leave band
+        </button>
+      )}
+    </>
+  );
+
+  const libraryTab = (shown: BandView, tab: "songs" | "setlists") => (
+    <BandLibraryTab
+      band={shown}
+      me={me}
+      tab={tab}
+      library={library}
+      reload={() => reloadLibrary().then(() => {})}
+      busy={busy}
+      run={run}
+      notify={setNotice}
+      onOpenSong={(item) => (window.location.hash = bandSongHref(bandId, item.songId))}
+      onOpenSetlist={(setlist) => go({ name: "setlist", setlistId: setlist.setlistId })}
+      onPlanGig={isAdmin ? planFrom : undefined}
+      landed={landing?.setlistId}
+      editing={editing}
+      onError={failed}
+    />
+  );
+
+  const offlineSongs = (
+    <>
+      {cannotReach}
+      {cached && cached.length > 0 ? (
+        <ul className="friends-list band-library-songs">
+          {cached.map((item) => (
+            <li key={item.songId}>
+              <button type="button" className="band-library-row" onClick={() => (window.location.hash = bandSongHref(bandId, item.songId))}>
+                <span className="band-library-name">{item.song.title}</span>
+                <small>{item.song.artist}</small>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="account-note">No songs of this band are on this phone.</p>
+      )}
+    </>
+  );
+
+  const sections: Record<BandSection, () => ReactNode> = {
+    songs: () => (band ? libraryTab(band, "songs") : offlineSongs),
+    setlists: () => (band ? libraryTab(band, "setlists") : cannotReach),
+    chat: () => (
+      <>
+        {chat ? <MuteButton entry={chat} muting={muting} onMuting={setMuting} /> : null}
+        <ChatThread
+          me={me}
+          roomId={bandId}
+          entry={chat}
+          muting={muting}
+          onEntry={(_, update) => setChat((entry) => entry && update(entry))}
+          onMuting={setMuting}
+          onGone={failed}
+          onSignedOut={onSignedOut}
+        />
+      </>
+    ),
+    gigs: () =>
+      !band || !gigs ? (
+        cached ? cannotReach : loading
+      ) : (
+        <>
+          {gigs.length === 0 ? <p className="account-note">No gigs planned yet.</p> : gigCards(band, gigs)}
+          {isAdmin ? (
+            <button type="button" className="account-secondary" disabled={busy} onClick={planFromTop}>
+              Plan a gig
+            </button>
+          ) : null}
+        </>
+      ),
+    members: () => (band ? members(band) : cannotReach),
+  };
+
+  const badge = chat && section !== "chat" ? unread(chat) : 0;
+
+  const bodies: Record<PageView["name"], () => ReactNode> = {
+    band: () => (
+      <>
+        {band && gigs ? <NextGigCard band={band} me={me} gigs={gigs} packs={packs} library={library} busy={busy} onOpen={() => toSection("gigs")} onPlan={planFromTop} /> : null}
+        <div className="band-status-slot" />
+        <div className="band-tabs" role="tablist" aria-label={name}>
+          {BAND_SECTIONS.map((key) => (
+            <span key={key} role="tab" aria-selected={section === key}>
+              <button type="button" onClick={() => toSection(key)}>
+                {SECTION_LABELS[key]}
+              </button>
+              {key === "chat" && badge > 0 ? <span className="chat-badge">{badge}</span> : null}
+            </span>
+          ))}
+        </div>
+        {sections[section]()}
+      </>
+    ),
+    invite: () =>
+      band ? (
+        <>
+          <ShowCode
+            key={inviteRound}
+            request={{ kind: "band", bandId }}
+            words={`Join ${band.name}`}
+            share
+            onStopped={() => {
+              invite.retry();
+              go({ name: "band" });
+              setNotice("Code stopped. Nobody can use it now.");
+            }}
+            onError={failed}
+          />
+          <p className="account-note">Whoever scans this or opens the link can join after they sign in.</p>
+          {isAdmin ? (
+            <button
+              type="button"
+              className="account-secondary"
+              disabled={busy}
+              onClick={() =>
+                run(async () => {
+                  await api("/api/bands/reset-link", { bandId });
+                  invite.retry();
+                  setInviteRound((round) => round + 1);
+                  setNotice("Link reset. Old codes and links don't work any more.");
+                })
+              }
+            >
+              Reset link
+            </button>
+          ) : null}
+          {backToBand}
+        </>
+      ) : (
+        <>
+          {cannotReach}
+          {backToBand}
+        </>
+      ),
+    settings: () =>
+      band ? (
+        <>
+          <BandSettings band={band} busy={busy || !isAdmin} onScrollWithLeader={(on) => change("/api/bands/settings", { bandId, scrollWithLeader: on })} />
+          {backToBand}
+        </>
+      ) : (
+        loading
+      ),
+    plan: () => (band && view.name === "plan" ? <GigPlanForm band={band} me={me} setlistName={view.setlistName} busy={busy} onSend={(draft) => sendPlan(view, draft)} onCancel={() => go({ name: "band" })} /> : loading),
+    "gig-song": () => {
+      const item = view.name === "gig-song" ? packs[view.gigId]?.songs[view.index] : undefined;
+      return item ? (
+        <GigSong bandId={bandId} item={item} onBack={() => go({ name: "band" })} />
+      ) : (
+        <>
+          <p className="account-note">This song isn't on this phone. Tap Get ready on the gig card.</p>
+          {backToBand}
+        </>
+      );
+    },
+    setlist: () => {
+      const setlist = view.name === "setlist" ? library?.setlists.find((item) => item.setlistId === view.setlistId) : undefined;
+      if (!band || !library || !setlist) return library ? <p className="account-note">That isn't in the band any more.</p> : loading;
+      return (
+        <BandSetlistView
+          bandId={bandId}
+          bandName={band.name}
+          setlist={setlist}
+          songs={library.songs}
+          packs={packs}
+          onBack={() => go({ name: "band" })}
+          onEdit={
+            isAdmin || setlist.sharedBy === me
+              ? () => {
+                  go({ name: "band" });
+                  window.location.replace(bandHref(bandId, "setlists"));
+                  setEditing({ ...setlist });
+                }
+              : undefined
+          }
+          onPlan={isAdmin ? () => planFrom(setlist) : undefined}
+          onCodeError={failed}
+        />
+      );
+    },
+  };
+
+  if (!band && !cached) {
+    return (
+      <section className="band-page" data-band={bandId} data-view={view.name}>
+        <Status notice={notice} error={error} />
+        {loading}
+      </section>
+    );
+  }
+  return (
+    <section className="band-page" data-band={bandId} data-view={view.name} aria-labelledby={titleId}>
+      <header className="band-page-top">
+        <h2 id={titleId}>{name}</h2>
+        <span className="band-invite">
+          <button type="button" className="account-primary" onClick={shareInvite}>
+            Invite
+          </button>
+          <button type="button" className="account-link" onClick={() => go({ name: "invite" })}>
+            Show as QR
+          </button>
+        </span>
+      </header>
+      <Status notice={notice} error={error} />
+      {bodies[view.name]()}
+    </section>
+  );
+}
+
+const BANDS_REFRESH_MS = 10_000;
+
+/**
+ * The Bands tab: the player's bands, each opening its band page, and + New band for the sheet. The list keeps up with
+ * bands joined or left on another phone while it is on screen. A refresh that fails keeps the list it has.
+ */
+export function BandsTab({ me, notice, onNew, onSignIn, onSignedOut }: { me: string | null; notice: string; onNew: () => void; onSignIn: () => void; onSignedOut: () => void }) {
   const [bands, setBands] = useState<BandSummary[] | null>(null);
   const [error, setError] = useState("");
-  const load = () => {
-    setError("");
+  const load = (quiet = false) => {
+    if (!quiet) setError("");
     api<{ bands: BandSummary[] }>("/api/bands").then(
-      (reply) => setBands(listed(reply.bands)),
-      (caught) => (caught instanceof ApiError && caught.status === 401 ? onSignedOut() : setError(message(caught))),
+      (reply) => {
+        setError("");
+        setBands(listed(reply.bands));
+      },
+      (caught) => (caught instanceof ApiError && caught.status === 401 ? onSignedOut() : quiet || setError(message(caught))),
     );
   };
   useEffect(() => {
     setBands(null);
-    if (account) load();
-  }, [account?.userId]);
+    if (!me) return;
+    load();
+    const refresh = () => document.visibilityState === "visible" && load(true);
+    const timer = setInterval(refresh, BANDS_REFRESH_MS);
+    addEventListener("online", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      clearInterval(timer);
+      removeEventListener("online", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [me]);
 
-  if (!account) {
-    return (
-      <div className="bands-tab">
-        <p className="bands-tab-note">Play with your band. Sign in to share setlists and follow gigs.</p>
-        <button type="button" className="live-launch bands-tab-button" onClick={onSignIn}>
-          Sign in
-        </button>
-      </div>
-    );
-  }
+  if (!me) return <SignInToBands onSignIn={onSignIn} />;
   return (
     <div className="bands-tab">
+      <Status notice={notice} error="" />
       {error ? (
         <>
           <p className="bands-tab-note" role="alert">
             {error}
           </p>
-          <button type="button" className="live-launch bands-tab-button" onClick={load}>
+          <button type="button" className="live-launch bands-tab-button" onClick={() => load()}>
             Try again
           </button>
         </>
@@ -687,7 +855,7 @@ export function BandsTab({ account, onOpen, onSignIn, onSignedOut }: { account: 
         <ul className="song-list">
           {bands.map((band) => (
             <li key={band.bandId}>
-              <button type="button" className="song-row" onClick={() => onOpen(band.bandId)}>
+              <button type="button" className="song-row" onClick={() => (window.location.hash = bandHref(band.bandId))}>
                 <span className="song-title">{band.name}</span>
                 <span className="song-artist">
                   {band.role === "admin" ? "Admin · " : ""}
@@ -698,7 +866,7 @@ export function BandsTab({ account, onOpen, onSignIn, onSignedOut }: { account: 
           ))}
         </ul>
       )}
-      <button type="button" className="live-launch bands-tab-button" onClick={() => onOpen()}>
+      <button type="button" className="live-launch bands-tab-button" onClick={onNew}>
         + New band
       </button>
     </div>

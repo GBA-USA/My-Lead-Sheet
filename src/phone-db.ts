@@ -98,6 +98,24 @@ export async function clearPhone(): Promise<void> {
   phoneChanged();
 }
 
+/** Every `bandSongs` key of one band: `bandId/songId`. */
+const bandKeys = (bandId: string) => IDBKeyRange.bound(`${bandId}/`, `${bandId}/\uffff`);
+
+/** Empties one band's songs and gig packs, so nothing of a band stays on this phone once the player is out of it (SCREEN-MAP 4, band-only rule). */
+export async function clearBand(bandId: string): Promise<void> {
+  await written(["bandSongs", "gigPacks"], (clearing) => {
+    clearing.objectStore("bandSongs").delete(bandKeys(bandId));
+    const packs = clearing.objectStore("gigPacks").openCursor();
+    packs.onsuccess = () => {
+      const cursor = packs.result;
+      if (!cursor) return;
+      if ((cursor.value as GigPack).gig.bandId === bandId) cursor.delete();
+      cursor.continue();
+    };
+  });
+  phoneChanged();
+}
+
 /** Whether this phone's band data is `userId`'s. Unlike `claimPhone` it writes nothing, so a reader cannot clear the phone and wake itself again. */
 export function heldFor(userId: string): boolean {
   try {
@@ -119,7 +137,7 @@ export async function holdBandSongs(userId: string, bandId: string, bandName: st
   await claimPhone(userId);
   await written(["bandSongs"], (writing) => {
     const store = writing.objectStore("bandSongs");
-    store.delete(IDBKeyRange.bound(`${bandId}/`, `${bandId}/\uffff`));
+    store.delete(bandKeys(bandId));
     for (const { songId, song, sharedAs, updatedAt } of songs) store.put({ bandId, bandName, songId, song, sharedAs, updatedAt }, bandSongRef(bandId, songId));
   });
   phoneChanged();

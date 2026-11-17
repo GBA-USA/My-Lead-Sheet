@@ -1,3 +1,108 @@
+.band-page {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  color: var(--text);
+}
+
+.band-page-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.band-page-top h2 {
+  margin: 0;
+  font-size: 20px;
+  overflow-wrap: anywhere;
+}
+
+.band-invite {
+  display: flex;
+  gap: 8px;
+}
+
+.band-page button,
+.band-page .friends-list > li,
+.band-setlist-songs li {
+  min-height: 48px;
+}
+
+.band-status-slot:empty {
+  display: none;
+}
+
+.next-gig {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--surface);
+  border-radius: 12px;
+}
+
+.next-gig h3,
+.band-setlist-top h3 {
+  margin: 0;
+  font-size: 17px;
+  overflow-wrap: anywhere;
+}
+
+.next-gig small {
+  color: var(--text-dim);
+  font-weight: 400;
+}
+
+.band-library-row {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  padding: 4px 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.band-library-row small {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.band-setlist-view {
+  display: grid;
+  gap: 12px;
+}
+
+.band-setlist-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.band-setlist-songs {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 24px;
+}
+
+.band-setlist-songs li {
+  box-sizing: border-box;
+  padding: 12px 0;
+}
+
+.band-setlist-songs small {
+  margin-left: 8px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
 .band-tabs {
   display: flex;
   gap: 4px;
@@ -5,14 +110,26 @@
 }
 
 .band-tabs [role="tab"] {
+  display: flex;
   flex: 1;
-  min-height: 44px;
-  border: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
   border-bottom: 3px solid transparent;
-  background: transparent;
   color: var(--text-dim);
+}
+
+.band-tabs [role="tab"] button {
+  flex: 1;
+  min-width: 0;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: inherit;
   font-weight: 700;
   font-size: 15px;
+  cursor: pointer;
 }
 
 .band-tabs [role="tab"][aria-selected="true"] {

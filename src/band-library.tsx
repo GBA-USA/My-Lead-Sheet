@@ -9,36 +9,41 @@ import {
   type BandLibrary,
   type BandSetlist,
   type BandSong,
-  type CopiedSong,
   type SetlistSort,
   type SongContent,
   type SongSort,
 } from "./band-library-model";
 import type { BandView } from "./bands-model";
-import { holdBandSongs } from "./phone-db";
-import { matchingSongs, songYouHave } from "./search";
-import { YouHaveIt } from "./search-box";
+import { matchingSongs } from "./search";
 import type { ShareChoice } from "./share-rule";
 import { BandSetlistCode, CodeOfferButton } from "./setlist-code";
 import { codeOffer } from "./setlist-code-model";
 import { api } from "./sign-in-methods";
-import { addOwnSong, loadLibrary, songByRef } from "./storage";
+import { loadLibrary, songByRef } from "./storage";
 import type { Setlist, Song } from "./types";
 import "./band-library.css";
 
 export type LibraryTab = "setlists" | "songs";
 
-/** `landed` is the setlist a code opened, marked on its row. `onCodeError` hears why a code could not be made. */
+/**
+ * `library` is the band's, as its page last loaded it, and `reload` loads it again. `landed` is the setlist a code
+ * opened, marked on its row. `editing` opens that setlist's editor. `onError` hears why the library or a code failed.
+ */
 type Props = {
   band: BandView;
   me: string;
   tab: LibraryTab;
+  library: BandLibrary | null;
+  reload: () => Promise<void>;
   busy: boolean;
   run: (work: () => Promise<void>) => void;
   notify: (text: string) => void;
+  onOpenSong: (song: BandSong) => void;
+  onOpenSetlist: (setlist: BandSetlist) => void;
   onPlanGig?: (setlist: BandSetlist) => void;
   landed?: string;
-  onCodeError: (error: unknown) => void;
+  editing?: BandSetlist;
+  onError: (error: unknown) => void;
 };
 
 type SetlistFields = Pick<BandSetlist, "name" | "songIds" | "tags">;
@@ -53,7 +58,7 @@ export const CHOICES: Record<ShareChoice, { label: string; line: string }> = {
 };
 
 export const content = ({ ref: _ref, id: _id, copy: _copy, ...song }: Song): SongContent => song;
-const titleOf = (song: BandSong | undefined) => song?.song.title ?? "A song no longer in the band";
+export const titleOf = (song: BandSong | undefined) => song?.song.title ?? "A song no longer in the band";
 const lockFor = (item: { sharedAs: ShareChoice }) =>
   item.sharedAs === "private" ? (
     <span role="img" aria-label="Private" className="band-library-lock">
@@ -188,8 +193,7 @@ function SetlistEditor({
   );
 }
 
-export function BandLibraryTab({ band, me, tab, busy, run, notify, onPlanGig, landed, onCodeError }: Props) {
-  const [library, setLibrary] = useState<BandLibrary | null>(null);
+export function BandLibraryTab({ band, me, tab, library, reload, busy, run, notify, onOpenSong, onOpenSetlist, onPlanGig, landed, editing, onError }: Props) {
   const [mode, setMode] = useState<Mode>({ name: "list" });
   const [query, setQuery] = useState("");
   const [songSort, setSongSort] = useState<SongSort>("title");
@@ -197,20 +201,13 @@ export function BandLibraryTab({ band, me, tab, busy, run, notify, onPlanGig, la
   const [mine, setMine] = useState(false);
   const [tag, setTag] = useState<string | null>(null);
   const [myLibrary, setMyLibrary] = useState(() => loadLibrary());
-  const [asking, setAsking] = useState<{ songId: string; have: Song } | null>(null);
-
-  const reload = () =>
-    api<BandLibrary>("/api/bands/library", { bandId: band.bandId }).then((next) => {
-      setLibrary(next);
-      holdBandSongs(me, band.bandId, band.name, next.songs).catch(() => {});
-    });
   const landedRow = useCallback((row: HTMLLIElement | null) => row?.scrollIntoView({ block: "nearest" }), []);
 
   useEffect(() => {
-    setMode({ name: "list" });
+    setMode(editing ? { name: "edit", setlist: editing } : { name: "list" });
     setQuery("");
-    run(reload);
-  }, [band.bandId, tab]);
+    reload().catch(onError);
+  }, [band.bandId, tab, editing]);
 
   const back = () => {
     setQuery("");
@@ -253,16 +250,6 @@ export function BandLibraryTab({ band, me, tab, busy, run, notify, onPlanGig, la
       notify(`Shared ${picked.setlist.name} as ${CHOICES[choice].label}.`);
     });
 
-  const addToMySongs = (item: BandSong, anyway = false) => {
-    const have = anyway ? undefined : songYouHave(loadLibrary().songs, item.song);
-    setAsking(have ? { songId: item.songId, have } : null);
-    if (have) return;
-    act(async () => {
-      const copied = await api<CopiedSong>("/api/bands/library/copy-song", { bandId: band.bandId, songId: item.songId });
-      notify(addOwnSong({ ...copied.song, copy: copied.copy }) === null ? `This phone couldn't add ${item.song.title}.` : `Added ${item.song.title} to My Songs.`);
-    });
-  };
-
   const saveSetlist = (setlist: BandSetlist, fields: SetlistFields) =>
     act(async () => {
       await api<BandSetlist>("/api/bands/library/edit-setlist", { bandId: band.bandId, setlistId: setlist.setlistId, base: setlist.rev, ...fields });
@@ -293,7 +280,7 @@ export function BandLibraryTab({ band, me, tab, busy, run, notify, onPlanGig, la
         onBack={back}
         onError={(error) => {
           back();
-          onCodeError(error);
+          onError(error);
         }}
       />
     );
@@ -361,8 +348,9 @@ export function BandLibraryTab({ band, me, tab, busy, run, notify, onPlanGig, la
     return (
       <>
         <button type="button" className="account-primary" onClick={openPicker}>
-          + Share a song
+          + Add songs
         </button>
+        <p className="account-note band-library-stay">Band songs stay here.</p>
         {library.songs.length === 0 ? (
           <p className="account-note band-library-songs-empty">No songs yet. Share one from My Songs.</p>
         ) : (
@@ -374,20 +362,11 @@ export function BandLibraryTab({ band, me, tab, busy, run, notify, onPlanGig, la
             <ul className="friends-list band-library-songs">
               {shown.map((item) => (
                 <li key={item.songId}>
-                  <span>
+                  <button type="button" className="band-library-row" onClick={() => onOpenSong(item)}>
                     <span className="band-library-name">{item.song.title}</span>
                     {byline(item, `${item.song.artist} · `)}
-                  </span>
-                  <span className="friends-actions">
-                    {lockFor(item)}
-                    {asking?.songId === item.songId ? (
-                      <YouHaveIt have={asking.have} onAdd={() => addToMySongs(item, true)} />
-                    ) : (
-                      <button type="button" className="account-secondary" disabled={busy} onClick={() => addToMySongs(item)}>
-                        Add to My Songs
-                      </button>
-                    )}
-                  </span>
+                  </button>
+                  <span className="friends-actions">{lockFor(item)}</span>
                 </li>
               ))}
             </ul>
@@ -428,11 +407,11 @@ export function BandLibraryTab({ band, me, tab, busy, run, notify, onPlanGig, la
           <ul className="friends-list band-library-setlists">
             {shown.map((item) => (
               <li key={item.setlistId} data-setlist={item.setlistId} aria-current={item.setlistId === landed ? "true" : undefined} ref={item.setlistId === landed ? landedRow : undefined}>
-                <span>
+                <button type="button" className="band-library-row" onClick={() => onOpenSetlist(item)}>
                   <span className="band-library-name">{item.name}</span>
                   {byline(item, `${item.songIds.length} songs · `)}
                   <small>{item.songIds.map((id) => titleOf(songsById.get(id))).join(", ")}</small>
-                </span>
+                </button>
                 <span className="friends-actions">
                   {lockFor(item)}
                   <CodeOfferButton offer={codeOffer(item.songIds.length, item.canSendOn)} busy={busy} onShow={() => run(async () => setMode({ name: "code", setlist: item }))} />

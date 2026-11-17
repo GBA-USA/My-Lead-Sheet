@@ -535,21 +535,24 @@ const isVersion = (value: unknown): value is StoredVersion => isSettings(value) 
 /**
  * On disk a version without taught timing carries this pace, because a build from before versions held settings
  * (U1 and earlier) requires `bpm` and `marks`, drops a row without them, and its next write of the song stores the
- * shorter list, which backup spreads to every phone. That build scrolls the version top to bottom over four minutes
- * at 100 bpm. A constant, not the song's own pace, so two phones store the same version as the same bytes and
- * backup's merge keeps one. `even` marks it, since a song with tempo 100 and a 4:00 runtime has this pace for real.
+ * shorter list, which backup spreads to every phone. That build scrolls the version top to bottom over four minutes.
+ * A constant, not the song's own pace, so two phones store the same version as the same bytes and backup's merge
+ * keeps one. The stand-in is known by its value alone, because an older build's Save keeps only `bpm` and `marks`
+ * (U3's `toStored`), and the value is one no take can produce: a taught plan's bpm is the metronome's, which
+ * `clampMetronomeBpm` rounds to a whole number, while an early Done on a 4:00 song at tempo 100 ends on exactly
+ * these marks at bpm 100.
  */
-type StoredRow = StoredVersion & { even?: true };
+const EVEN_PACE: ScrollPlan = { bpm: 100.5, marks: [{ at: 0, progress: 0 }, { at: 240, progress: 1 }] };
 
-const EVEN_PACE: ScrollPlan & { even: true } = { bpm: 100, marks: [{ at: 0, progress: 0 }, { at: 240, progress: 1 }], even: true };
+const isEvenPace = (row: StoredVersion): boolean => row.bpm === EVEN_PACE.bpm && JSON.stringify(row.marks) === JSON.stringify(EVEN_PACE.marks);
 
 function withoutEvenPace(row: unknown): unknown {
-  if (!row || typeof row !== "object" || (row as StoredRow).even !== true) return row;
-  const { even: _even, bpm: _bpm, marks: _marks, tempo: _tempo, learned: _learned, ...settings } = row as StoredRow;
+  if (!row || typeof row !== "object" || !isEvenPace(row as StoredVersion)) return row;
+  const { bpm: _bpm, marks: _marks, tempo: _tempo, learned: _learned, ...settings } = row as StoredVersion;
   return settings;
 }
 
-const withEvenPace = (version: StoredVersion): StoredRow => (version.marks === undefined ? { ...version, ...EVEN_PACE } : version);
+const withEvenPace = (version: StoredVersion): StoredVersion => (version.marks === undefined ? { ...version, ...EVEN_PACE } : version);
 
 export function loadScrollVersions(ref: SongRef): ScrollVersions {
   const value = readSongPref(SCROLL_VERSIONS_KEY, ref) as Partial<ScrollVersions> | undefined;

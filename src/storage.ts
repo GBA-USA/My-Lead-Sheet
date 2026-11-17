@@ -463,8 +463,8 @@ export function withSongData(song: Song, data: SongData): Song {
 
 /**
  * A saved version as stored. The timing keeps the top-level fields it had before versions held settings, so an older
- * build and the send route still read it; a version saved without taught timing has none of them. The settings are
- * absent on a version saved before them.
+ * build and the send route still read it. A version saved without taught timing has none of them in memory; on disk
+ * it carries `EVEN_PACE`, which `loadScrollVersions` strips. The settings are absent on a version saved before them.
  */
 export type StoredVersion = Partial<ScrollPlan> & {
   name: string;
@@ -530,18 +530,40 @@ const isTiming: Check = (value) => {
 
 const untimed: Check = (value) => ["bpm", "marks", "tempo", "learned"].every((name) => (value as Record<string, unknown>)[name] === undefined);
 
-const isVersion: Check = (value) => isSettings(value) && ((value as StoredVersion).marks === undefined ? untimed(value) : isTiming(value));
+const isVersion = (value: unknown): value is StoredVersion => isSettings(value) && ((value as StoredVersion).marks === undefined ? untimed(value) : isTiming(value));
+
+/**
+ * On disk a version without taught timing carries this pace, because a build from before versions held settings
+ * (U1 and earlier) requires `bpm` and `marks`, drops a row without them, and its next write of the song stores the
+ * shorter list, which backup spreads to every phone. That build scrolls the version top to bottom over four minutes.
+ * A constant, not the song's own pace, so two phones store the same version as the same bytes and backup's merge
+ * keeps one. The stand-in is known by its value alone, because an older build's Save keeps only `bpm` and `marks`
+ * (U3's `toStored`), and the value is one no take can produce: a taught plan's bpm is the metronome's, which
+ * `clampMetronomeBpm` rounds to a whole number, while an early Done on a 4:00 song at tempo 100 ends on exactly
+ * these marks at bpm 100.
+ */
+const EVEN_PACE: ScrollPlan = { bpm: 100.5, marks: [{ at: 0, progress: 0 }, { at: 240, progress: 1 }] };
+
+const isEvenPace = (row: StoredVersion): boolean => row.bpm === EVEN_PACE.bpm && JSON.stringify(row.marks) === JSON.stringify(EVEN_PACE.marks);
+
+function withoutEvenPace(row: unknown): unknown {
+  if (!row || typeof row !== "object" || !isEvenPace(row as StoredVersion)) return row;
+  const { bpm: _bpm, marks: _marks, tempo: _tempo, learned: _learned, ...settings } = row as StoredVersion;
+  return settings;
+}
+
+const withEvenPace = (version: StoredVersion): StoredVersion => (version.marks === undefined ? { ...version, ...EVEN_PACE } : version);
 
 export function loadScrollVersions(ref: SongRef): ScrollVersions {
   const value = readSongPref(SCROLL_VERSIONS_KEY, ref) as Partial<ScrollVersions> | undefined;
-  const versions = Array.isArray(value?.versions) ? value.versions.filter(isVersion) : [];
+  const versions = Array.isArray(value?.versions) ? value.versions.map(withoutEvenPace).filter(isVersion) : [];
   const selected = value?.selected;
   const valid = typeof selected === "number" && Number.isInteger(selected) && selected >= 0 && selected < versions.length;
   return { versions, selected: valid ? selected : null };
 }
 
 export function saveScrollVersions(ref: SongRef, value: ScrollVersions): boolean {
-  return writeRaw(`${SCROLL_VERSIONS_KEY}.${refKey(ref)}`, JSON.stringify(value));
+  return writeRaw(`${SCROLL_VERSIONS_KEY}.${refKey(ref)}`, JSON.stringify({ ...value, versions: value.versions.map(withEvenPace) }));
 }
 
 /** Applies one change to the stored versions, not to a copy a screen holds, so a version pulled meanwhile stays. Null when the browser refused the write. */

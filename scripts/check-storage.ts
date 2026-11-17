@@ -253,6 +253,16 @@ check(
   "saves for the band's copy leave this phone's song untouched",
 );
 
+freshStorage();
+app.saveSongDraft("user-a", ref(10), { semitones: 2 });
+app.saveSongDraft(null, ref(10), { semitones: -1 });
+storage.failWrites = true;
+check(
+  app.saveSongDraft(null, ref(10), null) && app.loadSongDraft(null, ref(10)) === undefined && JSON.stringify(app.loadSongDraft("user-a", ref(10))) === '{"semitones":2}',
+  `dropping one account's draft on a full phone goes through and leaves another account's draft readable (signed out ${JSON.stringify(app.loadSongDraft(null, ref(10)))}, user-a ${JSON.stringify(app.loadSongDraft("user-a", ref(10)))})`,
+);
+storage.failWrites = false;
+
 if (failures) {
   console.error(`${failures} storage check(s) failed`);
   process.exit(1);

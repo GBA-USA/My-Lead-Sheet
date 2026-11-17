@@ -1,5 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { createServer, request as httpRequest } from "node:http";
+import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { build as bundle } from "esbuild";
 import type { LibraryFile } from "../src/types.ts";
@@ -131,6 +133,30 @@ const keyName = () => evaluate<string>(`document.querySelector(".controls .key-n
 const stored = (key: string) => evaluate<string | null>(`localStorage.getItem(${js(key)})`);
 const VERSIONS = `leadSheetsScrollVersions.${CHAIN_BREAKER}`;
 const DRAFT = `leadSheetsSongDraft.${CHAIN_BREAKER}`;
+const REF = `local/${CHAIN_BREAKER}` as const;
+const REFUSAL = "Couldn't save. Free some space and try again.";
+const FULL_PHONE = `Storage.prototype.setItem = function () { throw new DOMException("full", "QuotaExceededError"); }`;
+const FULL_FOR_VERSIONS = `(() => {
+  const real = Storage.prototype.setItem;
+  Storage.prototype.setItem = function (key, value) {
+    if (String(key).startsWith("leadSheetsScrollVersions")) throw new DOMException("full", "QuotaExceededError");
+    return real.call(this, key, value);
+  };
+})()`;
+const alerts = () => evaluate<string>(`[...document.querySelectorAll("[role=alert]")].filter((el) => el.getClientRects().length > 0).map((el) => el.textContent.trim()).join(" | ")`);
+/** Copies the phone's stored drafts into the node store, so `loadDraft` reads what the phone holds whatever the key shape. Returns their keys. */
+async function phoneDrafts() {
+  const entries = await evaluate<[string, string][]>(`Object.entries(localStorage).filter(([key]) => key.startsWith("leadSheetsSongDraft"))`);
+  store.clear();
+  for (const [key, value] of entries) store.set(key, value);
+  return entries.map(([key]) => key);
+}
+/** Puts the node store's drafts on the phone in place of its own. */
+async function putDrafts() {
+  const mine = [...store];
+  const theirs = await evaluate<string[]>(`Object.keys(localStorage).filter((key) => key.startsWith("leadSheetsSongDraft"))`);
+  await evaluate(`${theirs.map((key) => `localStorage.removeItem(${js(key)})`).join("; ")}; ${mine.map(([key, value]) => `localStorage.setItem(${js(key)}, ${js(value)})`).join("; ")}; 0`);
+}
 const chip = () => evaluate<string>(`document.querySelector(".shell-header button.version-chip")?.textContent?.trim() ?? ""`);
 const saveShown = () => has("Save", HEADER);
 const revertShown = () => has("Revert", HEADER);
@@ -310,8 +336,9 @@ try {
     expect(draft?.semitones === 3, `the signed-out draft reads ${js(draft)}`);
     expect(saveDraft("user-a", ref, draft) && loadDraft("user-b", ref) === null && loadDraft("user-a", ref)?.semitones === 3, "account B sees account A's draft, or A lost it");
     expect(loadDraft(null, ref)?.semitones === 3, "account A's save replaced the signed-out draft");
-    const other = js({ "user-b": loadDraft(null, ref) });
-    await evaluate(`localStorage.setItem(${js(DRAFT)}, ${js(other)})`);
+    store.clear();
+    saveDraft("user-b", ref, draft);
+    await putDrafts();
     await load(`#/song/${CHAIN_BREAKER}`);
     expect(!(await saveShown()), "a signed-out phone shows another account's draft");
     await evaluate(`localStorage.setItem(${js(DRAFT)}, ${js(mine)})`);
@@ -322,16 +349,10 @@ try {
   await test("a full storage on Save shows Couldn't save. Free some space and try again. and the draft stays", async () => {
     await freshPhone();
     await tap("Transpose up", CONTROLS);
-    await evaluate(`(() => {
-      const real = Storage.prototype.setItem;
-      Storage.prototype.setItem = function (key, value) {
-        if (String(key).startsWith("leadSheetsScrollVersions")) throw new DOMException("full", "QuotaExceededError");
-        return real.call(this, key, value);
-      };
-    })()`);
+    await evaluate(FULL_FOR_VERSIONS);
     await saveAs("Full");
-    const shown = await evaluate<string>(`[...document.querySelectorAll("[role=alert]")].map((el) => el.textContent.trim()).join(" | ")`);
-    expect(shown.includes("Couldn't save. Free some space and try again."), `the alert reads ${js(shown)}`);
+    const shown = await alerts();
+    expect(shown.includes(REFUSAL), `the alert reads ${js(shown)}`);
     await evaluate(`${buttonIn(DIALOG, "Cancel")}?.click()`);
     await settle();
     expect((await saveShown()) && (await stored(DRAFT)) !== null && (await stored(VERSIONS)) === null, "the draft did not stay after a refused Save");
@@ -589,7 +610,7 @@ try {
       await tap("Transpose up", CONTROLS);
       expect((await keyName()) !== original, `Transpose up does nothing on locked song ${id}`);
       expect(!(await saveShown()) && !(await revertShown()) && !(await has("Send", CONTROLS)), `locked song ${id} shows Save, Revert or Send`);
-      expect((await stored(`leadSheetsSongDraft.${id}`)) === null, `locked song ${id} stored a draft`);
+      expect((await evaluate<number>(`Object.keys(localStorage).filter((key) => key.startsWith("leadSheetsSongDraft.${id}")).length`)) === 0, `locked song ${id} stored a draft`);
       await go("#/songs");
       await go(`#/song/${id}`);
       expect((await keyName()) === original, `locked song ${id} kept ${await keyName()} after leaving`);
@@ -599,7 +620,6 @@ try {
   });
 
   const noSignal = (on: boolean) => site.send("Network.setBlockedURLs", { urls: on ? ["*/api/*"] : [] });
-  const drafts = async () => JSON.parse((await stored(DRAFT)) ?? "{}") as Record<string, { semitones: number }>;
 
   await test("signed in with /api/* unreachable at launch, the account's draft shows and nothing lands in the signed-out entry", async () => {
     await freshPhone(`#/song/${CHAIN_BREAKER}`, signedIn);
@@ -612,8 +632,9 @@ try {
       await load(`#/song/${CHAIN_BREAKER}`);
       expect((await keyName()) === moved && (await saveShown()), `with no signal the song opens in ${await keyName()}, not the account's draft ${moved}, and Save shows: ${await saveShown()}`);
       await tap("Transpose down", CONTROLS);
-      const kept = await drafts();
-      expect(Object.keys(kept).length === 1 && kept[sam.userId]?.semitones === 1, `with no signal the change was stored as ${js(kept)}, not under the account alone`);
+      const keys = await phoneDrafts();
+      const { loadDraft } = needModel();
+      expect(keys.length === 1 && loadDraft(sam.userId, REF)?.semitones === 1 && loadDraft(null, REF) === null, `with no signal the change was stored under ${js(keys)} as ${js(loadDraft(sam.userId, REF))}, not under the account alone`);
     } finally {
       await noSignal(false);
     }
@@ -632,7 +653,98 @@ try {
     }
     await load(`#/song/${CHAIN_BREAKER}`);
     await until(`!!${buttonIn(CONTROLS, "Send")}`, "the account to answer", 10000);
-    expect(!("" in (await drafts())), `the signed-out entry holds ${js(await drafts())} once the account answered`);
+    await phoneDrafts();
+    expect(needModel().loadDraft(null, REF) === null, `the signed-out entry holds ${js(needModel().loadDraft(null, REF))} once the account answered`);
+  });
+
+  await test("a Revert on a full phone stays reverted after reload when another account has a draft for the song", async () => {
+    await freshPhone(`#/song/${CHAIN_BREAKER}`, signedIn);
+    await until(`!!${buttonIn(CONTROLS, "Send")}`, "the account to answer", 10000);
+    const original = await keyName();
+    await tap("Transpose up", CONTROLS);
+    await tap("Transpose up", CONTROLS);
+    const theirs = await keyName();
+    await evaluate(`localStorage.removeItem("leadSheetsSignedIn")`);
+    await load(`#/song/${CHAIN_BREAKER}`);
+    if (await saveShown()) throw new Failed("signed out, the phone shows the account's draft");
+    await tap("Transpose down", CONTROLS);
+    await evaluate(FULL_PHONE);
+    await tap("Revert", HEADER);
+    expect((await keyName()) === original && !(await saveShown()), `on the full phone Revert left ${await keyName()} and Save shows: ${await saveShown()}`);
+    await load(`#/song/${CHAIN_BREAKER}`);
+    expect((await keyName()) === original && !(await saveShown()) && !(await revertShown()), `after a reload the key reads ${await keyName()} (want ${original}) and Save shows: ${await saveShown()}`);
+    await evaluate(signedIn);
+    await load(`#/song/${CHAIN_BREAKER}`);
+    await until(`!!${buttonIn(CONTROLS, "Send")}`, "the account to answer again", 10000);
+    expect((await keyName()) === theirs && (await saveShown()), `back in the account the key reads ${await keyName()}, not its draft ${theirs}, and Save shows: ${await saveShown()}`);
+  });
+
+  await test("a pick on a full phone drops the stored draft when another account has one for the song", async () => {
+    await freshPhone(`#/song/${CHAIN_BREAKER}`, `${signedIn} localStorage.setItem(${js(VERSIONS)}, ${js(js({ versions: [SUNDAY], selected: null }))})`);
+    await until(`!!${buttonIn(CONTROLS, "Send")}`, "the account to answer", 10000);
+    await tap("Transpose up", CONTROLS);
+    await evaluate(`localStorage.removeItem("leadSheetsSignedIn")`);
+    await load(`#/song/${CHAIN_BREAKER}`);
+    const original = await keyName();
+    await tap("Transpose down", CONTROLS);
+    await evaluate(`(() => {
+      const real = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (key, value) {
+        if (String(key).startsWith("leadSheetsSongDraft")) throw new DOMException("full", "QuotaExceededError");
+        return real.call(this, key, value);
+      };
+    })()`);
+    await tap("Default ▾", HEADER);
+    await tap("Sunday");
+    expect((await chip()) === "Sunday ▾" && (await keyName()) === original && !(await saveShown()), `after the pick the chip reads ${await chip()}, the key ${await keyName()} and Save shows: ${await saveShown()}`);
+    await load(`#/song/${CHAIN_BREAKER}`);
+    expect((await keyName()) === original && !(await saveShown()), `after a reload the key reads ${await keyName()} (want ${original}) and Save shows: ${await saveShown()}`);
+  });
+
+  await test("after a refused Save, Revert clears Couldn't save", async () => {
+    await freshPhone();
+    await tap("Transpose up", CONTROLS);
+    await evaluate(FULL_FOR_VERSIONS);
+    await saveAs("Full");
+    if (!(await alerts()).includes(REFUSAL)) throw new Failed(`the refused Save shows ${js(await alerts())}`);
+    await tap("Cancel", DIALOG);
+    await tap("Revert", HEADER);
+    expect(!(await alerts()).includes(REFUSAL) && !(await saveShown()), `after Revert the line reads ${js(await alerts())} and Save shows: ${await saveShown()}`);
+  });
+
+  await test("a phone signed in by an older build keeps a change made before /api/me answers", async () => {
+    const slow = createServer((request, response) => {
+      const path = new URL(request.url ?? "/", "http://localhost").pathname;
+      setTimeout(() => {
+        const upstream = httpRequest(new URL(request.url ?? "/", base), { method: request.method, headers: { ...request.headers, host: new URL(base).host } }, (reply) => {
+          response.writeHead(reply.statusCode ?? 502, reply.headers);
+          reply.pipe(response);
+        });
+        upstream.on("error", () => response.destroy());
+        request.pipe(upstream);
+      }, path === "/api/me" ? 4000 : 0);
+    });
+    await new Promise<void>((done) => slow.listen(0, "127.0.0.1", done));
+    apiBase = `http://127.0.0.1:${(slow.address() as AddressInfo).port}`;
+    try {
+      await freshPhone(`#/song/${CHAIN_BREAKER}`, signedIn);
+      const original = await keyName();
+      await tap("Transpose up", CONTROLS);
+      const moved = await keyName();
+      if (moved === original || (await stored("leadSheetsSignedIn")) !== "1") throw new Failed(`the account answered before the change (mark ${await stored("leadSheetsSignedIn")}, key ${moved})`);
+      await until(`localStorage.getItem("leadSheetsSignedIn") === ${js(sam.userId)}`, "the account to answer", 10000);
+      await settle(400);
+      expect((await keyName()) === moved && (await saveShown()), `once the account answered the key reads ${await keyName()}, not the change ${moved}, and Save shows: ${await saveShown()}`);
+      await phoneDrafts();
+      const { loadDraft } = needModel();
+      expect(loadDraft(sam.userId, REF)?.semitones === 1 && loadDraft(null, REF) === null, `the change is stored as ${js(loadDraft(sam.userId, REF))} for the account and ${js(loadDraft(null, REF))} signed out`);
+      await load(`#/song/${CHAIN_BREAKER}`);
+      await until(`!!${buttonIn(CONTROLS, "Send")}`, "the account to answer after a reload", 10000);
+      expect((await keyName()) === moved && (await saveShown()), `after a reload the key reads ${await keyName()}, not the change ${moved}`);
+    } finally {
+      apiBase = base;
+      slow.close();
+    }
   });
 
   for (const pixels of WIDTHS) {

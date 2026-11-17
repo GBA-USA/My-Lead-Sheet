@@ -241,8 +241,8 @@ async function appChecks(site: Awaited<ReturnType<typeof openSite>>, base: strin
   assert.deepEqual(refusal(await mike.call("/api/bands/library/copy-song", { bandId, songId: mikesView.songId })), [403, "band-only"], "Mike can't copy Sam's Private song out of the band");
   assert.equal(
     (await mike.call("/api/bands/library/share-song", { bandId: mikeSide, song: mikesView.song, choice: "public", localId: 1 })).status,
-    403,
-    "a direct server call from Mike to pass Sam's Private song on is refused",
+    200,
+    "Fire Away is a built-in every phone has, so with no copy taken Mike's own Fire Away is still his to share",
   );
 
   const mikesPrivate = chart("Back Porch Blues", "Mike Keys", "Sitting on the back porch");

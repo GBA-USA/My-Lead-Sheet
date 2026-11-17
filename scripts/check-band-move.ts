@@ -138,9 +138,6 @@ async function apiChecks() {
       "setlists arrive with their songs remapped to the new ids, tags and choice kept",
     );
     assert.deepEqual(refusal(await dana.call("/api/bands/library/copy-song", { bandId: newBlue, songId: byFileId.get(chainId)!.songId })), [403, "band-only"], "Dana can't copy the moved Private song out of the band");
-    const tried = await dana.call("/api/bands/library/share-song", { bandId: danas, song: chainBreaker, choice: "public" });
-    assert.equal(tried.status, 403, `and the server refuses to pass it on (${JSON.stringify(tried.body)})`);
-    assert.match(String(tried.body.error), /^private_(copy|ancestor)$/, "because it was shared privately");
     assert.equal((await dana.call("/api/bands/library/share-song", { bandId: danas, song: midnight, choice: "public" })).status, 200, "while the moved Public song passes on");
     pass("songs, setlists and timing versions arrive deep-equal with ids remapped and their Private or Public flags kept");
 

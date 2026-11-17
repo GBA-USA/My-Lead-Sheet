@@ -51,7 +51,7 @@ const versionLabel = (version: SongVersion) => (version.learned ? `${version.nam
 /**
  * The header's second line: the lock on a locked song, the version chip when the song has versions, and Revert and
  * Save while the draft differs from the version in use. Rename and Delete take the line over until they finish. Save as
- * stands only while that draft does: a Save, Revert, a pick or an owner change closes it.
+ * belongs to the draft it was opened for, so the hook ends it with that draft.
  */
 export function SongLine({
   state,
@@ -67,9 +67,7 @@ export function SongLine({
   const [naming, setNaming] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [retiming, setRetiming] = useState(false);
-  const [savingAs, setSavingAs] = useState(false);
-  const { versions, selected, version, refused } = state;
-  if (savingAs && !state.changed) setSavingAs(false);
+  const { versions, selected, version, refused, savingAs } = state;
 
   if (!state.locked && versions.length === 0 && !state.changed && !refused) return null;
 
@@ -178,7 +176,7 @@ export function SongLine({
               <button type="button" role="menuitem" disabled={version == null} onClick={pick(state.saveToVersion)}>
                 Save to this version
               </button>
-              <button type="button" role="menuitem" onClick={pick(() => setSavingAs(true))}>
+              <button type="button" role="menuitem" onClick={pick(() => state.setSavingAs(true))}>
                 Save as…
               </button>
             </Menu>
@@ -191,7 +189,7 @@ export function SongLine({
         </p>
       ) : null}
       {savingAs ? (
-        <SaveAs name={state.nextName} refused={refused} onSave={state.saveAs} onCancel={() => setSavingAs(false)} />
+        <SaveAs name={state.nextName} refused={refused} onSave={state.saveAs} onCancel={() => state.setSavingAs(false)} />
       ) : null}
     </>
   );

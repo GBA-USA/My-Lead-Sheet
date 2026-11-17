@@ -121,36 +121,44 @@ const NONE: ScrollVersions = { versions: [], selected: null };
 
 type Patch = Partial<Draft> | ((draft: Draft) => Partial<Draft>);
 
+/** The player's unsaved change, whether the phone refused its last Save, and whether Save as stands over it. The three end together. */
+interface Held {
+  draft: Draft;
+  refused: boolean;
+  savingAs: boolean;
+}
+
 /**
- * One visit to a song: the draft over the version in use, a locked song's pick, and whether the phone refused the last
- * Save of this draft. The keeper is the owner whose stored draft this is, or undefined on a locked song or while the
- * phone cannot name its account, when the draft lives here only.
+ * One visit to a song: the draft held over the version in use, and a locked song's pick. The keeper is the owner whose
+ * stored draft this is, or undefined on a locked song or while the phone cannot name its account, when the draft lives
+ * here only.
  */
 interface Visit {
   ref: SongRef | null;
   keeper: Owner;
-  draft: Draft | null;
+  held: Held | null;
   selected: number | null;
-  refused: boolean;
 }
+
+const fresh = (draft: Draft | null): Held | null => (draft ? { draft, refused: false, savingAs: false } : null);
 
 const opened = (ref: SongRef | null, keeper: Owner, selected: number | null): Visit => ({
   ref,
   keeper,
-  draft: ref != null && keeper !== undefined ? loadDraft(keeper, ref) : null,
+  held: ref != null && keeper !== undefined ? fresh(loadDraft(keeper, ref)) : null,
   selected,
-  refused: false,
 });
 
 /**
  * The owner changed on the same song. A change made before the phone could name its account becomes that account's
- * draft, and a refusal of it comes along. Otherwise the new owner's own draft shows, and the old draft's refusal goes with it.
+ * draft, and its refusal and its Save as come along. Otherwise the new owner's own draft shows, and the old draft's
+ * refusal and Save as go with it.
  */
 function renamed(visit: Visit, keeper: Owner): Visit {
-  if (visit.ref == null || keeper === undefined) return { ...visit, keeper, draft: null, refused: false };
-  const carried = visit.keeper === undefined ? visit.draft : null;
-  if (carried) saveDraft(keeper, visit.ref, carried);
-  return { ...visit, keeper, draft: carried ?? loadDraft(keeper, visit.ref), refused: carried !== null && visit.refused };
+  if (visit.ref == null || keeper === undefined) return { ...visit, keeper, held: null };
+  const carried = visit.keeper === undefined ? visit.held : null;
+  if (carried) saveDraft(keeper, visit.ref, carried.draft);
+  return { ...visit, keeper, held: carried ?? fresh(loadDraft(keeper, visit.ref)) };
 }
 
 /**
@@ -158,8 +166,8 @@ function renamed(visit: Visit, keeper: Owner): Visit {
  * account until Save, Revert or a pick, so a choice the player made holds even when it matches today's default. Save
  * shows while the draft differs from the version in use. A locked song keeps the draft, and any version picked, only
  * until the player leaves it. A phone signed in to an account it cannot name yet keeps the draft in memory until the
- * account answers, then hands it to that account. A refused Save shows until the draft goes. Every change the controls
- * make goes through `set`.
+ * account answers, then hands it to that account. A refused Save shows until the draft goes. Save as stands only while
+ * the draft it was opened for is held and differs from the version in use. Every change the controls make goes through `set`.
  */
 export function useSongVersion(song: Song | null, owner: Owner, personal: PersonalDefaults) {
   const ref = song?.ref ?? null;
@@ -167,22 +175,29 @@ export function useSongVersion(song: Song | null, owner: Owner, personal: Person
   const keeper = isLocked ? undefined : owner;
   const [stored, setStored] = useStored(() => (ref == null ? NONE : loadScrollVersions(ref)), ref);
   const [slot, setVisit] = useState(() => opened(ref, keeper, stored.selected));
-  const visit = slot.ref !== ref ? opened(ref, keeper, stored.selected) : slot.keeper !== keeper ? renamed(slot, keeper) : slot;
-  if (visit !== slot) setVisit(visit);
+  const moved = slot.ref !== ref ? opened(ref, keeper, stored.selected) : slot.keeper !== keeper ? renamed(slot, keeper) : slot;
 
   const versions = stored.versions.map(fromStored);
-  const selected = isLocked ? visit.selected : stored.selected;
+  const selected = isLocked ? moved.selected : stored.selected;
   const version = selected == null ? null : (versions[selected] ?? null);
   const defaults = song ? songDefaults(song, personal) : null;
   const base = defaults ? baseline(version, defaults) : null;
-  const draft = visit.draft ?? base;
+  const changed = !isLocked && moved.held != null && base != null && differs(moved.held.draft, base);
+  const visit = moved.held?.savingAs && !changed ? { ...moved, held: { ...moved.held, savingAs: false } } : moved;
+  if (visit !== slot) setVisit(visit);
+
+  const held = visit.held;
+  const draft = held?.draft ?? base;
   const latest = useRef(draft);
   latest.current = draft;
 
   const keepDraft = (next: Draft | null) => {
     if (ref == null) return;
     if (keeper !== undefined) saveDraft(keeper, ref, next);
-    setVisit((current) => ({ ...current, draft: next, refused: next !== null && current.refused }));
+    setVisit((current) => ({
+      ...current,
+      held: next ? { draft: next, refused: current.held?.refused ?? false, savingAs: current.held?.savingAs ?? false } : null,
+    }));
   };
 
   const set = (patch: Patch) => {
@@ -200,14 +215,13 @@ export function useSongVersion(song: Song | null, owner: Owner, personal: Person
   };
 
   /** Saves the held draft. With no draft there is nothing to save, so nothing is written and nothing is refused. */
-  const commit = (change: (held: Draft, current: ScrollVersions) => ScrollVersions): boolean => {
-    const held = visit.draft;
+  const commit = (change: (draft: Draft, current: ScrollVersions) => ScrollVersions): boolean => {
     if (!held || ref == null) return false;
-    if (!write((current) => change(held, current))) {
-      setVisit((current) => ({ ...current, refused: true }));
+    if (!write((current) => change(held.draft, current))) {
+      setVisit((current) => (current.held ? { ...current, held: { ...current.held, refused: true } } : current));
       return false;
     }
-    if (held.data) saveSongData(ref, { ...loadSongData(ref), ...held.data });
+    if (held.draft.data) saveSongData(ref, { ...loadSongData(ref), ...held.draft.data });
     keepDraft(null);
     return true;
   };
@@ -221,15 +235,17 @@ export function useSongVersion(song: Song | null, owner: Owner, personal: Person
     version,
     draft,
     locked: isLocked,
-    changed: !isLocked && draft != null && base != null && differs(draft, base),
-    refused: visit.refused,
+    changed,
+    refused: held?.refused ?? false,
+    savingAs: held?.savingAs ?? false,
     nextName: nextVersionName(versions),
     set,
+    setSavingAs: (open: boolean) => setVisit((current) => (current.held ? { ...current, held: { ...current.held, savingAs: open } } : current)),
     revert: () => keepDraft(null),
-    saveAs: (name: string) => commit((held, current) => ({ versions: [...current.versions, toStored(name, held)], selected: current.versions.length })),
-    saveToVersion: () => selected != null && commit((held, current) => ({ ...current, versions: current.versions.map((each, i) => (i === selected ? toStored(each.name, held) : each)) })),
+    saveAs: (name: string) => commit((draft, current) => ({ versions: [...current.versions, toStored(name, draft)], selected: current.versions.length })),
+    saveToVersion: () => selected != null && commit((draft, current) => ({ ...current, versions: current.versions.map((each, i) => (i === selected ? toStored(each.name, draft) : each)) })),
     select: (index: number | null) => {
-      if (isLocked) return setVisit((current) => ({ ...current, selected: index, draft: null }));
+      if (isLocked) return setVisit((current) => ({ ...current, selected: index, held: null }));
       if (write((current) => ({ ...current, selected: index }))) keepDraft(null);
     },
     rename: (index: number, name: string) => edit(index, (each) => ({ ...each, name })),

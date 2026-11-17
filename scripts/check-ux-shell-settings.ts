@@ -312,18 +312,22 @@ try {
     await closeSheet();
   });
 
-  await test("the Account, Friends and Messages rows open their sheets and close back to Settings", async () => {
+  await test("the Account and Friends rows open their sheets, Messages opens its screen, and each closes back to Settings", async () => {
     await until(`!!${SETTINGS} || !!${gear}`, "Settings or a list");
     if (!(await evaluate<boolean>(`!!${SETTINGS}`))) await openSettings();
     await until(`${js(["Account", "Friends", "Messages"].join())} === [...(document.querySelector(".settings [role=group][aria-label=Account]")?.querySelectorAll("button") ?? [])].map((b) => b.textContent.trim()).join()`, "the signed-in account rows");
     const account = await evaluate<string>(`document.querySelector(".settings [role=group][aria-label=Account]")?.innerText ?? ""`);
     expect(account.includes("Signed in as Sam Rivera · @samrivera"), `the Account group says ${account}`);
-    for (const [row, sheet] of [["Account", ".account-sheet"], ["Friends", ".friends-sheet"], ["Messages", ".chat-sheet"]]) {
+    for (const [row, sheet] of [["Account", ".account-sheet"], ["Friends", ".friends-sheet"]]) {
       await tap(row, `document.querySelector(".settings [role=group][aria-label=Account]")`);
       await until(`!!document.querySelector(${js(sheet)})`, `the ${row} sheet`);
       await closeSheet();
       expect(await evaluate<boolean>(`!document.querySelector("[role=dialog]") && location.hash.startsWith("#/settings") && !!${SETTINGS}`), `closing ${row} does not return to Settings`);
     }
+    await tap("Messages", `document.querySelector(".settings [role=group][aria-label=Account]")`);
+    await until(`location.hash === "#/messages" && !!document.querySelector(".messages") && !document.querySelector("[role=dialog]")`, "the Messages screen");
+    await tap("Back", `document.querySelector(".shell-header")`);
+    await until(`location.hash.startsWith("#/settings") && !!${SETTINGS}`, "Back from Messages to Settings");
   });
 
   await test("the gear opens Settings from Songs, Setlists, Bands and the band page", async () => {

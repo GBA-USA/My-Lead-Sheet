@@ -25,7 +25,8 @@ const ONE_COPY: { what: string; pattern: RegExp; home: string; dir?: string }[] 
   { what: "what counts as the same @name", pattern: /replace\(\/\^@\/, ""\)\.toLowerCase\(\)/, home: "src/handle.ts" },
   { what: "the @name made from a display name", pattern: /normalize\("NFKD"\)/, home: "src/handle.ts" },
   { what: "the app's name", pattern: /"Groovist"/, home: "src/data-kinds.ts", dir: "src/" },
-  { what: "the chat thread: messages, composer, mute and socket", pattern: /function ChatThread\b/, home: "src/chat.tsx" },
+  { what: "the room view: messages, composer and mute, on its screen and on the band page", pattern: /function Room\b/, home: "src/room.tsx" },
+  { what: "the room socket", pattern: /new WebSocket\(/, home: "src/chat.tsx", dir: "src/" },
 ];
 
 for (const { what, pattern, home, dir } of ONE_COPY) {

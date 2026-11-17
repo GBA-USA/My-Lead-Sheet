@@ -121,7 +121,7 @@ const NONE: ScrollVersions = { versions: [], selected: null };
 
 type Patch = Partial<Draft> | ((draft: Draft) => Partial<Draft>);
 
-/** The player's unsaved change, whether the phone refused its last Save, and whether Save as stands over it. The three end together. */
+/** The player's unsaved change, whether the phone refused its last Save, and whether Save as stands over it. The three end with the draft, and Save as also ends when the keeper changes. */
 interface Held {
   draft: Draft;
   refused: boolean;
@@ -150,15 +150,16 @@ const opened = (ref: SongRef | null, keeper: Owner, selected: number | null): Vi
 });
 
 /**
- * The owner changed on the same song. A change made before the phone could name its account becomes that account's
- * draft, and its refusal and its Save as come along. Otherwise the new owner's own draft shows, and the old draft's
- * refusal and Save as go with it.
+ * The owner changed on the same song. A change made before the phone could name its account becomes the new owner's
+ * draft, whether that is the account that answered or the signed-out player, and its refusal comes along. Otherwise
+ * the new owner's own draft shows, and the old draft's refusal goes with it. Save as ends either way: it was opened
+ * under the old owner.
  */
 function renamed(visit: Visit, keeper: Owner): Visit {
   if (visit.ref == null || keeper === undefined) return { ...visit, keeper, held: null };
   const carried = visit.keeper === undefined ? visit.held : null;
   if (carried) saveDraft(keeper, visit.ref, carried.draft);
-  return { ...visit, keeper, held: carried ?? fresh(loadDraft(keeper, visit.ref)) };
+  return { ...visit, keeper, held: carried ? { ...carried, savingAs: false } : fresh(loadDraft(keeper, visit.ref)) };
 }
 
 /**
@@ -167,7 +168,8 @@ function renamed(visit: Visit, keeper: Owner): Visit {
  * shows while the draft differs from the version in use. A locked song keeps the draft, and any version picked, only
  * until the player leaves it. A phone signed in to an account it cannot name yet keeps the draft in memory until the
  * account answers, then hands it to that account. A refused Save shows until the draft goes. Save as stands only while
- * the draft it was opened for is held and differs from the version in use. Every change the controls make goes through `set`.
+ * the draft it was opened for is held by the owner it was opened under and differs from the version in use, so a
+ * sign-out ends it in every draft state. Every change the controls make goes through `set`.
  */
 export function useSongVersion(song: Song | null, owner: Owner, personal: PersonalDefaults) {
   const ref = song?.ref ?? null;

@@ -656,6 +656,7 @@ function BandScreen({ me, bandId, section: asked, landing, onMessage, onSignedOu
         loading
       ) : (
         <>
+          {!band && cached ? cannotReach : null}
           {chat.entry ? <MuteButton entry={chat.entry} muting={muting} onMuting={setMuting} /> : null}
           <ChatThread
             me={me}

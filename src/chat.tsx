@@ -78,7 +78,7 @@ export function ChatThread({
   onSignedOut: () => void;
 }) {
   const inputId = useId();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[] | null>(null);
   const queue = useSyncExternalStore(onQueueChange, queuedMessages, queuedMessages);
   const [newLineAt, setNewLineAt] = useState<number | null>(null);
   const [text, setText] = useState("");
@@ -100,7 +100,7 @@ export function ChatThread({
     if (more.length === 0) return;
     const last = more[more.length - 1];
     onEntry(roomId, (c) => (c.lastSeq < last.seq ? { ...c, lastSeq: last.seq, lastAt: last.at, preview: `${last.fromName}: ${previewText(last)}` } : c));
-    setMessages((current) => withMessages(current, more));
+    setMessages((current) => withMessages(current ?? [], more));
     markRead(last.seq);
   };
 
@@ -117,7 +117,7 @@ export function ChatThread({
     let socket: WebSocket | null = null;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let lastSeq = 0;
-    setMessages([]);
+    setMessages(null);
     setNewLineAt(null);
     setError("");
     const fetchNew = () =>
@@ -125,6 +125,7 @@ export function ChatThread({
         if (stopped) return;
         setError("");
         lastSeq = Math.max(lastSeq, ...reply.messages.map((m) => m.seq));
+        setMessages((current) => current ?? []);
         arrived(reply.messages);
       }, failed);
     const connect = () => {
@@ -162,7 +163,7 @@ export function ChatThread({
   useEffect(() => {
     const list = listRef.current;
     if (list) list.scrollTop = list.scrollHeight;
-  }, [messages.length, waiting.length]);
+  }, [messages?.length, waiting.length]);
 
   const send = (event: FormEvent) => {
     event.preventDefault();
@@ -200,8 +201,8 @@ export function ChatThread({
         </div>
       ) : null}
       <ol className="chat-messages" ref={listRef}>
-        {messages.length === 0 && waiting.length === 0 ? <li className="account-note">No messages yet. Say hello.</li> : null}
-        {messages.map((m) => (
+        {messages?.length === 0 && waiting.length === 0 ? <li className="account-note">No messages yet. Say hello.</li> : null}
+        {(messages ?? []).map((m) => (
           <li key={m.seq} className={`chat-line chat-line-${side(m, me)}`}>
             {newLineAt === m.seq ? <div className="chat-new-line">New messages</div> : null}
             <span className="chat-name">{nameAbove(m, me)}</span>

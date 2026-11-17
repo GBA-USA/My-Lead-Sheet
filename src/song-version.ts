@@ -199,13 +199,15 @@ export function useSongVersion(song: Song | null, owner: Owner, personal: Person
     return next !== null;
   };
 
-  const commit = (change: (current: ScrollVersions) => ScrollVersions): boolean => {
-    if (!draft || ref == null) return false;
-    if (!write(change)) {
+  /** Saves the held draft. With no draft there is nothing to save, so nothing is written and nothing is refused. */
+  const commit = (change: (held: Draft, current: ScrollVersions) => ScrollVersions): boolean => {
+    const held = visit.draft;
+    if (!held || ref == null) return false;
+    if (!write((current) => change(held, current))) {
       setVisit((current) => ({ ...current, refused: true }));
       return false;
     }
-    if (draft.data) saveSongData(ref, { ...loadSongData(ref), ...draft.data });
+    if (held.data) saveSongData(ref, { ...loadSongData(ref), ...held.data });
     keepDraft(null);
     return true;
   };
@@ -224,8 +226,8 @@ export function useSongVersion(song: Song | null, owner: Owner, personal: Person
     nextName: nextVersionName(versions),
     set,
     revert: () => keepDraft(null),
-    saveAs: (name: string) => commit((current) => ({ versions: [...current.versions, toStored(name, draft!)], selected: current.versions.length })),
-    saveToVersion: () => selected != null && commit((current) => ({ ...current, versions: current.versions.map((each, i) => (i === selected ? toStored(each.name, draft!) : each)) })),
+    saveAs: (name: string) => commit((held, current) => ({ versions: [...current.versions, toStored(name, held)], selected: current.versions.length })),
+    saveToVersion: () => selected != null && commit((held, current) => ({ ...current, versions: current.versions.map((each, i) => (i === selected ? toStored(each.name, held) : each)) })),
     select: (index: number | null) => {
       if (isLocked) return setVisit((current) => ({ ...current, selected: index, draft: null }));
       if (write((current) => ({ ...current, selected: index }))) keepDraft(null);

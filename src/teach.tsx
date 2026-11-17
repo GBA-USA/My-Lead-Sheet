@@ -50,7 +50,8 @@ const versionLabel = (version: SongVersion) => (version.learned ? `${version.nam
 
 /**
  * The header's second line: the lock on a locked song, the version chip when the song has versions, and Revert and
- * Save while the draft differs from the version in use. Rename and Delete take the line over until they finish.
+ * Save while the draft differs from the version in use. Rename and Delete take the line over until they finish. Save as
+ * stands only while that draft does: a Save, Revert, a pick or an owner change closes it.
  */
 export function SongLine({
   state,
@@ -68,6 +69,7 @@ export function SongLine({
   const [retiming, setRetiming] = useState(false);
   const [savingAs, setSavingAs] = useState(false);
   const { versions, selected, version, refused } = state;
+  if (savingAs && !state.changed) setSavingAs(false);
 
   if (!state.locked && versions.length === 0 && !state.changed && !refused) return null;
 
@@ -189,14 +191,7 @@ export function SongLine({
         </p>
       ) : null}
       {savingAs ? (
-        <SaveAs
-          name={state.nextName}
-          refused={refused}
-          onSave={(name) => {
-            if (state.saveAs(name)) setSavingAs(false);
-          }}
-          onCancel={() => setSavingAs(false)}
-        />
+        <SaveAs name={state.nextName} refused={refused} onSave={state.saveAs} onCancel={() => setSavingAs(false)} />
       ) : null}
     </>
   );

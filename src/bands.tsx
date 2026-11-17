@@ -4,8 +4,8 @@ import type { BandLibrary, BandSetlist } from "./band-library-model";
 import { BandSetlistView, dropSetlists, holdSetlists } from "./band-setlist-view";
 import { BandSettings } from "./band-settings";
 import type { BandPreview, BandSummary, BandView } from "./bands-model";
-import { ChatThread, MuteButton } from "./chat";
-import { unread, type ChatEntry } from "./chat-model";
+import type { Inbox } from "./chat";
+import { unread } from "./chat-model";
 import { CODE_REFUSED, codeInText, readPayload, type CodeKind } from "./code-link";
 import { ScanCode, ShowCode, shareLink, useCode } from "./codes";
 import { APP_NAME } from "./data-kinds";
@@ -15,6 +15,7 @@ import type { GigDraft, GigView } from "./gig-plan-model";
 import { useCloseOnSong, useEscape } from "./hooks";
 import { NextGigCard } from "./next-gig-card";
 import { allOnPhone, clearBand, heldFor, holdBandSongs, keepBandsOnPhone, type CachedBandSong } from "./phone-db";
+import { Room } from "./room";
 import { BAND_SECTIONS, bandHref, bandSongHref, sectionOf, type BandSection } from "./route";
 import { SETLIST_CODE_MESSAGES } from "./setlist-code";
 import { ApiError, api } from "./sign-in-methods";
@@ -349,7 +350,8 @@ type PageProps = {
   bandId: string;
   section: BandSection | null;
   landing?: BandLanding;
-  onMessage: (userId: string) => void;
+  inbox: Inbox;
+  onMessage: (userId: string) => Promise<void>;
   onSignIn: () => void;
   onSignedOut: () => void;
   onGone: (words: string) => void;
@@ -363,7 +365,7 @@ export function BandPage(props: PageProps) {
   return props.me ? <BandScreen {...props} me={props.me} /> : <SignInToBands onSignIn={props.onSignIn} />;
 }
 
-function BandScreen({ me, bandId, section: asked, landing, onMessage, onSignedOut, onGone }: PageProps & { me: string }) {
+function BandScreen({ me, bandId, section: asked, landing, inbox, onMessage, onSignedOut, onGone }: PageProps & { me: string }) {
   const titleId = useId();
   const section = sectionOf(bandId, asked);
   const [view, setView] = useState<PageView>({ name: "band" });
@@ -371,8 +373,6 @@ function BandScreen({ me, bandId, section: asked, landing, onMessage, onSignedOu
   const [library, setLibrary] = useState<BandLibrary | null>(null);
   const [gigs, setGigs] = useState<GigView[] | null>(null);
   const [packs, setPacks] = useState<Record<string, GigPack>>({});
-  const [chat, setChat] = useState<{ entry?: ChatEntry } | null>(null);
-  const [muting, setMuting] = useState(false);
   const [cached, setCached] = useState<CachedBandSong[] | null>(null);
   const [editing, setEditing] = useState<BandSetlist | undefined>(undefined);
   const [confirming, setConfirming] = useState<string | null>(null);
@@ -451,10 +451,6 @@ function BandScreen({ me, bandId, section: asked, landing, onMessage, onSignedOu
   useEffect(() => {
     reloadLibrary().catch(loaded);
     loadGigs().catch(loaded);
-    api<{ chats: ChatEntry[] }>("/api/chat").then(
-      (reply) => setChat({ entry: reply.chats.find((c) => c.roomId === bandId) }),
-      () => setChat({}),
-    );
   }, []);
 
   /** The band as it is now, each time the page comes back from Invite, settings or a form, so Members shows who joined meanwhile. */
@@ -524,6 +520,7 @@ function BandScreen({ me, bandId, section: asked, landing, onMessage, onSignedOu
   };
 
   const name = band?.name ?? cached?.[0]?.bandName ?? "Band";
+  const chatEntry = inbox.chats?.find((c) => c.roomId === bandId);
   const isAdmin = band?.role === "admin";
   const loading = <p className="account-note">Loading…</p>;
   const cannotReach = <p className="account-note">{OFFLINE}</p>;
@@ -557,7 +554,7 @@ function BandScreen({ me, bandId, section: asked, landing, onMessage, onSignedOu
               {member.role === "admin" ? <small>Admin</small> : null}
             </span>
             {member.userId !== me ? (
-              <button type="button" className="account-link" onClick={() => onMessage(member.userId)}>
+              <button type="button" className="account-link" disabled={busy} onClick={() => run(() => onMessage(member.userId))}>
                 Message
               </button>
             ) : null}
@@ -652,22 +649,12 @@ function BandScreen({ me, bandId, section: asked, landing, onMessage, onSignedOu
     songs: () => (band ? libraryTab(band, "songs") : offlineSongs),
     setlists: () => (band ? libraryTab(band, "setlists") : cannotReach),
     chat: () =>
-      chat === null ? (
+      inbox.chats === null && !inbox.failed ? (
         loading
       ) : (
         <>
           {!band && cached ? cannotReach : null}
-          {chat.entry ? <MuteButton entry={chat.entry} muting={muting} onMuting={setMuting} /> : null}
-          <ChatThread
-            me={me}
-            roomId={bandId}
-            entry={chat.entry}
-            muting={muting}
-            onEntry={(_, update) => setChat((held) => (held?.entry ? { entry: update(held.entry) } : held))}
-            onMuting={setMuting}
-            onGone={failed}
-            onSignedOut={onSignedOut}
-          />
+          <Room me={me} roomId={bandId} entry={chatEntry} inline onEntry={inbox.change} onGone={failed} onSignedOut={onSignedOut} />
         </>
       ),
     gigs: () =>
@@ -686,7 +673,7 @@ function BandScreen({ me, bandId, section: asked, landing, onMessage, onSignedOu
     members: () => (band ? members(band) : cannotReach),
   };
 
-  const badge = chat?.entry && section !== "chat" ? unread(chat.entry) : 0;
+  const badge = chatEntry && section !== "chat" ? unread(chatEntry) : 0;
 
   const bodies: Record<PageView["name"], () => ReactNode> = {
     band: () => (

@@ -3,7 +3,7 @@ import { AccountSheet, googleReturn, useAccount } from "./account";
 import { backupOff, backupOn, syncBackup, type BackupResult } from "./backup";
 import { BandPlayMissing, useBandPlay } from "./band-setlist-view";
 import { BandPage, BandsSheet, BandsTab, type BandLanding } from "./bands";
-import { ChatSheet, queueOwner, type ChatTarget } from "./chat";
+import { chatMessage, openDm, queueOwner, useInbox } from "./chat";
 import { readPayload, type CodeScreen } from "./code-link";
 import { clearLanding, landedCode } from "./codes";
 import { BackIcon, OverflowMenu, SongControls, TextSizeButtons } from "./controls";
@@ -14,10 +14,12 @@ import { LearnSong } from "./learn-song";
 import { SetlistList, SongBody, SongList, Tabs } from "./library-lists";
 import { useSendSong } from "./send-song";
 import { initialMetronomeBpm } from "./metronome";
+import { MessagesScreen } from "./messages";
 import { useMetronome } from "./metronome-view";
 import { clampScrollPercent, displayKeyLabel } from "./music";
 import type { PersonalDefaults } from "./personal-settings-model";
-import { backHref, bandHref, bandLiveHref, parseHash, settingsHref, type TabName } from "./route";
+import { backHref, bandHref, bandLiveHref, messagesHref, parseHash, roomHref, settingsHref, type TabName } from "./route";
+import { Room } from "./room";
 import { READING_LINE, changeTempo, evenPlan, scrollMotion, startTake, toggleHold, type ScrollVersion, type Take } from "./scroll-timing";
 import { ScrollSheet } from "./scroll-sheet";
 import { FriendsSheet } from "./friends";
@@ -73,12 +75,10 @@ export function App() {
   const [friends, setFriends] = useState<{ code?: string } | null>(null);
   const [bands, setBands] = useState<{ code?: string } | null>(null);
   const [landing, setLanding] = useState<BandLanding | null>(null);
-  const [bandsNotice, setBandsNotice] = useState("");
+  const [notice, setNotice] = useState("");
   const [setlistCode, setSetlistCode] = useState<Setlist | null>(null);
   const [setlistCopy, setSetlistCopy] = useState<{ code: string } | null>(null);
-  const [chat, setChat] = useState<{ open?: ChatTarget } | null>(null);
   const [landed, setLanded] = useState(landedCode);
-  const sendSong = useSendSong(account, stored.songs, { friends: () => setFriends({}), chat: (roomId) => setChat({ open: { roomId } }) });
 
   useEffect(() => {
     if (landed) clearLanding();
@@ -143,8 +143,9 @@ export function App() {
   }, []);
 
   const route = parseHash(hash);
+  const inbox = useInbox(owner ?? null, route.name, () => setAccount(null));
   const bandRoute = route.name === "band-song" || route.name === "band-live";
-  const showTabs = route.name !== "live" && route.name !== "band-live" && route.name !== "settings";
+  const showTabs = !["live", "band-live", "settings", "messages", "room"].includes(route.name);
   const tab: TabName =
     route.name === "bands" || route.name === "band" || route.name === "band-song" ? "bands" : route.name === "setlists" || (route.name === "song" && route.from === "setlists") ? "setlists" : "songs";
   const back = backHref(route);
@@ -206,7 +207,7 @@ export function App() {
     setEditing(false);
     setTeaching(null);
     const now = parseHash(window.location.hash).name;
-    if (now !== "bands") setBandsNotice("");
+    if (now !== "bands" && now !== "messages") setNotice("");
     if (now !== "band") setLanding(null);
   }, [hash]);
 
@@ -217,21 +218,22 @@ export function App() {
   const closeMenu = () => setMenu(null);
   const toggleMenu = (id: Exclude<MenuId, null>) => setMenu((current) => (current === id ? null : id));
 
-  const openChat = (open: ChatTarget) => {
+  const openRoom = (roomId: string) => {
     setFriends(null);
     setBands(null);
     setSetlistCopy(null);
-    setChat({ open });
+    window.location.hash = roomHref(roomId);
   };
-  const messageUser = (userId: string) => openChat({ userId });
+  const messageUser = (userId: string) => openDm(userId).then(openRoom);
+  const sendSong = useSendSong(account, stored.songs, { friends: () => setFriends({}), chat: openRoom });
   const openBand = (next: BandLanding) => {
     setBands(null);
     setLanding(next);
     window.location.hash = bandHref(next.bandId, next.section);
   };
-  const bandGone = (words: string) => {
-    setBandsNotice(words);
-    window.location.replace("#/bands");
+  const gone = (to: string) => (words: string) => {
+    setNotice(words);
+    window.location.replace(to);
   };
 
   const changeText = (index: number) => {
@@ -285,15 +287,16 @@ export function App() {
         >
           <BackIcon />
         </button>
-        {activeSong ? <p className="shell-title">{APP_NAME}</p> : <h1 className="shell-title">{route.name === "settings" ? "Settings" : APP_NAME}</h1>}
+        {activeSong ? <p className="shell-title">{APP_NAME}</p> : <h1 className="shell-title">{route.name === "settings" ? "Settings" : route.name === "messages" || route.name === "room" ? "Messages" : APP_NAME}</h1>}
         {activeSong ? <TextSizeButtons index={textIndex} count={TEXT_SCALES.length} onChange={changeText} /> : null}
         {activeSong ? (
           <OverflowMenu label="More" size="shell" open={menu === "shell"} onToggle={() => toggleMenu("shell")} onClose={closeMenu} onSongData={bandRoute ? undefined : () => setEditing(true)}>
             {bandRoute ? null : sendSong.item(activeSong, closeMenu)}
           </OverflowMenu>
         ) : route.name === "settings" ? null : (
-          <button type="button" className="icon-btn" aria-label="Settings" onClick={() => (window.location.hash = settingsHref(tab))}>
+          <button type="button" className="icon-btn gear-btn" aria-label="Settings" onClick={() => (window.location.hash = settingsHref(tab))}>
             <GearIcon />
+            {inbox.unread > 0 ? <span className="chat-badge">{inbox.unread}</span> : null}
           </button>
         )}
         {activeSong ? <SongLine key={activeSong.ref} state={songVersion} menu={menu} onToggleMenu={toggleMenu} onCloseMenu={closeMenu} /> : null}
@@ -397,23 +400,9 @@ export function App() {
       ) : null}
       {setlistCode && account ? <MySetlistCodeSheet key={account.userId} setlist={setlistCode} onSignedOut={() => setAccount(null)} onClose={() => setSetlistCode(null)} /> : null}
       {setlistCopy && account ? (
-        <SetlistCopySheet code={setlistCopy.code} onChat={(roomId) => openChat({ roomId })} onSignedOut={() => setAccount(null)} onClose={() => setSetlistCopy(null)} />
+        <SetlistCopySheet code={setlistCopy.code} onChat={openRoom} onSignedOut={() => setAccount(null)} onClose={() => setSetlistCopy(null)} />
       ) : null}
       {sendSong.sheet}
-
-      {chat && account ? (
-        <ChatSheet
-          key={account.userId}
-          account={account}
-          open={chat.open}
-          onBand={(bandId) => openBand({ bandId, section: "chat" })}
-          onSignedOut={() => {
-            setAccount(null);
-            setChat(null);
-          }}
-          onClose={() => setChat(null)}
-        />
-      ) : null}
 
       {liveList && liveList.count > 0 ? (
         <div className="live-nav">
@@ -451,13 +440,17 @@ export function App() {
             metronome={metronome}
             onAccount={() => setAccountOpen(true)}
             onFriends={() => setFriends({})}
-            onMessages={() => setChat({})}
+            onMessages={() => (window.location.hash = messagesHref)}
           />
         ) : null}
-        {route.name === "bands" ? <BandsTab me={owner ?? null} notice={bandsNotice} onNew={() => setBands({})} onSignIn={() => setAccountOpen(true)} onSignedOut={() => setAccount(null)} /> : null}
+        {route.name === "bands" ? <BandsTab me={owner ?? null} notice={notice} onNew={() => setBands({})} onSignIn={() => setAccountOpen(true)} onSignedOut={() => setAccount(null)} /> : null}
         {route.name === "band" ? (
           <BandPage key={`${owner}/${route.bandId}`} me={owner ?? null} bandId={route.bandId} section={route.section} landing={landing?.bandId === route.bandId ? landing : undefined}
-            onMessage={messageUser} onSignIn={() => setAccountOpen(true)} onSignedOut={() => setAccount(null)} onGone={bandGone} />
+            inbox={inbox} onMessage={messageUser} onSignIn={() => setAccountOpen(true)} onSignedOut={() => setAccount(null)} onGone={gone("#/bands")} />
+        ) : null}
+        {route.name === "messages" || (route.name === "room" && !owner) ? <MessagesScreen me={owner ?? null} inbox={inbox} notice={notice} onSignIn={() => setAccountOpen(true)} /> : null}
+        {route.name === "room" && owner ? (
+          <Room key={`${owner}/${route.roomId}`} me={owner} roomId={route.roomId} entry={inbox.chats?.find((c) => c.roomId === route.roomId)} onEntry={inbox.change} onGone={(error) => gone(messagesHref)(chatMessage(error))} onSignedOut={() => setAccount(null)} />
         ) : null}
         {route.name === "song" ? (
           <SongBody

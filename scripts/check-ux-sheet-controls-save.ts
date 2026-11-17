@@ -797,6 +797,45 @@ try {
     expect(added.length === 0, `the dialog saved ${js(added)} after the draft (key ${end.raised}) left with the 401, and the sheet reads ${end.key}`);
   });
 
+  await test("with a signed-out draft on the same song, a 401 while Save as is open closes the dialog and shows that draft with its own Save", async () => {
+    const dialogOpen = () => evaluate<boolean>(`!!${DIALOG}`);
+    const versions = async () => (JSON.parse((await stored(VERSIONS)) ?? "null") as { versions: { name: string; semitones?: number }[] } | null)?.versions ?? [];
+    await freshPhone();
+    await tap("Transpose up", CONTROLS);
+    await tap("Transpose up", CONTROLS);
+    const signedOutDraft = await stored(DRAFT);
+    const signedOutKey = await keyName();
+    if (!signedOutDraft) throw new Failed("no signed-out draft to seed");
+    const api = await gatedApi(401, { error: "signed-out" });
+    try {
+      await freshPhone(`#/song/${CHAIN_BREAKER}`, `localStorage.setItem("leadSheetsSignedIn", ${js(sam.userId)}); localStorage.setItem(${js(DRAFT)}, ${js(signedOutDraft)})`);
+      await evaluate(`localStorage.setItem(${js(VERSIONS)}, ${js(js({ versions: [TAUGHT], selected: null }))})`);
+      await load(`#/song/${CHAIN_BREAKER}`);
+      await tap("Transpose up", CONTROLS);
+      const raised = await keyName();
+      const accountDraft = (JSON.parse((await stored(`${DRAFT}.${sam.userId}`)) ?? "null") as { semitones?: number } | null)?.semitones ?? null;
+      if (raised === signedOutKey || accountDraft === null) throw new Failed(`the account's change reads ${raised} with draft semitones ${accountDraft}`);
+      await tap("Save", HEADER);
+      await tap("Save as…");
+      await until(`!!${DIALOG}?.querySelector("input[aria-label='Version name']")`, "the Save as name field");
+      if ((await stored("leadSheetsSignedIn")) !== sam.userId) throw new Failed(`the account answered before Save as opened (mark ${await stored("leadSheetsSignedIn")})`);
+      api.release();
+      await until(`localStorage.getItem("leadSheetsSignedIn") === null`, "the 401 to sign the phone out", 10000);
+      await settle(400);
+      const standing = await dialogOpen();
+      const behind = await keyName();
+      const before = await versions();
+      if (standing) await tap("Save", DIALOG);
+      if (await dialogOpen()) await tap("Cancel", DIALOG);
+      const added = (await versions()).slice(before.length).map((each) => [each.name, each.semitones ?? null]);
+      expect(!standing, `Save as still stands after the 401, opened on ${raised} (account draft semitones ${accountDraft}), and the sheet behind it reads ${behind}`);
+      expect(added.every(([, semitones]) => semitones === accountDraft), `the dialog's Save wrote ${js(added)}, but Save as was opened on ${raised} (semitones ${accountDraft})`);
+      expect((await keyName()) === signedOutKey && (await saveShown()), `signed out, the key reads ${await keyName()} (want the signed-out draft's ${signedOutKey}) and Save shows: ${await saveShown()}`);
+    } finally {
+      api.close();
+    }
+  });
+
   await test("a phone signed in by an older build keeps a change made before /api/me answers", async () => {
     const slow = createServer((request, response) => {
       const path = new URL(request.url ?? "/", "http://localhost").pathname;

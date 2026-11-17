@@ -530,14 +530,14 @@ const isTiming: Check = (value) => {
 
 const untimed: Check = (value) => ["bpm", "marks", "tempo", "learned"].every((name) => (value as Record<string, unknown>)[name] === undefined);
 
-const isVersion: Check = (value) => isSettings(value) && ((value as StoredVersion).marks === undefined ? untimed(value) : isTiming(value));
+const isVersion = (value: unknown): value is StoredVersion => isSettings(value) && ((value as StoredVersion).marks === undefined ? untimed(value) : isTiming(value));
 
 /**
- * What a version without taught timing carries on disk. A build from before versions held settings validates only
- * `bpm` and `marks`, drops a row without them, and its next write of the song stores the list without it, which
- * backup then spreads to every phone. With this pace the row passes, and that build scrolls the version top to bottom
- * over four minutes at 100 bpm. It is a constant, so the same version saved on two phones is the same bytes and backup
- * combines them as one. This build reads `even` and takes the pace back off.
+ * On disk a version without taught timing carries this pace, because a build from before versions held settings
+ * (U1 and earlier) requires `bpm` and `marks`, drops a row without them, and its next write of the song stores the
+ * shorter list, which backup spreads to every phone. That build scrolls the version top to bottom over four minutes
+ * at 100 bpm. A constant, not the song's own pace, so two phones store the same version as the same bytes and
+ * backup's merge keeps one. `even` marks it, since a song with tempo 100 and a 4:00 runtime has this pace for real.
  */
 type StoredRow = StoredVersion & { even?: true };
 
@@ -556,7 +556,7 @@ export function loadScrollVersions(ref: SongRef): ScrollVersions {
   const versions = Array.isArray(value?.versions) ? value.versions.map(withoutEvenPace).filter(isVersion) : [];
   const selected = value?.selected;
   const valid = typeof selected === "number" && Number.isInteger(selected) && selected >= 0 && selected < versions.length;
-  return { versions: versions as StoredVersion[], selected: valid ? selected : null };
+  return { versions, selected: valid ? selected : null };
 }
 
 export function saveScrollVersions(ref: SongRef, value: ScrollVersions): boolean {

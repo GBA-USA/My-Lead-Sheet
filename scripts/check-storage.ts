@@ -229,6 +229,12 @@ app.saveScrollVersions(ref(13), app.loadScrollVersions(ref(13)));
 app.saveSongData(ref(13), app.loadSongData(ref(13)));
 check(storage.getItem("leadSheetsScrollVersions.13") === phone["leadSheetsScrollVersions.13"] && storage.getItem("leadSheetsSongData.13") === phone["leadSheetsSongData.13"], "saving under the ref writes back to the same old key, unchanged");
 check([...storage.map.keys()].sort().join() === keysBefore, "saving under the ref adds no second copy");
+const mixed = { versions: [taught, { name: "Low set", semitones: -2, metronomeBpm: 72, scrollPercent: 90, notation: "nashville" }, learnedV2], selected: 1 };
+const twelve: SongRef = "local/12";
+storage.map.set("leadSheetsScrollVersions.12", JSON.stringify(mixed));
+check(JSON.stringify(app.loadScrollVersions(twelve)) === JSON.stringify(mixed), "old versions still read: old taught and learned rows load unchanged beside a version with no taught timing, in order, with its selection");
+storage.map.set("leadSheetsScrollVersions.12", JSON.stringify({ versions: [{ name: "Half", bpm: 78 }, { name: "Odd", semitones: "two" }, taught], selected: 2 }));
+check(JSON.stringify(app.loadScrollVersions(twelve)) === JSON.stringify({ versions: [taught], selected: null }), "a version with timing but no marks, or a bad setting, is dropped and the selection falls back");
 
 const bandRef: SongRef = "01JBANDROOM0000000000000000/01JBANDSONG0000000000000000";
 const bandSong: Song = { ...fromPhone.songs.find((entry) => entry.id === 13)!, ref: bandRef };
@@ -246,6 +252,16 @@ check(
     app.loadNotation(ref(13)) === "nashville",
   "saves for the band's copy leave this phone's song untouched",
 );
+
+freshStorage();
+app.saveSongDraft("user-a", ref(10), { semitones: 2 });
+app.saveSongDraft(null, ref(10), { semitones: -1 });
+storage.failWrites = true;
+check(
+  app.saveSongDraft(null, ref(10), null) && app.loadSongDraft(null, ref(10)) === undefined && JSON.stringify(app.loadSongDraft("user-a", ref(10))) === '{"semitones":2}',
+  `dropping one account's draft on a full phone goes through and leaves another account's draft readable (signed out ${JSON.stringify(app.loadSongDraft(null, ref(10)))}, user-a ${JSON.stringify(app.loadSongDraft("user-a", ref(10)))})`,
+);
+storage.failWrites = false;
 
 if (failures) {
   console.error(`${failures} storage check(s) failed`);

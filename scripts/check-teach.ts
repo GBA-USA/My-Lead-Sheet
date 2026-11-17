@@ -124,8 +124,12 @@ const dialog = () => elements().find((el) => el.getAttribute("role") === "dialog
 const nameField = () => dialog()?.elements.find((el) => el.nodeName === "INPUT");
 const menuButton = (name: string) => elements().find((el) => el.getAttribute("aria-haspopup") === "menu" && el.textContent.startsWith(name));
 const menuItems = () => elements().filter((el) => el.getAttribute("role")?.startsWith("menuitem"));
-const chip = () => menuButton("Timing:")?.textContent;
-const scrollOn = () => !!button("Scroll: On");
+const chipButton = () => elements().find((el) => el.getAttribute("class") === "version-chip");
+const chip = () => chipButton()?.textContent;
+const line = () => elements().find((el) => el.getAttribute("class") === "song-line");
+const lineText = () => line()?.textContent ?? "";
+const saveButton = () => button("Save", line);
+const scrollOn = () => sheet.listeners.has("pointerdown");
 
 async function tap(target: FakeElement | undefined, name: string) {
   if (!target) throw new Error(`no "${name}" button in: ${dom.container.textContent.slice(0, 300)}`);
@@ -136,7 +140,15 @@ async function choose(menu: string, item: string) {
   await tap(menuButton(menu), menu);
   await tap(menuItems().find((el) => el.textContent === item), item);
 }
-const teach = () => choose("Customize scroll", "Learn by user (scroll it yourself)");
+async function chooseVersion(item: string) {
+  await tap(chipButton(), "the version chip");
+  await tap(menuItems().find((el) => el.textContent === item), item);
+}
+const teach = async () => {
+  await tap(button("Scroll settings"), "Scroll settings");
+  await tap(button("Learn this song"), "Learn this song");
+  await tap(button("Learn by user"), "Learn by user");
+};
 /** Sends `type` to `target` the way a browser does: capture listeners on the way down, then bubble listeners up. */
 async function fire(target: FakeElement, type: string, extra: object = {}) {
   const event = { type, target, bubbles: true, cancelable: false, defaultPrevented: false, timeStamp: 0, preventDefault() {}, stopPropagation() {}, ...extra };
@@ -178,6 +190,7 @@ const same = (a: ScrollVersions, b: ScrollVersions) => JSON.stringify(a) === JSO
 let root = ui.createRoot(dom.container);
 async function open(versions: ScrollVersions) {
   root.unmount();
+  for (const key of [...store.keys()]) if (key.startsWith("leadSheetsSongDraft")) store.delete(key);
   ui.saveScrollVersions(`local/${CHAIN_BREAKER}`, versions);
   now += 1;
   sheet.scrollTop = 0;
@@ -211,27 +224,27 @@ await scenario("Discard while teaching", async () => {
   await tap(button("Discard", bar), "Discard");
   await tap(button("Discard", bar), "Discard (confirm)");
   check(!barText().startsWith("Teaching") && !scrollOn(), "confirming stops the take and the scroll");
-  check(!dialog(), "a discarded take opens no save sheet");
+  check(!dialog() && !saveButton(), "a discarded take opens no sheet and leaves no draft");
   check(same(saved(), before), `Discard leaves the saved versions untouched (${JSON.stringify(saved().versions.map((v) => v.name))}, selected ${saved().selected})`);
 });
 
 await scenario("Delete a saved version", async () => {
   await open({ versions: [V1, LEARNED], selected: 1 });
-  await choose("Timing:", "Delete Slow intro…");
-  check(barText().includes("Delete Slow intro?"), `Delete names the version and asks once (${barText()})`);
-  await tap(button("Cancel", bar), "Cancel");
+  await chooseVersion("Delete Slow intro…");
+  check(lineText().includes("Delete Slow intro?"), `Delete names the version and asks once (${lineText()})`);
+  await tap(button("Cancel", line), "Cancel");
   check(saved().versions.length === 2 && saved().selected === 1, "Cancel keeps it");
-  await choose("Timing:", "Delete Slow intro…");
-  await tap(button("Delete", bar), "Delete (confirm)");
+  await chooseVersion("Delete Slow intro…");
+  await tap(button("Delete", line), "Delete (confirm)");
   const after = saved();
   check(after.versions.length === 1 && after.versions[0].name === "V1", `only the learned "Slow intro" is deleted (${JSON.stringify(after.versions.map((v) => v.name))})`);
-  check(after.selected === null && chip() === "Timing: Default ▾", `the selection falls back to the default even scroll (selected ${after.selected}, ${chip()})`);
-  await tap(menuButton("Timing:"), "Timing");
+  check(after.selected === null && chip() === "Default ▾", `the selection falls back to the default even scroll (selected ${after.selected}, ${chip()})`);
+  await tap(chipButton(), "the version chip");
   check(!menuItems().some((el) => el.textContent.startsWith("Delete")), "with Default chosen there is nothing to delete");
 
   await open({ versions: [V1, LEARNED], selected: 0 });
-  await choose("Timing:", "Delete V1…");
-  await tap(button("Delete", bar), "Delete (confirm)");
+  await chooseVersion("Delete V1…");
+  await tap(button("Delete", line), "Delete (confirm)");
   check(JSON.stringify(saved().versions.map((v) => v.name)) === '["Slow intro"]' && saved().selected === null, "deleting V1 keeps the other version and resets the selection");
 });
 
@@ -240,9 +253,10 @@ await scenario("The take reaches the end", async () => {
   await open(before);
   await teach();
   await play(RUNTIME + 2);
-  check(!scrollOn() && !!dialog(), "at the end of the song the save sheet appears");
-  check(nameField()?.value === "V2", `its name is the next V# (${nameField()?.value})`);
-  check(!!button("Save", dialog) && !!button("Discard", dialog), "it offers Save and Discard");
+  check(!scrollOn() && !dialog() && !!saveButton(), "at the end of the song the take lands in the draft and Save shows");
+  await choose("Save", "Save as…");
+  check(nameField()?.value === "V2", `Save as offers the next V# (${nameField()?.value})`);
+  check(!!button("Save", dialog) && !!button("Cancel", dialog), "it offers Save and Cancel");
   check(same(saved(), before), "nothing is saved before Save");
   await type(nameField(), "Sunday");
   await tap(button("Save", dialog), "Save");
@@ -250,11 +264,11 @@ await scenario("The take reaches the end", async () => {
   check(after.versions.length === 2 && after.versions[1].name === "Sunday" && after.selected === 1, `Save stores the take under the typed name and selects it (${JSON.stringify(after.versions.map((v) => v.name))}, selected ${after.selected})`);
   const last = after.versions[1].marks.at(-1)!;
   check(after.versions[1].bpm === 78 && last.progress === 1 && Math.abs(last.at - RUNTIME) < 0.1, `the saved take ends where the song did (${last.at.toFixed(2)} s)`);
-  check(!dialog() && chip() === "Timing: Sunday ▾", `the sheet closes and the chip shows Sunday (${chip()})`);
+  check(!dialog() && !saveButton() && chip() === "Sunday ▾", `the sheet closes, Save goes and the chip shows Sunday (${chip()})`);
   check(!("tempo" in after.versions[1]), `a take with no BPM entered saves one BPM, as before (${JSON.stringify(after.versions[1])})`);
 });
 
-await scenario("Done, then Discard on the sheet", async () => {
+await scenario("Done, then Cancel and Revert", async () => {
   const before = { versions: [V1], selected: 0 };
   await open(before);
   await teach();
@@ -262,9 +276,12 @@ await scenario("Done, then Discard on the sheet", async () => {
   await tap(button("Hold"), "Hold");
   await play(5);
   await tap(button("Done", bar), "Done");
-  check(!scrollOn() && !!dialog() && nameField()?.value === "V2", "Done stops the scroll and opens the save sheet");
-  await tap(button("Discard", dialog), "Discard");
-  check(!dialog() && same(saved(), before), "Discard on the sheet stores nothing");
+  check(!scrollOn() && !dialog() && !!saveButton(), "Done stops the scroll and puts the take in the draft");
+  await choose("Save", "Save as…");
+  check(nameField()?.value === "V2", `Save as offers V2 (${nameField()?.value})`);
+  await tap(button("Cancel", dialog), "Cancel");
+  await tap(button("Revert", line), "Revert");
+  check(!dialog() && !saveButton() && same(saved(), before), "Cancel and Revert store nothing");
 });
 
 await scenario("Done mid-song, then Save", async () => {
@@ -276,6 +293,7 @@ await scenario("Done mid-song, then Save", async () => {
   await tap(button("Continue"), "Continue");
   await play(10);
   await tap(button("Done", bar), "Done");
+  await choose("Save", "Save as…");
   check(nameField()?.value === "V1", `the first take is named V1 (${nameField()?.value})`);
   await tap(button("Save", dialog), "Save");
   const version = saved().versions[0];
@@ -296,8 +314,9 @@ await scenario("Stopping the scroll mid-take", async () => {
   await play(3);
   sheet.listeners.get("pointerdown")?.();
   await settle();
-  check(!scrollOn() && !!dialog(), "grabbing the sheet mid-take offers the save sheet");
+  check(!scrollOn() && !!saveButton(), "grabbing the sheet mid-take puts the take in the draft");
   check(same(saved(), before), "and saves nothing yet");
+  await choose("Save", "Save as…");
   await tap(button("Save", dialog), "Save");
   check(saved().versions.length === 2 && saved().versions[1].name === "V2", "Save from a stopped take stores it");
 
@@ -305,17 +324,18 @@ await scenario("Stopping the scroll mid-take", async () => {
   await teach();
   await play(10);
   await tap(button("Hold"), "Hold");
-  await tap(button("Scroll: On"), "Scroll: On");
-  check(!scrollOn() && !!dialog(), "Scroll Off mid-take offers the save sheet too");
-  await tap(button("Discard", dialog), "Discard");
-  check(same(saved(), before), "Discard from it stores nothing");
+  sheet.listeners.get("wheel")?.();
+  await settle();
+  check(!scrollOn() && !!saveButton(), "a wheel scroll mid-take puts the take in the draft too");
+  await tap(button("Revert", line), "Revert");
+  check(same(saved(), before) && !saveButton(), "Revert from it stores nothing");
 
   await open(before);
   await teach();
   await play(10);
   sheet.listeners.get("pointerdown")?.();
   await settle();
-  check(!scrollOn() && !dialog() && !barText().startsWith("Teaching"), "a take with no marks yet just stops, with no sheet");
+  check(!scrollOn() && !dialog() && !saveButton() && !barText().startsWith("Teaching"), "a take with no marks yet just stops, with nothing in the draft");
   check(same(saved(), before), "and stores nothing");
 });
 
@@ -337,9 +357,10 @@ await scenario("BPM changes while teaching", async () => {
   await enter(field("BPM"), "78");
   check(metronomeBpm() === 78, `entering 78 brings the metronome back (${metronomeBpm()})`);
   await play(WALL_END - 60 - 1);
-  check(scrollOn() && !dialog(), "the take is still going a second before the faster section's end time");
+  check(scrollOn() && !saveButton(), "the take is still going a second before the faster section's end time");
   await play(2);
-  check(!scrollOn() && !!dialog(), "the 117 section scrolled faster, so the take ends early");
+  check(!scrollOn() && !!saveButton(), "the 117 section scrolled faster, so the take ends early");
+  await choose("Save", "Save as…");
   await tap(button("Save", dialog), "Save");
   const taught = saved();
   const tempo = taught.versions[1]?.tempo ?? [];
@@ -357,6 +378,7 @@ await scenario("BPM changes while teaching", async () => {
   for (let i = 0; i < 3; i++) await tap(button("Faster metronome"), "Faster metronome");
   await play(10);
   await tap(button("Done", bar), "Done");
+  await choose("Save", "Save as…");
   await tap(button("Save", dialog), "Save");
   const nudged = saved().versions[1]?.tempo ?? [];
   check(nudged.length === 2 && nudged[1].bpm === 81 && near(nudged[1].at, 20), `three quick + taps on the metronome are one change, to 81 (${JSON.stringify(nudged)})`);
@@ -381,7 +403,7 @@ await scenario("A saved tempo map plays back", async () => {
 
 await scenario("Editing the tempo map later", async () => {
   await open(MAPPED);
-  await choose("Timing:", "Edit tempo…");
+  await chooseVersion("Edit tempo…");
   check(!!dialog() && field("BPM of change 1")?.value === "117", `Edit tempo lists the changes (${dialog()?.textContent})`);
   check(field("Start of change 1")?.value === "0:30" && field("Start of change 2")?.value === "1:00", "each start shows as heard: 0:30, and 1:00 after 30 s at 117");
   await type(field("BPM of change 1"), "135");
@@ -407,13 +429,13 @@ await scenario("Editing the tempo map later", async () => {
   check(metronomeBpm() === 90, `and 90 from 2:00 heard (${metronomeBpm()})`);
   await tap(button("Scroll: On"), "Scroll: On");
 
-  await choose("Timing:", "Edit tempo…");
+  await chooseVersion("Edit tempo…");
   await tap(button("Remove change 1", dialog), "Remove change 1");
   await tap(button("Save", dialog), "Save");
   const removed = saved().versions[1].tempo ?? [];
   check(removed.length === 2 && removed[1].bpm === 90 && near(removed[1].at, want[3].at), `removing the 135 change merges the two 78 stretches (${JSON.stringify(removed)})`);
 
-  await choose("Timing:", "Edit tempo…");
+  await chooseVersion("Edit tempo…");
   await tap(button("Remove change 1", dialog), "Remove change 1");
   await tap(button("Save", dialog), "Save");
   check(!("tempo" in saved().versions[1]), "removing every change leaves one BPM, with no map");
@@ -424,4 +446,4 @@ if (failures) {
   console.error(`${failures} teach check(s) failed`);
   process.exit(1);
 }
-console.log("teach ok: Discard with a confirm, Delete with a confirm, a save sheet at the end, on Done and on a mid-take stop, BPM changes saved, played and edited");
+console.log("teach ok: Discard with a confirm, Delete with a confirm, the take in the draft at the end, on Done and on a mid-take stop, Save as names it, BPM changes saved, played and edited");

@@ -177,8 +177,8 @@ try {
     await until(`!!document.querySelector("article.sheet")`, "the song");
     const songLarger = await sheetFont();
     expect(songLarger === settingsLarger && songLarger !== "16px", `the song shows ${songLarger} after Settings showed ${settingsLarger}`);
-    await tap("Smaller text", `document.querySelector(".controls")`);
-    await tap("Smaller text", `document.querySelector(".controls")`);
+    await tap("Smaller text", `document.querySelector(".shell-header")`);
+    await tap("Smaller text", `document.querySelector(".shell-header")`);
     expect((await stored("leadSheetsTextScale")) === "0", `the song's A− stored ${await stored("leadSheetsTextScale")}`);
     const songSmaller = await sheetFont();
     await evaluate(`history.back()`);
@@ -217,8 +217,9 @@ try {
     expect((await text(".key-name")) === "B major", `C major opened as ${await text(".key-name")}`);
     await tap("Transpose up", `document.querySelector(".controls")`);
     expect((await text(".key-name")) === "C major", `Transpose up shows ${await text(".key-name")}`);
-    await tap("Original Key", `document.querySelector(".controls")`);
-    expect((await text(".key-name")) === "B major", `Original Key went to ${await text(".key-name")}, not the default`);
+    await evaluate(`document.querySelector(".controls button.key-readout").click()`);
+    await settle();
+    expect((await text(".key-name")) === "B major", `the readout tap went to ${await text(".key-name")}, not the default`);
     await evaluate(`location.hash = "#/live/1/0"`);
     await settle(400);
     const live = await text(".key-name");

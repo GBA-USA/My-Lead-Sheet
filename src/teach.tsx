@@ -4,45 +4,16 @@ import {
   clockAt,
   finishTake,
   heardAt,
-  nextVersionName,
   takeProgress,
   tempoAt,
   toggleHold,
-  withTempo,
   type ScrollPlan,
-  type ScrollVersion,
   type Take,
   type Tempo,
 } from "./scroll-timing";
 import { formatRuntime, parseBpm, parseRuntime } from "./song-data-editor";
-import { useStored } from "./hooks";
-import { loadScrollVersions, updateScrollVersions, type ScrollVersions } from "./storage";
-import type { SongRef } from "./types";
+import { SAVE_REFUSED, type SongVersion, type SongVersionState } from "./song-version";
 import "./teach.css";
-
-const NONE: ScrollVersions = { versions: [], selected: null };
-
-/** The current song's taught versions. Each change applies to the stored versions and is saved at once. */
-export function useScrollVersions(songRef: SongRef | null) {
-  const [state, setState] = useStored(() => (songRef == null ? NONE : loadScrollVersions(songRef)), songRef);
-
-  const update = (change: (current: ScrollVersions) => ScrollVersions) => {
-    if (songRef != null) setState(updateScrollVersions(songRef, change));
-  };
-  const edit = (index: number, change: (version: ScrollVersion) => ScrollVersion) =>
-    update((current) => ({ ...current, versions: current.versions.map((version, i) => (i === index ? change(version) : version)) }));
-
-  return {
-    ...state,
-    select: (selected: number | null) => update((current) => ({ ...current, selected })),
-    rename: (index: number, name: string) => edit(index, (version) => ({ ...version, name })),
-    retime: (index: number, tempo: Tempo[]) => edit(index, (version) => withTempo(version, tempo)),
-    add: (plan: Omit<ScrollVersion, "name">, name?: string) =>
-      update((current) => ({ versions: [...current.versions, { name: name ?? nextVersionName(current.versions), ...plan }], selected: current.versions.length })),
-    /** Deletes the chosen version and goes back to the even pace. */
-    remove: () => update((current) => ({ versions: current.versions.filter((_, i) => i !== current.selected), selected: null })),
-  };
-}
 
 /** What a take taught when it ends at `at`: a hold still on ends there, and the rest of the song runs at the take's pace. */
 export function taughtPlan(take: Take, at: number): ScrollPlan {
@@ -50,8 +21,8 @@ export function taughtPlan(take: Take, at: number): ScrollPlan {
   return finishTake(moving, at + (1 - takeProgress(moving, at)) / take.slope);
 }
 
-/** While a version with a tempo map plays, the metronome moves to each change as the clock reaches it. */
-export function useFollowTempo(tempo: Tempo[] | undefined, clock: { current: number }, setBpm: (bpm: number) => void) {
+/** While a version with a tempo map plays, the metronome follows each change as the clock reaches it, and lets go when it stops. */
+export function useFollowTempo(tempo: Tempo[] | undefined, clock: { current: number }, setBpm: (bpm: number | null) => void) {
   const set = useRef(setBpm);
   set.current = setBpm;
 
@@ -66,74 +37,64 @@ export function useFollowTempo(tempo: Tempo[] | undefined, clock: { current: num
       frame = requestAnimationFrame(follow);
     };
     frame = requestAnimationFrame(follow);
-    return () => cancelAnimationFrame(frame);
+    return () => {
+      cancelAnimationFrame(frame);
+      set.current(null);
+    };
   }, [tempo, clock]);
 }
 
-export type BarMenu = "timing" | "scroll";
+export type LineMenu = "versions" | "save";
 
-const versionLabel = (version: ScrollVersion) => (version.learned ? `${version.name} · learned` : version.name);
+const versionLabel = (version: SongVersion) => (version.learned ? `${version.name} · learned` : version.name);
 
-export function TeachBar({
-  versions,
-  selected,
-  canTeach,
-  teaching,
-  holding,
-  bpm,
+/**
+ * The header's second line: the lock on a locked song, the version chip when the song has versions, and Revert and
+ * Save while the draft differs from the version in use. Rename and Delete take the line over until they finish. Save as
+ * belongs to the draft it was opened for, so the hook ends it with that draft.
+ */
+export function SongLine({
+  state,
   menu,
   onToggleMenu,
   onCloseMenu,
-  onSelect,
-  onRename,
-  onRetime,
-  onDelete,
-  onTeach,
-  onListen,
-  onHold,
-  onBpm,
-  onDone,
-  onDiscard,
 }: {
-  versions: ScrollVersion[];
-  selected: number | null;
-  canTeach: boolean;
-  teaching: boolean;
-  holding: boolean;
-  bpm: number | null;
+  state: SongVersionState;
   menu: string | null;
-  onToggleMenu: (menu: BarMenu) => void;
+  onToggleMenu: (menu: LineMenu) => void;
   onCloseMenu: () => void;
-  onSelect: (index: number | null) => void;
-  onRename: (index: number, name: string) => void;
-  onRetime: (index: number, tempo: Tempo[]) => void;
-  onDelete: () => void;
-  onTeach: () => void;
-  /** Missing in a live setlist, where Learn by listen is not offered. */
-  onListen?: () => void;
-  onHold: () => void;
-  onBpm: (bpm: number) => void;
-  onDone: () => void;
-  onDiscard: () => void;
 }) {
-  const [draft, setDraft] = useState<string | null>(null);
+  const [naming, setNaming] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [retiming, setRetiming] = useState(false);
-  const reasonId = useId();
+  const { versions, selected, version, refused, savingAs } = state;
 
-  if (teaching) return <TakeBar holding={holding} bpm={bpm} onHold={onHold} onBpm={onBpm} onDone={onDone} onDiscard={onDiscard} />;
+  if (!state.locked && versions.length === 0 && !state.changed && !refused) return null;
 
-  const chosen = selected == null ? null : versions[selected];
-
-  if (deleting && chosen) {
+  const pick = (run: () => void) => () => {
+    onCloseMenu();
+    run();
+  };
+  const commitName = () => {
+    const name = naming?.trim();
+    if (name && selected != null) state.rename(selected, name);
+    setNaming(null);
+  };
+  const choice = (label: string, checked: boolean, index: number | null) => (
+    <button key={index ?? "default"} type="button" role="menuitemradio" aria-checked={checked} onClick={pick(() => state.select(index))}>
+      {checked ? <span aria-hidden="true">✓ </span> : null}
+      {label}
+    </button>
+  );
+  if (deleting && version && selected != null) {
     return (
-      <div className="teach-bar">
+      <div className="song-line">
         <Confirm
-          question={`Delete ${chosen.name}?`}
+          question={`Delete ${version.name}?`}
           action="Delete"
           onConfirm={() => {
             setDeleting(false);
-            onDelete();
+            state.remove(selected);
           }}
           onCancel={() => setDeleting(false)}
         />
@@ -141,111 +102,96 @@ export function TeachBar({
     );
   }
 
-  const commit = () => {
-    const name = draft?.trim();
-    if (name && selected != null) onRename(selected, name);
-    setDraft(null);
-  };
-  const pick = (run: () => void) => () => {
-    onCloseMenu();
-    run();
-  };
-  const choice = (label: string, checked: boolean, index: number | null) => (
-    <button key={index ?? "default"} type="button" role="menuitemradio" aria-checked={checked} onClick={pick(() => onSelect(index))}>
-      {checked ? <span aria-hidden="true">✓ </span> : null}
-      {label}
-    </button>
-  );
-
   return (
-    <div className="teach-bar">
-      {retiming && chosen && selected != null ? (
-        <TempoSheet
-          version={chosen}
-          onSave={(tempo) => {
-            setRetiming(false);
-            onRetime(selected, tempo);
-          }}
-          onClose={() => setRetiming(false)}
-        />
-      ) : null}
-      {draft != null ? (
-        <input
-          className="teach-name"
-          aria-label="Version name"
-          autoFocus
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onBlur={commit}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") commit();
-            if (event.key === "Escape") setDraft(null);
-          }}
-        />
-      ) : (
-        <Menu
-          button={
-            <>
-              <span className="teach-dim">Timing:</span> {chosen ? versionLabel(chosen) : "Default"}
-              <Caret />
-            </>
-          }
-          className="teach-btn"
-          open={menu === "timing"}
-          onToggle={() => onToggleMenu("timing")}
-          onClose={onCloseMenu}
-        >
-          {versions.map((version, index) => choice(versionLabel(version), index === selected, index))}
-          {choice("Default (even pace)", chosen == null, null)}
-          {chosen ? (
-            <>
-              <div className="menu-divider" role="separator" />
-              <button type="button" role="menuitem" onClick={pick(() => setDraft(chosen.name))}>
-                Rename {chosen.name}…
-              </button>
-              <button type="button" role="menuitem" onClick={pick(() => setRetiming(true))}>
-                Edit tempo…
-              </button>
-              <button type="button" role="menuitem" onClick={pick(() => setDeleting(true))}>
-                Delete {chosen.name}…
-              </button>
-            </>
-          ) : null}
-        </Menu>
-      )}
-      <Menu
-        button={
-          <>
-            Customize scroll
-            <Caret />
-          </>
-        }
-        className="teach-btn"
-        open={menu === "scroll"}
-        onToggle={() => onToggleMenu("scroll")}
-        onClose={onCloseMenu}
-      >
-        <button
-          type="button"
-          role="menuitem"
-          disabled={!canTeach}
-          aria-describedby={canTeach ? undefined : reasonId}
-          onClick={pick(onTeach)}
-        >
-          Learn by user (scroll it yourself)
-        </button>
-        {canTeach ? null : (
-          <p className="menu-note" id={reasonId}>
-            Needs the song's length and BPM
-          </p>
-        )}
-        {onListen ? (
-          <button type="button" role="menuitem" onClick={pick(onListen)}>
-            Learn by listen (play the song)
-          </button>
+    <>
+      <div className="song-line">
+        {state.locked ? (
+          <span className="song-lock" role="img" aria-label="Locked">
+            🔒
+          </span>
         ) : null}
-      </Menu>
-    </div>
+        {retiming && version?.plan && selected != null ? (
+          <TempoSheet
+            version={{ name: version.name, ...version.plan }}
+            onSave={(tempo) => {
+              setRetiming(false);
+              state.retime(selected, tempo);
+            }}
+            onClose={() => setRetiming(false)}
+          />
+        ) : null}
+        {naming != null ? (
+          <input
+            className="teach-name"
+            aria-label="Version name"
+            autoFocus
+            value={naming}
+            onChange={(event) => setNaming(event.target.value)}
+            onBlur={commitName}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") commitName();
+              if (event.key === "Escape") setNaming(null);
+            }}
+          />
+        ) : versions.length > 0 ? (
+          <Menu
+            button={
+              <>
+                <span className="chip-name">{version ? versionLabel(version) : "Default"}</span>
+                <Caret />
+              </>
+            }
+            className="version-chip"
+            open={menu === "versions"}
+            onToggle={() => onToggleMenu("versions")}
+            onClose={onCloseMenu}
+            align="start"
+          >
+            {versions.map((each, index) => choice(versionLabel(each), index === selected, index))}
+            {choice("Default (even pace)", version == null, null)}
+            {version && !state.locked ? (
+              <>
+                <div className="menu-divider" role="separator" />
+                <button type="button" role="menuitem" onClick={pick(() => setNaming(version.name))}>
+                  Rename {version.name}…
+                </button>
+                {version.plan ? (
+                  <button type="button" role="menuitem" onClick={pick(() => setRetiming(true))}>
+                    Edit tempo…
+                  </button>
+                ) : null}
+                <button type="button" role="menuitem" onClick={pick(() => setDeleting(true))}>
+                  Delete {version.name}…
+                </button>
+              </>
+            ) : null}
+          </Menu>
+        ) : null}
+        {state.changed ? (
+          <span className="song-save">
+            <button type="button" className="revert-btn" onClick={state.revert}>
+              Revert
+            </button>
+            <Menu button="Save" className="save-btn" open={menu === "save"} onToggle={() => onToggleMenu("save")} onClose={onCloseMenu}>
+              <button type="button" role="menuitem" disabled={version == null} onClick={pick(state.saveToVersion)}>
+                Save to this version
+              </button>
+              <button type="button" role="menuitem" onClick={pick(() => state.setSavingAs(true))}>
+                Save as…
+              </button>
+            </Menu>
+          </span>
+        ) : null}
+      </div>
+      {refused && !savingAs ? (
+        <p className="song-line-error" role="alert">
+          {SAVE_REFUSED}
+        </p>
+      ) : null}
+      {savingAs ? (
+        <SaveAs name={state.nextName} refused={refused} onSave={state.saveAs} onCancel={() => state.setSavingAs(false)} />
+      ) : null}
+    </>
   );
 }
 
@@ -253,7 +199,44 @@ function Caret() {
   return <span aria-hidden="true"> ▾</span>;
 }
 
-function TakeBar({
+/** The name for a new version. Nothing is saved until Save. */
+function SaveAs({ name, refused, onSave, onCancel }: { name: string; refused: boolean; onSave: (name: string) => void; onCancel: () => void }) {
+  const [draft, setDraft] = useState(name);
+  const titleId = useId();
+  const save = () => onSave(draft.trim() || name);
+
+  return (
+    <div className="teach-backdrop">
+      <div className="teach-sheet" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+        <h2 id={titleId}>Save as</h2>
+        <input
+          aria-label="Version name"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") save();
+            if (event.key === "Escape") onCancel();
+          }}
+        />
+        {refused ? (
+          <p className="teach-error" role="alert">
+            {SAVE_REFUSED}
+          </p>
+        ) : null}
+        <div className="teach-actions">
+          <button type="button" onClick={onCancel}>
+            Cancel
+          </button>
+          <button type="button" className="is-primary" onClick={save}>
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function TakeBar({
   holding,
   bpm,
   onHold,
@@ -329,37 +312,6 @@ function Confirm({
   );
 }
 
-/** Shown when a take ends: nothing is saved until Save. */
-export function SaveTake({ name, onSave, onDiscard }: { name: string; onSave: (name: string) => void; onDiscard: () => void }) {
-  const [draft, setDraft] = useState(name);
-  const titleId = useId();
-  const save = () => onSave(draft.trim() || name);
-
-  return (
-    <div className="teach-backdrop">
-      <div className="teach-sheet" role="dialog" aria-modal="true" aria-labelledby={titleId}>
-        <h2 id={titleId}>Save this take</h2>
-        <input
-          aria-label="Version name"
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") save();
-          }}
-        />
-        <div className="teach-actions">
-          <button type="button" onClick={onDiscard}>
-            Discard
-          </button>
-          <button type="button" className="is-primary" onClick={save}>
-            Save
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /** A field that shows `shown` until tapped, then edits a draft that commits on Enter or on leaving the field. */
 function DraftInput({
   label,
@@ -418,7 +370,7 @@ interface TempoRow {
  * A version's tempo map: each change's start as heard at 100%, and its BPM. A start is kept as its spot on the
  * version's clock, so a BPM edit leaves the later changes on the same spot in the chart.
  */
-function TempoSheet({ version, onSave, onClose }: { version: ScrollVersion; onSave: (tempo: Tempo[]) => void; onClose: () => void }) {
+function TempoSheet({ version, onSave, onClose }: { version: ScrollPlan & { name: string }; onSave: (tempo: Tempo[]) => void; onClose: () => void }) {
   const titleId = useId();
   const end = version.marks[version.marks.length - 1].at;
   const [rows, setRows] = useState<TempoRow[]>(() =>

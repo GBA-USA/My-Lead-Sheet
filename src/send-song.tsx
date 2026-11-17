@@ -8,7 +8,9 @@ import { YouHaveIt } from "./search-box";
 import { applyUpdate, canSend, cardLine, received, songMessageIn, type Received, type SendPick, type SongSend, type UpdateChoice } from "./send-song-model";
 import type { ShareChoice } from "./share-rule";
 import { ApiError, api, type Account } from "./sign-in-methods";
-import { addOwnSong, loadLibrary, loadScrollVersions, loadSongData, localRef, replaceOwnSong, saveScrollVersions, saveSongData, songByRef, storageChanged } from "./storage";
+import type { ScrollVersion } from "./scroll-timing";
+import { loadSongVersions, locked } from "./song-version";
+import { addOwnSong, loadLibrary, loadSongData, localRef, replaceOwnSong, saveScrollVersions, saveSongData, songByRef, storageChanged } from "./storage";
 import type { Song } from "./types";
 import "./friends.css";
 import "./band-library.css";
@@ -67,6 +69,11 @@ function keepReceived(kept: Received, replaceId: number | null): boolean {
   return true;
 }
 
+/** The song's versions with taught or learned timing, as the send route takes them. A version holding only settings has no timing to send. */
+function timingVersions(song: Song): ScrollVersion[] {
+  return loadSongVersions(song.ref).versions.flatMap(({ name, plan, learned }) => (plan ? [{ name, ...plan, ...(learned ? { learned } : {}) }] : []));
+}
+
 /**
  * Send to a friend…: pick a friend, tick timing versions and My song data (the chart always goes), then Private or
  * Public. The send waits in the chat queue like a message, so with no signal it goes later, once. `song` is the song as
@@ -79,7 +86,7 @@ export function SendSongSheet({ account, song, onFriends, onSent, onClose }: { a
   const [pick, setPick] = useState<SendPick>({ versions: [], data: false, choice: null });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const versions = loadScrollVersions(song.ref).versions;
+  const versions = timingVersions(song);
   const data = loadSongData(song.ref);
   const hasData = Object.keys(data).length > 0;
 
@@ -188,9 +195,9 @@ export function SendSongSheet({ account, song, onFriends, onSent, onClose }: { a
             <ul className="friends-list">
               {friends.map((friend) => (
                 <li key={friend.userId}>
-                  <button type="button" className="band-library-pick-row" disabled={busy} onClick={() => choose(friend)}>
+                  <button type="button" className="band-library-pick-row" aria-label={friend.name} aria-describedby={`${titleId}-${friend.userId}`} disabled={busy} onClick={() => choose(friend)}>
                     {friend.name}
-                    <small>@{friend.handle}</small>
+                    <small id={`${titleId}-${friend.userId}`}>@{friend.handle}</small>
                   </button>
                 </li>
               ))}
@@ -232,7 +239,7 @@ export function SendSongSheet({ account, song, onFriends, onSent, onClose }: { a
             </div>
             <p className="account-note">{step.friend.name} gets a copy. Your later changes won't change it.</p>
             <button type="button" className="account-primary" disabled={busy || !canSend(pick)} onClick={send}>
-              Send
+              Send to {step.friend.name}
             </button>
           </div>
         )}
@@ -241,7 +248,10 @@ export function SendSongSheet({ account, song, onFriends, onSent, onClose }: { a
   );
 }
 
-/** The song page's "Send to a friend…" entry and the sheet it opens. A signed-out phone or a Private copy gets no entry. The sheet is sent the song as stored. */
+/**
+ * The song page's "Send to a friend…" entry, the Send button's tap, and the sheet they open. A signed-out phone or a
+ * Private copy gets no entry, and a locked song no button. The sheet is sent the song as stored.
+ */
 export function useSendSong(account: Account | null, songs: Song[], open: { friends: () => void; chat: (roomId: string) => void }) {
   const [sending, setSending] = useState<Song | null>(null);
   const item = (song: Song, closeMenu: () => void) =>
@@ -251,12 +261,14 @@ export function useSendSong(account: Account | null, songs: Song[], open: { frie
         role="menuitem"
         onClick={() => {
           closeMenu();
-          setSending(songByRef(songs, song.ref) ?? null);
+          start(song);
         }}
       >
         Send to a friend…
       </button>
     ) : null;
+  const start = (song: Song) => setSending(songByRef(songs, song.ref) ?? null);
+  const onSend = (song: Song) => (account && !locked(song) ? () => start(song) : undefined);
   const close = () => setSending(null);
   const sheet =
     sending && account ? (
@@ -275,7 +287,7 @@ export function useSendSong(account: Account | null, songs: Song[], open: { frie
         onClose={close}
       />
     ) : null;
-  return { item, sheet };
+  return { item, onSend, sheet };
 }
 
 /** A song card in a DM thread. The friend adds it to My Songs, or, for an update of a copy they hold, picks what to keep. */

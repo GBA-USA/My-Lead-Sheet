@@ -260,6 +260,19 @@ try {
     await app.click("Has timing", `document.querySelector(".search-chips")`);
   });
 
+  await check("Has timing leaves out a song whose only version holds settings", async () => {
+    const settings = { versions: [{ name: "Low set", semitones: 1, metronomeBpm: 78, scrollPercent: 100, notation: "notes" }], selected: 0 };
+    await site.evaluate(`localStorage.setItem("leadSheetsScrollVersions.9", ${js(js(settings))})`);
+    try {
+      await typeIn("Search songs", "zach williams");
+      await app.click("Has timing", `document.querySelector(".search-chips")`);
+      assert.deepEqual(await groups(), ["My Songs: Chain Breaker"], "To The Table holds a key change and no timing, so only Chain Breaker stays");
+      await app.click("Has timing", `document.querySelector(".search-chips")`);
+    } finally {
+      await site.evaluate(`localStorage.removeItem("leadSheetsScrollVersions.9")`);
+    }
+  });
+
   await check("a tapped result opens the sheet with its ref", async () => {
     await typeIn("Search songs", "chain breaker");
     await tapRow("Chain Breaker", `document.querySelector(".search-group")`);

@@ -33,27 +33,37 @@ type Step =
 /** The word the Worker put in `?google=` when it sent the phone back from Google, or null. */
 export const googleReturn = () => new URLSearchParams(window.location.search).get("google");
 
+/** The id of the account this phone signed in to. Older builds kept "1", which names no account. */
 const SIGNED_IN_KEY = "leadSheetsSignedIn";
+const UNNAMED = "1";
+
+/** Whose data on this phone the app shows: an account id, null signed out, or undefined while signed in to an account the phone cannot name yet. */
+export type Owner = string | null | undefined;
+
+const signedInMark = () => {
+  try {
+    return localStorage.getItem(SIGNED_IN_KEY);
+  } catch {
+    return null;
+  }
+};
 
 /**
  * The signed-in account. Only a phone that signed in before asks the server on load, so signed-out use calls no API.
  * Each time the phone learns it is signed out, band data leaves with the account (PLAN.md 10), even on a launch whose
- * session had already ended. A launch with no answer, such as one with no signal, keeps it.
+ * session had already ended. A launch with no answer, such as one with no signal, keeps it, and `owner` still names
+ * the account from the mark, so its changes on this phone stay its own.
  */
-export function useAccount(): { account: Account | null; setAccount: (account: Account | null) => void; checking: boolean } {
+export function useAccount(): { account: Account | null; setAccount: (account: Account | null) => void; checking: boolean; owner: Owner } {
   const [account, setAccount] = useState<Account | null>(null);
-  const [checking, setChecking] = useState(() => {
-    try {
-      return localStorage.getItem(SIGNED_IN_KEY) !== null;
-    } catch {
-      return false;
-    }
-  });
+  const [mark, setMark] = useState(signedInMark);
+  const [checking, setChecking] = useState(mark !== null);
   const remember = useCallback((next: Account | null) => {
     setAccount(next);
+    setMark(next?.userId ?? null);
     if (!next) clearPhone().catch(() => {});
     try {
-      if (next) localStorage.setItem(SIGNED_IN_KEY, "1");
+      if (next) localStorage.setItem(SIGNED_IN_KEY, next.userId);
       else localStorage.removeItem(SIGNED_IN_KEY);
     } catch {}
   }, []);
@@ -66,7 +76,8 @@ export function useAccount(): { account: Account | null; setAccount: (account: A
       )
       .finally(() => setChecking(false));
   }, []);
-  return { account, setAccount: remember, checking };
+  const owner = account ? account.userId : mark === UNNAMED ? undefined : mark;
+  return { account, setAccount: remember, checking, owner };
 }
 
 const MESSAGES: Record<string, string> = {

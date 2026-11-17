@@ -186,8 +186,9 @@ try {
   await evaluate(`document.fonts.ready.then(() => true)`);
   chartRows.push(...(await barRows()));
 
-  await click(".teach-btn", "Customize scroll ▾");
-  await click("[role=menu] button", "Learn by listen (play the song)");
+  await click('[aria-label="Scroll settings"]');
+  await click("[role=dialog] button", "Learn this song");
+  await click('[role=dialog] button[aria-label="Learn by listen"]');
   await until(`!!window.__mic`, "the mic");
   await evaluate(`window.__play(${JSON.stringify({ ...quiet, swaps: { [OUTSIDE]: "G7" } })})`);
   await click(".learn-actions button", "Stop");
@@ -218,6 +219,8 @@ try {
 
   await click(".learn-chords input[aria-label^='Keep HOOK']");
   await click(".learn-actions button", "Save");
+  await click(".shell-header .song-line button", "Save");
+  await click("[role=menu] button", "Save as…");
   await click(".teach-sheet button", "Save");
   const saved = await evaluate<{ versions: { learned: { sections: { heading: string; heard?: (string | null)[] }[] } }[] }>(`JSON.parse(localStorage.getItem("leadSheetsScrollVersions.${NO_HALF_STEPPIN}"))`);
   const sections = saved.versions[0].learned.sections;

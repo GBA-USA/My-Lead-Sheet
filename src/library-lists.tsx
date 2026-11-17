@@ -10,7 +10,8 @@ import { SearchBox, SearchChips } from "./search-box";
 import { CodeOfferButton } from "./setlist-code";
 import { codeOffer } from "./setlist-code-model";
 import { LeadSheet } from "./sheet";
-import { loadScrollVersions, songByRef, tempoText } from "./storage";
+import { hasTiming } from "./song-version";
+import { songByRef, tempoText } from "./storage";
 import type { Library, Setlist, Song, SongRef } from "./types";
 
 const TABS: [TabName, string][] = [
@@ -116,8 +117,6 @@ function SongRowText({ song }: { song: Song }) {
   );
 }
 
-const timed = (ref: SongRef) => loadScrollVersions(ref).versions.length > 0;
-
 /**
  * This phone's songs, and while searching, the band songs this phone holds too, grouped by where they live. Nothing
  * here asks the server, and nothing here writes. Signed in, only band data this account saved shows, so another
@@ -173,7 +172,7 @@ export function SongList({ songs, userId }: { songs: Song[]; userId: string | nu
       </li>
     );
   };
-  const groups = searching ? groupedSongs([...songs, ...bandSongs], bands, query, chips, timed) : [];
+  const groups = searching ? groupedSongs([...songs, ...bandSongs], bands, query, chips, hasTiming) : [];
   return (
     <>
       <SearchBox label="Search songs" value={query} onChange={setQuery} />

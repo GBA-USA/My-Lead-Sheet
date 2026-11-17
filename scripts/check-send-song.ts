@@ -200,11 +200,11 @@ try {
     await openSong(firstId);
     await openSendToFriend();
     await tap("Mike Keys", "document.querySelector('[role=dialog]')");
-    const before = (await dialogButtons()).find((b) => b.text === "Send");
+    const before = (await dialogButtons()).find((b) => b.text.startsWith("Send to "));
     assert.ok(before, "a Send button on the sheet");
     assert.equal(before!.disabled, true, "Send is off with no Private or Public picked");
     await tap("Public", "document.querySelector('[role=dialog]')");
-    assert.equal((await dialogButtons()).find((b) => b.text === "Send")!.disabled, false, "and on once Public is picked");
+    assert.equal((await dialogButtons()).find((b) => b.text.startsWith("Send to "))!.disabled, false, "and on once Public is picked");
     await app.shot(shots && `${shots}/send-song-sheet.png`);
     for (const choice of [null, "friends", undefined]) {
       assert.deepEqual(refusal(await send(terry, mike, chart("Chain Breaker", "Terry", "Break every chain tonight"), { choice: choice as ShareChoice | null })), [400, "choice_required"], `a direct send with choice ${js(choice)} is refused`);

@@ -1,7 +1,5 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
-import { SCROLL_MAX, SCROLL_MIN, SCROLL_STEP, type Notation } from "./music";
-
-/** The song header keeps the Phase 1 phone and tablet arrangement. */
+import type { Notation } from "./music";
 
 export function TextSizeButtons({
   index,
@@ -34,7 +32,7 @@ export function TextSizeButtons({
   );
 }
 
-function StepButton({
+export function StepButton({
   label,
   onClick,
   disabled,
@@ -64,38 +62,7 @@ function NotationSwitch({ value, onChange }: { value: Notation; onChange: (next:
   );
 }
 
-function ScrollGroup({
-  on,
-  percent,
-  onToggle,
-  onPercent,
-}: {
-  on: boolean;
-  percent: number;
-  onToggle: () => void;
-  onPercent: (next: number) => void;
-}) {
-  return (
-    <div className="scroll-group">
-      <button type="button" className={on ? "scroll-pill is-on" : "scroll-pill"} aria-pressed={on} onClick={onToggle}>
-        <PlayIcon />
-        Scroll: {on ? "On" : "Off"}
-      </button>
-      <StepButton
-        label="Scroll slower"
-        onClick={() => onPercent(percent - SCROLL_STEP)}
-        disabled={percent <= SCROLL_MIN}
-      />
-      <span className="percent">{percent}%</span>
-      <StepButton
-        label="Scroll faster"
-        onClick={() => onPercent(percent + SCROLL_STEP)}
-        disabled={percent >= SCROLL_MAX}
-      />
-    </div>
-  );
-}
-
+/** Key − and +, and the readout, which a tap puts back in the original key. */
 export function TransposeStrip({
   keyLabel,
   onDown,
@@ -109,17 +76,12 @@ export function TransposeStrip({
 }) {
   return (
     <div className="transpose">
-      <div className="key-cluster">
-        <StepButton label="Transpose down" onClick={onDown} />
-        <div className="key-readout">
-          <span className="key-kicker">KEY</span>
-          <span className={keyLabel.length > 18 ? "key-name key-name-long" : "key-name"}>{keyLabel}</span>
-        </div>
-        <StepButton label="Transpose up" onClick={onUp} />
-      </div>
-      <button type="button" className="original" onClick={onOriginal}>
-        Original Key
+      <StepButton label="Transpose down" onClick={onDown} />
+      <button type="button" className="key-readout" aria-label={`Key ${keyLabel}. Tap for the original key.`} onClick={onOriginal}>
+        <span className="key-kicker">KEY</span>
+        <span className={keyLabel.length > 18 ? "key-name key-name-long" : "key-name"}>{keyLabel}</span>
       </button>
+      <StepButton label="Transpose up" onClick={onUp} />
     </div>
   );
 }
@@ -132,6 +94,7 @@ export function Menu({
   open,
   onToggle,
   onClose,
+  align = "end",
   children,
 }: {
   button: ReactNode;
@@ -140,6 +103,7 @@ export function Menu({
   open: boolean;
   onToggle: () => void;
   onClose: () => void;
+  align?: "start" | "end";
   children: ReactNode;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -178,7 +142,7 @@ export function Menu({
         {button}
       </button>
       {open ? (
-        <div className="menu" role="menu">
+        <div className={align === "start" ? "menu menu-start" : "menu"} role="menu">
           {children}
         </div>
       ) : null}
@@ -240,63 +204,62 @@ export function OverflowMenu({
   );
 }
 
+/**
+ * The song's two control rows. Row 1: the key and Notes | Nashville. Row 2: the Scroll pill with its caret to the
+ * Scroll sheet, the Metronome pill, and Send when `onSend` is given. A take puts `take` in row 2's place.
+ */
 export function SongControls({
-  textIndex,
-  textCount,
-  onTextIndex,
-  menuOpen,
-  onMenuToggle,
-  onMenuClose,
-  onSongData,
-  notation,
-  onNotation,
-  scrolling,
-  onToggleScroll,
-  percent,
-  onPercent,
   keyLabel,
   onTransposeDown,
   onTransposeUp,
   onOriginalKey,
+  notation,
+  onNotation,
+  scrolling,
+  onToggleScroll,
+  onScrollSheet,
+  onMetronome,
+  onSend,
+  take,
 }: {
-  textIndex: number;
-  textCount: number;
-  onTextIndex: (index: number) => void;
-  menuOpen: boolean;
-  onMenuToggle: () => void;
-  onMenuClose: () => void;
-  onSongData: () => void;
-  notation: Notation;
-  onNotation: (next: Notation) => void;
-  scrolling: boolean;
-  onToggleScroll: () => void;
-  percent: number;
-  onPercent: (next: number) => void;
   keyLabel: string;
   onTransposeDown: () => void;
   onTransposeUp: () => void;
   onOriginalKey: () => void;
+  notation: Notation;
+  onNotation: (next: Notation) => void;
+  scrolling: boolean;
+  onToggleScroll: () => void;
+  onScrollSheet: () => void;
+  onMetronome: () => void;
+  onSend?: () => void;
+  take?: ReactNode;
 }) {
   return (
     <div className="controls">
-      <div className="tools">
-        <TextSizeButtons index={textIndex} count={textCount} onChange={onTextIndex} />
-        <OverflowMenu
-          label="Song actions"
-          open={menuOpen}
-          onToggle={onMenuToggle}
-          onClose={onMenuClose}
-          onSongData={onSongData}
-        />
+      <div className="control-row">
+        <TransposeStrip keyLabel={keyLabel} onDown={onTransposeDown} onUp={onTransposeUp} onOriginal={onOriginalKey} />
+        <NotationSwitch value={notation} onChange={onNotation} />
       </div>
-      <NotationSwitch value={notation} onChange={onNotation} />
-      <ScrollGroup on={scrolling} percent={percent} onToggle={onToggleScroll} onPercent={onPercent} />
-      <TransposeStrip
-        keyLabel={keyLabel}
-        onDown={onTransposeDown}
-        onUp={onTransposeUp}
-        onOriginal={onOriginalKey}
-      />
+      {take ?? (
+        <div className="control-row">
+          <button type="button" className={scrolling ? "scroll-pill is-on" : "scroll-pill"} aria-pressed={scrolling} onClick={onToggleScroll}>
+            <PlayIcon />
+            Scroll: {scrolling ? "On" : "Off"}
+          </button>
+          <button type="button" className="scroll-caret" aria-label="Scroll settings" aria-haspopup="dialog" onClick={onScrollSheet}>
+            <CaretIcon />
+          </button>
+          <button type="button" className="metronome-pill" onClick={onMetronome}>
+            Metronome
+          </button>
+          {onSend ? (
+            <button type="button" className="send-btn" aria-label="Send" onClick={onSend}>
+              <SendIcon />
+            </button>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }
@@ -321,6 +284,22 @@ function PlayIcon() {
   return (
     <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true">
       <path d="M3 1.5v9l8-4.5-8-4.5z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function CaretIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+      <path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function SendIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">
+      <path d="M14.5 1.5 1.5 7l5 2 2 5 6-12.5zM6.5 9l8-7.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
     </svg>
   );
 }

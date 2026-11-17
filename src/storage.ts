@@ -1,7 +1,7 @@
 import seedLibrary from "../data/library.json";
 import { clampScrollPercent, pitchClass, type Notation } from "./music";
 import { parsePersonal, type PersonalDefaults } from "./personal-settings-model";
-import type { Learned, Mark, ScrollVersion, Span, Tempo } from "./scroll-timing";
+import type { Learned, Mark, ScrollPlan, Span, Tempo } from "./scroll-timing";
 import type { BassNote, ChartLine, ChartSection, CopyMark, Library, LibraryFile, Song, SongData, SongRef } from "./types";
 
 export const LIBRARY_KEY = "leadSheetsLibrary";
@@ -416,8 +416,10 @@ export function saveNotation(ref: SongRef, notation: Notation): boolean {
 
 /** Per-song runtime, BPM and time signature entered in the app, under `leadSheetsSongData.<ref key>`. */
 export const SONG_DATA_KEY = "leadSheetsSongData";
-/** Per-song taught scroll versions and which one plays, under `leadSheetsScrollVersions.<ref key>`. */
+/** Per-song saved versions and which one is in use, under `leadSheetsScrollVersions.<ref key>`. */
 export const SCROLL_VERSIONS_KEY = "leadSheetsScrollVersions";
+/** Per-song changes not yet saved: the signed-out player's under `leadSheetsSongDraft.<ref key>`, an account's under `leadSheetsSongDraft.<ref key>.<account id>`. */
+export const SONG_DRAFT_KEY = "leadSheetsSongDraft";
 
 function isPositive(value: unknown): boolean {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
@@ -459,8 +461,23 @@ export function withSongData(song: Song, data: SongData): Song {
   return { ...song, officialRuntimeSec: song.officialRuntimeSec ?? null, ...data };
 }
 
+/**
+ * A saved version as stored. The timing keeps the top-level fields it had before versions held settings, so an older
+ * build and the send route still read it; a version saved without taught timing has none of them. The settings are
+ * absent on a version saved before them.
+ */
+export type StoredVersion = Partial<ScrollPlan> & {
+  name: string;
+  learned?: Learned;
+  semitones?: number;
+  metronomeBpm?: number;
+  scrollPercent?: number;
+  notation?: Notation;
+  data?: SongData;
+};
+
 export interface ScrollVersions {
-  versions: ScrollVersion[];
+  versions: StoredVersion[];
   /** Index into `versions`, or null for the even pace. */
   selected: number | null;
 }
@@ -488,16 +505,32 @@ const isTempoMap: Check = (value) => {
   return tempo[0]?.at === 0 && tempo.every((change, i) => i === 0 || change.at > tempo[i - 1].at);
 };
 
-const isVersion: Check = (value) => {
-  const fields = { name: isString, bpm: isPositive, marks: listOf(isMark), learned: optional(isLearned), tempo: optional(isTempoMap) };
-  if (!shaped<ScrollVersion>(fields)(value)) return false;
-  const marks = (value as ScrollVersion).marks;
+const isSongData: Check = (value) =>
+  !!value && typeof value === "object" && Object.entries(value as Record<string, unknown>).every(([name, field]) => name in SONG_DATA_FIELDS && SONG_DATA_FIELDS[name as keyof SongData](field));
+
+const isSettings = shaped<Omit<StoredVersion, keyof ScrollPlan | "learned">>({
+  name: isString,
+  semitones: optional((value) => Number.isInteger(value)),
+  metronomeBpm: optional(isPositive),
+  scrollPercent: optional(isPositive),
+  notation: optional((value) => value === "notes" || value === "nashville"),
+  data: optional(isSongData),
+});
+
+const isTiming: Check = (value) => {
+  const fields = { bpm: isPositive, marks: listOf(isMark), learned: optional(isLearned), tempo: optional(isTempoMap) };
+  if (!shaped<ScrollPlan & { learned?: Learned }>(fields)(value)) return false;
+  const marks = (value as ScrollPlan).marks;
   return (
     marks.length >= 2 &&
     marks[marks.length - 1].progress === 1 &&
     marks.every((mark, i) => i === 0 || (mark.at >= marks[i - 1].at && mark.progress >= marks[i - 1].progress))
   );
 };
+
+const untimed: Check = (value) => ["bpm", "marks", "tempo", "learned"].every((name) => (value as Record<string, unknown>)[name] === undefined);
+
+const isVersion: Check = (value) => isSettings(value) && ((value as StoredVersion).marks === undefined ? untimed(value) : isTiming(value));
 
 export function loadScrollVersions(ref: SongRef): ScrollVersions {
   const value = readSongPref(SCROLL_VERSIONS_KEY, ref) as Partial<ScrollVersions> | undefined;
@@ -511,9 +544,27 @@ export function saveScrollVersions(ref: SongRef, value: ScrollVersions): boolean
   return writeRaw(`${SCROLL_VERSIONS_KEY}.${refKey(ref)}`, JSON.stringify(value));
 }
 
-/** Applies one change to the stored versions, not to a copy a screen holds, so a version pulled meanwhile stays. */
-export function updateScrollVersions(ref: SongRef, change: (current: ScrollVersions) => ScrollVersions): ScrollVersions {
+/** Applies one change to the stored versions, not to a copy a screen holds, so a version pulled meanwhile stays. Null when the browser refused the write. */
+export function updateScrollVersions(ref: SongRef, change: (current: ScrollVersions) => ScrollVersions): ScrollVersions | null {
   const next = change(loadScrollVersions(ref));
-  saveScrollVersions(ref, next);
-  return next;
+  return saveScrollVersions(ref, next) ? next : null;
+}
+
+const draftKey = (owner: string | null, ref: SongRef) => `${SONG_DRAFT_KEY}.${refKey(ref)}${owner === null ? "" : `.${owner}`}`;
+
+/** This account's unsaved changes to one song, as stored, or undefined when it has none. The Save model parses what comes back. */
+export function loadSongDraft(owner: string | null, ref: SongRef): unknown {
+  const raw = readRaw(draftKey(owner, ref));
+  if (raw === null) return undefined;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+}
+
+/** A null `draft` removes this account's key. Each account has its own, so a drop never rewrites another account's draft and a full phone cannot refuse it. */
+export function saveSongDraft(owner: string | null, ref: SongRef, draft: object | null): boolean {
+  const key = draftKey(owner, ref);
+  return draft === null ? removeRaw(key) : writeRaw(key, JSON.stringify(draft));
 }

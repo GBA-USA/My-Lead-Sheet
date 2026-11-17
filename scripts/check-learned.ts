@@ -128,8 +128,9 @@ async function openSong(id: number, scale: number, setup = "") {
 
 async function learnOnce() {
   await evaluate(`window.__mic = null`);
-  await click(".teach-btn", "Customize scroll ▾");
-  await click("[role=menu] button", "Learn by listen (play the song)");
+  await click('[aria-label="Scroll settings"]');
+  await click("[role=dialog] button", "Learn this song");
+  await click('[role=dialog] button[aria-label="Learn by listen"]');
   await until(`!!window.__mic`, "the mic");
   await evaluate(`window.__playSong(document.querySelectorAll(".chart-heading").length)`);
   await pause(50);
@@ -180,7 +181,7 @@ try {
       }
     }
     const backdrop = panel.closest(".learn-backdrop");
-    const under = [".shell-header", ".tabs", ".controls", ".teach-bar"].flatMap((selector) => {
+    const under = [".shell-header", ".tabs", ".controls"].flatMap((selector) => {
       const bar = document.querySelector(selector).getBoundingClientRect();
       return [0.1, 0.5, 0.9].flatMap((across) => {
         const hit = document.elementFromPoint(bar.left + bar.width * across, bar.top + bar.height / 2);
@@ -191,15 +192,18 @@ try {
   })()`);
   await shoot("review-panel");
   check(cover.misses.length === 0, `every point of the Review panel (${cover.points} points, y ${Math.round(cover.top)} to ${Math.round(cover.bottom)}) is the panel itself${cover.misses.length ? `, not ${[...new Set(cover.misses)].slice(0, 4).join(", ")}` : ""}`);
-  check(cover.under.length === 0, `the header, tabs, controls and Teach bar sit under the backdrop${cover.under.length ? `, but ${cover.under.slice(0, 4).join(", ")}` : ""}`);
+  check(cover.under.length === 0, `the header, tabs and controls sit under the backdrop${cover.under.length ? `, but ${cover.under.slice(0, 4).join(", ")}` : ""}`);
 
   await click(".learn-actions button", "Save");
+  check((await stored(NO_HALF_STEPPIN)) === null && !(await evaluate<boolean>(`!!document.querySelector("[role=dialog]")`)), "Learn's Save closes the sheet and puts the result in the draft, storing nothing");
+  await click(".shell-header .song-line button", "Save");
+  await click("[role=menu] button", "Save as…");
   const sheet = await evaluate<{ title: string; name: string; buttons: string[] } | null>(`(() => {
     const sheet = document.querySelector(".teach-sheet");
     return sheet && { title: sheet.querySelector("h2").textContent, name: sheet.querySelector("input").value, buttons: [...sheet.querySelectorAll("button")].map((b) => b.textContent) };
   })()`);
   await shoot("name-sheet-after-learn");
-  check(sheet?.title === "Save this take" && sheet.name === "V1" && sheet.buttons.join() === "Discard,Save", `Learn's Save opens the Teach name sheet with V1 to edit, Discard and Save (${JSON.stringify(sheet)})`);
+  check(sheet?.title === "Save as" && sheet.name === "V1" && sheet.buttons.join() === "Cancel,Save", `the header's Save as opens the name sheet with V1 to edit, Cancel and Save (${JSON.stringify(sheet)})`);
   check((await stored(NO_HALF_STEPPIN)) === null, "nothing is stored before the name sheet's Save");
   if (sheet) {
     await evaluate(`(() => {
@@ -215,12 +219,15 @@ try {
   await learnOnce();
   await click(".learn-use input");
   await click(".learn-actions button", "Save");
+  await click(".shell-header .song-line button", "Save");
+  await click("[role=menu] button", "Save as…");
   const second = await evaluate<string | undefined>(`document.querySelector(".teach-sheet input")?.value`);
   check(second === "V2", `the next Learn offers V2 (${second})`);
-  if (second) await click(".teach-sheet button", "Discard");
+  if (second) await click(".teach-sheet button", "Cancel");
+  await click(".shell-header .song-line button", "Revert");
   const after = await stored(NO_HALF_STEPPIN);
   const data = await evaluate<string | null>(`localStorage.getItem("${app.SONG_DATA_KEY}.${NO_HALF_STEPPIN}")`);
-  check(after?.versions.length === 1 && data === null && !(await evaluate<boolean>(`!!document.querySelector("[role=dialog]")`)), `Discard closes the sheet and stores nothing, not the version and not the song's length and BPM (${after?.versions.length} version, song data ${data})`);
+  check(after?.versions.length === 1 && data === null && !(await evaluate<boolean>(`!!document.querySelector("[role=dialog]")`)), `Cancel and Revert close the sheet and store nothing, not the version and not the song's length and BPM (${after?.versions.length} version, song data ${data})`);
 
   for (const run of [
     { id: NO_HALF_STEPPIN, learnAt: 1, playAt: 1, at: [1, 12, 45, 75, 110, 150, 190], end: 232 },

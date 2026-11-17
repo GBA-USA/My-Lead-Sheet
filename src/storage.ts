@@ -463,8 +463,8 @@ export function withSongData(song: Song, data: SongData): Song {
 
 /**
  * A saved version as stored. The timing keeps the top-level fields it had before versions held settings, so an older
- * build and the send route still read it; a version saved without taught timing has none of them. The settings are
- * absent on a version saved before them.
+ * build and the send route still read it. A version saved without taught timing has none of them in memory; on disk
+ * it carries `EVEN_PACE`, which `loadScrollVersions` strips. The settings are absent on a version saved before them.
  */
 export type StoredVersion = Partial<ScrollPlan> & {
   name: string;
@@ -532,16 +532,35 @@ const untimed: Check = (value) => ["bpm", "marks", "tempo", "learned"].every((na
 
 const isVersion: Check = (value) => isSettings(value) && ((value as StoredVersion).marks === undefined ? untimed(value) : isTiming(value));
 
+/**
+ * What a version without taught timing carries on disk. A build from before versions held settings validates only
+ * `bpm` and `marks`, drops a row without them, and its next write of the song stores the list without it, which
+ * backup then spreads to every phone. With this pace the row passes, and that build scrolls the version top to bottom
+ * over four minutes at 100 bpm. It is a constant, so the same version saved on two phones is the same bytes and backup
+ * combines them as one. This build reads `even` and takes the pace back off.
+ */
+type StoredRow = StoredVersion & { even?: true };
+
+const EVEN_PACE: ScrollPlan & { even: true } = { bpm: 100, marks: [{ at: 0, progress: 0 }, { at: 240, progress: 1 }], even: true };
+
+function withoutEvenPace(row: unknown): unknown {
+  if (!row || typeof row !== "object" || (row as StoredRow).even !== true) return row;
+  const { even: _even, bpm: _bpm, marks: _marks, tempo: _tempo, learned: _learned, ...settings } = row as StoredRow;
+  return settings;
+}
+
+const withEvenPace = (version: StoredVersion): StoredRow => (version.marks === undefined ? { ...version, ...EVEN_PACE } : version);
+
 export function loadScrollVersions(ref: SongRef): ScrollVersions {
   const value = readSongPref(SCROLL_VERSIONS_KEY, ref) as Partial<ScrollVersions> | undefined;
-  const versions = Array.isArray(value?.versions) ? value.versions.filter(isVersion) : [];
+  const versions = Array.isArray(value?.versions) ? value.versions.map(withoutEvenPace).filter(isVersion) : [];
   const selected = value?.selected;
   const valid = typeof selected === "number" && Number.isInteger(selected) && selected >= 0 && selected < versions.length;
-  return { versions, selected: valid ? selected : null };
+  return { versions: versions as StoredVersion[], selected: valid ? selected : null };
 }
 
 export function saveScrollVersions(ref: SongRef, value: ScrollVersions): boolean {
-  return writeRaw(`${SCROLL_VERSIONS_KEY}.${refKey(ref)}`, JSON.stringify(value));
+  return writeRaw(`${SCROLL_VERSIONS_KEY}.${refKey(ref)}`, JSON.stringify({ ...value, versions: value.versions.map(withEvenPace) }));
 }
 
 /** Applies one change to the stored versions, not to a copy a screen holds, so a version pulled meanwhile stays. Null when the browser refused the write. */

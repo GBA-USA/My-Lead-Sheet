@@ -137,13 +137,8 @@ async function apiChecks() {
       [...file.setlists].sort(byName).map((item) => [item.name, item.songIds.map((id) => byFileId.get(id)!.songId), item.tags, item.share.choice]),
       "setlists arrive with their songs remapped to the new ids, tags and choice kept",
     );
-    const privateCopy = (await dana.call("/api/bands/library/copy-song", { bandId: newBlue, songId: byFileId.get(chainId)!.songId })).body;
-    assert.equal(privateCopy.copy.canSendOn, false, "Dana adds the moved Private song to My Songs as not hers to send on");
-    const tried = await dana.call("/api/bands/library/share-song", { bandId: danas, song: chainBreaker, choice: "public", copyId: privateCopy.copy.id });
-    assert.equal(tried.status, 403, `and the server refuses to pass it on (${JSON.stringify(tried.body)})`);
-    assert.match(String(tried.body.error), /^private_(copy|ancestor)$/, "because it was shared privately");
-    const publicCopy = (await dana.call("/api/bands/library/copy-song", { bandId: newBlue, songId: byFileId.get(midnightId)!.songId })).body;
-    assert.equal((await dana.call("/api/bands/library/share-song", { bandId: danas, song: midnight, choice: "public", copyId: publicCopy.copy.id })).status, 200, "while the moved Public song passes on");
+    assert.deepEqual(refusal(await dana.call("/api/bands/library/copy-song", { bandId: newBlue, songId: byFileId.get(chainId)!.songId })), [403, "band-only"], "Dana can't copy the moved Private song out of the band");
+    assert.equal((await dana.call("/api/bands/library/share-song", { bandId: danas, song: midnight, choice: "public" })).status, 200, "while the moved Public song passes on");
     pass("songs, setlists and timing versions arrive deep-equal with ids remapped and their Private or Public flags kept");
 
     const again = await importBandFile(admin(ann, fresh), newBlue, text);
@@ -195,11 +190,11 @@ async function appChecks() {
     const app = await appPage(site);
     await site.send("Network.enable");
     await site.send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: downloads, eventsEnabled: true });
-    const view = (name: string) => app.until(`document.querySelector(".bands-sheet")?.dataset.view === ${JSON.stringify(name)} && !document.querySelector(".bands-sheet").textContent.includes("Loading")`, `the ${name} view`, 15000);
-    const status = (words: string) => app.until(`(document.querySelector(".bands-sheet [role=status], .bands-sheet [role=alert]")?.textContent ?? "").includes(${JSON.stringify(words)})`, `the words ${words}`, 15000);
+    const view = (name: string) => app.until(`document.querySelector(".bands-sheet, .band-page")?.dataset.view === ${JSON.stringify(name)} && !document.querySelector(".bands-sheet, .band-page").textContent.includes("Loading")`, `the ${name} view`, 15000);
+    const status = (words: string) => app.until(`(document.querySelector(".bands-sheet [role=status], .bands-sheet [role=alert], .band-page [role=status], .band-page [role=alert]")?.textContent ?? "").includes(${JSON.stringify(words)})`, `the words ${words}`, 15000);
     const pickFile = async (path: string) => {
       const { root: doc } = await site.send("DOM.getDocument", { depth: 1 });
-      const { nodeId } = await site.send("DOM.querySelector", { nodeId: doc.nodeId, selector: ".bands-sheet input[type=file]" });
+      const { nodeId } = await site.send("DOM.querySelector", { nodeId: doc.nodeId, selector: ".bands-sheet input[type=file], .band-page input[type=file]" });
       await site.send("DOM.setFileInputFiles", { nodeId, files: [path] });
     };
     const offline = (on: boolean) => site.send("Network.emulateNetworkConditions", { offline: on, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
@@ -217,7 +212,7 @@ async function appChecks() {
     await app.type("New band", "Sam's Trio");
     await app.click("Create band");
     await view("band");
-    await app.click("Invite");
+    await app.click("Show as QR");
     await view("invite");
     await app.until(`!!document.querySelector(".codes-qr svg")`, "the QR code");
     const link = readQr(await site.evaluate<string>(`document.querySelector(".codes-qr").innerHTML`));

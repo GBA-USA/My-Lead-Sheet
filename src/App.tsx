@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AccountSheet, googleReturn, useAccount } from "./account";
 import { backupOff, backupOn, syncBackup, type BackupResult } from "./backup";
-import { BandsSheet, BandsTab } from "./bands";
+import { BandPlayMissing, useBandPlay } from "./band-setlist-view";
+import { BandPage, BandsSheet, BandsTab, type BandLanding } from "./bands";
 import { ChatSheet, queueOwner, type ChatTarget } from "./chat";
 import { readPayload, type CodeScreen } from "./code-link";
 import { clearLanding, landedCode } from "./codes";
@@ -16,7 +17,7 @@ import { initialMetronomeBpm } from "./metronome";
 import { useMetronome } from "./metronome-view";
 import { clampScrollPercent, displayKeyLabel } from "./music";
 import type { PersonalDefaults } from "./personal-settings-model";
-import { parseHash, settingsHref, type TabName } from "./route";
+import { backHref, bandHref, bandLiveHref, parseHash, settingsHref, type TabName } from "./route";
 import { READING_LINE, changeTempo, evenPlan, scrollMotion, startTake, toggleHold, type ScrollVersion, type Take } from "./scroll-timing";
 import { ScrollSheet } from "./scroll-sheet";
 import { FriendsSheet } from "./friends";
@@ -46,7 +47,6 @@ type MenuId = "shell" | LineMenu | null;
 
 type SongDataByRef = Record<SongRef, SongData>;
 
-
 /** Teach mode: the take while it plays, or Learn this song while it listens. What either taught goes into the song's draft. */
 type Teaching = { take: Take } | { learning: true };
 
@@ -71,7 +71,9 @@ export function App() {
   const [personal, setPersonal] = useStored(() => loadPersonal(owner ?? null), owner);
   const [accountOpen, setAccountOpen] = useState(() => googleReturn() !== null);
   const [friends, setFriends] = useState<{ code?: string } | null>(null);
-  const [bands, setBands] = useState<{ code?: string; bandId?: string } | null>(null);
+  const [bands, setBands] = useState<{ code?: string } | null>(null);
+  const [landing, setLanding] = useState<BandLanding | null>(null);
+  const [bandsNotice, setBandsNotice] = useState("");
   const [setlistCode, setSetlistCode] = useState<Setlist | null>(null);
   const [setlistCopy, setSetlistCopy] = useState<{ code: string } | null>(null);
   const [chat, setChat] = useState<{ open?: ChatTarget } | null>(null);
@@ -141,9 +143,12 @@ export function App() {
   }, []);
 
   const route = parseHash(hash);
-  const showTabs = route.name !== "live" && route.name !== "settings";
+  const bandRoute = route.name === "band-song" || route.name === "band-live";
+  const showTabs = route.name !== "live" && route.name !== "band-live" && route.name !== "settings";
   const tab: TabName =
-    route.name === "bands" ? "bands" : route.name === "setlists" || (route.name === "song" && route.from === "setlists") ? "setlists" : "songs";
+    route.name === "bands" || route.name === "band" || route.name === "band-song" ? "bands" : route.name === "setlists" || (route.name === "song" && route.from === "setlists") ? "setlists" : "songs";
+  const back = backHref(route);
+  const play = useBandPlay(route, owner ?? null);
 
   const liveSetlist = route.name === "live" ? library.setlists.find((set) => set.id === route.setlistId) : undefined;
   const liveIndex =
@@ -152,8 +157,13 @@ export function App() {
       : 0;
   const liveSong =
     route.name === "live" && liveSetlist ? songByRef(library.songs, liveSetlist.songRefs[liveIndex]) : undefined;
-  const activeSong =
-    route.name === "song" ? songByRef(library.songs, localRef(route.id)) : route.name === "live" ? liveSong : undefined;
+  const activeSong = route.name === "song" ? songByRef(library.songs, localRef(route.id)) : route.name === "live" ? liveSong : play.song;
+  const liveList =
+    route.name === "live" && liveSetlist
+      ? { name: liveSetlist.name, count: liveSetlist.songRefs.length, index: liveIndex, href: (index: number) => `#/live/${route.setlistId}/${index}` }
+      : route.name === "band-live" && play.setlist
+        ? { name: play.setlist.name, count: play.setlist.songIds.length, index: play.index, href: (index: number) => bandLiveHref(route.bandId, route.setlistId, index) }
+        : null;
 
   const performance = useScrolling(activeSong?.ref ?? null);
   const songVersion = useSongVersion(activeSong ?? null, owner, personal);
@@ -195,6 +205,9 @@ export function App() {
     setScrollSheet(false);
     setEditing(false);
     setTeaching(null);
+    const now = parseHash(window.location.hash).name;
+    if (now !== "bands") setBandsNotice("");
+    if (now !== "band") setLanding(null);
   }, [hash]);
 
   useEffect(() => {
@@ -211,6 +224,15 @@ export function App() {
     setChat({ open });
   };
   const messageUser = (userId: string) => openChat({ userId });
+  const openBand = (next: BandLanding) => {
+    setBands(null);
+    setLanding(next);
+    window.location.hash = bandHref(next.bandId, next.section);
+  };
+  const bandGone = (words: string) => {
+    setBandsNotice(words);
+    window.location.replace("#/bands");
+  };
 
   const changeText = (index: number) => {
     const next = Math.max(0, Math.min(TEXT_SCALES.length - 1, index));
@@ -221,16 +243,6 @@ export function App() {
   const changePersonal = (next: PersonalDefaults) => {
     setPersonal(next);
     return savePersonal(owner ?? null, next);
-  };
-
-  const goBack = () => {
-    if (route.name === "song") {
-      window.location.hash = route.from === "setlists" ? "#/setlists" : "#/songs";
-    } else if (route.name === "live") {
-      window.location.hash = "#/setlists";
-    } else if (route.name === "settings") {
-      window.location.hash = `#/${route.from}`;
-    }
   };
 
   const teach = () => {
@@ -261,11 +273,6 @@ export function App() {
     setEditing(false);
   };
 
-  const goLive = (index: number) => {
-    if (route.name !== "live") return;
-    window.location.hash = `#/live/${route.setlistId}/${index}`;
-  };
-
   return (
     <div className="app">
       <header className={activeSong ? "shell-header song-header" : "shell-header"}>
@@ -273,16 +280,16 @@ export function App() {
           type="button"
           className="icon-btn"
           aria-label="Back"
-          disabled={route.name !== "song" && route.name !== "live" && route.name !== "settings"}
-          onClick={goBack}
+          disabled={back === null}
+          onClick={() => back && (window.location.hash = back)}
         >
           <BackIcon />
         </button>
         {activeSong ? <p className="shell-title">{APP_NAME}</p> : <h1 className="shell-title">{route.name === "settings" ? "Settings" : APP_NAME}</h1>}
         {activeSong ? <TextSizeButtons index={textIndex} count={TEXT_SCALES.length} onChange={changeText} /> : null}
         {activeSong ? (
-          <OverflowMenu label="More" size="shell" open={menu === "shell"} onToggle={() => toggleMenu("shell")} onClose={closeMenu} onSongData={() => setEditing(true)}>
-            {sendSong.item(activeSong, closeMenu)}
+          <OverflowMenu label="More" size="shell" open={menu === "shell"} onToggle={() => toggleMenu("shell")} onClose={closeMenu} onSongData={bandRoute ? undefined : () => setEditing(true)}>
+            {bandRoute ? null : sendSong.item(activeSong, closeMenu)}
           </OverflowMenu>
         ) : route.name === "settings" ? null : (
           <button type="button" className="icon-btn" aria-label="Settings" onClick={() => (window.location.hash = settingsHref(tab))}>
@@ -385,18 +392,8 @@ export function App() {
         />
       ) : null}
 
-      {bands && account ? (
-        <BandsSheet
-          account={account}
-          code={bands.code}
-          bandId={bands.bandId}
-          onMessage={messageUser}
-          onChat={(roomId) => openChat({ roomId })}
-          onSetlistCopy={(code) => { setBands(null); setSetlistCopy({ code }); }}
-          onSettings={() => { setBands(null); window.location.hash = settingsHref("bands"); }}
-          onSignedOut={() => setAccount(null)}
-          onClose={() => setBands(null)}
-        />
+      {bands && owner ? (
+        <BandsSheet code={bands.code} onBand={openBand} onSetlistCopy={(code) => { setBands(null); setSetlistCopy({ code }); }} onSignedOut={() => setAccount(null)} onClose={() => setBands(null)} />
       ) : null}
       {setlistCode && account ? <MySetlistCodeSheet key={account.userId} setlist={setlistCode} onSignedOut={() => setAccount(null)} onClose={() => setSetlistCode(null)} /> : null}
       {setlistCopy && account ? (
@@ -409,6 +406,7 @@ export function App() {
           key={account.userId}
           account={account}
           open={chat.open}
+          onBand={(bandId) => openBand({ bandId, section: "chat" })}
           onSignedOut={() => {
             setAccount(null);
             setChat(null);
@@ -417,20 +415,15 @@ export function App() {
         />
       ) : null}
 
-      {liveSetlist && liveSetlist.songRefs.length > 0 ? (
+      {liveList && liveList.count > 0 ? (
         <div className="live-nav">
-          <button type="button" aria-label="Previous song" disabled={liveIndex <= 0} onClick={() => goLive(liveIndex - 1)}>
+          <button type="button" aria-label="Previous song" disabled={liveList.index <= 0} onClick={() => (window.location.hash = liveList.href(liveList.index - 1))}>
             Prev
           </button>
           <span className="live-count">
-            {liveSetlist.name} · {liveIndex + 1}/{liveSetlist.songRefs.length}
+            {liveList.name} · {liveList.index + 1}/{liveList.count}
           </span>
-          <button
-            type="button"
-            aria-label="Next song"
-            disabled={liveIndex >= liveSetlist.songRefs.length - 1}
-            onClick={() => goLive(liveIndex + 1)}
-          >
+          <button type="button" aria-label="Next song" disabled={liveList.index >= liveList.count - 1} onClick={() => (window.location.hash = liveList.href(liveList.index + 1))}>
             Next
           </button>
         </div>
@@ -461,7 +454,11 @@ export function App() {
             onMessages={() => setChat({})}
           />
         ) : null}
-        {route.name === "bands" ? <BandsTab account={account} onOpen={(bandId) => setBands({ bandId })} onSignIn={() => setAccountOpen(true)} onSignedOut={() => setAccount(null)} /> : null}
+        {route.name === "bands" ? <BandsTab me={owner ?? null} notice={bandsNotice} onNew={() => setBands({})} onSignIn={() => setAccountOpen(true)} onSignedOut={() => setAccount(null)} /> : null}
+        {route.name === "band" ? (
+          <BandPage key={`${owner}/${route.bandId}`} me={owner ?? null} bandId={route.bandId} section={route.section} landing={landing?.bandId === route.bandId ? landing : undefined}
+            onMessage={messageUser} onSignIn={() => setAccountOpen(true)} onSignedOut={() => setAccount(null)} onGone={bandGone} />
+        ) : null}
         {route.name === "song" ? (
           <SongBody
             library={shownLibrary}
@@ -472,7 +469,7 @@ export function App() {
             metronome={metronome}
           />
         ) : null}
-        {route.name === "live" ? (
+        {route.name === "live" || bandRoute ? (
           shownSong ? (
             <LeadSheet
               song={shownSong}
@@ -481,6 +478,8 @@ export function App() {
               notation={draft?.notation ?? "notes"}
               metronome={metronome}
             />
+          ) : bandRoute ? (
+            <BandPlayMissing play={play} back={back ?? "#/bands"} />
           ) : (
             <div className="missing">
               <p>{liveSetlist?.songRefs.length === 0 ? "This setlist is empty." : "That setlist isn't in this library."}</p>

@@ -65,7 +65,7 @@ const attrs = (html: string, tag: RegExp) => [...html.matchAll(tag)].map((match)
 const attr = (element: string, name: string) => element.match(new RegExp(`${name}="([^"]*)"`))?.[1];
 
 const firstSetlist = seed.setlists[0];
-const routes = ["#/songs", "#/setlists", "#/bands", `#/song/${seed.songs[0].id}`, "#/song/999", `#/live/${firstSetlist.id}/0`, `#/live/${firstSetlist.id}/99`, "#/live/77/0", "#/live/404/0", "#/settings"];
+const routes = ["#/songs", "#/setlists", "#/bands", `#/song/${seed.songs[0].id}`, "#/song/999", `#/live/${firstSetlist.id}/0`, `#/live/${firstSetlist.id}/99`, "#/live/77/0", "#/live/404/0", "#/settings", "#/band/band_x"];
 
 for (const hash of routes) {
   const html = render(hash);

@@ -24,7 +24,7 @@ import { openSite } from "./chrome.ts";
  *   reshareable }`. Anyone else is `404 not-found`.
  *
  * On the phone: the tabs are My Songs, Setlists, Bands. The Bands tab (`.bands-tab`) lists each band as a button that
- * starts with its name, and signed out says "Play with your band. Sign in to share setlists and follow gigs." with Sign
+ * starts with its name, and signed out says "Sign in to see your bands." with Sign
  * in. A band's tabs are Songs, Setlists, Chat, Gigs, Members. A band setlist row is `[data-setlist=<id>]`, has Show
  * code or "Add a song first", and the row a code landed on has `aria-current="true"`. A personal setlist has Show
  * code, which opens `.setlist-code-sheet` with one ticked box per song, Private and Public, then Show code. A DM card
@@ -142,7 +142,7 @@ try {
   const appCalls = (path: string, body: object) =>
     site.evaluate<Reply>(`fetch(${js(path)}, { method: "POST", headers: { "content-type": "application/json" }, body: ${js(js(body))} }).then(async (r) => ({ status: r.status, body: await r.json() }))`);
   const bandsView = (name: string) =>
-    app.until(`document.querySelector(".bands-sheet")?.dataset.view === ${js(name)} && !document.querySelector(".bands-sheet").textContent.includes("Loading")`, `the ${name} view`, 15000);
+    app.until(`document.querySelector(".bands-sheet, .band-page")?.dataset.view === ${js(name)} && !document.querySelector(".bands-sheet, .band-page").textContent.includes("Loading")`, `the ${name} view`, 15000);
   const bandTab = (name: string) => app.click(name, `document.querySelector(".band-tabs")`);
   const setlistRow = (setlistId: string) => `document.querySelector(${js(`.band-library-setlists [data-setlist="${setlistId}"]`)})`;
   const buttonsIn = (scope: string) => site.evaluate<string[]>(`[...(${scope}?.querySelectorAll("button") ?? [])].map((b) => b.textContent.trim())`);
@@ -199,7 +199,7 @@ try {
     assert.deepEqual(await app.texts(".tabs [role=tab]"), ["My Songs", "Setlists", "Bands"], "three tabs: My Songs, Setlists, Bands");
     await topTab("bands");
     assert.equal(await site.evaluate<string>("location.hash"), "#/bands", "the Bands tab has its own address");
-    await app.until(`document.querySelector(".bands-tab")?.textContent.includes("Play with your band. Sign in to share setlists and follow gigs.")`, "the signed-out Bands screen");
+    await app.until(`document.querySelector(".bands-tab")?.textContent.includes("Sign in to see your bands.")`, "the signed-out Bands screen");
     await app.shot(shots && `${shots}/bands-tab-signed-out.png`);
     await app.click("Sign in", `document.querySelector(".bands-tab")`);
     await finishSignUp("Sam Rivera");
@@ -223,25 +223,24 @@ try {
     assert.equal(after.songs.length, before.songs.length, "opening the band's Songs adds nothing to My Songs");
     for (const song of BAND_SONGS) assert.ok(!after.songs.some((mine) => mine.title === song.title), `${song.title} is not in My Songs`);
     await bandTab("Gigs");
-    await app.until(`document.querySelector(".bands-sheet")?.textContent.includes("No gigs planned yet.")`, "the empty Gigs section");
+    await app.until(`document.querySelector(".band-page")?.textContent.includes("No gigs planned yet.")`, "the empty Gigs section");
     await bandTab("Members");
     await app.until(`document.querySelectorAll(".bands-members li").length === 3`, "the three members");
     await bandTab("Setlists");
     await app.until(`!!${setlistRow(pFriday)}`, "the band's setlists");
-    await app.click("+ New setlist", `document.querySelector(".bands-sheet")`);
+    await app.click("+ New setlist", `document.querySelector(".band-page")`);
     await app.type("Setlist name", "Sam picks");
     await site.evaluate(
       `(() => { const field = document.querySelector("[aria-label='Add a band song']"); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(field, ${js(pSongIds[1])}); field.dispatchEvent(new Event("change", { bubbles: true })); })()`,
     );
     await settle();
-    await app.click("Save", `document.querySelector(".bands-sheet")`);
-    await app.click("Public", `document.querySelector(".bands-sheet")`);
-    await app.click("Share", `document.querySelector(".bands-sheet")`);
+    await app.click("Save", `document.querySelector(".band-page")`);
+    await app.click("Public", `document.querySelector(".band-page")`);
+    await app.click("Share", `document.querySelector(".band-page")`);
     await app.until(`[...document.querySelectorAll(".band-library-setlists li")].some((li) => li.textContent.includes("Sam picks") && li.textContent.includes("Blue Notes Bravo"))`, "Sam's new band setlist");
     await bandTab("Chat");
-    await app.click("Open band chat", `document.querySelector(".bands-sheet")`);
-    await app.until(`document.querySelector(".chat-sheet")?.dataset.view === "thread" && document.querySelector(".chat-sheet h2")?.textContent === "The Blue Notes"`, "the band thread", 15000);
-    assert.equal(await site.evaluate<boolean>(`!!document.querySelector(".bands-sheet")`), false, "the chat opens in place of the band page");
+    await app.until(`!!document.querySelector(".band-page .chat-messages") && document.querySelector(".band-page h2")?.textContent === "The Blue Notes"`, "the band thread", 15000);
+    assert.equal(await site.evaluate<boolean>(`!!document.querySelector(".chat-sheet")`), false, "the chat opens on the band page, not in a sheet");
     await closeSheets();
     assert.equal((await stored()).songs.length, before.songs.length, "nothing on the band page added a song to My Songs");
   });
@@ -260,7 +259,7 @@ try {
     assert.match(await site.evaluate<string>(`${setlistRow(pEmpty)}.textContent`), /Add a song first/, "and says Add a song first");
     await offline(true);
     await app.click("Show code", setlistRow(pFriday));
-    await app.until(`document.querySelector(".bands-sheet")?.textContent.includes("Can't reach the server")`, "the offline words");
+    await app.until(`document.querySelector(".band-page")?.textContent.includes("Can't reach the server")`, "the offline words");
     assert.equal(await site.evaluate<boolean>(`!!document.querySelector(".codes-qr")`), false, "offline, no QR code is shown");
     await offline(false);
     await bandsView("band");
@@ -268,7 +267,7 @@ try {
     await app.until(`!!${setlistRow(pFriday)}`, "the Friday set row again");
     await app.click("Show code", setlistRow(pFriday));
     const code = await shownCode();
-    assert.equal(await sheetText(".bands-sheet .codes-words"), "Friday set · The Blue Notes", "the QR says which setlist and band");
+    assert.equal(await sheetText(".band-page .codes-words"), "Friday set · The Blue Notes", "the QR says which setlist and band");
     await app.shot(shots && `${shots}/band-setlist-code.png`);
     assert.deepEqual(ok(await pMike.call("/api/bands/setlist-code", { code }), "Mike scans Sam's QR"), { bandId: pBand, setlistId: pFriday }, "the QR opens the Friday set for Mike");
     await closeSheets();

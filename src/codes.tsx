@@ -34,13 +34,16 @@ const endTime = (ms: number) =>
     ? new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
     : new Date(ms).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 
+type CodeRequest = { kind: CodeKind } & Record<string, unknown>;
+
 /**
- * Show my code: a big black-on-white QR code with the plain words under it and its end time.
- * `request` is the body for `POST /api/codes`. A code that ends is swapped for a fresh one while the screen is open.
+ * A code for `request`, made when the screen opens and made again when it ends, so a tap can use the link at once.
+ * `problem` is why the last try failed. `retry` tries again.
  */
-export function ShowCode({ request, words, share, onStopped, onError }: { request: { kind: CodeKind } & Record<string, unknown>; words: string; share?: true; onStopped: () => void; onError: (error: unknown) => void }) {
+export function useCode(request: CodeRequest, onError?: (error: unknown) => void) {
   const [shown, setShown] = useState<ShownCode | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [problem, setProblem] = useState<unknown>(null);
+  const [round, setRound] = useState(0);
 
   useEffect(() => {
     if (shown && shown.expiresAt > Date.now()) {
@@ -48,18 +51,52 @@ export function ShowCode({ request, words, share, onStopped, onError }: { reques
       return () => clearTimeout(timer);
     }
     let live = true;
-    api<ShownCode>("/api/codes", request).then((made) => live && setShown(made), (error) => live && onError(error));
+    api<ShownCode>("/api/codes", request).then(
+      (made) => {
+        if (!live) return;
+        setProblem(null);
+        setShown(made);
+      },
+      (error) => {
+        if (!live) return;
+        setProblem(error);
+        onError?.(error);
+      },
+    );
     return () => {
       live = false;
     };
-  }, [shown]);
+  }, [shown, round]);
+
+  const retry = () => {
+    setShown(null);
+    setRound((n) => n + 1);
+  };
+  return { shown, problem, retry };
+}
+
+/**
+ * Opens the phone's share sheet with the link inside the tap, since iOS refuses a share that comes after an await.
+ * Without a share sheet it copies the link. Resolves true once the link is copied.
+ */
+export function shareLink(link: string, title: string): Promise<boolean> {
+  if (navigator.share) {
+    navigator.share({ title, url: link }).catch(() => {});
+    return Promise.resolve(false);
+  }
+  return navigator.clipboard ? navigator.clipboard.writeText(link).then(() => true, () => false) : Promise.resolve(false);
+}
+
+/**
+ * Show my code: a big black-on-white QR code with the plain words under it and its end time.
+ * `request` is the body for `POST /api/codes`. A code that ends is swapped for a fresh one while the screen is open.
+ */
+export function ShowCode({ request, words, share, onStopped, onError }: { request: CodeRequest; words: string; share?: true; onStopped: () => void; onError: (error: unknown) => void }) {
+  const { shown } = useCode(request, onError);
+  const [copied, setCopied] = useState(false);
 
   if (!shown) return <p className="account-note">Making your code…</p>;
 
-  const shareLink = async () => {
-    if (navigator.share) return navigator.share({ title: words, url: shown.link }).catch(() => {});
-    await navigator.clipboard?.writeText(shown.link).then(() => setCopied(true), () => {});
-  };
   const stop = () => api("/api/codes/stop", { code: shown.code }).then(onStopped, onError);
 
   return (
@@ -70,7 +107,7 @@ export function ShowCode({ request, words, share, onStopped, onError }: { reques
       {share ? (
         <>
           <p className="codes-link">{shown.link}</p>
-          <button type="button" className="account-primary" onClick={shareLink}>
+          <button type="button" className="account-primary" onClick={() => shareLink(shown.link, words).then((done) => done && setCopied(true))}>
             {copied ? "Link copied" : "Share link"}
           </button>
         </>

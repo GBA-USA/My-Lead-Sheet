@@ -1,5 +1,5 @@
 import seedLibrary from "../data/library.json" with { type: "json" };
-import type { BandLibrary, BandSetlist, BandSong, CopiedSong, SongContent } from "../src/band-library-model";
+import type { BandLibrary, BandSetlist, BandSong, SongContent } from "../src/band-library-model";
 import type { ChartLine, ChartSection } from "../src/types";
 import { randomBytes, toBase64Url } from "./bytes";
 import { liveCode } from "./codes";
@@ -233,13 +233,6 @@ export const bandLibrary = {
     if (!setlistRow(band.sql, setlistId)) throw refused("not-found");
   },
 
-  copyOut(band: RoomStore, userId: string, songId: string): { song: SongContent; print: string; from: Chain } {
-    inRoom(band.sql, userId);
-    const row = songRow(band.sql, songId);
-    if (!row) throw refused("not-found");
-    return { song: JSON.parse(row.song), print: row.print, from: holding(band.sql, row, userId) };
-  },
-
   /**
    * What the caller holds of the band songs that show this chart, except the song being edited. With `takenFrom` (the
    * share ids the caller's own copies came through), only the songs the caller shared or took a copy from; with null, all.
@@ -283,12 +276,6 @@ export function setlistCopyFor(sent: SentSetlist, userId: string) {
 }
 
 export const selfCopies = {
-  record(sql: SqlStorage, userId: string, from: Chain, print: string): CopiedSong["copy"] {
-    const id = adopt(sql, newId("copy"), userId, from, "public");
-    sql.exec(`INSERT INTO song_copies (copy_id, print) VALUES (?, ?)`, id, print);
-    return { id, canSendOn: allowed([storeOf(sql)(id)!, ...from], userId, "public").ok };
-  },
-
   /** Keeps a copy that arrived from a friend. A node already under this id stays as it was, so a reused id can only fail closed. */
   receive(sql: SqlStorage, chain: Chain, print: string) {
     for (const share of chain) keep(sql, share);
@@ -535,12 +522,9 @@ export const LIBRARY_ROUTES: Record<string, Route> = {
     return { body: { bandId, setlistId } };
   },
 
+  /** Band songs stay in the band (t814u): nothing copies one out into a player's own songs. */
   async "POST /api/bands/library/copy-song"(c) {
-    const bandId = bandIdIn(c.body);
-    const songId = idIn(c.body.songId);
-    const userId = signedIn(c).user_id;
-    const { song, print, from } = await fromRoom(roomOf(c, bandId).copyBandSong(userId, songId));
-    const copy = await selfRoom(c, userId).recordCopy(userId, from, print);
-    return { body: { song, copy } satisfies CopiedSong };
+    signedIn(c);
+    throw new Refused("band-only", 403);
   },
 };

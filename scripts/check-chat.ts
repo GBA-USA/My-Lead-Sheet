@@ -272,6 +272,8 @@ async function appChecks() {
       await app.pick("Messages");
       await view("list");
     };
+    const onBandChat = (bandId: string) =>
+      app.until(`location.hash === ${JSON.stringify(`#/band/${bandId}?s=chat`)} && !document.querySelector(".chat-sheet") && !!document.querySelector(".band-page .chat-composer")`, "the band's thread on its band page", 15000);
     const terry = await passwordPlayer(base, origin, "Terry Bass", "terrybass");
     const mike = await passwordPlayer(base, origin, "Mike Keys", "mikekeys");
     const terryReads = async (roomId: string) => ((await terry.call("/api/chat/open", { roomId })).body.messages as ChatMessage[]);
@@ -300,8 +302,8 @@ async function appChecks() {
     await openMessages();
     assert.deepEqual(await app.texts(".chat-row-title"), ["The Blue Notes"], "the band is on Sam's Messages list");
     await openRow("The Blue Notes");
-    await view("thread");
-    assert.equal(await app.text(".chat-sheet h2"), "The Blue Notes", "the thread opens");
+    await onBandChat(bandId);
+    assert.equal(await app.text(".band-page h2"), "The Blue Notes", "the thread opens");
     await app.type("Message", "Hello band");
     await app.click("Send");
     await app.until(`[...document.querySelectorAll(".chat-bubble")].some((b) => b.textContent.includes("Hello band"))`, "Sam's bubble");
@@ -336,9 +338,8 @@ async function appChecks() {
 
     await app.click("Mute");
     await app.click("8 hours");
-    await app.until(`document.querySelector(".chat-sheet")?.textContent.includes("Muted")`, "the muted state");
-    await app.click("Back");
-    await view("list");
+    await app.until(`document.querySelector(".band-page")?.textContent.includes("Muted")`, "the muted state");
+    await openMessages();
     assert.equal(await site.evaluate<number>(`document.querySelectorAll(".chat-row .chat-muted").length`), 1, "the muted thread shows it on the list");
     await app.click("✕");
     await terry.call("/api/chat/send", { roomId: bandId, msgId: "terryhello0002", text: "Another one" });
@@ -346,10 +347,10 @@ async function appChecks() {
     assert.deepEqual(await app.texts(".chat-row .chat-badge"), ["1"], "a new message shows as one unread on the list");
     await app.shot(shots && `${shots}/chat-list.png`);
     await openRow("The Blue Notes");
-    await view("thread");
+    await onBandChat(bandId);
+    await app.until(`!!document.querySelector(".band-page .chat-new-line")`, "the New messages line");
     assert.ok(await site.evaluate<boolean>(`(() => { const line = document.querySelector(".chat-new-line"); return !!line && line.parentElement.querySelector(".chat-bubble").textContent === "Another one"; })()`), "the New messages line sits above the unread message");
-    await app.click("Back");
-    await view("list");
+    await openMessages();
     await app.until(`document.querySelectorAll(".chat-row .chat-badge").length === 0`, "the badge clearing");
     pass("mute, unread badge and the New messages line");
 
@@ -357,6 +358,7 @@ async function appChecks() {
     await app.openBands();
     await app.until(`document.querySelector(".bands-sheet")?.dataset.view === "list" && document.querySelectorAll(".bands-list li").length > 0`, "the Bands list");
     await app.click("Open");
+    await app.click("Members", `document.querySelector(".band-tabs")`);
     await app.until(`document.querySelectorAll(".bands-members li").length === 2`, "the Members list");
     await app.click("Message", `[...document.querySelectorAll(".bands-members li")].find((li) => li.textContent.startsWith("Terry Bass"))`);
     await view("thread");
@@ -386,7 +388,7 @@ async function appChecks() {
     await view("list");
     assert.deepEqual(await app.texts(".chat-row-title"), ["Mike Keys", "Terry Bass", "The Blue Notes"], "the list has both DMs and the band, newest first");
     await openRow("The Blue Notes");
-    await view("thread");
+    await onBandChat(bandId);
     await offline(true);
     await app.type("Message", "Sam's late one");
     await app.click("Send");
@@ -406,7 +408,7 @@ async function appChecks() {
     assert.equal((await appCalls("/api/bands/join", { code })).status, 200, "Pat joins the band on the same phone");
     await openMessages();
     await openRow("The Blue Notes");
-    await view("thread");
+    await onBandChat(bandId);
     assert.equal(await waiting(), 0, "Pat's thread shows nothing of Sam's waiting");
     await sleep(1500);
     const bandLines = (await terryReads(bandId)).map((m) => `${m.fromName}: ${m.text}`);
@@ -415,8 +417,8 @@ async function appChecks() {
     pass("another account on the same phone never sends what Sam wrote offline");
 
     await terry.call("/api/bands/remove", { bandId, userId: pat.userId });
-    await app.until(`document.querySelector(".chat-sheet")?.textContent.includes("not in this band")`, "the thread closing on removal", 8000);
-    await view("list");
+    await app.until(`location.hash === "#/bands" && (document.querySelector(".bands-notice")?.textContent ?? "").includes("not in this band")`, "the thread closing on removal", 8000);
+    await openMessages();
     assert.match(await app.text(".chat-sheet"), /No messages yet/, "the band leaves Pat's list");
     pass("a removed member's open thread closes at once");
 

@@ -90,9 +90,9 @@ async function appChecks() {
         if (beacon) navigator.sendBeacon = (url, data) => (keep("beacon " + url, data), beacon(url, data));
       })();`,
     });
-    const view = (name: string) => app.until(`document.querySelector(".bands-sheet")?.dataset.view === ${JSON.stringify(name)} && !document.querySelector(".bands-sheet").textContent.includes("Loading")`, `the ${name} view`, 15000);
-    const toggle = () => site.evaluate(`document.querySelector(".bands-sheet input[role=switch]").click()`);
-    const switchIs = (on: boolean) => app.until(`(() => { const s = document.querySelector(".bands-sheet input[role=switch]"); return s && s.checked === ${on} && !s.disabled; })()`, `the switch ${on ? "on" : "off"}`);
+    const view = (name: string) => app.until(`document.querySelector(".bands-sheet, .band-page")?.dataset.view === ${JSON.stringify(name)} && !document.querySelector(".bands-sheet, .band-page").textContent.includes("Loading")`, `the ${name} view`, 15000);
+    const toggle = () => site.evaluate(`document.querySelector(".bands-sheet input[role=switch], .band-page input[role=switch]").click()`);
+    const switchIs = (on: boolean) => app.until(`(() => { const s = document.querySelector(".bands-sheet input[role=switch], .band-page input[role=switch]"); return s && s.checked === ${on} && !s.disabled; })()`, `the switch ${on ? "on" : "off"}`);
     const mike = await passwordPlayer(base, origin, "Mike Keys", "mikekeys");
 
     await site.send("Page.navigate", { url: `${origin}/#/songs` });
@@ -113,7 +113,7 @@ async function appChecks() {
     await app.type("New band", "Sam's Trio");
     await app.click("Create band");
     await view("band");
-    await app.click("Invite");
+    await app.click("Show as QR");
     await view("invite");
     await app.until(`!!document.querySelector(".codes-qr svg")`, "the QR code");
     const link = readQr(await site.evaluate<string>(`document.querySelector(".codes-qr").innerHTML`));
@@ -121,10 +121,11 @@ async function appChecks() {
     const packOf = async () => (await mike.call("/api/bands/pack", { bandId })).body;
     await app.click("Back");
     await view("band");
+    await app.click("Members", `document.querySelector(".band-tabs")`);
     await app.click("Band settings");
     await view("settings");
-    assert.match(await app.text(".bands-sheet"), /Scroll with the leader/, "Band settings shows Scroll with the leader");
-    assert.match(await app.text(".bands-sheet"), /Nobody's private versions are shared\./, "and says nobody's private versions are shared");
+    assert.match(await app.text(".bands-sheet, .band-page"), /Scroll with the leader/, "Band settings shows Scroll with the leader");
+    assert.match(await app.text(".bands-sheet, .band-page"), /Nobody's private versions are shared\./, "and says nobody's private versions are shared");
     await switchIs(false);
     await toggle();
     await switchIs(true);
@@ -145,6 +146,7 @@ async function appChecks() {
     await view("list");
     await app.click("Open");
     await view("band");
+    await app.click("Members", `document.querySelector(".band-tabs")`);
     await app.click("Band settings");
     await view("settings");
     await switchIs(true);

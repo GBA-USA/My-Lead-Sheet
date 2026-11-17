@@ -16,7 +16,7 @@ export const newGigId = () => `gig_${toBase64Url(crypto.getRandomValues(new Uint
 
 const dayOf = (date: string) => new Date(`${date}T00:00:00`);
 const daysUntil = (date: string) => Math.round((dayOf(date).getTime() - new Date().setHours(0, 0, 0, 0)) / DAY_MS);
-const shownDate = (date: string) => dayOf(date).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+export const shownDate = (date: string) => dayOf(date).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 
 /** Plan a gig: name and date, who's playing, the leader and backup, and the admin's Connection for tonight. */
 export function GigPlanForm({ band, me, setlistName, busy, onSend, onCancel }: { band: BandView; me: string; setlistName: string; busy: boolean; onSend: (draft: GigDraft) => void; onCancel: () => void }) {

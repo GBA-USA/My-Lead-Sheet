@@ -352,6 +352,29 @@ try {
     landed(await terry.call("/api/chat/send-song", back), back, "and Terry can send it to Mike too, whoever sent it Private first");
   });
 
+  await check("a copy's lineage holds on the DM chain: another player's copy, a Public copy carrying a Private chart, and a Private copy of a built-in are refused, while the player's own built-in still sends", async () => {
+    const harbor = chart("Harbor Song", "Terry", "Lights across the harbor");
+    const toMike = sendBody(mike, harbor, { choice: "public" });
+    landed(await terry.call("/api/chat/send-song", toMike), toMike, "Terry sends Mike Harbor Song as Public");
+    assert.deepEqual(refusal(await send(ann, dana, harbor, { copyId: toMike.shareId })), [404, "not_found"], "Ann can't name Mike's copy as hers");
+    const gateLock = chart("Gate Lock", "Terry", "Lock the garden gate");
+    const lockToMike = sendBody(mike, gateLock, { choice: "private" });
+    landed(await terry.call("/api/chat/send-song", lockToMike), lockToMike, "Terry sends Mike Gate Lock as Private");
+    assert.deepEqual(refusal(await send(mike, ann, gateLock, { copyId: toMike.shareId })), [403, "private_copy"], "naming his Public copy doesn't let Mike send the Private Gate Lock with it");
+    const claimed = await send(mike, ann, gateLock, { copyId: lockToMike.shareId, reshareable: true } as Partial<SendBody>);
+    assert.equal(claimed.status, 403, `nor does claiming his Private copy is reshareable (${js(claimed.body)})`);
+    const sameOnScreen = { ...gateLock, body: [{ heading: "Verse 1", lines: [{ lyrics: "Lock the garden gate   ", chords: "G       C", hidden: "x" }, {}] }, { heading: "", lines: [] }] };
+    const tweaked = await send(mike, ann, sameOnScreen as SongContent);
+    assert.equal(tweaked.status, 403, `nor changing only what never shows: key order, an unknown field, trailing spaces, empty lines (${js(tweaked.body)})`);
+    const builtIn = content(seed.songs[3]);
+    const middleToMike = sendBody(mike, builtIn, { choice: "private" });
+    landed(await terry.call("/api/chat/send-song", middleToMike), middleToMike, `Terry sends Mike the built-in ${builtIn.title} as Private`);
+    const named = await send(mike, ann, builtIn, { copyId: middleToMike.shareId });
+    assert.equal(named.status, 403, `Mike can't send Terry's Private copy of the built-in ${builtIn.title} on by naming it (${js(named.body)})`);
+    const own = sendBody(ann, builtIn, { choice: "public" });
+    landed(await mike.call("/api/chat/send-song", own), own, `but his own built-in ${builtIn.title} is still his to send`);
+  });
+
   await check("no page errors", async () => assert.deepEqual(await app.errors(), [], "the page logged no errors"));
 } finally {
   await site.close();

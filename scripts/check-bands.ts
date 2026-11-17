@@ -164,9 +164,12 @@ async function appChecks() {
   const sockets: WebSocket[] = [];
   try {
     const app = await appPage(site);
-    const view = (name: string) => app.until(`document.querySelector(".bands-sheet")?.dataset.view === ${JSON.stringify(name)} && !document.querySelector(".bands-sheet").textContent.includes("Loading")`, `the ${name} view`, 15000);
+    const view = (name: string) => app.until(`document.querySelector(".bands-sheet, .band-page")?.dataset.view === ${JSON.stringify(name)} && !document.querySelector(".bands-sheet, .band-page").textContent.includes("Loading")`, `the ${name} view`, 15000);
     const noticed = (pattern: string) => app.until(`new RegExp(${JSON.stringify(pattern)}).test(document.querySelector(".bands-notice")?.textContent ?? "")`, `the notice ${pattern}`);
-    const members = () => app.texts(".bands-members li > span:first-child");
+    const members = async () => {
+      await app.click("Members", `document.querySelector(".band-page .band-tabs")`);
+      return app.texts(".bands-members li > span:first-child");
+    };
     const fitsPhone = async (what: string) => {
       const fit = await app.fits();
       assert.ok(fit.page <= WIDTH && fit.left >= 0 && fit.right <= WIDTH, `${what} fits the phone with no sideways scroll (${JSON.stringify(fit)})`);
@@ -213,13 +216,15 @@ async function appChecks() {
     await app.shot(shots && `${shots}/bands-join.png`);
     await app.click("Join");
     await view("band");
+    assert.deepEqual(await app.texts(".band-page .band-tabs [role=tab]"), ["Songs", "Setlists", "Chat", "Gigs", "Members"], "the band page's sections are Songs, Setlists, Chat, Gigs and Members, in that order");
     await noticed("You joined The Blue Notes\\.");
     assert.deepEqual(await members(), ["Terry BassAdmin", "Sam Rivera"], "Sam is in the band, with Terry as its admin");
     assert.deepEqual(await namesIn(terry, blueNotes), ["Terry Bass (admin)", "Sam Rivera"], "and Terry's phone sees Sam joined");
-    assert.equal(await site.evaluate<number>(`document.querySelectorAll(".bands-sheet .account-primary").length`), 0, "a member sees no Invite or Band settings");
+    const memberButtons = await app.texts(".band-page button");
+    assert.ok(memberButtons.includes("Invite") && !memberButtons.includes("Band settings") && !memberButtons.includes("Reset link"), `a member sees Invite but no Band settings or Reset link (${JSON.stringify(memberButtons)})`);
     pass("a band link opened signed out joins after sign-up, in the app");
 
-    await app.click("✕");
+    await site.evaluate(`location.hash = "#/songs"`);
     assert.deepEqual(await app.openMenu(), ["Account", "Friends", "Messages"], "signed in, Settings has no Bands row: the Bands tab is the one way in");
     await app.openBands();
     await view("list");
@@ -229,9 +234,9 @@ async function appChecks() {
     await view("band");
     assert.deepEqual(await members(), ["Sam RiveraAdmin"], "a new band has its maker as admin");
     await fitsPhone("a band");
-    await app.click("Invite");
+    await app.click("Show as QR");
     await view("invite");
-    assert.equal(await app.text(".bands-sheet .codes-words"), "Join Sam's Trio", "Invite says what the code does");
+    assert.equal(await app.text(".band-page .codes-words"), "Join Sam's Trio", "Invite says what the code does");
     const firstLink = await shownLink();
     assert.ok(firstLink.startsWith(`${origin}/c/band.`) && !/sam|trio/i.test(firstLink), `the QR code is a band code link with no names (${firstLink})`);
     assert.equal(await app.text(".codes-link"), firstLink, "the link under it matches");
@@ -269,22 +274,23 @@ async function appChecks() {
     await app.shot(shots && `${shots}/bands-members.png`);
     pass("Remove and Make admin work from Members");
 
-    await app.click("All bands");
+    await app.openBands();
     await view("list");
     assert.deepEqual(await app.texts(".bands-list li > span:first-child"), ["Sam's TrioAdmin · 2 members", "The Blue Notes2 members"], "the list shows both bands by name, with Sam's role");
     await app.click("Open", `[...document.querySelectorAll(".bands-list li")].find((li) => li.textContent.startsWith("The Blue Notes"))`);
     await view("band");
-    assert.equal(await app.text(".bands-sheet h2"), "The Blue Notes", "Open goes to that band");
+    assert.equal(await app.text(".band-page h2"), "The Blue Notes", "Open goes to that band");
+    await app.click("Members", `document.querySelector(".band-page .band-tabs")`);
     await app.click("Leave band");
     await app.click("Yes, leave The Blue Notes");
-    await view("list");
+    await app.until(`location.hash === "#/bands"`, "the Bands tab after leaving");
     await noticed("You left The Blue Notes\\.");
-    assert.deepEqual(await app.texts(".bands-list li > span:first-child"), ["Sam's TrioAdmin · 2 members"], "The Blue Notes is off the list");
+    await app.until(`document.querySelectorAll(".bands-tab .song-row").length === 1`, "the Bands tab without The Blue Notes");
+    assert.deepEqual(await app.texts(".bands-tab .song-row"), ["Sam's TrioAdmin · 2 members"], "The Blue Notes is off the list");
     assert.deepEqual(await namesIn(terry, blueNotes), ["Terry Bass (admin)"], "and off Terry's Members");
     await app.shot(shots && `${shots}/bands-list.png`);
     pass("Leave band takes you out");
 
-    await app.click("✕");
     await app.openMenu();
     await app.pick("Account");
     await app.until(`document.querySelector(".account-sheet")?.dataset.step === "account"`, "the account screen");

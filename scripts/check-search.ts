@@ -173,7 +173,7 @@ try {
     assert.ok(tapped, `a ${title} row to tap`);
     await settle();
   };
-  const bandsSheet = (name: string) => app.until(`document.querySelector(".bands-sheet")?.dataset.view === ${js(name)} && !document.querySelector(".bands-sheet").textContent.includes("Loading")`, `the bands ${name} view`, 15000);
+  const bandsSheet = (name: string) => app.until(`document.querySelector(".bands-sheet, .band-page")?.dataset.view === ${js(name)} && !document.querySelector(".bands-sheet, .band-page").textContent.includes("Loading")`, `the bands ${name} view`, 15000);
   const openBandSongs = async (name: string, bandId: string) => {
     await site.evaluate(`location.hash = "#/bands"`);
     await app.until(`[...document.querySelectorAll(".bands-tab .song-title")].some((t) => t.textContent.trim() === ${js(name)})`, `${name} on the Bands tab`, 15000);
@@ -182,7 +182,7 @@ try {
     await app.click("Songs", `document.querySelector(".band-tabs")`);
     await app.until(`!!document.querySelector(".band-library-songs")`, `${name}'s songs`, 15000);
     for (const end = Date.now() + 8000; Date.now() < end && !(await bandKeys()).some((key) => key.startsWith(`${bandId}/`)); ) await settle(100);
-    await app.click("✕", `document.querySelector(".bands-sheet")`);
+    await site.evaluate(`location.hash = "#/bands"`);
   };
   const content = ({ id: _id, ref: _ref, copy: _copy, ...song }: Song) => song;
 
@@ -221,9 +221,8 @@ try {
     await app.click("Members", `document.querySelector(".band-tabs")`);
     await app.click("Leave band");
     await app.click("Yes, leave Old Band");
-    await bandsSheet("list");
+    await app.until(`location.hash === "#/bands"`, "the Bands tab after leaving");
     for (const end = Date.now() + 8000; Date.now() < end && (await bandKeys()).some((key) => key.startsWith(`${old.bandId}/`)); ) await settle(100);
-    await app.click("✕", `document.querySelector(".bands-sheet")`);
     await site.evaluate(`location.hash = "#/songs"`);
     await typeIn("Search songs", "mustang");
     assert.deepEqual(await groups(), ["The Blue Notes: Mustang Sally"], "only the band Sam is still in shows");
@@ -296,6 +295,7 @@ try {
 
   const myCount = () => site.evaluate<number>(`JSON.parse(localStorage.getItem("leadSheetsLibrary")).songs.length`);
   const bandRow = (artist: string) => `[...document.querySelectorAll(".band-library-songs li")].find((li) => li.textContent.includes(${js(artist)}))`;
+  const dmCard = (artist: string) => `[...document.querySelectorAll(".chat-sheet li")].find((li) => li.textContent.includes(${js(artist)}))`;
   const openBlueSongs = async () => {
     await site.evaluate(`location.hash = "#/bands"`);
     await app.until(`[...document.querySelectorAll(".bands-tab .song-title")].some((t) => t.textContent.trim() === "The Blue Notes")`, "The Blue Notes on the Bands tab", 15000);
@@ -304,31 +304,49 @@ try {
     await app.click("Songs", `document.querySelector(".band-tabs")`);
     await app.until(`!!document.querySelector(".band-library-songs")`, "The Blue Notes' songs", 15000);
   };
+  const openTerrysDm = async () => {
+    await site.evaluate(`location.hash = "#/songs"`);
+    await app.openMenu();
+    await app.pick("Messages");
+    await app.until(`document.querySelector(".chat-sheet")?.dataset.view === "list" && [...document.querySelectorAll(".chat-row-title")].some((t) => t.textContent === "Terry Bass")`, "Terry's DM on the list", 15000);
+    await site.evaluate(`[...document.querySelectorAll(".chat-row")].find((b) => b.querySelector(".chat-row-title")?.textContent === "Terry Bass").click()`);
+    await app.until(`document.querySelector(".chat-sheet")?.dataset.view === "thread"`, "Terry's DM");
+  };
+  const CHAIN_BREAKERS = [["Chain Breaker", "The Other Chain Gang"], ["chain-breaker", "ZACH WILLIAMS"]] as const;
 
-  await check("a same-title band song by a different artist adds with no prompt", async () => {
-    for (const [title, artist] of [["Chain Breaker", "The Other Chain Gang"], ["chain-breaker", "ZACH WILLIAMS"]]) {
+  await check("a same-title song by a different artist adds with no prompt, and a band song stays in the band", async () => {
+    for (const [title, artist] of CHAIN_BREAKERS) {
       const shared = await terry.call("/api/bands/library/share-song", { bandId: blue.bandId, song: { ...content(seedSong(10)), title, artist }, choice: "public", localId: null });
       assert.equal(shared.status, 200, `Terry shares ${title} by ${artist} into The Blue Notes`);
     }
     await openBlueSongs();
     await app.until(`!!${bandRow("ZACH WILLIAMS")} && !!${bandRow("The Other Chain Gang")}`, "both Chain Breaker rows");
+    assert.ok(!(await site.evaluate<boolean>(`[...document.querySelectorAll(".band-library-songs button")].some((b) => b.textContent.trim() === "Add to My Songs")`)), "a band song row has no Add to My Songs");
+    const me = await site.evaluate<{ userId: string; handle: string }>(`fetch("/api/me").then((r) => r.json()).then((reply) => reply.account)`);
+    assert.equal((await terry.call("/api/friends/request", { handle: me.handle })).status, 200, "Terry asks Sam to be friends");
+    assert.equal((await appCalls("/api/friends/accept", { userId: terry.userId })).status, 200, "Sam accepts");
+    for (const [title, artist] of CHAIN_BREAKERS) {
+      const sent = await terry.call("/api/chat/send-song", { userId: me.userId, msgId: crypto.randomUUID().replace(/-/g, ""), shareId: crypto.randomUUID().replace(/-/g, ""), song: { ...content(seedSong(10)), title, artist }, versions: [], data: null, choice: "public" });
+      assert.equal(sent.status, 200, `Terry sends Sam ${title} by ${artist} (${js(sent.body)})`);
+    }
+    await openTerrysDm();
+    await app.until(`!!${dmCard("The Other Chain Gang")}?.querySelector("button")`, "The Other Chain Gang's card", 15000);
     const before = await myCount();
-    await app.click("Add to My Songs", bandRow("The Other Chain Gang"));
-    await app.until(`document.querySelector(".bands-notice")?.textContent.includes("Added Chain Breaker to My Songs.")`, "the added notice", 15000);
-    assert.equal(await myCount(), before + 1, "the song by a different artist is added");
-    assert.ok(!(await site.evaluate<string>(`document.querySelector(".bands-sheet").textContent`)).includes("You already have"), "with no duplicate prompt");
+    await app.click("Add to My Songs", dmCard("The Other Chain Gang"));
+    await app.until(`JSON.parse(localStorage.getItem("leadSheetsLibrary")).songs.length === ${before + 1}`, "the song by a different artist added", 15000);
+    assert.ok(!(await site.evaluate<string>(`document.querySelector(".chat-sheet").textContent`)).includes("You already have"), "with no duplicate prompt");
   });
 
-  await check("the duplicate guard offers Open it when adding a band song you already have, and adds nothing until the player chooses", async () => {
-    await app.until(`!!${bandRow("ZACH WILLIAMS")}?.querySelector("button")`, "the ZACH WILLIAMS row's Add button", 15000);
+  await check("the duplicate guard offers Open it when adding a song you already have, and adds nothing until the player chooses", async () => {
+    await app.until(`!!${dmCard("ZACH WILLIAMS")}?.querySelector("button")`, "the ZACH WILLIAMS card's Add button", 15000);
     const before = await myCount();
-    await app.click("Add to My Songs", bandRow("ZACH WILLIAMS"));
-    await app.until(`${bandRow("ZACH WILLIAMS")}?.textContent.includes("You already have Chain Breaker · Open it?")`, "the duplicate prompt on the row");
+    await app.click("Add to My Songs", dmCard("ZACH WILLIAMS"));
+    await app.until(`${dmCard("ZACH WILLIAMS")}?.textContent.includes("You already have Chain Breaker · Open it?")`, "the duplicate prompt on the card");
     await settle(500);
     assert.equal(await myCount(), before, "nothing is added before the player chooses");
-    assert.ok(await site.evaluate<boolean>(`[...${bandRow("ZACH WILLIAMS")}.querySelectorAll("button")].some((b) => b.textContent.trim() === "Add anyway")`), "Add anyway is offered");
-    await site.evaluate(`[...${bandRow("ZACH WILLIAMS")}.querySelectorAll("a")].find((a) => a.textContent.trim() === "Open").click()`);
-    await app.until(`location.hash === "#/song/10" && !document.querySelector(".bands-sheet") && document.querySelector(".sheet .sheet-name")?.textContent === "Chain Breaker"`, "Open shows the Chain Breaker already in My Songs");
+    assert.ok(await site.evaluate<boolean>(`[...${dmCard("ZACH WILLIAMS")}.querySelectorAll("button")].some((b) => b.textContent.trim() === "Add anyway")`), "Add anyway is offered");
+    await site.evaluate(`[...${dmCard("ZACH WILLIAMS")}.querySelectorAll("a")].find((a) => a.textContent.trim() === "Open").click()`);
+    await app.until(`location.hash === "#/song/10" && !document.querySelector(".chat-sheet") && document.querySelector(".sheet .sheet-name")?.textContent === "Chain Breaker"`, "Open shows the Chain Breaker already in My Songs");
     assert.equal(await myCount(), before, "and Open adds nothing");
   });
 
@@ -382,7 +400,6 @@ try {
       await app.signUp("Ann Horn");
       assert.equal((await appCalls("/api/bands/join", { code: blue.code })).status, 200, "Ann joins The Blue Notes");
       await openBlueSongs();
-      await app.click("✕", `document.querySelector(".bands-sheet")`);
       await site.evaluate(`location.hash = "#/songs"`);
       await typeIn("Search songs", "mustang");
       await app.until(`[...document.querySelectorAll(".search-group-head")].some((h) => h.textContent.trim() === "The Blue Notes")`, "Ann, signed in, finding the band's song");

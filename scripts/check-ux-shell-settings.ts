@@ -339,8 +339,8 @@ try {
     await load("#/bands");
     await until(`[...document.querySelectorAll(".song-row")].some((b) => b.textContent.includes("The Low Tides"))`, "the band in the Bands tab", 8000);
     await evaluate(`[...document.querySelectorAll(".song-row")].find((b) => b.textContent.includes("The Low Tides")).click()`);
-    await until(`document.querySelector(".bands-sheet")?.dataset.view === "band" && !!document.querySelector(".bands-sheet [aria-label=Settings]")`, "the band page's gear", 8000);
-    await evaluate(`document.querySelector(".bands-sheet [aria-label=Settings]").click()`);
+    await until(`document.querySelector(".band-page")?.dataset.view === "band" && !!document.querySelector(".shell-header [aria-label=Settings]")`, "the band page's gear", 8000);
+    await evaluate(`document.querySelector(".shell-header [aria-label=Settings]").click()`);
     await until(`location.hash.startsWith("#/settings") && !!${SETTINGS} && !document.querySelector("[role=dialog]")`, "Settings from the band page");
     await tap("Back", `document.querySelector(".shell-header")`);
     expect((await evaluate<string>("location.hash")) === "#/bands", `Back from Settings opened on the band page went to ${await evaluate<string>("location.hash")}`);

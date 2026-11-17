@@ -123,17 +123,17 @@ try {
   const offline = (on: boolean) => site.send("Network.emulateNetworkConditions", { offline: on, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
   const appCalls = (path: string, body: object) =>
     site.evaluate<Reply>(`fetch(${js(path)}, { method: "POST", headers: { "content-type": "application/json" }, body: ${js(js(body))} }).then(async (r) => ({ status: r.status, body: await r.json() }))`);
-  const view = (name: string) => app.until(`document.querySelector(".bands-sheet")?.dataset.view === ${js(name)} && !document.querySelector(".bands-sheet").textContent.includes("Loading")`, `the ${name} view`, 15000);
+  const view = (name: string) => app.until(`document.querySelector(".bands-sheet, .band-page")?.dataset.view === ${js(name)} && !document.querySelector(".bands-sheet, .band-page").textContent.includes("Loading")`, `the ${name} view`, 15000);
   const tab = (name: string) => app.click(name, `document.querySelector(".band-tabs")`);
   /** Taps the first enabled button whose text starts with `start` inside `scope`. */
-  const tap = async (start: string, scope = "document.querySelector('.bands-sheet')") => {
+  const tap = async (start: string, scope = "document.querySelector('.bands-sheet, .band-page')") => {
     const tapped = await site.evaluate<boolean>(`(() => { const el = [...(${scope}?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim().startsWith(${js(start)}) && !b.disabled); el?.click(); return !!el; })()`);
     assert.ok(tapped, `a button starting ${js(start)} to tap`);
     await settle();
   };
   const setField = async (label: string, value: string) => {
     await site.evaluate(
-      `(() => { const field = [...document.querySelectorAll("[role=dialog] label")].find((l) => l.textContent.trim() === ${js(label)}).control; Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field), "value").set.call(field, ${js(value)}); field.dispatchEvent(new Event("input", { bubbles: true })); field.dispatchEvent(new Event("change", { bubbles: true })); })()`,
+      `(() => { const field = [...document.querySelectorAll("[role=dialog] label, .band-page label")].find((l) => l.textContent.trim() === ${js(label)}).control; Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field), "value").set.call(field, ${js(value)}); field.dispatchEvent(new Event("input", { bubbles: true })); field.dispatchEvent(new Event("change", { bubbles: true })); })()`,
     );
     await settle();
   };
@@ -147,8 +147,9 @@ try {
     await view("list");
     await app.click("Open");
     await view("band");
+    await tab("Gigs");
   };
-  const card = (gigId: string) => `document.querySelector(${js(`.bands-sheet [data-gig=${js(gigId)}]`)})`;
+  const card = (gigId: string) => `document.querySelector(${js(`.bands-sheet [data-gig=${js(gigId)}], .band-page [data-gig=${js(gigId)}]`)})`;
   const cardText = (gigId: string) => site.evaluate<string>(`${card(gigId)}?.textContent ?? ""`);
   const count = (text: string, word: string) => text.split(word).length - 1;
   /** The packs in the phone's IndexedDB, read without making the database if the app has not yet. */
@@ -226,8 +227,8 @@ try {
     await setField("Date", "2026-11-20");
     await app.shot(shots && `${shots}/gig-plan-form.png`);
     await tap("Send to band");
-    await app.until(`!!document.querySelector(".bands-sheet [data-gig]")`, "the gig card on the band screen", 15000);
-    g1 = await site.evaluate<string>(`document.querySelector(".bands-sheet [data-gig]").dataset.gig`);
+    await app.until(`!!document.querySelector(".bands-sheet [data-gig], .band-page [data-gig]")`, "the gig card on the band screen", 15000);
+    g1 = await site.evaluate<string>(`document.querySelector(".bands-sheet [data-gig], .band-page [data-gig]").dataset.gig`);
     assert.match(await cardText(g1), /Friday at the Elks/, "the card names the gig");
     await app.shot(shots && `${shots}/gig-plan-card.png`);
     const posted = (await mike.call("/api/chat/open", { roomId: bandId })).body.messages as ChatMessage[];
@@ -390,7 +391,7 @@ try {
     assert.equal(await site.evaluate("window.sawSignIn ?? false"), false, "with no sign-in sheet on the way");
     assert.equal(await site.evaluate<string>("location.search"), "", "the landed code leaves the address bar");
 
-    await app.click("✕");
+    await site.evaluate(`location.hash = "#/songs"`);
     await app.openMenu();
     await app.pick("Account");
     await app.click("Sign out");

@@ -47,9 +47,9 @@ export function songHref(id: number, from: TabName): string {
 
 const lastSection = new Map<string, BandSection>();
 
-/** The section a band page opens on: the one its hash names, else the last one opened for that band, else Songs. */
+/** The section a band page opens on: the one its hash names, else the last one opened for that band, else Members. */
 export function sectionOf(bandId: string, asked: BandSection | null): BandSection {
-  const section = asked ?? lastSection.get(bandId) ?? "songs";
+  const section = asked ?? lastSection.get(bandId) ?? "members";
   lastSection.set(bandId, section);
   return section;
 }

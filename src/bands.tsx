@@ -314,6 +314,24 @@ export function BandsSheet({
   );
 }
 
+function PlanGigSheet({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+  const titleId = useId();
+  useEscape(onClose);
+  return (
+    <div className="account-backdrop" onClick={onClose}>
+      <section className="account-sheet" role="dialog" aria-modal="true" aria-labelledby={titleId} onClick={(event) => event.stopPropagation()}>
+        <header className="account-top">
+          <h2 id={titleId}>Plan a gig</h2>
+          <button type="button" className="account-close" aria-label="Close" onClick={onClose}>
+            ✕
+          </button>
+        </header>
+        {children}
+      </section>
+    </div>
+  );
+}
+
 function SignInToBands({ onSignIn }: { onSignIn: () => void }) {
   return (
     <div className="bands-tab">
@@ -353,7 +371,7 @@ function BandScreen({ me, bandId, section: asked, landing, onMessage, onSignedOu
   const [library, setLibrary] = useState<BandLibrary | null>(null);
   const [gigs, setGigs] = useState<GigView[] | null>(null);
   const [packs, setPacks] = useState<Record<string, GigPack>>({});
-  const [chat, setChat] = useState<ChatEntry | undefined>(undefined);
+  const [chat, setChat] = useState<{ entry?: ChatEntry } | null>(null);
   const [muting, setMuting] = useState(false);
   const [cached, setCached] = useState<CachedBandSong[] | null>(null);
   const [editing, setEditing] = useState<BandSetlist | undefined>(undefined);
@@ -431,20 +449,22 @@ function BandScreen({ me, bandId, section: asked, landing, onMessage, onSignedOu
   }, [asked]);
 
   useEffect(() => {
-    api<BandView>("/api/bands/open", { bandId }).then(setBand, loaded);
     reloadLibrary().catch(loaded);
     loadGigs().catch(loaded);
-    api<{ chats: ChatEntry[] }>("/api/chat").then((reply) => setChat(reply.chats.find((c) => c.roomId === bandId)), () => {});
+    api<{ chats: ChatEntry[] }>("/api/chat").then(
+      (reply) => setChat({ entry: reply.chats.find((c) => c.roomId === bandId) }),
+      () => setChat({}),
+    );
   }, []);
+
+  /** The band as it is now, each time the page comes back from Invite, settings or a form, so Members shows who joined meanwhile. */
+  useEffect(() => {
+    if (view.name === "band") api<BandView>("/api/bands/open", { bandId }).then(setBand, loaded);
+  }, [view.name]);
 
   useEffect(() => {
     if (band && library) holdBandSongs(me, bandId, band.name, library.songs).catch(() => {});
   }, [band?.name, library]);
-
-  /** On the Chat section every message that arrives is read, so the tab's badge waits for the player to leave it. */
-  useEffect(() => {
-    if (section === "chat") setChat((entry) => entry && { ...entry, lastReadSeq: entry.lastSeq });
-  }, [section, chat?.lastSeq]);
 
   /** A lineup phone fetches a pack it lacks, or one older than the plan, as soon as it sees the gig. A failure waits for Get ready. */
   useEffect(() => {
@@ -631,21 +651,24 @@ function BandScreen({ me, bandId, section: asked, landing, onMessage, onSignedOu
   const sections: Record<BandSection, () => ReactNode> = {
     songs: () => (band ? libraryTab(band, "songs") : offlineSongs),
     setlists: () => (band ? libraryTab(band, "setlists") : cannotReach),
-    chat: () => (
-      <>
-        {chat ? <MuteButton entry={chat} muting={muting} onMuting={setMuting} /> : null}
-        <ChatThread
-          me={me}
-          roomId={bandId}
-          entry={chat}
-          muting={muting}
-          onEntry={(_, update) => setChat((entry) => entry && update(entry))}
-          onMuting={setMuting}
-          onGone={failed}
-          onSignedOut={onSignedOut}
-        />
-      </>
-    ),
+    chat: () =>
+      chat === null ? (
+        loading
+      ) : (
+        <>
+          {chat.entry ? <MuteButton entry={chat.entry} muting={muting} onMuting={setMuting} /> : null}
+          <ChatThread
+            me={me}
+            roomId={bandId}
+            entry={chat.entry}
+            muting={muting}
+            onEntry={(_, update) => setChat((held) => (held?.entry ? { entry: update(held.entry) } : held))}
+            onMuting={setMuting}
+            onGone={failed}
+            onSignedOut={onSignedOut}
+          />
+        </>
+      ),
     gigs: () =>
       !band || !gigs ? (
         cached ? cannotReach : loading
@@ -662,7 +685,7 @@ function BandScreen({ me, bandId, section: asked, landing, onMessage, onSignedOu
     members: () => (band ? members(band) : cannotReach),
   };
 
-  const badge = chat && section !== "chat" ? unread(chat) : 0;
+  const badge = chat?.entry && section !== "chat" ? unread(chat.entry) : 0;
 
   const bodies: Record<PageView["name"], () => ReactNode> = {
     band: () => (
@@ -732,7 +755,14 @@ function BandScreen({ me, bandId, section: asked, landing, onMessage, onSignedOu
       ) : (
         loading
       ),
-    plan: () => (band && view.name === "plan" ? <GigPlanForm band={band} me={me} setlistName={view.setlistName} busy={busy} onSend={(draft) => sendPlan(view, draft)} onCancel={() => go({ name: "band" })} /> : loading),
+    plan: () => (
+      <>
+        {bodies.band()}
+        <PlanGigSheet onClose={() => go({ name: "band" })}>
+          {band && view.name === "plan" ? <GigPlanForm band={band} me={me} setlistName={view.setlistName} busy={busy} onSend={(draft) => sendPlan(view, draft)} onCancel={() => go({ name: "band" })} /> : loading}
+        </PlanGigSheet>
+      </>
+    ),
     "gig-song": () => {
       const item = view.name === "gig-song" ? packs[view.gigId]?.songs[view.index] : undefined;
       return item ? (

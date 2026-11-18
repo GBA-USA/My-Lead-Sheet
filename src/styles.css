@@ -520,6 +520,11 @@ a:focus-visible {
   background: var(--bg);
 }
 
+.song-chrome.is-off,
+.song-chrome.is-off > .song-chrome-bar {
+  display: contents;
+}
+
 .song-chrome-bar[data-folded] {
   box-sizing: border-box;
   height: var(--song-chrome-folded);

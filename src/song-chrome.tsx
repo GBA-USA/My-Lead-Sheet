@@ -98,10 +98,10 @@ export function useSongChrome(song: SongRef | null, scrolling: boolean, holdOpen
 
 type SongChrome = ReturnType<typeof useSongChrome>;
 
+/** The same two wrappers on every route, so going between a song and a list keeps the header and tabs mounted, focus included. */
 export function SongChromeSlot({ chrome, children }: { chrome: SongChrome; children: ReactNode }) {
-  if (!chrome.song) return <>{children}</>;
   return (
-    <div className="song-chrome" ref={chrome.slot} style={chrome.slotStyle}>
+    <div className={chrome.song ? "song-chrome" : "song-chrome is-off"} ref={chrome.slot} style={chrome.slotStyle}>
       <div className="song-chrome-bar" ref={chrome.bar} data-folded={chrome.folded || undefined} onClick={chrome.onBarClick}>
         {children}
       </div>

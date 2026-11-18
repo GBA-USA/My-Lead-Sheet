@@ -159,10 +159,10 @@ try {
   const openDm = async (title: string) => {
     await app.openMenu();
     await app.pick("Messages");
-    await app.until(`document.querySelector(".chat-sheet")?.dataset.view === "list" && !document.querySelector(".chat-sheet").textContent.includes("Loading")`, "the Messages list", 15000);
-    const found = await site.evaluate<boolean>(`(() => { const row = [...document.querySelectorAll(".chat-row")].find((b) => b.querySelector(".chat-row-title")?.textContent === ${js(title)}); row?.click(); return !!row; })()`);
+    await app.until(`location.hash === "#/messages" && !!document.querySelector(".messages") && !document.querySelector(".messages").textContent.includes("Loading")`, "the Messages list", 15000);
+    const found = await site.evaluate<boolean>(`(() => { const row = [...document.querySelectorAll(".messages .chat-row")].find((b) => b.querySelector(".chat-row-title")?.textContent === ${js(title)}); row?.click(); return !!row; })()`);
     assert.ok(found, `a ${title} row on the Messages list`);
-    await app.until(`document.querySelector(".chat-sheet")?.dataset.view === "thread"`, `the ${title} thread`);
+    await app.until(`location.hash.startsWith("#/messages/") && !!document.querySelector(".room .chat-composer")`, `the ${title} thread`);
   };
   const me = () => site.evaluate<{ account?: { userId: string; handle: string } }>(`fetch("/api/me").then((r) => r.json())`).then((reply) => reply.account);
 
@@ -239,9 +239,9 @@ try {
     landed(await terry.call("/api/chat/send-song", sent), sent, "Terry sends Sam Back Porch Blues as Private");
     await reset();
     await openDm("Terry");
-    await app.until(`[...document.querySelectorAll(".chat-sheet button")].some((b) => b.textContent.trim() === "Add to My Songs")`, "the song card with Add to My Songs", 15000);
+    await app.until(`[...document.querySelectorAll(".room button")].some((b) => b.textContent.trim() === "Add to My Songs")`, "the song card with Add to My Songs", 15000);
     await app.shot(shots && `${shots}/send-song-card.png`);
-    await tap("Add to My Songs", "document.querySelector('.chat-sheet')");
+    await tap("Add to My Songs", "document.querySelector('.room')");
     const row = await eventually(() => stored().then((songs) => songs.find((song) => song.title === privateSong.title)), (song) => !!song, "the copy in My Songs");
     assert.deepEqual([row!.copy?.canSendOn, row!.copy?.from?.name], [false, "Terry"], "the copy is marked Private and from Terry");
     await reset();
@@ -263,8 +263,8 @@ try {
     landed(await terry.call("/api/chat/send-song", firstSend), firstSend, "Terry sends Sam Open Road as Public");
     await reset();
     await openDm("Terry");
-    await app.until(`[...document.querySelectorAll(".chat-sheet button")].filter((b) => b.textContent.trim() === "Add to My Songs").length >= 1`, "Open Road's card", 15000);
-    const added = await site.evaluate<boolean>(`(() => { const b = [...document.querySelectorAll(".chat-sheet button")].find((b) => b.textContent.trim() === "Add to My Songs" && b.closest("li")?.textContent.includes("Open Road")); b?.click(); return !!b; })()`);
+    await app.until(`[...document.querySelectorAll(".room button")].filter((b) => b.textContent.trim() === "Add to My Songs").length >= 1`, "Open Road's card", 15000);
+    const added = await site.evaluate<boolean>(`(() => { const b = [...document.querySelectorAll(".room button")].find((b) => b.textContent.trim() === "Add to My Songs" && b.closest("li")?.textContent.includes("Open Road")); b?.click(); return !!b; })()`);
     assert.ok(added, "Add to My Songs on Open Road's card (the card sits in its message's li)");
     const row = await eventually(() => stored().then((songs) => songs.find((song) => song.title === "Open Road")), (song) => !!song, "Open Road in My Songs");
     assert.deepEqual([row!.copy?.from?.name, lyricOf(row!), row!.copy?.canSendOn], ["Terry", lyricOf(openRoad), true], "the copy says From Terry, holds the chart Terry sent, and may be passed on");
@@ -286,11 +286,11 @@ try {
     }
     await reset();
     await openDm("Terry");
-    await app.until(`[...document.querySelectorAll(".chat-sheet button")].some((b) => b.textContent.trim() === "Keep both")`, "the update card", 15000);
-    const names = (await dialogButtons("document.querySelector('.chat-sheet')")).map((b) => b.text);
+    await app.until(`[...document.querySelectorAll(".room button")].some((b) => b.textContent.trim() === "Keep both")`, "the update card", 15000);
+    const names = (await dialogButtons("document.querySelector('.room')")).map((b) => b.text);
     for (const choice of ["Keep mine", "Take Terry's", "Keep both"]) assert.ok(names.includes(choice), `the update card offers ${choice} (saw ${js(names)})`);
     await app.shot(shots && `${shots}/send-song-update.png`);
-    await tap("Keep both", "document.querySelector('.chat-sheet')");
+    await tap("Keep both", "document.querySelector('.room')");
     const both = await eventually(() => stored().then((songs) => songs.filter((song) => song.title.startsWith("Open Road") && song.copy?.from?.name === "Terry")), (songs) => songs.length === 2, "two Open Road songs from Terry", 10000);
     assert.deepEqual(both.map(lyricOf).sort(), [lyricOf(openRoad), lyricOf(openRoadEdited)].sort(), "one with the first chart and one with the edit");
   });

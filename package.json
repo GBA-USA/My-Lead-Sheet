@@ -61,7 +61,8 @@
     "check:ux-shell-settings": "tsc -p worker && node --experimental-strip-types scripts/check-ux-shell-settings.ts",
     "check:ux-sheet-controls-save": "node --experimental-strip-types scripts/check-ux-sheet-controls-save.ts",
     "check:ux-settings-only-old-build": "node --experimental-strip-types scripts/check-ux-settings-only-old-build.ts",
-    "check:ux-band-page": "tsc -p worker && node --experimental-strip-types scripts/check-ux-band-page.ts"
+    "check:ux-band-page": "tsc -p worker && node --experimental-strip-types scripts/check-ux-band-page.ts",
+    "check:ux-chat-rooms": "tsc -p worker && node --experimental-strip-types scripts/check-ux-chat-rooms.ts"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.5",

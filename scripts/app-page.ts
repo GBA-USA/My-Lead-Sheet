@@ -34,7 +34,7 @@ export async function appPage(site: Site) {
     await settle();
   };
   const type = async (label: string, text: string) => {
-    await site.evaluate(`[...document.querySelectorAll("[role=dialog] label, .band-page label")].find((l) => l.textContent.trim() === ${js(label)}).control.focus()`);
+    await site.evaluate(`[...document.querySelectorAll("[role=dialog] label, .band-page label, .room label")].find((l) => l.textContent.trim() === ${js(label)}).control.focus()`);
     await site.send("Input.insertText", { text });
   };
   const text = (selector: string) => site.evaluate<string>(`document.querySelector(${js(selector)})?.textContent ?? ""`);
@@ -68,7 +68,7 @@ export async function appPage(site: Site) {
   };
   const fits = () =>
     site.evaluate<{ page: number; left: number; right: number }>(`(() => {
-      const sheet = document.querySelector("[role=dialog], .band-page")?.getBoundingClientRect() ?? { left: 0, right: 0 };
+      const sheet = document.querySelector("[role=dialog], .band-page, .room, .messages")?.getBoundingClientRect() ?? { left: 0, right: 0 };
       return { page: document.documentElement.scrollWidth, left: sheet.left, right: sheet.right };
     })()`);
 

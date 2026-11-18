@@ -11,6 +11,8 @@ export type Route =
   | { name: "song"; id: number; from: TabName }
   | { name: "live"; setlistId: number; index: number }
   | { name: "settings"; from: TabName }
+  | { name: "messages" }
+  | { name: "room"; roomId: string }
   | { name: "band"; bandId: string; section: BandSection | null }
   | { name: "band-song"; bandId: string; songId: string }
   | { name: "band-live"; bandId: string; setlistId: string; index: number };
@@ -31,6 +33,9 @@ export function parseHash(hash: string): Route {
   if (bandSong) return { name: "band-song", bandId: bandSong[1], songId: bandSong[2] };
   const band = path.match(new RegExp(`^/band/${ID}$`));
   if (band) return { name: "band", bandId: band[1], section: BAND_SECTIONS.find((section) => section === query.get("s")) ?? null };
+  const room = path.match(new RegExp(`^/messages/${ID}$`));
+  if (room) return { name: "room", roomId: room[1] };
+  if (path === "/messages") return { name: "messages" };
   if (path === "/settings") return { name: "settings", from: TABS.find((tab) => tab === query.get("from")) ?? "songs" };
   if (path === "/setlists") return { name: "setlists" };
   if (path === "/bands") return { name: "bands" };
@@ -56,6 +61,8 @@ export function sectionOf(bandId: string, asked: BandSection | null): BandSectio
 
 export const bandHref = (bandId: string, section?: BandSection) => (section ? `#/band/${bandId}?s=${section}` : `#/band/${bandId}`);
 export const bandSongHref = (bandId: string, songId: string) => `#/band/${bandId}/song/${songId}`;
+export const messagesHref = "#/messages";
+export const roomHref = (roomId: string) => `#/messages/${roomId}`;
 export const bandLiveHref = (bandId: string, setlistId: string, index: number) => `#/live/band/${bandId}/${setlistId}/${index}`;
 
 /** Where the header's Back goes from each screen, or null on a tab, which has no Back. */
@@ -64,6 +71,8 @@ export function backHref(route: Route): string | null {
   if (route.name === "live") return "#/setlists";
   if (route.name === "settings") return `#/${route.from}`;
   if (route.name === "band") return "#/bands";
+  if (route.name === "messages") return "#/settings";
+  if (route.name === "room") return messagesHref;
   if (route.name === "band-song" || route.name === "band-live") return bandHref(route.bandId);
   return null;
 }

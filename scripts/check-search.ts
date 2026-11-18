@@ -295,7 +295,7 @@ try {
 
   const myCount = () => site.evaluate<number>(`JSON.parse(localStorage.getItem("leadSheetsLibrary")).songs.length`);
   const bandRow = (artist: string) => `[...document.querySelectorAll(".band-library-songs li")].find((li) => li.textContent.includes(${js(artist)}))`;
-  const dmCard = (artist: string) => `[...document.querySelectorAll(".chat-sheet li")].find((li) => li.textContent.includes(${js(artist)}))`;
+  const dmCard = (artist: string) => `[...document.querySelectorAll(".room li")].find((li) => li.textContent.includes(${js(artist)}))`;
   const openBlueSongs = async () => {
     await site.evaluate(`location.hash = "#/bands"`);
     await app.until(`[...document.querySelectorAll(".bands-tab .song-title")].some((t) => t.textContent.trim() === "The Blue Notes")`, "The Blue Notes on the Bands tab", 15000);
@@ -308,9 +308,9 @@ try {
     await site.evaluate(`location.hash = "#/songs"`);
     await app.openMenu();
     await app.pick("Messages");
-    await app.until(`document.querySelector(".chat-sheet")?.dataset.view === "list" && [...document.querySelectorAll(".chat-row-title")].some((t) => t.textContent === "Terry Bass")`, "Terry's DM on the list", 15000);
-    await site.evaluate(`[...document.querySelectorAll(".chat-row")].find((b) => b.querySelector(".chat-row-title")?.textContent === "Terry Bass").click()`);
-    await app.until(`document.querySelector(".chat-sheet")?.dataset.view === "thread"`, "Terry's DM");
+    await app.until(`location.hash === "#/messages" && [...document.querySelectorAll(".messages .chat-row-title")].some((t) => t.textContent === "Terry Bass")`, "Terry's DM on the list", 15000);
+    await site.evaluate(`[...document.querySelectorAll(".messages .chat-row")].find((b) => b.querySelector(".chat-row-title")?.textContent === "Terry Bass").click()`);
+    await app.until(`location.hash.startsWith("#/messages/dm_") && !!document.querySelector(".room .chat-composer")`, "Terry's DM");
   };
   const CHAIN_BREAKERS = [["Chain Breaker", "The Other Chain Gang"], ["chain-breaker", "ZACH WILLIAMS"]] as const;
 
@@ -334,7 +334,7 @@ try {
     const before = await myCount();
     await app.click("Add to My Songs", dmCard("The Other Chain Gang"));
     await app.until(`JSON.parse(localStorage.getItem("leadSheetsLibrary")).songs.length === ${before + 1}`, "the song by a different artist added", 15000);
-    assert.ok(!(await site.evaluate<string>(`document.querySelector(".chat-sheet").textContent`)).includes("You already have"), "with no duplicate prompt");
+    assert.ok(!(await site.evaluate<string>(`document.querySelector(".room").textContent`)).includes("You already have"), "with no duplicate prompt");
   });
 
   await check("the duplicate guard offers Open it when adding a song you already have, and adds nothing until the player chooses", async () => {
@@ -346,7 +346,7 @@ try {
     assert.equal(await myCount(), before, "nothing is added before the player chooses");
     assert.ok(await site.evaluate<boolean>(`[...${dmCard("ZACH WILLIAMS")}.querySelectorAll("button")].some((b) => b.textContent.trim() === "Add anyway")`), "Add anyway is offered");
     await site.evaluate(`[...${dmCard("ZACH WILLIAMS")}.querySelectorAll("a")].find((a) => a.textContent.trim() === "Open").click()`);
-    await app.until(`location.hash === "#/song/10" && !document.querySelector(".chat-sheet") && document.querySelector(".sheet .sheet-name")?.textContent === "Chain Breaker"`, "Open shows the Chain Breaker already in My Songs");
+    await app.until(`location.hash === "#/song/10" && !document.querySelector(".room") && document.querySelector(".sheet .sheet-name")?.textContent === "Chain Breaker"`, "Open shows the Chain Breaker already in My Songs");
     assert.equal(await myCount(), before, "and Open adds nothing");
   });
 

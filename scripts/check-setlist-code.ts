@@ -240,7 +240,7 @@ try {
     await app.until(`[...document.querySelectorAll(".band-library-setlists li")].some((li) => li.textContent.includes("Sam picks") && li.textContent.includes("Blue Notes Bravo"))`, "Sam's new band setlist");
     await bandTab("Chat");
     await app.until(`!!document.querySelector(".band-page .chat-messages") && document.querySelector(".band-page h2")?.textContent === "The Blue Notes"`, "the band thread", 15000);
-    assert.equal(await site.evaluate<boolean>(`!!document.querySelector(".chat-sheet")`), false, "the chat opens on the band page, not in a sheet");
+    assert.equal(await site.evaluate<boolean>(`!!document.querySelector("[role=dialog] .chat-messages")`), false, "the chat opens on the band page, not in a sheet");
     await closeSheets();
     assert.equal((await stored()).songs.length, before.songs.length, "nothing on the band page added a song to My Songs");
   });
@@ -329,15 +329,16 @@ try {
     const secret = ok(await pTerry.call("/api/codes", { kind: "my-setlist", choice: "private", name: "Secret set", songs: SECRET.map((song) => ({ song, copyId: null })), setlistCopyId: null }), "Terry makes a Private copy code");
     for (const round of [1, 2]) {
       await site.send("Page.navigate", { url: secret.link });
-      await app.until(`!!document.querySelector(".chat-sheet .setlist-card")`, "the setlist card in Sam's DM", 15000);
+      await app.until(`!!document.querySelector(".room .setlist-card")`, "the setlist card in Sam's DM", 15000);
       if (round === 1) {
-        assert.match(await sheetText(".chat-sheet .setlist-card"), /Secret set/, "the card names the setlist");
-        await app.click("Add to My Songs", `document.querySelector(".chat-sheet .setlist-card")`);
+        assert.match(await sheetText(".room .setlist-card"), /Secret set/, "the card names the setlist");
+        await app.click("Add to My Songs", `document.querySelector(".room .setlist-card")`);
         await app.shot(shots && `${shots}/setlist-card.png`);
       }
-      await app.until(`document.querySelector(".chat-sheet .setlist-card")?.textContent.includes("In your Setlists")`, "the card saying it is in Sam's Setlists");
+      await app.until(`document.querySelector(".room .setlist-card")?.textContent.includes("In your Setlists")`, "the card saying it is in Sam's Setlists");
       await closeSheets();
     }
+    await site.evaluate(`location.hash = "#/setlists"`);
     const library = await stored();
     const kept = library.setlists.filter((setlist) => setlist.name === "Secret set");
     assert.equal(kept.length, 1, "opening the code twice and adding keeps one setlist");

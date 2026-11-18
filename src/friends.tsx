@@ -57,7 +57,7 @@ export function FriendsSheet({
 }: {
   account: Account;
   code?: string;
-  onMessage: (userId: string) => void;
+  onMessage: (userId: string) => Promise<void>;
   onSignedOut: () => void;
   onClose: () => void;
 }) {
@@ -171,7 +171,7 @@ export function FriendsSheet({
             <ul className="friends-list friends-friends">
               {lists.friends.map((person) => (
                 <PersonRow key={person.userId} person={person}>
-                  <button type="button" className="account-link" onClick={() => onMessage(person.userId)}>
+                  <button type="button" className="account-link" disabled={busy} onClick={() => run(() => onMessage(person.userId))}>
                     Message
                   </button>
                   {blocking === person.userId ? (

@@ -250,7 +250,20 @@ async function appChecks() {
   apiBase = base;
   try {
     const app = await appPage(site);
-    const view = (name: string) => app.until(`document.querySelector(".chat-sheet")?.dataset.view === ${JSON.stringify(name)} && !document.querySelector(".chat-sheet").textContent.includes("Loading")`, `the ${name} view`, 15000);
+    const onList = () => app.until(`location.hash === "#/messages" && !!document.querySelector(".messages") && !document.querySelector(".messages").textContent.includes("Loading")`, "the Messages list", 15000);
+    const room = (roomId: string) => `document.querySelector(${JSON.stringify(`.room[data-room="${roomId}"]`)})`;
+    const onRoom = (roomId: string) => app.until(`location.hash === ${JSON.stringify(`#/messages/${roomId}`)} && !!${room(roomId)}?.querySelector(".chat-composer") && !${room(roomId)}.textContent.includes("Loading")`, `the room ${roomId}`, 15000);
+    const onDm = async (title: string) => {
+      await app.until(`location.hash.startsWith("#/messages/dm_") && document.querySelector(".room h2")?.textContent === ${JSON.stringify(title)}`, `the DM room with ${title}`, 15000);
+      const roomId = (await site.evaluate<string>("location.hash")).slice("#/messages/".length);
+      await onRoom(roomId);
+      return roomId;
+    };
+    const leave = async () => {
+      await site.evaluate(`location.hash = "#/songs"`);
+      await app.library();
+    };
+    const back = () => site.evaluate(`document.querySelector(".shell-header [aria-label=Back]").click()`);
     const bubbles = () => app.texts(".chat-bubble");
     const waiting = () => site.evaluate<number>(`document.querySelectorAll(".chat-waiting").length`);
     const fitsPhone = async (what: string) => {
@@ -263,17 +276,15 @@ async function appChecks() {
         `fetch(${JSON.stringify(path)}, { method: "POST", headers: { "content-type": "application/json" }, body: ${JSON.stringify(JSON.stringify(body))} }).then(async (r) => ({ status: r.status, body: await r.json() }))`,
       );
     const openRow = async (title: string) => {
-      const found = await site.evaluate<boolean>(`(() => { const row = [...document.querySelectorAll(".chat-row")].find((b) => b.querySelector(".chat-row-title")?.textContent === ${JSON.stringify(title)}); row?.click(); return !!row; })()`);
+      const found = await site.evaluate<boolean>(`(() => { const row = [...document.querySelectorAll(".messages .chat-row")].find((b) => b.querySelector(".chat-row-title")?.textContent === ${JSON.stringify(title)}); row?.click(); return !!row; })()`);
       assert.ok(found, `a ${title} row to tap`);
       await settle();
     };
     const openMessages = async () => {
       await app.openMenu();
       await app.pick("Messages");
-      await view("list");
+      await onList();
     };
-    const onBandChat = (bandId: string) =>
-      app.until(`location.hash === ${JSON.stringify(`#/band/${bandId}?s=chat`)} && !document.querySelector(".chat-sheet") && !!document.querySelector(".band-page .chat-composer")`, "the band's thread on its band page", 15000);
     const terry = await passwordPlayer(base, origin, "Terry Bass", "terrybass");
     const mike = await passwordPlayer(base, origin, "Mike Keys", "mikekeys");
     const terryReads = async (roomId: string) => ((await terry.call("/api/chat/open", { roomId })).body.messages as ChatMessage[]);
@@ -289,21 +300,21 @@ async function appChecks() {
     await app.signUp("Sam Rivera");
     assert.deepEqual(await app.openMenu(), ["Account", "Friends", "Messages"], "signed in, Messages sits after Friends");
     await app.pick("Messages");
-    await view("list");
-    assert.match(await app.text(".chat-sheet"), /No messages yet/, "a new player has no threads");
+    await onList();
+    assert.match(await app.text(".messages"), /No messages yet/, "a new player has no threads");
     await fitsPhone("Messages");
     await app.shot(shots && `${shots}/chat-empty.png`);
-    await app.click("✕");
+    await leave();
     pass("Messages opens from Settings");
 
     const bandId = (await terry.call("/api/bands/create", { name: "The Blue Notes" })).body.bandId as string;
     const code = (await terry.call("/api/codes", { kind: "band", bandId })).body.code as string;
     assert.equal((await appCalls("/api/bands/join", { code })).status, 200, "Sam joins Terry's band");
     await openMessages();
-    assert.deepEqual(await app.texts(".chat-row-title"), ["The Blue Notes"], "the band is on Sam's Messages list");
+    assert.deepEqual(await app.texts(".messages .chat-row-title"), ["The Blue Notes"], "the band is on Sam's Messages list");
     await openRow("The Blue Notes");
-    await onBandChat(bandId);
-    assert.equal(await app.text(".band-page h2"), "The Blue Notes", "the thread opens");
+    await onRoom(bandId);
+    assert.equal(await app.text(".room h2"), "The Blue Notes", "the thread opens");
     await app.type("Message", "Hello band");
     await app.click("Send");
     await app.until(`[...document.querySelectorAll(".chat-bubble")].some((b) => b.textContent.includes("Hello band"))`, "Sam's bubble");
@@ -336,33 +347,33 @@ async function appChecks() {
     assert.equal((await terryReads(bandId)).length, 4, "and nothing is sent twice");
     pass("messages written offline go out once, in order, when signal returns");
 
-    await app.click("Mute");
-    await app.click("8 hours");
-    await app.until(`document.querySelector(".band-page")?.textContent.includes("Muted")`, "the muted state");
+    await site.evaluate(`${room(bandId)}.querySelector("[aria-label=More]").click()`);
+    await app.click("8 hours", room(bandId));
+    await app.until(`(${room(bandId)}?.querySelector(".room-top")?.textContent ?? "").includes("Muted")`, "the muted state");
     await openMessages();
-    assert.equal(await site.evaluate<number>(`document.querySelectorAll(".chat-row .chat-muted").length`), 1, "the muted thread shows it on the list");
-    await app.click("✕");
+    assert.equal(await site.evaluate<number>(`document.querySelectorAll(".messages .chat-row .chat-muted").length`), 1, "the muted thread shows it on the list");
+    await leave();
     await terry.call("/api/chat/send", { roomId: bandId, msgId: "terryhello0002", text: "Another one" });
     await openMessages();
-    assert.deepEqual(await app.texts(".chat-row .chat-badge"), ["1"], "a new message shows as one unread on the list");
+    assert.deepEqual(await app.texts(".messages .chat-row .chat-badge"), ["1"], "a new message shows as one unread on the list");
     await app.shot(shots && `${shots}/chat-list.png`);
     await openRow("The Blue Notes");
-    await onBandChat(bandId);
-    await app.until(`!!document.querySelector(".band-page .chat-new-line")`, "the New messages line");
+    await onRoom(bandId);
+    await app.until(`!!${room(bandId)}.querySelector(".chat-new-line")`, "the New messages line");
     assert.ok(await site.evaluate<boolean>(`(() => { const line = document.querySelector(".chat-new-line"); return !!line && line.parentElement.querySelector(".chat-bubble").textContent === "Another one"; })()`), "the New messages line sits above the unread message");
     await openMessages();
-    await app.until(`document.querySelectorAll(".chat-row .chat-badge").length === 0`, "the badge clearing");
+    await app.until(`document.querySelectorAll(".messages .chat-row .chat-badge").length === 0`, "the badge clearing");
     pass("mute, unread badge and the New messages line");
 
-    await app.click("✕");
+    await leave();
     await app.openBands();
     await app.until(`document.querySelector(".bands-sheet")?.dataset.view === "list" && document.querySelectorAll(".bands-list li").length > 0`, "the Bands list");
     await app.click("Open");
     await app.click("Members", `document.querySelector(".band-tabs")`);
     await app.until(`document.querySelectorAll(".bands-members li").length === 2`, "the Members list");
     await app.click("Message", `[...document.querySelectorAll(".bands-members li")].find((li) => li.textContent.startsWith("Terry Bass"))`);
-    await view("thread");
-    assert.equal(await app.text(".chat-sheet h2"), "Terry Bass", "Message on a bandmate opens a DM with them");
+    await onDm("Terry Bass");
+    assert.equal(await app.text(".room h2"), "Terry Bass", "Message on a bandmate opens a DM with them");
     assert.ok(!(await site.evaluate<boolean>(`!!document.querySelector(".bands-sheet")`)), "and the Bands sheet is gone");
     await app.type("Message", "Hi Terry");
     await app.click("Send");
@@ -370,7 +381,7 @@ async function appChecks() {
     assert.deepEqual([dm!.title, dm!.preview], ["Sam Rivera", "Sam Rivera: Hi Terry"], "titled with Sam's name");
     pass("Message from a band's Members list opens the DM");
 
-    await app.click("✕");
+    await leave();
     const me = () => site.evaluate<{ account: { userId: string; handle: string } }>(`fetch("/api/me").then((r) => r.json())`).then((reply) => reply.account);
     const sam = await me();
     assert.equal((await mike.call("/api/friends/request", { handle: sam.handle })).status, 200, "Mike asks Sam to be friends");
@@ -379,16 +390,16 @@ async function appChecks() {
     await app.pick("Friends");
     await app.until(`document.querySelectorAll(".friends-friends li").length === 1`, "Mike on the Friends list");
     await app.click("Message", "document.querySelector('.friends-friends li')");
-    await view("thread");
-    assert.equal(await app.text(".chat-sheet h2"), "Mike Keys", "Message on a friend opens a DM with them");
+    await onDm("Mike Keys");
+    assert.equal(await app.text(".room h2"), "Mike Keys", "Message on a friend opens a DM with them");
     assert.equal((await mike.call("/api/chat/dm", { userId: sam.userId })).status, 200, "and Mike can open the same one");
     pass("Message from Friends opens the DM");
 
-    await app.click("Back");
-    await view("list");
-    assert.deepEqual(await app.texts(".chat-row-title"), ["Mike Keys", "Terry Bass", "The Blue Notes"], "the list has both DMs and the band, newest first");
+    await back();
+    await onList();
+    assert.deepEqual(await app.texts(".messages .chat-row-title"), ["Mike Keys", "Terry Bass", "The Blue Notes"], "the list has both DMs and the band, newest first");
     await openRow("The Blue Notes");
-    await onBandChat(bandId);
+    await onRoom(bandId);
     await offline(true);
     await app.type("Message", "Sam's late one");
     await app.click("Send");
@@ -408,7 +419,7 @@ async function appChecks() {
     assert.equal((await appCalls("/api/bands/join", { code })).status, 200, "Pat joins the band on the same phone");
     await openMessages();
     await openRow("The Blue Notes");
-    await onBandChat(bandId);
+    await onRoom(bandId);
     assert.equal(await waiting(), 0, "Pat's thread shows nothing of Sam's waiting");
     await sleep(1500);
     const bandLines = (await terryReads(bandId)).map((m) => `${m.fromName}: ${m.text}`);
@@ -417,12 +428,12 @@ async function appChecks() {
     pass("another account on the same phone never sends what Sam wrote offline");
 
     await terry.call("/api/bands/remove", { bandId, userId: pat.userId });
-    await app.until(`location.hash === "#/bands" && (document.querySelector(".bands-notice")?.textContent ?? "").includes("not in this band")`, "the thread closing on removal", 8000);
+    await app.until(`location.hash === "#/messages" && !document.querySelector(".room") && (document.querySelector(".messages-notice")?.textContent ?? "").includes("not in this band")`, "the thread closing on removal", 8000);
     await openMessages();
-    assert.match(await app.text(".chat-sheet"), /No messages yet/, "the band leaves Pat's list");
+    assert.match(await app.text(".messages"), /No messages yet/, "the band leaves Pat's list");
     pass("a removed member's open thread closes at once");
 
-    await app.click("✕");
+    await leave();
     await settle();
     assert.deepEqual(await app.errors(), [], "no page errors");
   } finally {

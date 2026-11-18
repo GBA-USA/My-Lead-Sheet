@@ -295,11 +295,12 @@ try {
     await site.evaluate(`location.hash = "#/songs"`);
     await app.openMenu();
     await app.pick("Messages");
-    await app.until(`document.querySelector(".chat-sheet")?.dataset.view === "list" && document.querySelectorAll(".chat-row").length > 0`, "the Messages list");
-    await site.evaluate(`[...document.querySelectorAll(".chat-row")].find((b) => b.querySelector(".chat-row-title")?.textContent === "The Low Tides").click()`);
-    await app.until(`location.hash === ${js(`#/band/${lowTides.bandId}?s=chat`)}`, "the band row landing on the band page's Chat");
-    await app.until(`!document.querySelector(".chat-sheet") && !!${page(lowTides.bandId)}?.querySelector(".chat-messages")`, "the thread inline, the sheet gone");
-    await app.until(`[...${page(lowTides.bandId)}.querySelectorAll(".chat-bubble")].some((b) => b.textContent.includes("Welcome Sam"))`, "the band's messages on it");
+    await app.until(`location.hash === "#/messages" && document.querySelectorAll(".messages .chat-row").length > 0`, "the Messages list");
+    await site.evaluate(`[...document.querySelectorAll(".messages .chat-row")].find((b) => b.querySelector(".chat-row-title")?.textContent === "The Low Tides").click()`);
+    await app.until(`location.hash === ${js(`#/messages/${lowTides.bandId}`)}`, "the band row landing on the band's room");
+    const bandRoom = `document.querySelector(${js(`.room[data-room="${lowTides.bandId}"]`)})`;
+    await app.until(`!document.querySelector("[role=dialog]") && !!${bandRoom}?.querySelector(".chat-messages")`, "the band's room, no sheet");
+    await app.until(`[...${bandRoom}.querySelectorAll(".chat-bubble")].some((b) => b.textContent.includes("Hello band")) && [...${bandRoom}.querySelectorAll(".chat-bubble")].some((b) => b.textContent.includes("Welcome Sam"))`, "the band's messages on it");
   });
 
   await check("an unread band message badges the Chat tab", async () => {
@@ -425,15 +426,15 @@ try {
     await site.evaluate(`location.hash = "#/songs"`);
     await app.openMenu();
     await app.pick("Messages");
-    await app.until(`document.querySelector(".chat-sheet")?.dataset.view === "list" && [...document.querySelectorAll(".chat-row-title")].some((t) => t.textContent === "Terry Bass")`, "Terry's DM on the list", 15000);
-    await site.evaluate(`[...document.querySelectorAll(".chat-row")].find((b) => b.querySelector(".chat-row-title")?.textContent === "Terry Bass").click()`);
+    await app.until(`location.hash === "#/messages" && [...document.querySelectorAll(".messages .chat-row-title")].some((t) => t.textContent === "Terry Bass")`, "Terry's DM on the list", 15000);
+    await site.evaluate(`[...document.querySelectorAll(".messages .chat-row")].find((b) => b.querySelector(".chat-row-title")?.textContent === "Terry Bass").click()`);
     for (const title of ["Porch Light", "Back Steps"]) {
-      const card = `[...document.querySelectorAll(".chat-sheet li")].find((li) => li.textContent.includes(${js(title)}))`;
+      const card = `[...document.querySelectorAll(".room li")].find((li) => li.textContent.includes(${js(title)}))`;
       await app.until(`!!${card} && [...${card}.querySelectorAll("button")].some((b) => b.textContent.trim() === "Add to My Songs")`, `${title}'s card`, 15000);
       await app.click("Add to My Songs", card);
       await app.until(`JSON.parse(localStorage.getItem("leadSheetsLibrary")).songs.some((s) => s.title === ${js(title)})`, `${title} in My Songs`);
     }
-    await app.click("✕", `document.querySelector(".chat-sheet")`);
+    await site.evaluate(`location.hash = "#/songs"`);
     await site.evaluate(`(() => {
       const library = JSON.parse(localStorage.getItem("leadSheetsLibrary"));
       const id = (title) => library.songs.find((s) => s.title === title).id;

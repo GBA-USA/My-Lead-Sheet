@@ -338,6 +338,7 @@ try {
       await app.until(`document.querySelector(".room .setlist-card")?.textContent.includes("In your Setlists")`, "the card saying it is in Sam's Setlists");
       await closeSheets();
     }
+    await site.evaluate(`location.hash = "#/setlists"`);
     const library = await stored();
     const kept = library.setlists.filter((setlist) => setlist.name === "Secret set");
     assert.equal(kept.length, 1, "opening the code twice and adding keeps one setlist");

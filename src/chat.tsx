@@ -23,7 +23,6 @@ export const chatMessage = (error: unknown) => {
   return MESSAGES[reason] ?? "Something went wrong. Try again.";
 };
 
-/** A refusal that means the room is closed to this player for good. */
 export const closedRoom = (error: unknown) => error instanceof ApiError && ["not-a-member", "no-band", "not-friends"].includes(error.reason);
 
 const SIGNED_OUT_CLOSE = 4401;
@@ -47,7 +46,6 @@ const merged = (held: ChatEntry[] | null, got: ChatEntry[]) =>
 /** Screens that show the list or a badge from it. A song or the stage makes no call. */
 const INBOX_SCREENS: ReadonlySet<Route["name"]> = new Set(["songs", "setlists", "bands", "settings", "messages", "room", "band"]);
 
-/** The signed-in player's rooms, one copy for the Messages list, a room, the gear and the band page's Chat tab. */
 export type Inbox = { chats: ChatEntry[] | null; failed: boolean; unread: number; change: ChangeEntry };
 
 export function useInbox(me: string | null, screen: Route["name"], onSignedOut: () => void): Inbox {
@@ -89,17 +87,11 @@ export function useInbox(me: string | null, screen: Route["name"], onSignedOut: 
   return { chats, failed, unread: chats?.reduce((total, c) => total + (isMuted(c, now) ? 0 : unread(c)), 0) ?? 0, change };
 }
 
-/** Why a room closed, in the words for its kind: a DM that is not yours is not a band you left. */
 export const goneWords = (roomId: string, error: unknown) =>
   roomId.startsWith("dm_") && error instanceof ApiError && error.reason === "not-a-member" ? MESSAGES["not-friends"] : chatMessage(error);
 
-/** The DM room with a friend or bandmate, made on the server if it is not there yet. */
 export const openDm = (userId: string) => api<{ roomId: string }>("/api/chat/dm", { userId }).then((reply) => reply.roomId);
 
-/**
- * One room's messages, the messages waiting for signal, read marking and the live socket. `entry` is the room's row on
- * the Messages list, `onEntry` keeps that row in step. `onGone` hears a refusal that means the room is closed to this player.
- */
 export function useRoomSocket({
   me,
   roomId,

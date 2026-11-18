@@ -8,13 +8,12 @@ import { SetlistCard } from "./setlist-code";
 import { api } from "./sign-in-methods";
 
 const MUTE_CHOICES: MuteChoice[] = ["8h", "1w", "always"];
-const DAY_MS = 24 * 3600 * 1000;
+export const DAY_MS = 24 * 3600 * 1000;
 const COMPOSER_LINES = 4;
 
-/** One line of the thread as drawn: the day divider and New messages line above it, and the name above a run. */
 type Line = { key: string; day: string | null; newLine: boolean; name: string | null; mine: boolean } & ({ message: ChatMessage } | { waiting: Queued });
 
-const dayOf = (at: number) => new Date(at).toDateString();
+export const dayOf = (at: number) => new Date(at).toDateString();
 
 function dayLabel(at: number, now: number): string {
   if (dayOf(at) === dayOf(now)) return "Today";
@@ -54,7 +53,6 @@ function useKeyboardInset() {
   return inset;
 }
 
-/** Enter sends from a hardware keyboard. On a phone's keyboard it is a new line. */
 const hardwareKeyboard = () => matchMedia("(hover: hover) and (pointer: fine)").matches;
 
 function Composer({ onSend }: { onSend: (text: string) => void }) {
@@ -99,10 +97,6 @@ function Composer({ onSend }: { onSend: (text: string) => void }) {
   );
 }
 
-/**
- * One room at `#/messages/:roomId`, and the same room under the band page's Chat tab with `inline`, which drops the header.
- * The header holds the room's name and its ••• with the mute choices and, for a band, Open band.
- */
 export function Room({
   me,
   roomId,

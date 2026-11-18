@@ -1,17 +1,16 @@
 import { useState } from "react";
 import { isMuted, sortChats, unread, type ChatEntry } from "./chat-model";
 import type { Inbox } from "./chat";
+import { DAY_MS, dayOf } from "./room";
 import { roomHref } from "./route";
 import { SearchBox } from "./search-box";
 
 const SEARCH_ABOVE = 8;
-const DAY_MS = 24 * 3600 * 1000;
 
-/** When a room last spoke: the time today, Yesterday, the weekday this week, else the date. */
 function rowTime(at: number, now: number): string {
   const when = new Date(at);
-  if (when.toDateString() === new Date(now).toDateString()) return when.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  if (when.toDateString() === new Date(now - DAY_MS).toDateString()) return "Yesterday";
+  if (dayOf(at) === dayOf(now)) return when.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  if (dayOf(at) === dayOf(now - DAY_MS)) return "Yesterday";
   if (now - at < 6 * DAY_MS) return when.toLocaleDateString(undefined, { weekday: "short" });
   return when.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
@@ -36,7 +35,6 @@ function RoomRow({ chat, now }: { chat: ChatEntry; now: number }) {
   );
 }
 
-/** Messages at `#/messages`: one row per band room and DM, newest first, with a search box once there are more than eight. */
 export function MessagesScreen({ me, inbox, notice, onSignIn }: { me: string | null; inbox: Inbox; notice: string; onSignIn: () => void }) {
   const [query, setQuery] = useState("");
 

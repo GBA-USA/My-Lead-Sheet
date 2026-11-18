@@ -57,6 +57,9 @@ const BACKUP_EVERY_MS = 60_000;
 
 const SCREEN_TITLES: Partial<Record<Route["name"], string>> = { settings: "Settings", messages: "Messages", room: "Messages" };
 
+/** Routes whose top folds on scroll: a song to its playing bar, a list to its header row. */
+const FOLDS: Partial<Record<Route["name"], "song" | "list">> = { song: "song", "band-song": "song", setlists: "list", band: "list" };
+
 const loadAllSongData = (library: Library): SongDataByRef => Object.fromEntries(library.songs.map((song) => [song.ref, loadSongData(song.ref)]));
 
 export function App() {
@@ -180,8 +183,8 @@ export function App() {
     setBpm: (bpm) => { setFollowed(null); songVersion.set({ bpm }); },
   });
   const take = teaching && "take" in teaching ? teaching.take : null;
-  const foldSong = route.name === "song" || route.name === "band-song" ? (activeSong?.ref ?? null) : null;
-  const chrome = useSongChrome(foldSong, performance.scrolling, take != null, () => setMenu(null));
+  const fold = FOLDS[route.name];
+  const chrome = useSongChrome(fold === "song" ? (activeSong?.ref ?? null) : fold ? hash : null, performance.scrolling, take != null, () => setMenu(null));
   const playing: ScrollVersion | null = draft?.plan ? { name: "", ...draft.plan, ...(draft.learned ? { learned: draft.learned } : {}) } : null;
   const learned = take ? undefined : playing?.learned;
   const even = shownSong ? evenPlan(shownSong) : null;
@@ -282,7 +285,7 @@ export function App() {
 
   return (
     <div className="app">
-      <SongChromeSlot chrome={chrome}>
+      <SongChromeSlot chrome={chrome} list={fold === "list"}>
         <header className={activeSong ? "shell-header song-header" : "shell-header"}>
           <button
             type="button"

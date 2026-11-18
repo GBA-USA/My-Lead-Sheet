@@ -1,5 +1,6 @@
 import { useId, useReducer, useState, type FormEvent } from "react";
-import { bandSongRef } from "./band-library-model";
+import { titleOf } from "./band-library";
+import { bandSongRef, type BandLibrary } from "./band-library-model";
 import type { BandView } from "./bands-model";
 import type { GigPack, GigPackSong } from "./gig-pack";
 import { downloaded, draftProblem, draftReducer, newDraft, type GigDraft, type GigView } from "./gig-plan-model";
@@ -99,18 +100,23 @@ export function GigPlanForm({ band, me, setlistName, busy, onSend, onCancel }: {
         Send to band
       </button>
       <button type="button" className="account-link" onClick={onCancel}>
-        Back
+        Cancel
       </button>
     </form>
   );
 }
 
-/** The gig card on the band screen: who's playing with Downloaded ✓ or Not yet, Get ready, and tonight's songs once the pack is on this phone. */
+/**
+ * The gig card on the band screen: who's playing with Downloaded ✓ or Not yet, and Get ready, which downloads the whole
+ * pack. Tonight's songs open from the pack once it is on this phone; before that each song offers Download, the same
+ * one pack call, for whoever may fetch it.
+ */
 export function GigCard({
   view,
   band,
   me,
   pack,
+  library,
   busy,
   onGetReady,
   onSong,
@@ -119,6 +125,7 @@ export function GigCard({
   band: BandView;
   me: string;
   pack: GigPack | undefined;
+  library: BandLibrary | null;
   busy: boolean;
   onGetReady: () => void;
   onSong: (index: number) => void;
@@ -128,6 +135,8 @@ export function GigCard({
   const days = daysUntil(gig.date);
   const nameOf = (userId: string) => band.members.find((member) => member.userId === userId)?.name ?? "Not in the band now";
   const role = (userId: string) => (userId === gig.leader ? " · Leading" : userId === gig.backup ? " · Backup" : "");
+  const mayFetch = playing || band.role === "admin";
+  const planned = library?.setlists.find((setlist) => setlist.setlistId === gig.setlistId)?.songIds ?? [];
 
   return (
     <section className="gig-card" data-gig={gig.gigId} aria-label={gig.name}>
@@ -146,7 +155,7 @@ export function GigCard({
           </li>
         ))}
       </ul>
-      {playing || band.role === "admin" ? (
+      {mayFetch ? (
         <button type="button" className="account-primary" disabled={busy} onClick={onGetReady}>
           Get ready
         </button>
@@ -159,6 +168,17 @@ export function GigCard({
             <li key={item.songId}>
               <button type="button" className="account-secondary" onClick={() => onSong(index)}>
                 {item.song.title} <small>{item.song.artist}</small>
+              </button>
+            </li>
+          ))}
+        </ol>
+      ) : mayFetch && planned.length > 0 ? (
+        <ol className="gig-card-songs">
+          {planned.map((songId) => (
+            <li key={songId}>
+              <span>{titleOf(library?.songs.find((song) => song.songId === songId))}</span>
+              <button type="button" className="account-secondary" disabled={busy} onClick={onGetReady}>
+                Download
               </button>
             </li>
           ))}

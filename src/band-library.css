@@ -251,3 +251,67 @@
 .setlist-head .setlist-code-show {
   flex: none;
 }
+
+.band-setlist-songs li:has(> button) {
+  padding: 0;
+}
+
+.band-setlist-songs li > button,
+.gig-card-songs li > button:not(:only-child) {
+  margin-left: 8px;
+}
+
+.plan-gig {
+  align-content: start;
+}
+
+.plan-gig .gig-plan {
+  max-width: 560px;
+}
+
+.plan-gig .account-input {
+  height: 48px;
+}
+
+.gig-plan-lineup label {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+}
+
+.gig-plan-route {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.gig-plan-route legend {
+  padding: 0;
+  margin-bottom: 8px;
+}
+
+.gig-plan-route label {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: 12px;
+  min-height: 48px;
+  padding: 4px 0;
+}
+
+.gig-plan-route input {
+  grid-row: span 2;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+}
+
+.gig-plan-route small {
+  grid-column: 2;
+  color: var(--text-dim);
+  font-size: 13px;
+}

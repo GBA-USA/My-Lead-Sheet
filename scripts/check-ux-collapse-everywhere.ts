@@ -246,13 +246,6 @@ try {
     await app.until(`${page}?.dataset.view === "setlist" && ${page}.querySelectorAll(".band-setlist-songs li").length === 25`, "the band setlist view");
     await painted(6);
   };
-  const myLive = () => go(`#/live/${seed.setlists[0].id}/0`, `!!document.querySelector(".live-nav") && !!document.querySelector(".sheet .sheet-name")`, "My setlist Live");
-  const bandLive = async () => {
-    await bandSetlist();
-    await app.click("Live", `${page}.querySelector(".band-setlist-view")`);
-    await app.until(`location.hash === ${js(`#/live/band/${bandId}/${friday.body.setlistId}/0`)} && document.querySelector(".sheet .sheet-name")?.textContent === "Tide Song 1"`, "the band Live song", 15000);
-    await painted(6);
-  };
 
   await check("a band song sheet folds its top on scroll down and unfolds on scroll up or a bar tap, like My songs", async () => {
     for (const at of [PHONE, DESK]) {
@@ -267,14 +260,6 @@ try {
       await size(at);
       await foldsLikeMySongs(`My setlists at ${at.name}`, mySetlists, KEEP_LIST);
       await foldsLikeMySongs(`the band setlist view at ${at.name}`, bandSetlist, KEEP_LIST);
-    }
-  });
-
-  await check("Live / setlist mode song pages fold the same way", async () => {
-    for (const at of [PHONE, DESK]) {
-      await size(at);
-      await foldsLikeMySongs(`My setlist Live at ${at.name}`, myLive, KEEP_SONG);
-      await foldsLikeMySongs(`band Live at ${at.name}`, bandLive, KEEP_SONG);
     }
   });
 

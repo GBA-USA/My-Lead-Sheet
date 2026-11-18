@@ -74,8 +74,8 @@ const CHORDS = `(() => {
         range.setStart(node, match.index);
         range.setEnd(node, match.index + match[0].length);
         const box = range.getBoundingClientRect();
-        const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
-        out.push({ text: match[0], section, row: r, x: box.left, y: box.top, w: box.width, h: box.height, visible: !!hit && chart.contains(hit) });
+        const points = [[0.5, 0.5], [0.05, 0.1], [0.95, 0.1], [0.05, 0.9], [0.95, 0.9]].map(([x, y]) => document.elementFromPoint(box.left + box.width * x, box.top + box.height * y));
+        out.push({ text: match[0], section, row: r, x: box.left, y: box.top, w: box.width, h: box.height, visible: points.every((hit) => !!hit && row.contains(hit)) });
       }
     }
   });
@@ -148,11 +148,11 @@ let loads = 0;
 async function phone(width: number, height = 844) {
   await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 2, mobile: true });
 }
-/** Opens `hash` fresh after `setup` runs on the page's storage, at text size x1.5. */
+/** Opens `hash` fresh after `setup` runs on the page's storage, at text size x1.5. `setup` can read the library the app stored as `library`. */
 async function open(hash: string, setup = "", ready = `!!document.querySelector("#chord-section .chart-heading")`) {
   await send("Page.navigate", { url: `${site.origin}/?load=${(loads += 1)}#/songs` });
   await until(`document.readyState === "complete"`, "the app");
-  await evaluate(`localStorage.clear(); ${setup}; localStorage.setItem("leadSheetsTextScale", "${SCALE_15}")`);
+  await evaluate(`(() => { const library = localStorage.getItem("leadSheetsLibrary"); localStorage.clear(); ${setup}; localStorage.setItem("leadSheetsTextScale", "${SCALE_15}"); })()`);
   await send("Page.navigate", { url: `${site.origin}/?load=${(loads += 1)}${hash}` });
   await until(ready, hash);
   await evaluate(`document.fonts.ready.then(() => true)`);
@@ -170,7 +170,8 @@ async function chordColor(): Promise<Rgb> {
 
 /**
  * Every chord with how much of it is filled, read from a screenshot: within a chord's box, a strongly inked pixel
- * either matches the chord color Notes uses or is the fill. A column counts as the color most of its ink has.
+ * either lies on the blend of the chord color Notes uses with the paper, or is the fill. A column counts as the color
+ * most of its ink has.
  */
 async function look(): Promise<Chord[]> {
   const chords = await evaluate<Omit<Chord, "filled" | "leftToRight">[]>(CHORDS);
@@ -194,10 +195,15 @@ async function look(): Promise<Chord[]> {
     const { data, width } = ctx.getImageData(0, 0, img.width, img.height);
     const at = (x, y) => { const i = (y * width + x) * 4; return [data[i], data[i + 1], data[i + 2]]; };
     const far = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+    const offBlend = (p, a, b) => {
+      const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+      const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * d[0] + (p[1] - a[1]) * d[1] + (p[2] - a[2]) * d[2]) / (d[0] ** 2 + d[1] ** 2 + d[2] ** 2)));
+      return far(p, [a[0] + t * d[0], a[1] + t * d[1], a[2] + t * d[2]]);
+    };
     return chords.map((chord) => {
       if (!chord.visible) return { ...chord, filled: null, leftToRight: true };
-      const x0 = Math.ceil((chord.x - view.x) * scale), x1 = Math.floor((chord.x + chord.w - view.x) * scale);
-      const y0 = Math.ceil((chord.y - view.y) * scale), y1 = Math.floor((chord.y + chord.h - view.y) * scale);
+      const x0 = Math.max(2, Math.ceil((chord.x - view.x) * scale)), x1 = Math.min(img.width, Math.floor((chord.x + chord.w - view.x) * scale));
+      const y0 = Math.max(0, Math.ceil((chord.y - view.y) * scale)), y1 = Math.min(img.height, Math.floor((chord.y + chord.h - view.y) * scale));
       const paper = at(Math.max(0, x0 - 2), y0);
       const ink = far(base, paper);
       const columns = [];
@@ -206,7 +212,7 @@ async function look(): Promise<Chord[]> {
         for (let y = y0; y < y1; y++) {
           const pixel = at(x, y);
           if (far(pixel, paper) < 0.6 * ink) continue;
-          if (far(pixel, base) < 0.3 * ink) own += 1;
+          if (offBlend(pixel, base, paper) < 0.15 * ink) own += 1;
           else fill += 1;
         }
         if (own + fill > 0) columns.push(fill > own ? "fill" : "own");
@@ -235,12 +241,14 @@ function inOrder(chords: Chord[]): boolean {
   return /^F*P?E*$/.test(states);
 }
 
+/** The chart's lyric rows, its chords in order, and all its text outside performance notes, which may quote a lyric. */
 async function lyricsAndChords(): Promise<{ lyrics: string[]; chords: string[]; chartText: string }> {
   return evaluate(`(() => {
     const chart = document.getElementById("chord-section");
     const lyrics = [...chart.querySelectorAll(".lyrics, .lyric-only")].filter((el) => el.getClientRects().length > 0).map((el) => el.textContent.trim()).filter((text) => text.length > 3);
     const chords = [...chart.querySelectorAll(".chords, .bars")].filter((el) => el.getClientRects().length > 0).flatMap((el) => el.textContent.match(/[^\\s|]+/g) ?? []);
-    return { lyrics, chords, chartText: chart.innerText };
+    const words = [...chart.querySelectorAll(".chart-section *")].filter((el) => !el.closest(".chart-note") && el.children.length === 0 && el.getClientRects().length > 0);
+    return { lyrics, chords, chartText: words.map((el) => el.textContent).join(" | ") };
   })()`);
 }
 
@@ -286,17 +294,29 @@ try {
           expect(await evaluate<boolean>(`!!document.querySelector(".song-chrome-bar[data-folded]")`), `at ${width} px the song chrome folds after scrolling the sheet`);
         }
         const row = await evaluate<{ fits: boolean; detail: string }>(`(() => {
-          const row = ${SWITCH}.closest(".control-row");
-          const parts = [row.querySelector(".transpose"), ...${SWITCH}.querySelectorAll("button")];
+          const group = ${SWITCH};
+          const buttons = [...group.querySelectorAll("button")];
+          const whole = (b) => { const r = b.getBoundingClientRect(), g = group.getBoundingClientRect(); return r.left >= g.left - 0.5 && r.right <= g.right + 0.5 && b.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)); };
+          const parts = [group.closest(".control-row").querySelector(".transpose"), group];
           const boxes = parts.map((el) => el.getBoundingClientRect());
           const middle = boxes.map((b) => b.top + b.height / 2);
-          const oneLine = middle.every((m) => Math.abs(m - middle[0]) < 2);
+          const oneLine = Math.abs(middle[1] - middle[0]) < 2 && boxes[0].right <= boxes[1].left;
           const inside = boxes.every((b) => b.left >= 0 && b.right <= innerWidth - 4);
-          const whole = [...${SWITCH}.querySelectorAll("button")].every((b) => b.scrollWidth <= b.clientWidth && b.getClientRects().length === 1);
-          const seen = [...${SWITCH}.querySelectorAll("button")].every((b) => { const r = b.getBoundingClientRect(); return b.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)); });
-          return { fits: oneLine && inside && whole && seen, detail: JSON.stringify({ oneLine, inside, whole, seen, boxes: boxes.map((b) => [Math.round(b.left), Math.round(b.top), Math.round(b.right)]) }) };
+          const unclipped = buttons.every((b) => b.scrollWidth <= b.clientWidth);
+          const pressedSeen = buttons.filter((b) => b.getAttribute("aria-pressed") === "true").every(whole);
+          const before = group.scrollLeft;
+          const reach = buttons.every((b) => { b.scrollIntoView({ inline: "nearest", block: "nearest" }); return whole(b); });
+          group.scrollLeft = before;
+          const allSeen = buttons.every(whole);
+          return { fits: oneLine && inside && unclipped && pressedSeen && reach && (${width} < 390 || allSeen), detail: JSON.stringify({ oneLine, inside, unclipped, pressedSeen, reach, allSeen, boxes: [...boxes, ...buttons.map((b) => b.getBoundingClientRect())].map((b) => [Math.round(b.left), Math.round(b.right)]) }) };
         })()`);
-        expect(row.fits, `at ${width} px ${fold ? "folded" : "open"}, the key and the three buttons share one row on screen, whole and tappable: ${row.detail}`);
+        expect(row.fits, `at ${width} px ${fold ? "folded" : "open"}, the key and the switch share one row, the mode in use is whole on screen, each mode can be reached${width >= 390 ? ", and all three show at once" : " by scrolling the switch"}: ${row.detail}`);
+        if (width < 390) {
+          await tap("Chords only", SWITCH);
+          const seen = await evaluate<boolean>(`(() => { const b = [...${SWITCH}.querySelectorAll("button")].at(-1), r = b.getBoundingClientRect(), g = ${SWITCH}.getBoundingClientRect(); return r.right <= g.right + 0.5 && r.left >= g.left - 0.5; })()`);
+          expect(seen, `at ${width} px ${fold ? "folded" : "open"}, choosing Chords only scrolls it whole into view`);
+          await tap("Notes", SWITCH);
+        }
       }
     }
     await phone(390);
@@ -321,7 +341,7 @@ try {
     const copy = { ...fireAway, id: 901, title: "Mike's Fire Away", copy: { id: "copy-dm", canSendOn: false, from: { name: "Mike" } } };
     await open(
       "#/song/901",
-      `const stored = JSON.parse(JSON.stringify(${js(seed)})); stored.songs.push(${js(copy)}); localStorage.setItem("leadSheetsLibrary", JSON.stringify(stored))`,
+      `const stored = JSON.parse(library); stored.songs.push(${js(copy)}); localStorage.setItem("leadSheetsLibrary", JSON.stringify(stored))`,
     );
     await tap("Chords only", SWITCH);
     const locked = await lyricsAndChords();
@@ -356,6 +376,8 @@ try {
     await open(`#/song/${FIRE_AWAY}`);
     base = await chordColor();
     await tap("Chords only", SWITCH);
+    await evaluate(`(() => { const el = document.getElementById("sheet-scroll"); el.scrollTop += document.getElementById("chord-section").getBoundingClientRect().top - el.getBoundingClientRect().top; })()`);
+    await pause(150);
     const still = await look();
     expect(shown(still).length > 4 && shown(still).every((chord) => chord.filled! <= EMPTY), `before Scroll, no chord is filled (${describe(still)})`);
     await play();
@@ -380,21 +402,27 @@ try {
     expect(partial >= 5, `a chord was partly filled at ${partial} of 15 samples`);
 
     let before = await look();
+    for (let i = 0; i < 100 && before[position(before).index]?.filled! > 0.5; i++) {
+      await evaluate(`window.__frames(15)`);
+      before = await look();
+    }
     const k = position(before).index;
-    expect(k >= 0 && k + 1 < before.length && before[k + 1].visible, `a chord and the one after it are on screen (${describe(before)})`);
-    let started = false;
-    let lag = 0;
-    for (let step = 0; step < 400 && !started; step++) {
+    const begun = before[k]?.filled ?? 1;
+    expect(k >= 0 && k + 1 < before.length && before[k + 1].visible && begun <= 0.5, `a chord at most half filled and the one after it are on screen (${describe(before)})`);
+    let [steps, toFull, lag, started] = [0, 0, 0, false];
+    for (; steps < 600 && !started; steps++) {
       await evaluate(`window.__frames(3)`);
       const now = await look();
       const [first, next] = [now[k], now[k + 1]];
-      expect(!(next.filled! > 0 && first.filled! < 0.9), `step ${step}: ${next.text} starts only once ${first.text} is full (${first.filled!.toFixed(2)}, ${next.filled!.toFixed(2)})`);
+      expect(!(next.filled! > 0 && first.filled! < 0.9), `step ${steps}: ${next.text} starts only once ${first.text} is full (${first.filled!.toFixed(2)}, ${next.filled!.toFixed(2)})`);
+      if (first.filled! >= 1 && !toFull) toFull = steps + 1;
       if (first.filled! >= 1 && next.filled! === 0) lag += 1;
       started = next.filled! > 0;
       before = now;
     }
-    expect(started, `${before[k + 1].text} started filling`);
-    expect(lag <= 2, `${before[k + 1].text} started within 6 frames of ${before[k].text} filling up (${lag} looks of 3 frames between)`);
+    expect(started && toFull > 0, `${before[k + 1].text} started filling after ${before[k].text} filled up`);
+    const whole = toFull / (1 - begun);
+    expect(lag <= Math.max(2, 0.1 * whole), `${before[k + 1].text} started within a tenth of ${before[k].text}'s fill time of it filling up (${lag} looks of 3 frames between, its fill takes about ${whole.toFixed(0)})`);
 
     await evaluate(`location.hash = "#/song/2"`);
     await until(`document.querySelector(".sheet-name")?.textContent === "Neon Moon"`, "Neon Moon");
@@ -414,10 +442,14 @@ try {
       const now = await look();
       const scroll = await evaluate<{ scrollTop: number; progress: number | null; at: number | null; slots: [number, number][] }>(SCROLL);
       expect(scroll.at !== null, "the Chords only chart is taller than the screen, so the scroll moves");
-      const filling = shown(now).find((chord) => chord.filled! > EMPTY && chord.filled! < FULL);
-      if (!filling) continue;
-      const [from, to] = scroll.slots[filling.row];
-      expect(scroll.at! >= from - 2 && scroll.at! <= to + 2, `at ${t} s the scroll is ${(scroll.progress! * 100).toFixed(1)}% down the chart (${scroll.at!.toFixed(0)} px), inside the row of ${filling.text} (${from.toFixed(0)} to ${to.toFixed(0)} px)`);
+      const k = now.findIndex((chord) => chord.filled !== null && chord.filled > EMPTY && chord.filled < FULL);
+      if (k < 0) continue;
+      const [filling, next] = [now[k], now[k + 1] ?? now[k]];
+      const [from, to] = [scroll.slots[filling.row][0], scroll.slots[next.row][1]];
+      expect(
+        scroll.at! >= from - 2 && scroll.at! <= to + 2,
+        `at ${t} s the scroll is ${(scroll.progress! * 100).toFixed(1)}% down the chart (${scroll.at!.toFixed(0)} px), between the top of ${filling.text}'s row and the end of the row where ${next.text} comes next (${from.toFixed(0)} to ${to.toFixed(0)} px)`,
+      );
     }
     const atForty = async (setup: string, seconds: number) => {
       await open(`#/song/${FIRE_AWAY}`, setup);

@@ -1,20 +1,19 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 import type { SongRef } from "./types";
 
-const FOLD_AFTER = 48;
-const OPEN_AFTER = 24;
+const TRAVEL = 24;
 
 /** Whether the song chrome is folded, and where the sheet's current run of scrolling began: the lowest point while open, the highest while folded. */
 type Fold = { folded: boolean; mark: number };
 
-/** The next fold after the sheet scrolls to `top`. It folds only once the `room` above the sheet is out of view, so no gap opens under the bar. */
+/** It folds only once the `room` above the sheet is out of view, so no gap opens under the bar. */
 function foldAfterScroll(fold: Fold, top: number, room: number): Fold {
   if (fold.folded) {
     if (top > fold.mark) return { folded: true, mark: top };
-    return fold.mark - top >= OPEN_AFTER ? { folded: false, mark: top } : fold;
+    return fold.mark - top >= TRAVEL ? { folded: false, mark: top } : fold;
   }
   if (top < fold.mark) return { folded: false, mark: top };
-  return top - fold.mark >= FOLD_AFTER && top >= room ? { folded: true, mark: top } : fold;
+  return top - fold.mark >= TRAVEL && top >= room ? { folded: true, mark: top } : fold;
 }
 
 /**
@@ -31,7 +30,7 @@ export function useSongChrome(song: SongRef | null, scrolling: boolean, holdOpen
   const fold = useRef<Fold>({ folded: false, mark: 0 });
   const latest = useRef({ room, holdOpen, onFold });
   latest.current = { room, holdOpen, onFold };
-  const over = folded || scrolling;
+  const over = song != null && (folded || scrolling);
   const wasOver = useRef(over);
   const keepTop = useRef<number | null>(null);
   if (over !== wasOver.current) {
@@ -66,7 +65,7 @@ export function useSongChrome(song: SongRef | null, scrolling: boolean, holdOpen
     return () => watch.disconnect();
   }, [song, folded]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     open();
     const el = document.getElementById("sheet-scroll");
     if (!song || !el) return;
@@ -98,7 +97,6 @@ export function useSongChrome(song: SongRef | null, scrolling: boolean, holdOpen
 
 type SongChrome = ReturnType<typeof useSongChrome>;
 
-/** The header, tabs and controls of a song, in the slot that folds them. Off a song route, `chrome` is null and they stay as they are. */
 export function SongChromeSlot({ chrome, children }: { chrome: SongChrome | null; children: ReactNode }) {
   if (!chrome) return <>{children}</>;
   return (

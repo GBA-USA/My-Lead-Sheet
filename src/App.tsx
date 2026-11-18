@@ -27,6 +27,7 @@ import { MySetlistCodeSheet, SetlistCopySheet } from "./setlist-code";
 import { GearIcon, SettingsScreen } from "./settings";
 import { LeadSheet } from "./sheet";
 import type { Account } from "./sign-in-methods";
+import { SongChromeSlot, useSongChrome } from "./song-chrome";
 import { SongDataEditor } from "./song-data-editor";
 import { useSongVersion } from "./song-version";
 import {
@@ -179,6 +180,8 @@ export function App() {
     setBpm: (bpm) => { setFollowed(null); songVersion.set({ bpm }); },
   });
   const take = teaching && "take" in teaching ? teaching.take : null;
+  const foldable = (route.name === "song" || route.name === "band-song") && activeSong != null;
+  const chrome = useSongChrome(foldable ? activeSong.ref : null, performance.scrolling, take != null, () => setMenu(null));
   const playing: ScrollVersion | null = draft?.plan ? { name: "", ...draft.plan, ...(draft.learned ? { learned: draft.learned } : {}) } : null;
   const learned = take ? undefined : playing?.learned;
   const even = shownSong ? evenPlan(shownSong) : null;
@@ -279,63 +282,65 @@ export function App() {
 
   return (
     <div className="app">
-      <header className={activeSong ? "shell-header song-header" : "shell-header"}>
-        <button
-          type="button"
-          className="icon-btn"
-          aria-label="Back"
-          disabled={back === null}
-          onClick={() => back && (window.location.hash = back)}
-        >
-          <BackIcon />
-        </button>
-        {activeSong ? <p className="shell-title">{APP_NAME}</p> : <h1 className="shell-title">{SCREEN_TITLES[route.name] ?? APP_NAME}</h1>}
-        {activeSong ? <TextSizeButtons index={textIndex} count={TEXT_SCALES.length} onChange={changeText} /> : null}
-        {activeSong ? (
-          <OverflowMenu label="More" size="shell" open={menu === "shell"} onToggle={() => toggleMenu("shell")} onClose={closeMenu} onSongData={bandRoute ? undefined : () => setEditing(true)}>
-            {bandRoute ? null : sendSong.item(activeSong, closeMenu)}
-          </OverflowMenu>
-        ) : route.name === "settings" ? null : (
-          <button type="button" className="icon-btn gear-btn" aria-label="Settings" onClick={() => (window.location.hash = settingsHref(tab))}>
-            <GearIcon />
-            {inbox.unread > 0 ? <span className="chat-badge">{inbox.unread}</span> : null}
+      <SongChromeSlot chrome={foldable ? chrome : null}>
+        <header className={activeSong ? "shell-header song-header" : "shell-header"}>
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label="Back"
+            disabled={back === null}
+            onClick={() => back && (window.location.hash = back)}
+          >
+            <BackIcon />
           </button>
-        )}
-        {activeSong ? <SongLine key={activeSong.ref} state={songVersion} menu={menu} onToggleMenu={toggleMenu} onCloseMenu={closeMenu} /> : null}
-      </header>
+          {activeSong ? <p className="shell-title">{APP_NAME}</p> : <h1 className="shell-title">{SCREEN_TITLES[route.name] ?? APP_NAME}</h1>}
+          {activeSong ? <TextSizeButtons index={textIndex} count={TEXT_SCALES.length} onChange={changeText} /> : null}
+          {activeSong ? (
+            <OverflowMenu label="More" size="shell" open={menu === "shell"} onToggle={() => toggleMenu("shell")} onClose={closeMenu} onSongData={bandRoute ? undefined : () => setEditing(true)}>
+              {bandRoute ? null : sendSong.item(activeSong, closeMenu)}
+            </OverflowMenu>
+          ) : route.name === "settings" ? null : (
+            <button type="button" className="icon-btn gear-btn" aria-label="Settings" onClick={() => (window.location.hash = settingsHref(tab))}>
+              <GearIcon />
+              {inbox.unread > 0 ? <span className="chat-badge">{inbox.unread}</span> : null}
+            </button>
+          )}
+          {activeSong ? <SongLine key={activeSong.ref} state={songVersion} menu={menu} onToggleMenu={toggleMenu} onCloseMenu={closeMenu} /> : null}
+        </header>
 
-      {showTabs ? <Tabs tab={tab} /> : null}
+        {showTabs ? <Tabs tab={tab} /> : null}
 
-      {activeSong && shownSong && draft ? (
-        <SongControls
-          keyLabel={displayKeyLabel(shownSong, draft.semitones)}
-          onTransposeDown={() => songVersion.set((current) => ({ semitones: current.semitones - 1 }))}
-          onTransposeUp={() => songVersion.set((current) => ({ semitones: current.semitones + 1 }))}
-          onOriginalKey={() => songVersion.set({ semitones: personal.transpose })}
-          notation={draft.notation}
-          onNotation={(notation) => songVersion.set({ notation })}
-          scrolling={performance.scrolling}
-          onToggleScroll={() => (take ? stopTake(take) : performance.setScrolling((on) => !on))}
-          onScrollSheet={() => {
-            closeMenu();
-            setScrollSheet(true);
-          }}
-          onMetronome={() => document.querySelector(".sheet .metronome")?.scrollIntoView({ block: "nearest" })}
-          onSend={route.name === "song" ? sendSong.onSend(activeSong) : undefined}
-          take={
-            take ? (
-              <TakeBar
-                holding={take.holding}
-                bpm={metronome.bpm}
-                onHold={() => setTeaching({ take: toggleHold(take, clock.current) })}
-                onBpm={metronome.setBpm}
-                onDone={() => finishTake(take)}
-                onDiscard={discardTake}
-              />
-            ) : undefined
-          }
-        />
-      ) : null}
+        {activeSong && shownSong && draft ? (
+          <SongControls
+            keyLabel={displayKeyLabel(shownSong, draft.semitones)}
+            onTransposeDown={() => songVersion.set((current) => ({ semitones: current.semitones - 1 }))}
+            onTransposeUp={() => songVersion.set((current) => ({ semitones: current.semitones + 1 }))}
+            onOriginalKey={() => songVersion.set({ semitones: personal.transpose })}
+            notation={draft.notation}
+            onNotation={(notation) => songVersion.set({ notation })}
+            scrolling={performance.scrolling}
+            onToggleScroll={() => (take ? stopTake(take) : performance.setScrolling((on) => !on))}
+            onScrollSheet={() => {
+              closeMenu();
+              setScrollSheet(true);
+            }}
+            onMetronome={() => document.querySelector(".sheet .metronome")?.scrollIntoView({ block: "nearest" })}
+            onSend={route.name === "song" ? sendSong.onSend(activeSong) : undefined}
+            take={
+              take ? (
+                <TakeBar
+                  holding={take.holding}
+                  bpm={metronome.bpm}
+                  onHold={() => setTeaching({ take: toggleHold(take, clock.current) })}
+                  onBpm={metronome.setBpm}
+                  onDone={() => finishTake(take)}
+                  onDiscard={discardTake}
+                />
+              ) : undefined
+            }
+          />
+        ) : null}
+      </SongChromeSlot>
 
       {activeSong && draft && scrollSheet ? (
         <ScrollSheet
@@ -425,7 +430,9 @@ export function App() {
         id="sheet-scroll"
         role={showTabs ? "tabpanel" : undefined}
         aria-labelledby={showTabs ? `tab-${tab}` : undefined}
+        style={foldable ? chrome.sheetStyle : undefined}
       >
+        {foldable ? <div className="song-chrome-room" style={{ height: chrome.spacer }} /> : null}
         {performance.scrolling && learned && motion.kind === "learned" ? (
           <LearnedCues learned={learned} clock={clock} rate={motion.rate} metronomeOn={metronome.playing} />
         ) : null}

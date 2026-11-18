@@ -506,6 +506,87 @@ a:focus-visible {
   color: var(--on-accent);
 }
 
+.song-chrome {
+  --song-chrome-folded: calc(env(safe-area-inset-top) + 116px);
+  position: relative;
+  z-index: 4;
+  flex: none;
+  height: var(--song-chrome-folded);
+}
+
+.song-chrome-bar {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+.song-chrome-bar[data-folded] {
+  box-sizing: border-box;
+  height: var(--song-chrome-folded);
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto auto;
+  grid-template-rows: 48px 48px;
+  grid-template-areas: "back title scroll metro" "keys keys keys keys";
+  align-items: center;
+  gap: 6px 8px;
+  padding: calc(8px + env(safe-area-inset-top)) 12px 6px;
+}
+
+.song-chrome-bar[data-folded] :is(.shell-header, .controls, .control-row + .control-row) {
+  display: contents;
+}
+
+.song-chrome-bar[data-folded] :is(.tabs, .text-size, .song-line, .song-line-error, .scroll-caret, .send-btn, .key-kicker, .shell-header > .menu-anchor) {
+  display: none;
+}
+
+.song-chrome-bar[data-folded] .shell-header > .icon-btn:first-child {
+  grid-area: back;
+}
+
+.song-chrome-bar[data-folded] .shell-title {
+  grid-area: title;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.song-chrome-bar[data-folded] .scroll-pill {
+  grid-area: scroll;
+  padding: 0 12px;
+}
+
+.song-chrome-bar[data-folded] .scroll-pill svg {
+  display: none;
+}
+
+.song-chrome-bar[data-folded] .metronome-pill {
+  grid-area: metro;
+  padding: 0 12px;
+}
+
+.song-chrome-bar[data-folded] .controls > .control-row:first-child {
+  grid-area: keys;
+}
+
+@media (min-width: 430px) {
+  .song-chrome-bar[data-folded] {
+    grid-template-columns: 48px minmax(0, 1fr) auto auto 48px;
+    grid-template-areas: "back title scroll metro more" "keys keys keys keys keys";
+  }
+
+  .song-chrome-bar[data-folded] .shell-header > .menu-anchor {
+    display: block;
+    grid-area: more;
+  }
+}
+
+.scroll .cue-anchor {
+  top: var(--chrome-over, 0px);
+}
+
 .scroll {
   position: relative;
   z-index: 1;
@@ -1322,7 +1403,7 @@ a:focus-visible {
 
 .beat-rail {
   position: sticky;
-  top: 0;
+  top: var(--chrome-over, 0px);
   z-index: 2;
   height: 0;
 }

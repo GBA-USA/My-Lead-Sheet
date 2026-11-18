@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, type ReactNode } from "react";
 import type { Notation } from "./music";
 
 export function TextSizeButtons({
@@ -49,15 +49,30 @@ export function StepButton({
   );
 }
 
+const NOTATION_LABELS: [Notation, string][] = [
+  ["notes", "Notes"],
+  ["nashville", "Nashville"],
+  ["chords", "Chords only"],
+];
+
+/** On a narrow phone the switch scrolls sideways, and the mode in use is scrolled into view. */
 function NotationSwitch({ value, onChange }: { value: Notation; onChange: (next: Notation) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const pressed = useRef<HTMLButtonElement>(null);
+
+  useLayoutEffect(() => {
+    const [box, on] = [ref.current, pressed.current];
+    if (!box || !on) return;
+    box.scrollLeft = Math.min(Math.max(box.scrollLeft, on.offsetLeft + on.offsetWidth - box.clientWidth), on.offsetLeft);
+  }, [value]);
+
   return (
-    <div className="notes-switch" role="group" aria-label="Notes or Nashville">
-      <button type="button" aria-pressed={value === "notes"} onClick={() => onChange("notes")}>
-        Notes
-      </button>
-      <button type="button" aria-pressed={value === "nashville"} onClick={() => onChange("nashville")}>
-        Nashville
-      </button>
+    <div className="notes-switch" role="group" aria-label="Notes or Nashville" ref={ref}>
+      {NOTATION_LABELS.map(([notation, label]) => (
+        <button key={notation} type="button" aria-pressed={value === notation} ref={value === notation ? pressed : undefined} onClick={() => onChange(notation)}>
+          {label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -205,7 +220,7 @@ export function OverflowMenu({
 }
 
 /**
- * The song's two control rows. Row 1: the key and Notes | Nashville. Row 2: the Scroll pill with its caret to the
+ * The song's two control rows. Row 1: the key and Notes | Nashville | Chords only. Row 2: the Scroll pill with its caret to the
  * Scroll sheet, the Metronome pill, and Send when `onSend` is given. A take puts `take` in row 2's place.
  */
 export function SongControls({

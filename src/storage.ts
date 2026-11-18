@@ -1,5 +1,5 @@
 import seedLibrary from "../data/library.json";
-import { clampScrollPercent, pitchClass, type Notation } from "./music";
+import { clampScrollPercent, isNotation, pitchClass, type Notation } from "./music";
 import { parsePersonal, type PersonalDefaults } from "./personal-settings-model";
 import type { Learned, Mark, ScrollPlan, Span, Tempo } from "./scroll-timing";
 import type { BassNote, ChartLine, ChartSection, CopyMark, Library, LibraryFile, Song, SongData, SongRef } from "./types";
@@ -407,7 +407,7 @@ export function saveScrollPercent(ref: SongRef, percent: number): boolean {
 
 export function loadNotation(ref: SongRef, fallback: Notation = "notes"): Notation {
   const value = readSongPref(NOTATION_KEY, ref);
-  return value === "nashville" || value === "notes" ? value : fallback;
+  return isNotation(value) ? value : fallback;
 }
 
 export function saveNotation(ref: SongRef, notation: Notation): boolean {
@@ -513,7 +513,7 @@ const isSettings = shaped<Omit<StoredVersion, keyof ScrollPlan | "learned">>({
   semitones: optional((value) => Number.isInteger(value)),
   metronomeBpm: optional(isPositive),
   scrollPercent: optional(isPositive),
-  notation: optional((value) => value === "notes" || value === "nashville"),
+  notation: optional(isNotation),
   data: optional(isSongData),
 });
 
@@ -554,16 +554,29 @@ function withoutEvenPace(row: unknown): unknown {
 
 const withEvenPace = (version: StoredVersion): StoredVersion => (version.marks === undefined ? { ...version, ...EVEN_PACE } : version);
 
+/**
+ * On disk a Chords only version says Notes and carries `chordsOnly`, because a build from before Chords only drops a
+ * version whose notation it does not know, and its next write of the song stores the shorter list, which backup
+ * spreads to every phone. That build shows the version in Notes.
+ */
+const withChordsOnly = (version: StoredVersion) => (version.notation === "chords" ? { ...version, notation: "notes", chordsOnly: true } : version);
+
+function withoutChordsOnly(row: unknown): unknown {
+  if (!row || typeof row !== "object" || (row as { chordsOnly?: unknown }).chordsOnly !== true) return row;
+  const { chordsOnly: _chordsOnly, ...version } = row as StoredVersion & { chordsOnly: true };
+  return { ...version, notation: "chords" };
+}
+
 export function loadScrollVersions(ref: SongRef): ScrollVersions {
   const value = readSongPref(SCROLL_VERSIONS_KEY, ref) as Partial<ScrollVersions> | undefined;
-  const versions = Array.isArray(value?.versions) ? value.versions.map(withoutEvenPace).filter(isVersion) : [];
+  const versions = Array.isArray(value?.versions) ? value.versions.map(withoutEvenPace).map(withoutChordsOnly).filter(isVersion) : [];
   const selected = value?.selected;
   const valid = typeof selected === "number" && Number.isInteger(selected) && selected >= 0 && selected < versions.length;
   return { versions, selected: valid ? selected : null };
 }
 
 export function saveScrollVersions(ref: SongRef, value: ScrollVersions): boolean {
-  return writeRaw(`${SCROLL_VERSIONS_KEY}.${refKey(ref)}`, JSON.stringify({ ...value, versions: value.versions.map(withEvenPace) }));
+  return writeRaw(`${SCROLL_VERSIONS_KEY}.${refKey(ref)}`, JSON.stringify({ ...value, versions: value.versions.map((version) => withChordsOnly(withEvenPace(version))) }));
 }
 
 /** Applies one change to the stored versions, not to a copy a screen holds, so a version pulled meanwhile stays. Null when the browser refused the write. */

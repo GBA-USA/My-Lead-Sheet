@@ -36,6 +36,7 @@
   --ink-soft: #5c584c;
   --on-paper-dim: #8a8172;
   --heading: #8a6c28;
+  --chord-played: #1c140f;
   --lamp-off: #c4b396;
   --chord-sure: #8fd3a0;
   --chord-sure-bg: #1f3a26;
@@ -91,6 +92,7 @@ html[data-theme="day"] {
   --ink-soft: #5c584c;
   --on-paper-dim: #8a8172;
   --heading: #8a6c28;
+  --chord-played: #1c140f;
   --lamp-off: #c4b396;
   --chord-sure: #18794e;
   --chord-sure-bg: #e6f4ec;
@@ -146,6 +148,7 @@ html[data-theme="cb-rg"] {
   --ink-soft: #5c584c;
   --on-paper-dim: #8a8172;
   --heading: #8a6c28;
+  --chord-played: #1c140f;
   --lamp-off: #c4b396;
   --chord-sure: #9ecbff;
   --chord-sure-bg: #15304a;
@@ -201,6 +204,7 @@ html[data-theme="cb-by"] {
   --ink-soft: #5c584c;
   --on-paper-dim: #8a8172;
   --heading: #8a6c28;
+  --chord-played: #1c140f;
   --lamp-off: #c4b396;
   --chord-sure: #5fd3c7;
   --chord-sure-bg: #0f3b37;
@@ -256,6 +260,7 @@ html[data-theme="contrast"] {
   --ink-soft: #000;
   --on-paper-dim: #333;
   --heading: #000;
+  --chord-played: #0000b0;
   --lamp-off: #777;
   --chord-sure: #fff;
   --chord-sure-bg: #000;
@@ -622,14 +627,18 @@ a:focus-visible {
 }
 
 .notes-switch {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 2px;
   margin-left: auto;
   min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
 .transpose {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -665,10 +674,21 @@ a:focus-visible {
 }
 
 .notes-switch button {
+  flex: none;
+  min-width: 48px;
   height: 48px;
-  padding: 0 12px;
+  padding: 0 6px;
   border-radius: 999px;
   white-space: nowrap;
+  font-size: 12px;
+}
+
+@media (max-width: 429px) {
+  .notes-switch button {
+    width: min-content;
+    white-space: normal;
+    line-height: 1.1;
+  }
 }
 
 .notes-switch button[aria-pressed="true"] {
@@ -1176,6 +1196,19 @@ a:focus-visible {
 .lyrics {
   color: var(--ink);
   font-weight: 400;
+}
+
+.chord-fill {
+  --fill: clamp(0, (var(--playhead, -1) - var(--from, 0)) * var(--per, 0), 1);
+  --started: min(1, var(--fill) * 1000000);
+  --ended: max(0, var(--fill) * 1000000 - 999999);
+  /* Before the chord starts nothing shows, once it ends the whole box does, and between, the fill crosses the ink, so a glyph edge rounded into the side bearing never shows early or late. */
+  --stop: calc(var(--started) * var(--ink-from, 0) + var(--fill) * (var(--ink-to, 1) - var(--ink-from, 0)) + var(--ended) * (1 - var(--ink-to, 1)));
+  background: linear-gradient(90deg, var(--chord-played) calc(var(--stop) * 100%), var(--heading) 0);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  print-color-adjust: exact;
 }
 
 .bars {

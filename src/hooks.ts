@@ -37,6 +37,14 @@ export function useScrolling(songRef: SongRef | null) {
   return { scrolling, setScrolling, stopScroll: () => setScrolling(false) };
 }
 
+const playheads = new Set<(at: number) => void>();
+
+/** Hears, every timed frame of auto-scroll, how far down the chart the song is, in pixels. */
+export function onPlayhead(listener: (at: number) => void): () => void {
+  playheads.add(listener);
+  return () => void playheads.delete(listener);
+}
+
 /**
  * Scrolls #sheet-scroll by `motion`. A timed motion moves #chord-section only: from its top at the top of the
  * view to its bottom at the bottom. A learned one brings each heading, then the chart's end, to the reading line.
@@ -60,7 +68,8 @@ export function useAutoScroll(
     if (!active) return;
     const el = document.getElementById("sheet-scroll");
     if (!el) return;
-    return scrollChart(el, () => document.getElementById("chord-section"), motionRef, clock, (reason) => onStopRef.current(reason), time);
+    const playhead = (at: number) => playheads.forEach((listener) => listener(at));
+    return scrollChart(el, () => document.getElementById("chord-section"), motionRef, clock, (reason) => onStopRef.current(reason), time, playhead);
   }, [active, plan, time]);
 
   return clock;
@@ -70,6 +79,8 @@ export function useAutoScroll(
  * Runs `runScroll` over the chord section, measured afresh every frame so a text size or window change keeps the
  * same progress. When the section has moved since the last frame, the browser shifted or clamped the scroll for
  * the new layout, so that scroll event is not passed on as the player scrolling.
+ * Each timed frame tells `onPlayhead` how far down the chart, in pixels, the song is. A timed motion goes down the
+ * chart with its progress; a learned one is at the reading line, where each heading arrives as its section starts.
  */
 export function scrollChart(
   el: HTMLElement,
@@ -78,6 +89,7 @@ export function scrollChart(
   clock: { current: number },
   onStop: (reason: "user" | "end") => void,
   time?: TimeSource,
+  onPlayhead?: (at: number) => void,
 ): () => void {
   let last: Section | null = null;
   const section = (): Section | null => {
@@ -97,7 +109,12 @@ export function scrollChart(
     }
   };
   el.addEventListener("scroll", relaid, { passive: true });
-  const stop = runScroll(el, motion, section, clock, onStop, time);
+  const playhead = (progress: number) => {
+    const found = chart();
+    if (!found || !last || !onPlayhead) return;
+    onPlayhead(motion.current.kind === "learned" ? el.scrollTop + READING_LINE - last.start : progress * found.offsetHeight);
+  };
+  const stop = runScroll(el, motion, section, clock, onStop, time, playhead);
   return () => {
     stop();
     el.removeEventListener("scroll", relaid);

@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import type { Owner } from "./account";
 import { initialMetronomeBpm } from "./metronome";
-import { clampScrollPercent, type Notation } from "./music";
+import { clampScrollPercent, isNotation, type Notation } from "./music";
 import type { PersonalDefaults } from "./personal-settings-model";
 import { nextVersionName, withTempo, type Learned, type ScrollPlan, type Tempo } from "./scroll-timing";
 import { useStored } from "./hooks";
@@ -107,7 +107,7 @@ export const differs = (draft: Draft, version: Draft): boolean => print(draft) !
 function parseDraft(value: unknown): Draft | null {
   if (!value || typeof value !== "object") return null;
   const draft = value as Draft;
-  const notation = draft.notation === "notes" || draft.notation === "nashville";
+  const notation = isNotation(draft.notation);
   const numbers = Number.isInteger(draft.semitones) && (draft.bpm === null || Number.isFinite(draft.bpm)) && Number.isFinite(draft.scrollPercent);
   if (!notation || !numbers) return null;
   const timing = draft.plan === null || (Array.isArray(draft.plan?.marks) && draft.plan.marks.length >= 2 && Number.isFinite(draft.plan.bpm));

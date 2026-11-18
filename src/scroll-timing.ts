@@ -263,7 +263,7 @@ interface Scroller {
  * band time puts it however late the frame is.
  * The even pace started from the top of the chord section holds there for its first 2 seconds, so the first chords
  * can be read, and plays the rest a touch faster to still end on time. A taught version keeps its own timing, and
- * a resume or a live take does not hold.
+ * a resume or a live take does not hold. `onProgress` hears how far through the chord section each timed frame is.
  */
 export function runScroll(
   el: Scroller,
@@ -272,6 +272,7 @@ export function runScroll(
   clock: { current: number },
   onStop: (reason: "user" | "end") => void,
   time: TimeSource = frameClock(),
+  onProgress?: (progress: number) => void,
 ): () => void {
   const limit = () => Math.max(0, el.scrollHeight - el.clientHeight);
   const track = (current: Exclude<Motion, { kind: "pace" }>): Track => {
@@ -333,6 +334,7 @@ export function runScroll(
       const path = track(current);
       const progress = path.progressAt(planTime(clock.current));
       place(path.start + (path.end - path.start) * progress);
+      onProgress?.(progress);
       if (progress >= 1) return onStop("end");
     } else {
       const max = limit();

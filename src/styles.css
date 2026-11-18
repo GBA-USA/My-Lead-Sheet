@@ -547,6 +547,7 @@ a:focus-visible {
 .song-chrome-bar[data-folded] .shell-title {
   grid-area: title;
   min-width: 0;
+  font-size: 16px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

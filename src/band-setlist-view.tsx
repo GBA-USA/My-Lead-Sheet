@@ -2,6 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { plural, titleOf } from "./band-library";
 import { bandSongRef, type BandLibrary, type BandSetlist, type BandSong } from "./band-library-model";
 import type { GigPack } from "./gig-pack";
+import type { GigView } from "./gig-plan-model";
 import { getFromPhone, heldFor, onPhoneChange, phoneGeneration } from "./phone-db";
 import { bandLiveHref, type Route } from "./route";
 import { BandSetlistCode, CodeOfferButton } from "./setlist-code";
@@ -69,7 +70,9 @@ export function BandPlayMissing({ play, back }: { play: BandPlay; back: string }
 
 /**
  * A band setlist as a member reads it: who shared it, the band-only line, its songs with Downloaded ✓ where a gig pack
- * on this phone holds them, Show code, Live, and Edit for an admin or the sharer and Plan a gig for an admin.
+ * on this phone holds them, Show code, Live, and Edit for an admin or the sharer and Plan a gig for an admin. When a gig
+ * is planned from it, a song not on this phone offers Download and the foot offers Download all: both fetch that gig's
+ * one pack, since the pack is per gig.
  */
 export function BandSetlistView({
   bandId,
@@ -77,6 +80,9 @@ export function BandSetlistView({
   setlist,
   songs,
   packs,
+  gig,
+  busy,
+  onDownload,
   onBack,
   onEdit,
   onPlan,
@@ -87,6 +93,9 @@ export function BandSetlistView({
   setlist: BandSetlist;
   songs: BandSong[];
   packs: Record<string, GigPack>;
+  gig: GigView | undefined;
+  busy: boolean;
+  onDownload: (gig: GigView) => void;
   onBack: () => void;
   onEdit?: () => void;
   onPlan?: () => void;
@@ -117,7 +126,13 @@ export function BandSetlistView({
           {setlist.songIds.map((songId) => (
             <li key={songId}>
               <span className="band-library-name">{titleOf(byId.get(songId))}</span>
-              {onPhone.has(songId) ? <small>Downloaded ✓</small> : null}
+              {onPhone.has(songId) ? (
+                <small>Downloaded ✓</small>
+              ) : gig ? (
+                <button type="button" className="account-secondary" disabled={busy} onClick={() => onDownload(gig)}>
+                  Download
+                </button>
+              ) : null}
             </li>
           ))}
         </ol>
@@ -126,6 +141,11 @@ export function BandSetlistView({
         <button type="button" className="account-primary" disabled={count === 0} onClick={() => (window.location.hash = bandLiveHref(bandId, setlist.setlistId, 0))}>
           Live
         </button>
+        {gig && count > 0 ? (
+          <button type="button" className="account-secondary" disabled={busy} onClick={() => onDownload(gig)}>
+            Download all
+          </button>
+        ) : null}
         {onEdit ? (
           <button type="button" className="account-secondary" onClick={onEdit}>
             Edit

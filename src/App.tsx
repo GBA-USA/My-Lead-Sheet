@@ -27,7 +27,7 @@ import { MySetlistCodeSheet, SetlistCopySheet } from "./setlist-code";
 import { GearIcon, SettingsScreen } from "./settings";
 import { LeadSheet } from "./sheet";
 import type { Account } from "./sign-in-methods";
-import { SongChromeSlot, useSongChrome } from "./song-chrome";
+import { SongChromeRoom, SongChromeSlot, useSongChrome } from "./song-chrome";
 import { SongDataEditor } from "./song-data-editor";
 import { useSongVersion } from "./song-version";
 import {
@@ -180,8 +180,8 @@ export function App() {
     setBpm: (bpm) => { setFollowed(null); songVersion.set({ bpm }); },
   });
   const take = teaching && "take" in teaching ? teaching.take : null;
-  const foldable = (route.name === "song" || route.name === "band-song") && activeSong != null;
-  const chrome = useSongChrome(foldable ? activeSong.ref : null, performance.scrolling, take != null, () => setMenu(null));
+  const foldSong = route.name === "song" || route.name === "band-song" ? (activeSong?.ref ?? null) : null;
+  const chrome = useSongChrome(foldSong, performance.scrolling, take != null, () => setMenu(null));
   const playing: ScrollVersion | null = draft?.plan ? { name: "", ...draft.plan, ...(draft.learned ? { learned: draft.learned } : {}) } : null;
   const learned = take ? undefined : playing?.learned;
   const even = shownSong ? evenPlan(shownSong) : null;
@@ -282,7 +282,7 @@ export function App() {
 
   return (
     <div className="app">
-      <SongChromeSlot chrome={foldable ? chrome : null}>
+      <SongChromeSlot chrome={chrome}>
         <header className={activeSong ? "shell-header song-header" : "shell-header"}>
           <button
             type="button"
@@ -430,9 +430,9 @@ export function App() {
         id="sheet-scroll"
         role={showTabs ? "tabpanel" : undefined}
         aria-labelledby={showTabs ? `tab-${tab}` : undefined}
-        style={foldable ? chrome.sheetStyle : undefined}
+        style={chrome.sheetStyle}
       >
-        {foldable ? <div className="song-chrome-room" style={{ height: chrome.spacer }} /> : null}
+        <SongChromeRoom chrome={chrome} />
         {performance.scrolling && learned && motion.kind === "learned" ? (
           <LearnedCues learned={learned} clock={clock} rate={motion.rate} metronomeOn={metronome.playing} />
         ) : null}

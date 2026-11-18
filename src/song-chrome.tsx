@@ -85,20 +85,21 @@ export function useSongChrome(song: SongRef | null, scrolling: boolean, holdOpen
   };
 
   return {
+    song,
     bar,
     slot,
     folded,
     onBarClick,
     slotStyle: over ? undefined : { marginBottom: room },
     spacer: over ? room : 0,
-    sheetStyle: { "--chrome-over": `${over && !folded ? room : 0}px`, scrollPaddingTop: over ? room : 0 } as CSSProperties,
+    sheetStyle: song ? ({ "--chrome-over": `${over && !folded ? room : 0}px`, scrollPaddingTop: over ? room : 0 } as CSSProperties) : undefined,
   };
 }
 
 type SongChrome = ReturnType<typeof useSongChrome>;
 
-export function SongChromeSlot({ chrome, children }: { chrome: SongChrome | null; children: ReactNode }) {
-  if (!chrome) return <>{children}</>;
+export function SongChromeSlot({ chrome, children }: { chrome: SongChrome; children: ReactNode }) {
+  if (!chrome.song) return <>{children}</>;
   return (
     <div className="song-chrome" ref={chrome.slot} style={chrome.slotStyle}>
       <div className="song-chrome-bar" ref={chrome.bar} data-folded={chrome.folded || undefined} onClick={chrome.onBarClick}>
@@ -106,4 +107,8 @@ export function SongChromeSlot({ chrome, children }: { chrome: SongChrome | null
       </div>
     </div>
   );
+}
+
+export function SongChromeRoom({ chrome }: { chrome: SongChrome }) {
+  return chrome.song ? <div className="song-chrome-room" style={{ height: chrome.spacer }} /> : null;
 }

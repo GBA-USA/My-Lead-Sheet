@@ -10,13 +10,13 @@ import { CODE_REFUSED, codeInText, readPayload, type CodeKind } from "./code-lin
 import { ScanCode, ShowCode, shareLink, useCode } from "./codes";
 import { APP_NAME } from "./data-kinds";
 import { downloadPack, packsOnPhone, type GigPack } from "./gig-pack";
-import { GigCard, GigPlanForm, GigSong, newGigId } from "./gig-plan";
+import { GigCard, GigPlanForm, newGigId } from "./gig-plan";
 import type { GigDraft, GigView } from "./gig-plan-model";
 import { useCloseOnSong, useEscape } from "./hooks";
 import { NextGigCard, nextGig } from "./next-gig-card";
 import { allOnPhone, clearBand, heldFor, holdBandSongs, keepBandsOnPhone, type CachedBandSong } from "./phone-db";
 import { Room } from "./room";
-import { BAND_SECTIONS, bandHref, bandPlanHref, bandSongHref, sectionOf, type BandSection } from "./route";
+import { BAND_SECTIONS, bandHref, bandPlanHref, bandSongHref, gigHref, sectionOf, type BandSection } from "./route";
 import { SETLIST_CODE_MESSAGES } from "./setlist-code";
 import { ApiError, api } from "./sign-in-methods";
 import "./friends.css";
@@ -26,12 +26,7 @@ export type BandLanding = { bandId: string; section?: BandSection; notice?: stri
 
 type SheetView = { name: "list" } | { name: "scan" } | { name: "code"; code: string } | { name: "gig-code"; code: string } | { name: "setlist-code"; code: string };
 
-type PageView =
-  | { name: "band" }
-  | { name: "invite" }
-  | { name: "settings" }
-  | { name: "gig-song"; gigId: string; index: number }
-  | { name: "setlist"; setlistId: string };
+type PageView = { name: "band" } | { name: "invite" } | { name: "settings" } | { name: "setlist"; setlistId: string };
 
 const SECTION_LABELS: Record<BandSection, string> = { songs: "Songs", setlists: "Setlists", chat: "Chat", gigs: "Gigs", members: "Members" };
 
@@ -513,7 +508,7 @@ function BandScreen({ me, bandId, section: asked, landing, inbox, onMessage, onS
         busy={busy}
         library={library}
         onGetReady={() => getReady(item)}
-        onSong={(index) => go({ name: "gig-song", gigId: item.gig.gigId, index })}
+        onSong={(index) => (window.location.hash = gigHref(bandId, item.gig.gigId, index))}
       />
     ));
 
@@ -651,7 +646,9 @@ function BandScreen({ me, bandId, section: asked, landing, inbox, onMessage, onS
   const bodies: Record<PageView["name"], () => ReactNode> = {
     band: () => (
       <>
-        {band && gigs ? <NextGigCard band={band} me={me} gigs={gigs} packs={packs} library={library} busy={busy} onOpen={() => toSection("gigs")} onPlan={planFromTop} /> : null}
+        {band && gigs ? (
+          <NextGigCard band={band} me={me} gigs={gigs} packs={packs} library={library} busy={busy} onStart={(id) => (window.location.hash = gigHref(bandId, id))} onOpen={() => toSection("gigs")} onPlan={planFromTop} />
+        ) : null}
         <div className="band-status-slot" />
         <div className="band-tabs" role="tablist" aria-label={name}>
           {BAND_SECTIONS.map((key) => (
@@ -716,17 +713,6 @@ function BandScreen({ me, bandId, section: asked, landing, inbox, onMessage, onS
       ) : (
         loading
       ),
-    "gig-song": () => {
-      const item = view.name === "gig-song" ? packs[view.gigId]?.songs[view.index] : undefined;
-      return item ? (
-        <GigSong bandId={bandId} item={item} onBack={() => go({ name: "band" })} />
-      ) : (
-        <>
-          <p className="account-note">This song isn't on this phone. Tap Get ready on the gig card.</p>
-          {backToBand}
-        </>
-      );
-    },
     setlist: () => {
       const setlist = view.name === "setlist" ? library?.setlists.find((item) => item.setlistId === view.setlistId) : undefined;
       if (!band || !library || !setlist) return library ? <p className="account-note">That isn't in the band any more.</p> : loading;

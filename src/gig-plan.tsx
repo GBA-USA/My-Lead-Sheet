@@ -1,6 +1,7 @@
 import { useId, useReducer, useState, type FormEvent } from "react";
 import { titleOf } from "./band-library";
-import { bandSongRef, type BandLibrary } from "./band-library-model";
+import type { BandLibrary } from "./band-library-model";
+import { bandSong } from "./band-setlist-view";
 import type { BandView } from "./bands-model";
 import type { GigPack, GigPackSong } from "./gig-pack";
 import { downloaded, draftProblem, draftReducer, newDraft, type GigDraft, type GigView } from "./gig-plan-model";
@@ -108,8 +109,8 @@ export function GigPlanForm({ band, me, setlistName, busy, onSend, onCancel }: {
 
 /**
  * The gig card on the band screen: who's playing with Downloaded ✓ or Not yet, and Get ready, which downloads the whole
- * pack. Tonight's songs open from the pack once it is on this phone; before that each song offers Download, the same
- * one pack call, for whoever may fetch it.
+ * pack. Tonight's songs open on the gig-mode sheet once the pack is on this phone; before that each song offers
+ * Download, the same one pack call, for whoever may fetch it.
  */
 export function GigCard({
   view,
@@ -188,7 +189,7 @@ export function GigCard({
   );
 }
 
-/** One song of the pack, read from this phone, so it opens with no signal. */
+/** A band song read from this phone, opened from a search result, so it shows with no signal. The gig routes render through `src/App.tsx` instead. */
 export function GigSong({ bandId, item, onBack }: { bandId: string; item: GigPackSong; onBack: () => void }) {
   const metronome = useMetronome(null, item.song.tempo);
   const [scale] = useState(() => TEXT_SCALES[loadTextScaleIndex()]);
@@ -197,7 +198,7 @@ export function GigSong({ bandId, item, onBack }: { bandId: string; item: GigPac
       <button type="button" className="account-link" onClick={onBack}>
         Back
       </button>
-      <LeadSheet song={{ ...item.song, ref: bandSongRef(bandId, item.songId), id: 0 }} scale={scale} semitones={0} notation="notes" metronome={metronome} />
+      <LeadSheet song={bandSong(bandId, item.songId, item.song)} scale={scale} semitones={0} notation="notes" metronome={metronome} />
     </>
   );
 }

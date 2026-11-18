@@ -248,6 +248,16 @@ export const gigRoom = {
     return viewOf(band, row);
   },
 
+  /** The leader, the backup or an admin ends the gig for everyone. Ending it again changes nothing and answers the same. */
+  end(band: RoomStore, userId: string, gigId: string, now: number): GigView {
+    const { me } = inRoom(band.sql, userId);
+    const row = gigRow(band.sql, gigId);
+    if (!row) throw refused("not-found");
+    if (!(me.role === "admin" || row.leader === userId || row.backup === userId)) throw refused("not-allowed");
+    if (row.status !== "ended") band.sql.exec(`UPDATE gigs SET status = 'ended', ended_at = ? WHERE gig_id = ?`, now, gigId);
+    return viewOf(band, gigRow(band.sql, gigId));
+  },
+
   requireGigAdmin(band: RoomStore, userId: string, gigId: string) {
     const { me } = inRoom(band.sql, userId);
     if (me.role !== "admin") throw refused("not-allowed");
@@ -373,6 +383,11 @@ export const GIG_ROUTES: Record<string, Route> = {
   async "POST /api/bands/gig/route"(c) {
     const { room, gigId, me } = inGig(c);
     return { body: await fromRoom(room.gigRoute(me, gigId, routeIn(c.body.route))) };
+  },
+
+  async "POST /api/bands/gig/end"(c) {
+    const { room, gigId, me } = inGig(c);
+    return { body: await fromRoom(room.gigEnd(me, gigId, c.now)) };
   },
 
   async "POST /api/bands/gig/pack"(c) {

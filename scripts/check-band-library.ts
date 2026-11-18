@@ -324,8 +324,8 @@ async function appChecks(site: Awaited<ReturnType<typeof openSite>>, base: strin
   assert.deepEqual([saved.rev, saved.songIds], [3, [renamed.body.songIds[1], renamed.body.songIds[0], ...renamed.body.songIds.slice(2)]], "an edit from the latest rev moves the song");
   await app.click("Church", `document.querySelector(".band-library-chips")`);
   assert.deepEqual(await rows("setlists"), ["Sunday Worship"], "the Church tag chip keeps it");
-  await app.click("Mine", `document.querySelector(".band-library-chips")`);
-  assert.deepEqual(await rows("setlists"), ["Sunday Worship"], "and so does Mine, since Sam shared it");
+  await app.click("Shared by me", `document.querySelector(".band-library-chips")`);
+  assert.deepEqual(await rows("setlists"), ["Sunday Worship"], "and so does Shared by me, since Sam shared it");
   await app.shot(shots && `${shots}/band-library-setlists.png`);
   await fitsPhone("the band's Setlists");
   pass("setlist edits from an old rev are refused and the phone shows the latest");

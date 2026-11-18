@@ -98,9 +98,26 @@ const creationOptions = (options: CreationJson): PublicKeyCredentialCreationOpti
   excludeCredentials: options.excludeCredentials.map((item) => ({ ...item, id: fromBase64Url(item.id) })),
 });
 
+/** The page is not on `host`, the passkey's site, or a subdomain of it. WebAuthn refuses passkeys anywhere else. */
+export class WrongAddress extends Error {
+  constructor(readonly host: string) {
+    super("wrong-address");
+  }
+}
+
+async function askPhone<T>(rpId = location.hostname, ask: () => Promise<T>): Promise<T> {
+  const here = location.hostname;
+  if (here !== rpId && !here.endsWith(`.${rpId}`)) throw new WrongAddress(rpId);
+  try {
+    return await ask();
+  } catch (error) {
+    throw error instanceof DOMException && error.name === "SecurityError" ? new WrongAddress(rpId) : error;
+  }
+}
+
 async function makePasskey(path: string, body: object) {
   const { options } = await api<{ options: CreationJson }>(`${path}/options`, body);
-  const credential = (await navigator.credentials.create({ publicKey: creationOptions(options) })) as PublicKeyCredential;
+  const credential = (await askPhone(options.rp.id, () => navigator.credentials.create({ publicKey: creationOptions(options) }))) as PublicKeyCredential;
   const response = credential.response as AuthenticatorAttestationResponse;
   return api<SignedIn>(`${path}/finish`, { id: credential.id, clientDataJSON: toBase64Url(response.clientDataJSON), attestationObject: toBase64Url(response.attestationObject) });
 }
@@ -115,7 +132,7 @@ const passkey: SignInMethod = {
   create: (displayName) => makePasskey("/api/auth/passkey/create", { name: displayName }),
   async signIn() {
     const { options } = await api<{ options: Omit<PublicKeyCredentialRequestOptions, "challenge"> & { challenge: string } }>("/api/auth/passkey/sign-in/options", {});
-    const credential = (await navigator.credentials.get({ publicKey: { ...options, challenge: fromBase64Url(options.challenge) } })) as PublicKeyCredential;
+    const credential = (await askPhone(options.rpId, () => navigator.credentials.get({ publicKey: { ...options, challenge: fromBase64Url(options.challenge) } }))) as PublicKeyCredential;
     const response = credential.response as AuthenticatorAssertionResponse;
     return api<SignedIn>("/api/auth/passkey/sign-in/finish", {
       id: credential.id,

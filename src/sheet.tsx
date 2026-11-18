@@ -11,6 +11,8 @@ import {
   originalKey,
   type Notation,
 } from "./music";
+import { evenPlan } from "./scroll-timing";
+import { hasTiming } from "./song-version";
 import { tempoText } from "./storage";
 import type { ChartLine, Song } from "./types";
 
@@ -162,6 +164,10 @@ function Chart({
     return () => observer.disconnect();
   }, []);
 
+  const playing = usePlayingLearned();
+  const columns = chartColumns(width, chartFont(scale), charAdvance);
+  const fontFor = (piece: ChartPiece) => `${fitChartFont(width, Math.max(piece.chords.length, piece.lyrics?.length ?? 0), scale, charAdvance)}px`;
+
   useLayoutEffect(() => {
     const element = ref.current;
     if (!element || notation !== "chords") return;
@@ -170,14 +176,13 @@ function Chart({
     const observer = new ResizeObserver(measure);
     observer.observe(element);
     return () => observer.disconnect();
-  });
-
-  const playing = usePlayingLearned();
-  const columns = chartColumns(width, chartFont(scale), charAdvance);
-  const fontFor = (piece: ChartPiece) => `${fitChartFont(width, Math.max(piece.chords.length, piece.lyrics?.length ?? 0), scale, charAdvance)}px`;
+  }, [notation, columns, song, semitones, scale, playing]);
 
   return (
     <div className="chart" id="chord-section" ref={ref}>
+      {notation === "chords" && !evenPlan(song) && !hasTiming(song.ref) ? (
+        <p className="chart-note">This song has no tempo and length yet, so the chords don't fill as it plays.</p>
+      ) : null}
       {song.body.map((section, index) => {
         const learned = playing?.sections[index];
         const heard = learned?.heading === section.heading ? learned.heard : undefined;
@@ -207,8 +212,8 @@ function Chart({
  * Gives each Chords only chord the stretch of the chart it plays over, as `--from` and `--to` in pixels down the
  * chart, the unit `--playhead` moves in. A row's slot runs to the next row's, the first row's from its section's top.
  * A chord starts at its share of its slot and plays until the next chord starts, the last one until the chart's end.
- * `--ink-from` and `--ink-to` are where its letters' ink starts and ends across its box, so the fill covers the
- * letters exactly over that stretch.
+ * `--per` is one over the stretch's length. `--ink-from` and `--ink-to` are where its letters' ink starts and ends
+ * across its box, so the fill covers the letters exactly over that stretch.
  */
 function timeChords(chart: HTMLElement) {
   const top = chart.getBoundingClientRect().top;
@@ -222,8 +227,8 @@ function timeChords(chart: HTMLElement) {
   });
   starts.forEach(({ chord, at }, i) => {
     chord.style.setProperty("--from", String(at));
-    chord.style.setProperty("--to", String(Math.max(at + 0.01, starts[i + 1]?.at ?? chart.offsetHeight)));
-    const ink = textMetrics(chord.textContent ?? "", getComputedStyle(chord).font);
+    chord.style.setProperty("--per", String(1 / Math.max(0.01, (starts[i + 1]?.at ?? chart.offsetHeight) - at)));
+    const ink = textMetrics(chord.textContent ?? "", monoFont(100));
     if (!ink || ink.width <= 0) return;
     chord.style.setProperty("--ink-from", String(Math.max(0, -ink.actualBoundingBoxLeft / ink.width)));
     chord.style.setProperty("--ink-to", String(Math.min(1, ink.actualBoundingBoxRight / ink.width)));
@@ -269,26 +274,19 @@ function ChartRow({
   notation: Notation;
 }) {
   const chordsOnly = notation === "chords";
+  const chordText = (text: string, width: number) => (chordsOnly ? <TimedChords text={text} width={width} /> : text);
   return (
     <>
       {line.chords !== undefined ? (
         wrapAligned(displayChordLine(line.chords, song, semitones, notation), line.lyrics, columns).map((piece, index) => {
+          if (chordsOnly && !piece.chords.trim()) return null;
           const mono = { fontSize: fontFor(piece) };
-          if (chordsOnly) {
-            return piece.chords.trim() ? (
-              <div className="pair" key={index}>
-                <div className="chords" style={mono}>
-                  <TimedChords text={piece.chords} width={Math.max(piece.chords.length, piece.lyrics?.length ?? 0)} />
-                </div>
-              </div>
-            ) : null;
-          }
           return (
             <div className="pair" key={index}>
               <div className="chords" style={mono}>
-                {piece.chords}
+                {chordText(piece.chords, Math.max(piece.chords.length, piece.lyrics?.length ?? 0))}
               </div>
-              {piece.lyrics !== undefined ? (
+              {piece.lyrics !== undefined && !chordsOnly ? (
                 <div className="lyrics" style={mono}>
                   {piece.lyrics}
                 </div>
@@ -302,7 +300,7 @@ function ChartRow({
       {line.bars !== undefined
         ? wrapAligned(displayChordLine(line.bars, song, semitones, notation), undefined, columns).map((piece, index) => (
             <div className="bars" style={{ fontSize: fontFor(piece) }} key={index}>
-              {chordsOnly ? <TimedChords text={piece.chords} width={piece.chords.length} /> : piece.chords}
+              {chordText(piece.chords, piece.chords.length)}
             </div>
           ))
         : null}
@@ -322,6 +320,8 @@ function textMetrics(text: string, font: string): TextMetrics | null {
   return measureCanvas.measureText(text);
 }
 
+const monoFont = (size: number) => `500 ${size}px "IBM Plex Mono", ui-monospace, monospace`;
+
 function charAdvance(size: number): number {
-  return textMetrics("0", `500 ${size}px "IBM Plex Mono", ui-monospace, monospace`)?.width ?? size * 0.6;
+  return textMetrics("0", monoFont(size))?.width ?? size * 0.6;
 }

@@ -347,6 +347,16 @@ try {
     const locked = await lyricsAndChords();
     expect(locked.lyrics.length === 0 && js(locked.chords) === js(notes.chords), `a locked copy shows Chords only too (${locked.lyrics.length} lyric rows, ${locked.chords.length} chords)`);
 
+    const untimed = `[...document.querySelectorAll("#chord-section .chart-note")].some((note) => note.textContent.includes("no tempo and length"))`;
+    await open(`#/song/${FIRE_AWAY}`);
+    await tap("Chords only", SWITCH);
+    expect(!(await evaluate<boolean>(untimed)), "Fire Away, which has a tempo and length, does not say its chords won't fill");
+    await open(`#/song/${NO_HALF_STEPPIN}`);
+    await tap("Chords only", SWITCH);
+    expect(await evaluate<boolean>(untimed), "No Half Steppin', which has no tempo, says its chords don't fill as it plays");
+    await tap("Notes", SWITCH);
+    expect(!(await evaluate<boolean>(untimed)), "Notes does not show that line");
+
     await open("#/live/1/0");
     await tap("Chords only", SWITCH);
     const live = await lyricsAndChords();

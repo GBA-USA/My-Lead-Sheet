@@ -674,6 +674,7 @@ a:focus-visible {
 
 .notes-switch button {
   flex: none;
+  min-width: 48px;
   height: 48px;
   padding: 0 6px;
   border-radius: 999px;
@@ -682,7 +683,7 @@ a:focus-visible {
 }
 
 @media (max-width: 429px) {
-  .notes-switch button:last-child {
+  .notes-switch button {
     width: min-content;
     white-space: normal;
     line-height: 1.1;
@@ -1197,11 +1198,16 @@ a:focus-visible {
 }
 
 .chord-fill {
-  --fill: clamp(0, (var(--playhead, -1) - var(--from, 0)) / (var(--to, 1) - var(--from, 0)), 1);
-  background: linear-gradient(90deg, var(--chord-played) calc((var(--ink-from, 0) + var(--fill) * (var(--ink-to, 1) - var(--ink-from, 0))) * 100%), var(--heading) 0);
+  --fill: clamp(0, (var(--playhead, -1) - var(--from, 0)) * var(--per, 0), 1);
+  --started: min(1, var(--fill) * 1000000);
+  --ended: max(0, var(--fill) * 1000000 - 999999);
+  /* Before the chord starts nothing shows, once it ends the whole box does, and between, the fill crosses the ink, so a glyph edge rounded into the side bearing never shows early or late. */
+  --stop: calc(var(--started) * var(--ink-from, 0) + var(--fill) * (var(--ink-to, 1) - var(--ink-from, 0)) + var(--ended) * (1 - var(--ink-to, 1)));
+  background: linear-gradient(90deg, var(--chord-played) calc(var(--stop) * 100%), var(--heading) 0);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+  print-color-adjust: exact;
 }
 
 .bars {

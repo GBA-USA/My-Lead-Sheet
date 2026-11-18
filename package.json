@@ -62,6 +62,7 @@
     "check:ux-sheet-controls-save": "node --experimental-strip-types scripts/check-ux-sheet-controls-save.ts",
     "check:ux-settings-only-old-build": "node --experimental-strip-types scripts/check-ux-settings-only-old-build.ts",
     "check:ux-band-page": "tsc -p worker && node --experimental-strip-types scripts/check-ux-band-page.ts",
+    "check:ux-plan-gig-route": "tsc -p worker && node --experimental-strip-types scripts/check-ux-plan-gig-route.ts",
     "check:ux-chat-rooms": "tsc -p worker && node --experimental-strip-types scripts/check-ux-chat-rooms.ts",
     "check:ux-layout-fix": "tsc -p worker && node --experimental-strip-types scripts/check-ux-layout-fix.ts",
     "check:ux-chords-only": "node --experimental-strip-types scripts/check-ux-chords-only.ts",

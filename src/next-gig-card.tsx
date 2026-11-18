@@ -14,7 +14,7 @@ export function nextGig(gigs: GigView[]): GigView | undefined {
 /**
  * The next gig on the band page: its name and day, how many songs and how much of its pack this phone holds, Start gig
  * for whoever can lead it, Open gig for the rest of the lineup, and Plan gig for an admin. Until the gig screen lands,
- * Start gig and Open gig open the gig's card in Gigs (`onOpen`).
+ * Start gig and Open gig open the gig's card in Gigs (`onOpen`). Plan gig starts from the next gig's setlist when there is one.
  */
 export function NextGigCard({
   band,
@@ -33,12 +33,12 @@ export function NextGigCard({
   library: BandLibrary | null;
   busy: boolean;
   onOpen: (gigId: string) => void;
-  onPlan: () => void;
+  onPlan: (setlistId?: string) => void;
 }) {
   const admin = band.role === "admin";
   const next = nextGig(gigs);
   const plan = admin ? (
-    <button type="button" className="account-secondary" disabled={busy} onClick={onPlan}>
+    <button type="button" className="account-secondary" disabled={busy} onClick={() => onPlan(next?.gig.setlistId)}>
       Plan gig
     </button>
   ) : null;

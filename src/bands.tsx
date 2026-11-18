@@ -13,10 +13,10 @@ import { downloadPack, packsOnPhone, type GigPack } from "./gig-pack";
 import { GigCard, GigPlanForm, GigSong, newGigId } from "./gig-plan";
 import type { GigDraft, GigView } from "./gig-plan-model";
 import { useCloseOnSong, useEscape } from "./hooks";
-import { NextGigCard } from "./next-gig-card";
+import { NextGigCard, nextGig } from "./next-gig-card";
 import { allOnPhone, clearBand, heldFor, holdBandSongs, keepBandsOnPhone, type CachedBandSong } from "./phone-db";
 import { Room } from "./room";
-import { BAND_SECTIONS, bandHref, bandSongHref, sectionOf, type BandSection } from "./route";
+import { BAND_SECTIONS, bandHref, bandPlanHref, bandSongHref, sectionOf, type BandSection } from "./route";
 import { SETLIST_CODE_MESSAGES } from "./setlist-code";
 import { ApiError, api } from "./sign-in-methods";
 import "./friends.css";
@@ -30,7 +30,6 @@ type PageView =
   | { name: "band" }
   | { name: "invite" }
   | { name: "settings" }
-  | { name: "plan"; setlistId: string; setlistName: string; gigId: string }
   | { name: "gig-song"; gigId: string; index: number }
   | { name: "setlist"; setlistId: string };
 
@@ -315,24 +314,6 @@ export function BandsSheet({
   );
 }
 
-function PlanGigSheet({ onClose, children }: { onClose: () => void; children: ReactNode }) {
-  const titleId = useId();
-  useEscape(onClose);
-  return (
-    <div className="account-backdrop" onClick={onClose}>
-      <section className="account-sheet" role="dialog" aria-modal="true" aria-labelledby={titleId} onClick={(event) => event.stopPropagation()}>
-        <header className="account-top">
-          <h2 id={titleId}>Plan a gig</h2>
-          <button type="button" className="account-close" aria-label="Close" onClick={onClose}>
-            ✕
-          </button>
-        </header>
-        {children}
-      </section>
-    </div>
-  );
-}
-
 function SignInToBands({ onSignIn }: { onSignIn: () => void }) {
   return (
     <div className="bands-tab">
@@ -485,23 +466,14 @@ function BandScreen({ me, bandId, section: asked, landing, inbox, onMessage, onS
       await loadGigs();
     });
 
-  const sendPlan = (plan: Extract<PageView, { name: "plan" }>, draft: GigDraft) =>
-    run(async () => {
-      const made = await api<GigView>("/api/bands/gig/plan", { bandId, setlistId: plan.setlistId, gigId: plan.gigId, ...draft });
-      await loadGigs();
-      setView({ name: "band" });
-      toSection("gigs");
-      setNotice(`Sent ${made.gig.name} to the band.`);
-    });
+  const planFrom = (setlistId: string | null) => (window.location.hash = bandPlanHref(bandId, newGigId(), setlistId));
 
-  const planFromTop = () =>
+  const planFromTop = (setlistId?: string) =>
     run(async () => {
-      if ((library ?? (await reloadLibrary())).setlists.length === 0) return setNotice("Share a setlist first. Then tap Plan a gig on it.");
+      if (setlistId || (library ?? (await reloadLibrary())).setlists.length === 0) return void planFrom(setlistId ?? null);
       toSection("setlists");
       setNotice("Pick a setlist below, then tap Plan a gig.");
     });
-
-  const planFrom = (setlist: BandSetlist) => go({ name: "plan", setlistId: setlist.setlistId, setlistName: setlist.name, gigId: newGigId() });
 
   const change = (path: string, body: object, done?: string) =>
     run(async () => {
@@ -539,6 +511,7 @@ function BandScreen({ me, bandId, section: asked, landing, inbox, onMessage, onS
         me={me}
         pack={packs[item.gig.gigId]}
         busy={busy}
+        library={library}
         onGetReady={() => getReady(item)}
         onSong={(index) => go({ name: "gig-song", gigId: item.gig.gigId, index })}
       />
@@ -618,7 +591,7 @@ function BandScreen({ me, bandId, section: asked, landing, inbox, onMessage, onS
       notify={setNotice}
       onOpenSong={(item) => (window.location.hash = bandSongHref(bandId, item.songId))}
       onOpenSetlist={(setlist) => go({ name: "setlist", setlistId: setlist.setlistId })}
-      onPlanGig={isAdmin ? planFrom : undefined}
+      onPlanGig={isAdmin ? (setlist) => planFrom(setlist.setlistId) : undefined}
       landed={landing?.setlistId}
       editing={editing}
       onError={failed}
@@ -664,7 +637,7 @@ function BandScreen({ me, bandId, section: asked, landing, inbox, onMessage, onS
         <>
           {gigs.length === 0 ? <p className="account-note">No gigs planned yet.</p> : gigCards(band, gigs)}
           {isAdmin ? (
-            <button type="button" className="account-secondary" disabled={busy} onClick={planFromTop}>
+            <button type="button" className="account-secondary" disabled={busy} onClick={() => planFromTop()}>
               Plan a gig
             </button>
           ) : null}
@@ -743,14 +716,6 @@ function BandScreen({ me, bandId, section: asked, landing, inbox, onMessage, onS
       ) : (
         loading
       ),
-    plan: () => (
-      <>
-        {bodies.band()}
-        <PlanGigSheet onClose={() => go({ name: "band" })}>
-          {band && view.name === "plan" ? <GigPlanForm band={band} me={me} setlistName={view.setlistName} busy={busy} onSend={(draft) => sendPlan(view, draft)} onCancel={() => go({ name: "band" })} /> : loading}
-        </PlanGigSheet>
-      </>
-    ),
     "gig-song": () => {
       const item = view.name === "gig-song" ? packs[view.gigId]?.songs[view.index] : undefined;
       return item ? (
@@ -772,6 +737,9 @@ function BandScreen({ me, bandId, section: asked, landing, inbox, onMessage, onS
           setlist={setlist}
           songs={library.songs}
           packs={packs}
+          gig={nextGig((gigs ?? []).filter((item) => item.gig.setlistId === setlist.setlistId))}
+          busy={busy}
+          onDownload={getReady}
           onBack={() => go({ name: "band" })}
           onEdit={
             isAdmin || setlist.sharedBy === me
@@ -782,7 +750,7 @@ function BandScreen({ me, bandId, section: asked, landing, inbox, onMessage, onS
                 }
               : undefined
           }
-          onPlan={isAdmin ? () => planFrom(setlist) : undefined}
+          onPlan={isAdmin ? () => planFrom(setlist.setlistId) : undefined}
           onCodeError={failed}
         />
       );
@@ -812,6 +780,98 @@ function BandScreen({ me, bandId, section: asked, landing, inbox, onMessage, onS
       </header>
       <Status notice={notice} error={error} />
       {bodies[view.name]()}
+    </section>
+  );
+}
+
+type PlanProps = {
+  me: string | null;
+  bandId: string;
+  gigId: string;
+  setlistId: string | null;
+  onSignIn: () => void;
+  onSignedOut: () => void;
+  onDone: (landing: BandLanding) => void;
+};
+
+/**
+ * Plan gig at `#/band/:bandId/plan/:gigId?setlist=:setlistId`: the band read from the server on open, so a reload or a
+ * link renders it, and the form for an admin. The gig id comes from the route, so a second Send after a lost reply
+ * finds the gig already made. `onDone` returns to the band page, with the notice once the band has the gig.
+ */
+export function PlanGigScreen(props: PlanProps) {
+  return props.me ? <PlanGig {...props} me={props.me} /> : <SignInToBands onSignIn={props.onSignIn} />;
+}
+
+function PlanGig({ me, bandId, gigId, setlistId, onSignedOut, onDone }: PlanProps & { me: string }) {
+  const titleId = useId();
+  const [loaded, setLoaded] = useState<{ band: BandView; library: BandLibrary } | null>(null);
+  const [problem, setProblem] = useState<unknown>(null);
+  const [round, setRound] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const refused = (caught: unknown) => (caught instanceof ApiError && caught.status === 401 ? onSignedOut() : setProblem(caught));
+
+  useEffect(() => {
+    setProblem(null);
+    Promise.all([api<BandView>("/api/bands/open", { bandId }), api<BandLibrary>("/api/bands/library", { bandId })]).then(([band, library]) => setLoaded({ band, library }), refused);
+  }, [round]);
+
+  const send = (draft: GigDraft) => {
+    setBusy(true);
+    setError("");
+    api<GigView>("/api/bands/gig/plan", { bandId, setlistId, gigId, ...draft }).then(
+      (made) => onDone({ bandId, section: "gigs", notice: `Sent ${made.gig.name} to the band.` }),
+      (caught) => {
+        setBusy(false);
+        if (caught instanceof ApiError && caught.status === 401) return onSignedOut();
+        setError(message(caught));
+      },
+    );
+  };
+
+  const back = (
+    <button type="button" className="account-link" onClick={() => onDone({ bandId })}>
+      Back to the band
+    </button>
+  );
+  const stop = (words: string, action?: ReactNode) => (
+    <>
+      <p className="account-note" role="alert">
+        {words}
+      </p>
+      {action}
+      {back}
+    </>
+  );
+  const toSetlists = (
+    <button type="button" className="account-primary" onClick={() => onDone({ bandId, section: "setlists" })}>
+      Go to Setlists
+    </button>
+  );
+
+  const body = () => {
+    if (problem)
+      return unreachable(problem)
+        ? stop(OFFLINE, <button type="button" className="account-secondary" onClick={() => setRound((n) => n + 1)}>Try again</button>)
+        : stop(message(problem));
+    if (!loaded) return <p className="account-note">Loading…</p>;
+    const { band, library } = loaded;
+    if (band.role !== "admin") return stop(MESSAGES["not-admin"]);
+    if (!setlistId) return stop(library.setlists.length === 0 ? "Share a setlist first. Then tap Plan a gig on it." : "Pick a setlist in Setlists, then tap Plan a gig on it.", toSetlists);
+    const setlist = library.setlists.find((item) => item.setlistId === setlistId);
+    if (!setlist) return stop(MESSAGES["not-found"], toSetlists);
+    return <GigPlanForm band={band} me={me} setlistName={setlist.name} busy={busy} onSend={send} onCancel={() => onDone({ bandId })} />;
+  };
+
+  return (
+    <section className="band-page plan-gig" role="dialog" aria-labelledby={titleId} data-band={bandId} data-view="plan">
+      <header className="band-page-top">
+        <h2 id={titleId}>Plan gig</h2>
+      </header>
+      <Status notice="" error={error} />
+      {body()}
     </section>
   );
 }

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AccountSheet, googleReturn, useAccount } from "./account";
 import { backupOff, backupOn, syncBackup, type BackupResult } from "./backup";
 import { BandPlayMissing, useBandPlay } from "./band-setlist-view";
-import { BandPage, BandsSheet, BandsTab, type BandLanding } from "./bands";
+import { BandPage, BandsSheet, BandsTab, PlanGigScreen, type BandLanding } from "./bands";
 import { goneWords, openDm, queueOwner, useInbox } from "./chat";
 import { readPayload, type CodeScreen } from "./code-link";
 import { clearLanding, landedCode } from "./codes";
@@ -152,7 +152,7 @@ export function App() {
   const bandRoute = route.name === "band-song" || route.name === "band-live";
   const showTabs = !["live", "band-live", "settings", "messages", "room"].includes(route.name);
   const tab: TabName =
-    route.name === "bands" || route.name === "band" || route.name === "band-song" ? "bands" : route.name === "setlists" || (route.name === "song" && route.from === "setlists") ? "setlists" : "songs";
+    route.name === "bands" || route.name === "band" || route.name === "band-song" || route.name === "band-plan" ? "bands" : route.name === "setlists" || (route.name === "song" && route.from === "setlists") ? "setlists" : "songs";
   const back = backHref(route);
   const play = useBandPlay(route, owner ?? null);
 
@@ -233,10 +233,10 @@ export function App() {
   };
   const messageUser = (userId: string) => openDm(userId).then(openRoom);
   const sendSong = useSendSong(account, stored.songs, { friends: () => setFriends({}), chat: openRoom });
-  const openBand = (next: BandLanding) => {
+  const openBand = (next: BandLanding, replace = false) => {
     setBands(null);
     setLanding(next);
-    window.location.hash = bandHref(next.bandId, next.section);
+    window.location[replace ? "replace" : "assign"](bandHref(next.bandId, next.section));
   };
   const gone = (to: string, words: string) => {
     setNotice(words);
@@ -459,6 +459,7 @@ export function App() {
           <BandPage key={`${owner}/${route.bandId}`} me={owner ?? null} bandId={route.bandId} section={route.section} landing={landing?.bandId === route.bandId ? landing : undefined}
             inbox={inbox} onMessage={messageUser} onSignIn={() => setAccountOpen(true)} onSignedOut={() => setAccount(null)} onGone={(words) => gone("#/bands", words)} />
         ) : null}
+        {route.name === "band-plan" ? <PlanGigScreen key={`${owner}/${route.bandId}/${route.gigId}`} me={owner ?? null} bandId={route.bandId} gigId={route.gigId} setlistId={route.setlistId} onSignIn={() => setAccountOpen(true)} onSignedOut={() => setAccount(null)} onDone={(next) => openBand(next, true)} /> : null}
         {route.name === "messages" || (route.name === "room" && !owner) ? <MessagesScreen me={owner ?? null} inbox={inbox} notice={notice} onSignIn={() => setAccountOpen(true)} /> : null}
         {route.name === "room" && owner ? (
           <Room key={`${owner}/${route.roomId}`} me={owner} roomId={route.roomId} entry={inbox.chats?.find((c) => c.roomId === route.roomId)} onEntry={inbox.change} onGone={(error) => gone(messagesHref, goneWords(route.roomId, error))} onSignedOut={() => setAccount(null)} />

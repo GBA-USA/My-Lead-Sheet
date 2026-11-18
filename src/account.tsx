@@ -12,6 +12,7 @@ import {
   createWithPassword,
   setPassword,
   signInWithPassword,
+  WrongAddress,
   type Account,
   type Action,
   type AuthConfig,
@@ -97,6 +98,7 @@ const MESSAGES: Record<string, string> = {
   "google-cancelled": "Google sign-in was cancelled.",
   "wrong-state": "Google sign-in didn't finish. Try again.",
   "google-refused": "Google sign-in didn't finish. Try again.",
+  "wrong-origin": `Sign-in only works at ${APP_NAME}'s main address. Open that address and try again.`,
 };
 
 const minutes = (ms: number) => {
@@ -104,7 +106,19 @@ const minutes = (ms: number) => {
   return `${count} minute${count === 1 ? "" : "s"}`;
 };
 
-const message = (error: unknown) => {
+const message = (error: unknown): ReactNode => {
+  if (error instanceof WrongAddress) {
+    const main = new URL(location.href);
+    main.protocol = "https:";
+    main.hostname = error.host;
+    main.port = "";
+    main.search = "";
+    return (
+      <>
+        Open <a href={main.href}>{error.host}</a> to use Face ID or fingerprint.
+      </>
+    );
+  }
   if (error instanceof ApiError && error.reason === "wait") return `Too many wrong tries. Try again in ${minutes(error.waitMs)}.`;
   const key = error instanceof ApiError ? (error.status >= 500 && error.reason !== "not-configured" ? "offline" : error.reason) : error instanceof DOMException ? error.name : "";
   const text = MESSAGES[key] ?? "Something went wrong. Try again.";
@@ -146,7 +160,7 @@ export function AccountSheet({
   const secretId = useId();
   const [step, setStep] = useState<Step>(account ? { name: "account" } : { name: "loading" });
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<ReactNode>("");
   const [name, setName] = useState("");
   const [handle, setHandle] = useState("");
   const [secret, setSecret] = useState("");

@@ -124,7 +124,7 @@ const menus = () =>
   })`);
 
 let loads = 0;
-async function openSong(id: number, versions: object | null, scale = 1, route = `#/song/${id}`, others: number[] = []) {
+async function openSong(id: number, versions: object | null, scale = 1, route = `#/song/${id}`, others: number[] = [], ready = `!!document.querySelector(".controls")`) {
   await send("Page.navigate", { url: `${site.origin}/?load=${(loads += 1)}#/songs` });
   await until(`document.readyState === "complete"`, "the app");
   await evaluate(`(() => {
@@ -133,7 +133,7 @@ async function openSong(id: number, versions: object | null, scale = 1, route = 
     ${versions ? [id, ...others].map((song) => `localStorage.setItem("${app.SCROLL_VERSIONS_KEY}.${song}", ${JSON.stringify(JSON.stringify(versions))});`).join("") : ""}
   })()`);
   await send("Page.navigate", { url: `${site.origin}/?load=${(loads += 1)}${route}` });
-  await until(`!!document.querySelector(".controls") && !!document.querySelector(".chart-heading")`, `song ${id}`);
+  await until(`${ready} && !!document.querySelector(".chart-heading")`, `song ${id}`);
   await evaluate(`document.fonts.ready.then(() => true)`);
   await pause(100);
 }
@@ -300,16 +300,12 @@ try {
   });
 
   await scenario("a live setlist", async () => {
-    await openSong(CHAIN_BREAKER, { versions: [LEARNED, TAUGHT], selected: 0 }, 1, "#/live/2/0", [EAST_TO_WEST]);
-    await openChooser();
-    check(JSON.stringify((await chooser()).items) === '["Learn by user","Find BPM"]', "a live setlist offers Learn by user but not Learn by listen");
-    await key("Escape");
-    await tap(BUTTONS, CHIP);
-    await tap(ITEMS, "Delete V1…");
+    await openSong(CHAIN_BREAKER, { versions: [LEARNED, TAUGHT], selected: 0 }, 1, "#/live/2/0", [EAST_TO_WEST], `!!document.querySelector(".live-nav")`);
+    const stage = await evaluate<{ caret: boolean; line: boolean; controls: boolean; mic: boolean }>(`({ caret: !!document.querySelector(${JSON.stringify(CARET)}), line: !!document.querySelector(${JSON.stringify(LINE)}), controls: !!document.querySelector(".controls"), mic: !!window.__mic })`);
+    check(!stage.caret && !stage.line && !stage.controls && !stage.mic, `a live setlist is on stage: no Scroll sheet, version line, setup controls or listening (${JSON.stringify(stage)})`);
     await tap("[aria-label='Next song']", "Next");
     await until(`location.hash === "#/live/2/1"`, "the next song");
-    const next = await bar();
-    check(next.controls[0] === CHIP && (await stored(EAST_TO_WEST)).versions.length === 2, `a Delete left unconfirmed does not follow to the next song (${next.controls.join(" | ")})`);
+    check((await stored(CHAIN_BREAKER)).versions.length === 2 && (await stored(EAST_TO_WEST)).versions.length === 2, "moving the set on stage touches no saved version");
   });
 
   await scenario("a song with no tempo", async () => {

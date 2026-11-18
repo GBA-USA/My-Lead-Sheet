@@ -66,7 +66,8 @@
     "check:ux-chat-rooms": "tsc -p worker && node --experimental-strip-types scripts/check-ux-chat-rooms.ts",
     "check:ux-layout-fix": "tsc -p worker && node --experimental-strip-types scripts/check-ux-layout-fix.ts",
     "check:ux-chords-only": "node --experimental-strip-types scripts/check-ux-chords-only.ts",
-    "check:ux-datamuse-fix": "node --experimental-strip-types scripts/check-ux-datamuse-fix.ts"
+    "check:ux-datamuse-fix": "node --experimental-strip-types scripts/check-ux-datamuse-fix.ts",
+    "check:ux-gig-view": "tsc -p worker && node --experimental-strip-types scripts/check-ux-gig-view.ts"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.5",

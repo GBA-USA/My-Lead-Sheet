@@ -27,6 +27,8 @@ const ONE_COPY: { what: string; pattern: RegExp; home: string; dir?: string }[] 
   { what: "the app's name", pattern: /"Groovist"/, home: "src/data-kinds.ts", dir: "src/" },
   { what: "the room view: messages, composer and mute, on its screen and on the band page", pattern: /function Room\b/, home: "src/room.tsx" },
   { what: "the room socket", pattern: /new WebSocket\(/, home: "src/chat.tsx", dir: "src/" },
+  { what: "the stage bar: Prev, Scroll, Next at 64 px", pattern: /function StageBar\b/, home: "src/stage-bar.tsx" },
+  { what: "LeadSheet is the only sheet renderer", pattern: /className="sheet"/, home: "src/sheet.tsx", dir: "src/" },
 ];
 
 for (const { what, pattern, home, dir } of ONE_COPY) {

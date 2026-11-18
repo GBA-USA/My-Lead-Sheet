@@ -223,9 +223,37 @@ export function displayBassNote(note: string, song: Song, semitones: number, not
   return transposeNoteNames(note, semitones, flats);
 }
 
+/** Whether text names a chord or a note, so it reads in the song's own key. */
+export const namesChords = (text: string): boolean => text.search(CHORD_RE) >= 0;
+
+const OPEN_STRINGS: [string, string][] = [
+  ["E", "Open E string (top / 4th string)"],
+  ["A", "Open A string (3rd string)"],
+  ["D", "Open D string (2nd string)"],
+  ["G", "Open G string (1st string)"],
+];
+const ORDINALS = ["", "1st", "2nd", "3rd", "4th", "5th"];
+
+/** The open string if the note is one, else the first of E, A, D, G that has it at fret 5 or lower. */
+function easiestPlace(note: string): string {
+  const pc = pitchClass(note);
+  const open = OPEN_STRINGS.find(([string]) => PITCH[string] === pc);
+  if (open) return open[1];
+  const [string] = OPEN_STRINGS.find(([string]) => mod12(pc - PITCH[string]) <= 5)!;
+  return `${string} string, ${ORDINALS[mod12(pc - PITCH[string])]} fret`;
+}
+
+/** The stored place in the song's own key. Transposed, the place of each note the bass cell names, labelled when it names two. */
+export function displayPlace(row: BassNote, song: Song, semitones: number): string {
+  if (mod12(semitones) === 0) return row.position;
+  const shown = transposeNoteNames(row.bassNote, semitones, transposedKey(song, semitones).flats);
+  const notes = [...shown.matchAll(NOTE_RE)].map(([note]) => note);
+  return notes.length === 1 ? easiestPlace(notes[0]) : notes.map((note) => `${note}: ${easiestPlace(note)}`).join("; ");
+}
+
 /**
  * The table's Nashville number. A slash chord gets the key-relative bass (G/B in C → 5/7),
- * because its stored text is a teaching phrase ("5 over 3"), which the table shows as a hint.
+ * because its stored text is a teaching phrase ("5, 3rd in bass"), which the table shows as a hint.
  */
 export function nashvilleNumber(row: BassNote, song: Song): string {
   return parseChord(row.chord.trim())?.bass ? toNashvilleSymbol(row.chord.trim(), song) : row.nashville;

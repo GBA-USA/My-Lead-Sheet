@@ -29,10 +29,16 @@ export function clearLanding() {
   history.replaceState(history.state, "", url);
 }
 
-const endTime = (ms: number) =>
-  ms - Date.now() < 24 * 60 * 60 * 1000
-    ? new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
-    : new Date(ms).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** The Worker gives a code that never ends, such as a band setlist's, an end ten years out. */
+const endLine = (ms: number) => {
+  const left = ms - Date.now();
+  if (left > 365 * DAY_MS) return "Doesn't expire";
+  const date = new Date(ms);
+  const when = left < DAY_MS ? date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  return `Ends ${when}`;
+};
 
 type CodeRequest = { kind: CodeKind } & Record<string, unknown>;
 
@@ -103,7 +109,7 @@ export function ShowCode({ request, words, share, onStopped, onError }: { reques
     <>
       <div className="codes-qr" role="img" aria-label={words} dangerouslySetInnerHTML={{ __html: qrSvg(shown.link) }} />
       <p className="codes-words">{words}</p>
-      <p className="account-note">Ends {endTime(shown.expiresAt)}</p>
+      <p className="account-note">{endLine(shown.expiresAt)}</p>
       {share ? (
         <>
           <p className="codes-link">{shown.link}</p>

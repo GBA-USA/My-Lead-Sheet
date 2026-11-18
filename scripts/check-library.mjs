@@ -127,8 +127,11 @@ half.body.forEach((section, i) => {
 if (!formNotes.every((note) => half.howToPlay.includes(note)) || !half.howToPlay.startsWith(halfExport.howToPlay)) {
   fail("No Half Steppin' howToPlay should keep its text and add THE FORM's notes verbatim");
 }
+/** The export counts the A and D strings from the wrong end. The seed corrects those two phrases and nothing else. */
+const STRING_NUMBERS = [["Open A string (2nd string)", "Open A string (3rd string)"], ["Open D string (3rd string)", "Open D string (2nd string)"]];
+const corrected = (value) => STRING_NUMBERS.reduce((text, [from, to]) => text.replaceAll(from, to), JSON.stringify(value));
 for (const key of SONG_KEYS.filter((key) => !["officialRuntimeSec", "howToPlay", "body"].includes(key))) {
-  if (JSON.stringify(half[key]) !== JSON.stringify(halfExport[key])) fail(`No Half Steppin' ${key} changed`);
+  if (JSON.stringify(half[key]) !== corrected(halfExport[key])) fail(`No Half Steppin' ${key} changed`);
 }
 
 console.log("library.json ok: 15 songs, id 12 dropped, id 13 kept, Chain Breaker intact, official runtimes set, No Half Steppin' has 6 song sections with the 12-bar form in each");

@@ -8,6 +8,8 @@ import {
   displayChordCell,
   displayChordLine,
   displayKeyLabel,
+  displayPlace,
+  namesChords,
   nashvilleNumber,
   originalKey,
   type Notation,
@@ -32,8 +34,7 @@ export function LeadSheet({
 }) {
   const notes = [song.keyNote, song.tempoNote].filter((note) => note.trim().length > 0);
   const atAGlance = song.atAGlance ? displayChordLine(song.atAGlance, song, semitones, notation) : "";
-  const original = originalKey(song, semitones);
-  const inOriginalKey = original ? <span className="hint"> · original key ({original})</span> : null;
+  const inOriginalKey = <OriginalKeyHint song={song} semitones={semitones} />;
 
   return (
     <article className="sheet" style={{ fontSize: `calc(16px * ${scale})` }}>
@@ -90,6 +91,11 @@ export function LeadSheet({
   );
 }
 
+function OriginalKeyHint({ song, semitones }: { song: Song; semitones: number }) {
+  const original = originalKey(song, semitones);
+  return original ? <span className="hint"> · original key ({original})</span> : null;
+}
+
 function BassTable({
   song,
   semitones,
@@ -110,15 +116,7 @@ function BassTable({
             <br />
             note
           </th>
-          <th scope="col">
-            Easiest place to play it
-            {originalKey(song, semitones) ? (
-              <>
-                <br />
-                <span className="hint">original key</span>
-              </>
-            ) : null}
-          </th>
+          <th scope="col">Easiest place to play it</th>
         </tr>
       </thead>
       <tbody>
@@ -132,7 +130,7 @@ function BassTable({
                 {number === note.nashville ? null : <span className="hint"> ({note.nashville})</span>}
               </td>
               <td className="strong">{displayBassNote(note.bassNote, song, semitones, notation)}</td>
-              <td>{note.position}</td>
+              <td>{displayPlace(note, song, semitones)}</td>
             </tr>
           );
         })}
@@ -310,7 +308,12 @@ function ChartRow({
             </div>
           ))
         : null}
-      {line.note !== undefined ? <p className="chart-note">{line.note}</p> : null}
+      {line.note !== undefined ? (
+        <p className="chart-note">
+          {line.note}
+          {namesChords(line.note) ? <OriginalKeyHint song={song} semitones={semitones} /> : null}
+        </p>
+      ) : null}
     </>
   );
 }

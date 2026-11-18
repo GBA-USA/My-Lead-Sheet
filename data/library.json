@@ -26,7 +26,7 @@
           "chord": "A",
           "nashville": "1",
           "bassNote": "A",
-          "position": "Open A string (2nd string)"
+          "position": "Open A string (3rd string)"
         },
         {
           "chord": "E",
@@ -44,7 +44,7 @@
           "chord": "D",
           "nashville": "4",
           "bassNote": "D",
-          "position": "Open D string (3rd string)"
+          "position": "Open D string (2nd string)"
         },
         {
           "chord": "Bm",
@@ -191,13 +191,13 @@
           "chord": "A",
           "nashville": "1",
           "bassNote": "A",
-          "position": "Open A string (2nd string)"
+          "position": "Open A string (3rd string)"
         },
         {
           "chord": "D",
           "nashville": "4",
           "bassNote": "D",
-          "position": "Open D string (3rd string)"
+          "position": "Open D string (2nd string)"
         },
         {
           "chord": "E",
@@ -576,13 +576,13 @@
           "chord": "D",
           "nashville": "1",
           "bassNote": "D",
-          "position": "Open D string (3rd string)"
+          "position": "Open D string (2nd string)"
         },
         {
           "chord": "A",
           "nashville": "5",
           "bassNote": "A",
-          "position": "Open A string (2nd string)"
+          "position": "Open A string (3rd string)"
         },
         {
           "chord": "G",
@@ -747,7 +747,7 @@
           "chord": "Am",
           "nashville": "4",
           "bassNote": "A",
-          "position": "Open A string (2nd string)"
+          "position": "Open A string (3rd string)"
         },
         {
           "chord": "Bm",
@@ -759,7 +759,7 @@
           "chord": "D",
           "nashville": "b7",
           "bassNote": "D",
-          "position": "Open D string (3rd string)"
+          "position": "Open D string (2nd string)"
         },
         {
           "chord": "G",
@@ -917,19 +917,19 @@
           "chord": "Am",
           "nashville": "6",
           "bassNote": "A",
-          "position": "Open A string (2nd string)"
+          "position": "Open A string (3rd string)"
         },
         {
           "chord": "Dm",
           "nashville": "2",
           "bassNote": "D",
-          "position": "Open D string (3rd string)"
+          "position": "Open D string (2nd string)"
         },
         {
           "chord": "Dsus2",
           "nashville": "2",
           "bassNote": "D",
-          "position": "Open D string (3rd string)"
+          "position": "Open D string (2nd string)"
         }
       ],
       "body": [
@@ -1078,7 +1078,7 @@
           "chord": "A / Asus4",
           "nashville": "4",
           "bassNote": "A",
-          "position": "Open A string (2nd string)"
+          "position": "Open A string (3rd string)"
         },
         {
           "chord": "F#",
@@ -1096,7 +1096,7 @@
           "chord": "D / D/F#",
           "nashville": "b7",
           "bassNote": "D (F# in bass)",
-          "position": "Open D string (3rd string)"
+          "position": "Open D string (2nd string)"
         },
         {
           "chord": "C#7",
@@ -1641,13 +1641,13 @@
           "chord": "A / A5",
           "nashville": "1",
           "bassNote": "A",
-          "position": "Open A string (2nd string) (or E string, 5th fret)"
+          "position": "Open A string (3rd string) (or E string, 5th fret)"
         },
         {
           "chord": "D / D2",
           "nashville": "4",
           "bassNote": "D",
-          "position": "Open D string (3rd string) (or A string, 5th fret)"
+          "position": "Open D string (2nd string) (or A string, 5th fret)"
         },
         {
           "chord": "F#m",
@@ -1885,23 +1885,23 @@
           "chord": "Am / Am7",
           "nashville": "6",
           "bassNote": "A",
-          "position": "Open A string (2nd string)"
+          "position": "Open A string (3rd string)"
         },
         {
           "chord": "Dm",
           "nashville": "2",
           "bassNote": "D",
-          "position": "Open D string (3rd string)"
+          "position": "Open D string (2nd string)"
         },
         {
           "chord": "G/B",
-          "nashville": "5 over 3",
+          "nashville": "5, 3rd in bass",
           "bassNote": "B",
           "position": "A string, 2nd fret (final chorus/tag only)"
         },
         {
           "chord": "C/E",
-          "nashville": "1 over 3",
+          "nashville": "1, 3rd in bass",
           "bassNote": "E",
           "position": "Open E string (top / 4th string) (final chorus/tag only)"
         }
@@ -2116,7 +2116,7 @@
           "chord": "A",
           "nashville": "b3",
           "bassNote": "A",
-          "position": "Open A string (2nd string)"
+          "position": "Open A string (3rd string)"
         },
         {
           "chord": "Bm",
@@ -2134,7 +2134,7 @@
           "chord": "D",
           "nashville": "b6",
           "bassNote": "D",
-          "position": "Open D string (3rd string)"
+          "position": "Open D string (2nd string)"
         },
         {
           "chord": "E",
@@ -2351,13 +2351,13 @@
           "chord": "A7",
           "nashville": "1",
           "bassNote": "A",
-          "position": "Open A string (2nd string)"
+          "position": "Open A string (3rd string)"
         },
         {
           "chord": "D7",
           "nashville": "4",
           "bassNote": "D",
-          "position": "Open D string (3rd string)"
+          "position": "Open D string (2nd string)"
         },
         {
           "chord": "E7",

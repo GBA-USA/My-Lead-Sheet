@@ -60,7 +60,9 @@ export function useAutoScroll(
     if (!active) return;
     const el = document.getElementById("sheet-scroll");
     if (!el) return;
-    return scrollChart(el, () => document.getElementById("chord-section"), motionRef, clock, (reason) => onStopRef.current(reason), time);
+    const chart = () => document.getElementById("chord-section");
+    const playhead = (at: number) => chart()?.style.setProperty("--playhead", String(at));
+    return scrollChart(el, chart, motionRef, clock, (reason) => onStopRef.current(reason), time, playhead);
   }, [active, plan, time]);
 
   return clock;
@@ -70,8 +72,8 @@ export function useAutoScroll(
  * Runs `runScroll` over the chord section, measured afresh every frame so a text size or window change keeps the
  * same progress. When the section has moved since the last frame, the browser shifted or clamped the scroll for
  * the new layout, so that scroll event is not passed on as the player scrolling.
- * Each timed frame sets `--playhead` on the chart: how far down it, in pixels, the song is. A timed motion goes down
- * the chart with its progress; a learned one is at the reading line, where each heading arrives as its section starts.
+ * Each timed frame tells `onPlayhead` how far down the chart, in pixels, the song is. A timed motion goes down the
+ * chart with its progress; a learned one is at the reading line, where each heading arrives as its section starts.
  */
 export function scrollChart(
   el: HTMLElement,
@@ -80,6 +82,7 @@ export function scrollChart(
   clock: { current: number },
   onStop: (reason: "user" | "end") => void,
   time?: TimeSource,
+  onPlayhead?: (at: number) => void,
 ): () => void {
   let last: Section | null = null;
   const section = (): Section | null => {
@@ -101,9 +104,8 @@ export function scrollChart(
   el.addEventListener("scroll", relaid, { passive: true });
   const playhead = (progress: number) => {
     const found = chart();
-    if (!found || !last) return;
-    const at = motion.current.kind === "learned" ? el.scrollTop + READING_LINE - last.start : progress * found.offsetHeight;
-    found.style.setProperty("--playhead", String(at));
+    if (!found || !last || !onPlayhead) return;
+    onPlayhead(motion.current.kind === "learned" ? el.scrollTop + READING_LINE - last.start : progress * found.offsetHeight);
   };
   const stop = runScroll(el, motion, section, clock, onStop, time, playhead);
   return () => {

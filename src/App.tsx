@@ -27,7 +27,7 @@ import { MySetlistCodeSheet, SetlistCopySheet } from "./setlist-code";
 import { GearIcon, SettingsScreen } from "./settings";
 import { LeadSheet } from "./sheet";
 import type { Account } from "./sign-in-methods";
-import { SongChromeRoom, SongChromeSlot, useSongChrome } from "./song-chrome";
+import { FOLDS, SongChromeRoom, SongChromeSlot, useSongChrome } from "./song-chrome";
 import { SongDataEditor } from "./song-data-editor";
 import { useSongVersion } from "./song-version";
 import {
@@ -56,8 +56,6 @@ type Teaching = { take: Take } | { learning: true };
 const BACKUP_EVERY_MS = 60_000;
 
 const SCREEN_TITLES: Partial<Record<Route["name"], string>> = { settings: "Settings", messages: "Messages", room: "Messages" };
-
-const FOLDS: Partial<Record<Route["name"], "song" | "list">> = { song: "song", "band-song": "song", setlists: "list", band: "list" };
 
 const loadAllSongData = (library: Library): SongDataByRef => Object.fromEntries(library.songs.map((song) => [song.ref, loadSongData(song.ref)]));
 

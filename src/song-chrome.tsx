@@ -1,4 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
+import type { Route } from "./route";
+
+export const FOLDS: Partial<Record<Route["name"], "song" | "list">> = { song: "song", "band-song": "song", setlists: "list", band: "list" };
 
 const TRAVEL = 24;
 

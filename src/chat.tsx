@@ -15,6 +15,7 @@ export const MESSAGES: Record<string, string> = {
   "no-band": "This thread isn't there any more.",
   "not-friends": "You can only message friends and bandmates.",
   "not-found": "That person isn't here any more.",
+  "bad-request": "That conversation isn't here.",
 };
 
 export const chatMessage = (error: unknown) => {
@@ -50,15 +51,10 @@ const INBOX_SCREENS: ReadonlySet<Route["name"]> = new Set(["songs", "setlists", 
 export type Inbox = { chats: ChatEntry[] | null; failed: boolean; unread: number; change: ChangeEntry };
 
 export function useInbox(me: string | null, screen: Route["name"], onSignedOut: () => void): Inbox {
-  const [chats, setChats] = useState<ChatEntry[] | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [held, setHeld] = useState<{ me: string | null; chats: ChatEntry[] | null; failed: boolean }>({ me, chats: null, failed: false });
   const [round, setRound] = useState(0);
   const listed = INBOX_SCREENS.has(screen);
-
-  useEffect(() => {
-    setChats(null);
-    setFailed(false);
-  }, [me]);
+  const { chats, failed } = held.me === me ? held : { chats: null, failed: false };
 
   useEffect(() => {
     if (!me || !listed) return;
@@ -66,13 +62,12 @@ export function useInbox(me: string | null, screen: Route["name"], onSignedOut: 
     api<{ chats: ChatEntry[] }>("/api/chat").then(
       (reply) => {
         if (stopped) return;
-        setFailed(false);
-        setChats((held) => merged(held, reply.chats));
+        setHeld((current) => ({ me, chats: merged(current.me === me ? current.chats : null, reply.chats), failed: false }));
       },
       (caught) => {
         if (stopped) return;
         if (caught instanceof ApiError && caught.status === 401) return onSignedOut();
-        setFailed(true);
+        setHeld((current) => (current.me === me ? { ...current, failed: true } : { me, chats: null, failed: true }));
       },
     );
     return () => {
@@ -86,13 +81,17 @@ export function useInbox(me: string | null, screen: Route["name"], onSignedOut: 
     return () => document.removeEventListener("visibilitychange", onShow);
   }, []);
 
-  const change = useCallback<ChangeEntry>((roomId, update) => setChats((current) => current?.map((c) => (c.roomId === roomId ? update(c) : c)) ?? null), []);
+  const change = useCallback<ChangeEntry>((roomId, update) => setHeld((current) => ({ ...current, chats: current.chats?.map((c) => (c.roomId === roomId ? update(c) : c)) ?? null })), []);
 
   useEffect(() => onDelivery((item, outcome) => "message" in outcome && change(item.roomId, (c) => withLast(c, outcome.message))), []);
 
   const now = Date.now();
   return { chats, failed, unread: chats?.reduce((total, c) => total + (isMuted(c, now) ? 0 : unread(c)), 0) ?? 0, change };
 }
+
+/** Why a room closed, in the words for its kind: a DM that is not yours is not a band you left. */
+export const goneWords = (roomId: string, error: unknown) =>
+  roomId.startsWith("dm_") && error instanceof ApiError && error.reason === "not-a-member" ? MESSAGES["not-friends"] : chatMessage(error);
 
 /** The DM room with a friend or bandmate, made on the server if it is not there yet. */
 export const openDm = (userId: string) => api<{ roomId: string }>("/api/chat/dm", { userId }).then((reply) => reply.roomId);
@@ -163,7 +162,7 @@ export function useRoomSocket({
         lastSeq = Math.max(lastSeq, ...reply.messages.map((m) => m.seq));
         setMessages((current) => current ?? []);
         arrived(reply.messages);
-      }, failed);
+      }, (caught) => (caught instanceof ApiError && caught.status === 400 ? onGone(caught) : failed(caught)));
     const connect = () => {
       if (stopped) return;
       socket = new WebSocket(socketUrl(roomId));
@@ -182,6 +181,7 @@ export function useRoomSocket({
         timer = setTimeout(connect, RECONNECT_MS);
       };
     };
+    fetchNew();
     connect();
     return () => {
       stopped = true;

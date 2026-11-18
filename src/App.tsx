@@ -3,7 +3,7 @@ import { AccountSheet, googleReturn, useAccount } from "./account";
 import { backupOff, backupOn, syncBackup, type BackupResult } from "./backup";
 import { BandPlayMissing, useBandPlay } from "./band-setlist-view";
 import { BandPage, BandsSheet, BandsTab, type BandLanding } from "./bands";
-import { chatMessage, openDm, queueOwner, useInbox } from "./chat";
+import { goneWords, openDm, queueOwner, useInbox } from "./chat";
 import { readPayload, type CodeScreen } from "./code-link";
 import { clearLanding, landedCode } from "./codes";
 import { BackIcon, OverflowMenu, SongControls, TextSizeButtons } from "./controls";
@@ -18,7 +18,7 @@ import { MessagesScreen } from "./messages";
 import { useMetronome } from "./metronome-view";
 import { clampScrollPercent, displayKeyLabel } from "./music";
 import type { PersonalDefaults } from "./personal-settings-model";
-import { backHref, bandHref, bandLiveHref, messagesHref, parseHash, roomHref, settingsHref, type TabName } from "./route";
+import { backHref, bandHref, bandLiveHref, messagesHref, parseHash, roomHref, settingsHref, type Route, type TabName } from "./route";
 import { Room } from "./room";
 import { READING_LINE, changeTempo, evenPlan, scrollMotion, startTake, toggleHold, type ScrollVersion, type Take } from "./scroll-timing";
 import { ScrollSheet } from "./scroll-sheet";
@@ -53,6 +53,8 @@ type SongDataByRef = Record<SongRef, SongData>;
 type Teaching = { take: Take } | { learning: true };
 
 const BACKUP_EVERY_MS = 60_000;
+
+const SCREEN_TITLES: Partial<Record<Route["name"], string>> = { settings: "Settings", messages: "Messages", room: "Messages" };
 
 const loadAllSongData = (library: Library): SongDataByRef => Object.fromEntries(library.songs.map((song) => [song.ref, loadSongData(song.ref)]));
 
@@ -231,7 +233,7 @@ export function App() {
     setLanding(next);
     window.location.hash = bandHref(next.bandId, next.section);
   };
-  const gone = (to: string) => (words: string) => {
+  const gone = (to: string, words: string) => {
     setNotice(words);
     window.location.replace(to);
   };
@@ -287,7 +289,7 @@ export function App() {
         >
           <BackIcon />
         </button>
-        {activeSong ? <p className="shell-title">{APP_NAME}</p> : <h1 className="shell-title">{route.name === "settings" ? "Settings" : route.name === "messages" || route.name === "room" ? "Messages" : APP_NAME}</h1>}
+        {activeSong ? <p className="shell-title">{APP_NAME}</p> : <h1 className="shell-title">{SCREEN_TITLES[route.name] ?? APP_NAME}</h1>}
         {activeSong ? <TextSizeButtons index={textIndex} count={TEXT_SCALES.length} onChange={changeText} /> : null}
         {activeSong ? (
           <OverflowMenu label="More" size="shell" open={menu === "shell"} onToggle={() => toggleMenu("shell")} onClose={closeMenu} onSongData={bandRoute ? undefined : () => setEditing(true)}>
@@ -446,11 +448,11 @@ export function App() {
         {route.name === "bands" ? <BandsTab me={owner ?? null} notice={notice} onNew={() => setBands({})} onSignIn={() => setAccountOpen(true)} onSignedOut={() => setAccount(null)} /> : null}
         {route.name === "band" ? (
           <BandPage key={`${owner}/${route.bandId}`} me={owner ?? null} bandId={route.bandId} section={route.section} landing={landing?.bandId === route.bandId ? landing : undefined}
-            inbox={inbox} onMessage={messageUser} onSignIn={() => setAccountOpen(true)} onSignedOut={() => setAccount(null)} onGone={gone("#/bands")} />
+            inbox={inbox} onMessage={messageUser} onSignIn={() => setAccountOpen(true)} onSignedOut={() => setAccount(null)} onGone={(words) => gone("#/bands", words)} />
         ) : null}
         {route.name === "messages" || (route.name === "room" && !owner) ? <MessagesScreen me={owner ?? null} inbox={inbox} notice={notice} onSignIn={() => setAccountOpen(true)} /> : null}
         {route.name === "room" && owner ? (
-          <Room key={`${owner}/${route.roomId}`} me={owner} roomId={route.roomId} entry={inbox.chats?.find((c) => c.roomId === route.roomId)} onEntry={inbox.change} onGone={(error) => gone(messagesHref)(chatMessage(error))} onSignedOut={() => setAccount(null)} />
+          <Room key={`${owner}/${route.roomId}`} me={owner} roomId={route.roomId} entry={inbox.chats?.find((c) => c.roomId === route.roomId)} onEntry={inbox.change} onGone={(error) => gone(messagesHref, goneWords(route.roomId, error))} onSignedOut={() => setAccount(null)} />
         ) : null}
         {route.name === "song" ? (
           <SongBody

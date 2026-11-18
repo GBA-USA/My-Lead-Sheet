@@ -1,7 +1,7 @@
 .band-page {
   display: grid;
   gap: 12px;
-  padding: 16px;
+  padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
   color: var(--text);
 }
 
@@ -243,7 +243,7 @@
 
 .bands-tab-button {
   align-self: flex-start;
-  margin: 0 16px 16px;
+  margin: 0 16px calc(16px + env(safe-area-inset-bottom));
   border: var(--control-border);
   cursor: pointer;
 }

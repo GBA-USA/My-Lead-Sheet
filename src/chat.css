@@ -200,7 +200,7 @@
 .room[data-inline] .chat-composer {
   position: sticky;
   bottom: var(--keyboard);
-  padding-bottom: 8px;
+  padding-bottom: max(8px, calc(env(safe-area-inset-bottom) - var(--keyboard)));
   background: var(--bg);
 }
 

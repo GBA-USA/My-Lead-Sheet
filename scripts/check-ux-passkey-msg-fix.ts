@@ -61,14 +61,6 @@ async function openSignIn(url: string) {
   await site.evaluate(`[...document.querySelectorAll(".settings [role=group][aria-label=Account] button")].find((b) => b.textContent.trim() === "Sign in")?.click()`);
   await atStep("start");
   await ready();
-  await site.evaluate(`(() => {
-    window.__asked = [];
-    for (const name of ["get", "create"]) {
-      const real = navigator.credentials[name].bind(navigator.credentials);
-      navigator.credentials[name] = (options) => { __asked.push(name); return real(options); };
-    }
-    return true;
-  })()`);
 }
 async function phoneSize(width: number) {
   await site.send("Emulation.setDeviceMetricsOverride", { width, height: width > 884 ? 900 : 844, deviceScaleFactor: 2, mobile: width <= 884 });
@@ -79,7 +71,16 @@ try {
   await phoneSize(390);
   await site.send("Page.enable");
   await site.send("Page.addScriptToEvaluateOnNewDocument", {
-    source: `window.__errors = []; addEventListener("error", (e) => __errors.push(String(e.message))); addEventListener("unhandledrejection", (e) => __errors.push(String(e.reason)));`,
+    source: `window.__errors = []; addEventListener("error", (e) => __errors.push(String(e.message))); addEventListener("unhandledrejection", (e) => __errors.push(String(e.reason)));
+      window.__asked = [];
+      for (const name of ["get", "create"]) {
+        const real = CredentialsContainer.prototype[name];
+        CredentialsContainer.prototype[name] = function (options) {
+          __asked.push(name);
+          if (window.__refuse) return Promise.reject(new DOMException("The relying party ID is not a registrable domain suffix of, nor equal to the current domain.", window.__refuse));
+          return real.call(this, options);
+        };
+      }`,
   });
   await site.send("WebAuthn.enable");
   const { authenticatorId } = await site.send("WebAuthn.addVirtualAuthenticator", {
@@ -108,7 +109,7 @@ try {
   await atStep("start");
   await ready();
 
-  await site.evaluate(`navigator.credentials.get = () => Promise.reject(new DOMException("The relying party ID is not a registrable domain suffix of, nor equal to the current domain.", "SecurityError")); true`);
+  await site.evaluate(`window.__refuse = "SecurityError"`);
   check(await click(PASSKEY), "tap Face ID or fingerprint when the browser refuses with a SecurityError");
   await until(`!!document.querySelector(".account-sheet [role=alert]")`, "the SecurityError message");
   check((await alertText()) === WRONG_ADDRESS, `a passkey SecurityError shows Open the main address to use Face ID or fingerprint, with that address (${await alertText()})`);

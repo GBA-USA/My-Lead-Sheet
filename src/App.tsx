@@ -57,7 +57,6 @@ const BACKUP_EVERY_MS = 60_000;
 
 const SCREEN_TITLES: Partial<Record<Route["name"], string>> = { settings: "Settings", messages: "Messages", room: "Messages" };
 
-/** Routes whose top folds on scroll: a song to its playing bar, a list to its header row. */
 const FOLDS: Partial<Record<Route["name"], "song" | "list">> = { song: "song", "band-song": "song", setlists: "list", band: "list" };
 
 const loadAllSongData = (library: Library): SongDataByRef => Object.fromEntries(library.songs.map((song) => [song.ref, loadSongData(song.ref)]));

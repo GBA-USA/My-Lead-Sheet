@@ -397,7 +397,7 @@ export function BandLibraryTab({ band, me, tab, library, reload, busy, run, noti
         <>
           <div className="band-library-tools">
             <div className="band-library-chips">
-              {[["Mine", mine, () => setMine(!mine)] as const, ...tags.map((name) => [name, tag === name, () => setTag(tag === name ? null : name)] as const)].map(([label, on, toggle]) => (
+              {[["Shared by me", mine, () => setMine(!mine)] as const, ...tags.map((name) => [name, tag === name, () => setTag(tag === name ? null : name)] as const)].map(([label, on, toggle]) => (
                 <button key={label} type="button" className="band-library-chip" aria-pressed={on} onClick={toggle}>
                   {label}
                 </button>

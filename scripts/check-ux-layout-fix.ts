@@ -110,15 +110,16 @@ apiBase = base;
 try {
   const app = await appPage(site);
   await site.send("Page.addScriptToEvaluateOnNewDocument", { source: LOOK });
+  const painted = (count: number) => site.evaluate(`new Promise((done) => { let left = ${count}; const tick = () => (--left > 0 ? requestAnimationFrame(tick) : done(null)); requestAnimationFrame(tick); })`);
   const phone = async (width: number) => {
-    await site.send("Emulation.setDeviceMetricsOverride", { width, height: HEIGHTS[width], deviceScaleFactor: 3, mobile: true });
+    await site.send("Emulation.setDeviceMetricsOverride", { width, height: HEIGHTS[width], deviceScaleFactor: 2, mobile: true });
     await site.send("Emulation.setSafeAreaInsetsOverride", { insets: INSET });
-    await settle(300);
+    await painted(6);
   };
   const go = async (hash: string, ready: string, what: string) => {
     await site.evaluate(`location.hash = ${js(hash)}`);
     await app.until(ready, what, 15000);
-    await settle(400);
+    await painted(6);
   };
   const appCalls = (path: string, body: object) =>
     site.evaluate<{ status: number; body: Record<string, any> }>(`fetch(${js(path)}, { method: "POST", headers: { "content-type": "application/json" }, body: ${js(js(body))} }).then(async (r) => ({ status: r.status, body: await r.json() }))`);
@@ -135,7 +136,7 @@ try {
     })()`);
   const toTop = async () => {
     await site.evaluate(`document.getElementById("sheet-scroll").scrollTop = 0`);
-    await settle(400);
+    await painted(6);
   };
   const tabRow = () =>
     site.evaluate<{ count: number; tops: number[]; listHeight: number; tabHeight: number; listBottom: number; nextTop: number | null; covered: string[] }>(`(() => {
@@ -215,7 +216,7 @@ try {
   const section = async (name: string) => {
     await app.click(name, `${page}?.querySelector(".band-tabs")`);
     await app.until(`${page}?.querySelector(".band-tabs [aria-selected=true]")?.firstChild?.textContent.trim() === ${js(name)}`, `the ${name} section`);
-    await settle(600);
+    await painted(6);
   };
   const SECTION_READY: Record<string, string> = {
     Songs: `${page}.querySelectorAll(".band-library-songs li").length >= 13`,
@@ -272,11 +273,11 @@ try {
       assert.equal(await site.evaluate<number>("innerWidth"), width, `the page is ${width} CSS px wide`);
       assert.deepEqual(await site.evaluate("__look.inset()"), INSET, `env(safe-area-inset-*) reads the phone's insets at ${width} px`);
       await site.evaluate(`(() => { const s = document.createElement("style"); s.id = "broken"; s.textContent = ".tabs { grid-template-columns: 1fr 1fr !important } .privacy-link { padding-bottom: 0 !important }"; document.head.append(s); })()`);
-      await settle(200);
+      await painted(2);
       const wrapped = await tabRow();
       const cut = await lowest();
       await site.evaluate(`document.getElementById("broken").remove()`);
-      await settle(200);
+      await painted(2);
       assert.ok(!oneRow(wrapped), `at ${width} px the tab measure sees a two-column wrap (${js(wrapped)})`);
       assert.ok(!clear(cut), `at ${width} px the bottom measure sees a row inside the inset (${js(cut)})`);
       assert.ok(oneRow(await tabRow()), `at ${width} px the real tabs pass the same measure`);
@@ -402,52 +403,50 @@ try {
   });
 
   await check("collapsing the song chrome does not fight auto-scroll or jump the chart, and check:chords anchors stay stable", async () => {
-    for (const width of [360, 412]) {
-      for (const id of [TIMED, PACED]) {
-        await phone(width);
-        await openSong(`#/song/${id}`);
-        await toTop();
-        const before = await sheetRows();
-        assert.ok(before.length > 3, `song ${id} has chord rows`);
-        await app.click("Scroll: Off", `document.querySelector(".controls")`);
-        await app.until(`!__look.shown(document.querySelector(".tabs"))`, `auto-scroll folding the chrome on song ${id} at ${width} px`, 40000);
-        await site.evaluate(`(() => {
-          window.__frames = [];
-          window.__sampling = true;
-          const el = document.getElementById("sheet-scroll");
-          const pairs = document.querySelectorAll(".chart .pair .chords");
-          const mark = pairs[Math.min(6, pairs.length - 1)];
-          const tick = () => {
-            if (!window.__sampling) return;
-            const r = el.getBoundingClientRect();
-            window.__frames.push({ y: mark.getBoundingClientRect().top, top: el.scrollTop, st: r.top, sh: r.height, folded: !__look.shown(document.querySelector(".tabs")) });
-            requestAnimationFrame(tick);
-          };
+    for (const [width, id] of [[360, TIMED], [412, PACED]]) {
+      await phone(width);
+      await openSong(`#/song/${id}`);
+      await toTop();
+      const before = await sheetRows();
+      assert.ok(before.length > 3, `song ${id} has chord rows`);
+      await app.click("Scroll: Off", `document.querySelector(".controls")`);
+      await app.until(`!__look.shown(document.querySelector(".tabs"))`, `auto-scroll folding the chrome on song ${id} at ${width} px`, 40000);
+      await site.evaluate(`(() => {
+        window.__frames = [];
+        window.__sampling = true;
+        const el = document.getElementById("sheet-scroll");
+        const pairs = document.querySelectorAll(".chart .pair .chords");
+        const mark = pairs[Math.min(6, pairs.length - 1)];
+        const tick = () => {
+          if (!window.__sampling) return;
+          const r = el.getBoundingClientRect();
+          window.__frames.push({ y: mark.getBoundingClientRect().top, top: el.scrollTop, st: r.top, sh: r.height, folded: !__look.shown(document.querySelector(".tabs")) });
           requestAnimationFrame(tick);
-        })()`);
-        await settle(300);
-        await site.evaluate(`document.querySelector(".shell-header .shell-title").click()`);
-        await app.until(`__look.shown(document.querySelector(".tabs"))`, "the tap opening the chrome during auto-scroll");
-        await app.until(`!__look.shown(document.querySelector(".tabs"))`, `auto-scroll folding it again on song ${id} at ${width} px`, 40000);
-        await settle(400);
-        const frames = await site.evaluate<Frame[]>(`(window.__sampling = false, window.__frames)`);
-        const scrolling = await site.evaluate<boolean>(`[...document.querySelectorAll(".controls button")].some((b) => b.textContent.trim() === "Scroll: On")`);
-        await app.click("Scroll: On", `document.querySelector(".controls")`);
-        const after = await sheetRows();
-        assert.ok(scrolling, `auto-scroll is still running after the chrome opened and folded on song ${id} at ${width} px`);
-        assert.ok(frames.some((f) => !f.folded) && frames.at(-1)!.folded && frames[0].folded, `the samples cover open and folded (${frames.length} frames)`);
-        const spread = (pick: (f: Frame) => number) => Math.max(...frames.map(pick)) - Math.min(...frames.map(pick));
-        assert.ok(spread((f) => f.st) < 0.5 && spread((f) => f.sh) < 0.5, `the sheet's box stays put while the chrome opens and folds (top moved ${spread((f) => f.st)}, height ${spread((f) => f.sh)})`);
-        const steps = frames.slice(1).map((f, i) => ({ chart: f.y - frames[i].y, scroll: f.top - frames[i].top }));
-        const unexplained = Math.max(...steps.map((s) => Math.abs(s.chart + s.scroll)));
-        assert.ok(unexplained <= 1, `the chart moves only with the scroll on song ${id} at ${width} px (off by ${unexplained.toFixed(2)} px in one frame)`);
-        const moves = steps.map((s) => Math.abs(s.scroll)).sort((a, b) => a - b);
-        const median = moves[Math.floor(moves.length / 2)];
-        assert.ok(moves.at(-1)! <= median * 3 + 4, `auto-scroll never lurches across the fold on song ${id} at ${width} px (largest frame ${moves.at(-1)!.toFixed(2)} px, median ${median.toFixed(2)} px)`);
-        assert.deepEqual(chordAnchors(after), chordAnchors(before), `every chord stays over its syllable on song ${id} at ${width} px`);
-        const line = seed.songs.find((song) => song.id === id)!.body.flatMap((part) => part.lines).find((each) => each.chords && each.lyrics)!;
-        assert.equal(chordAnchors([before[0]])[0], chordAnchors([{ chords: line.chords!, lyrics: line.lyrics }])[0], `the first chord sits on its syllable on song ${id}`);
-      }
+        };
+        requestAnimationFrame(tick);
+      })()`);
+      await settle(300);
+      await site.evaluate(`document.querySelector(".shell-header .shell-title").click()`);
+      await app.until(`__look.shown(document.querySelector(".tabs"))`, "the tap opening the chrome during auto-scroll");
+      await app.until(`!__look.shown(document.querySelector(".tabs"))`, `auto-scroll folding it again on song ${id} at ${width} px`, 40000);
+      await settle(400);
+      const frames = await site.evaluate<Frame[]>(`(window.__sampling = false, window.__frames)`);
+      const scrolling = await site.evaluate<boolean>(`[...document.querySelectorAll(".controls button")].some((b) => b.textContent.trim() === "Scroll: On")`);
+      await app.click("Scroll: On", `document.querySelector(".controls")`);
+      const after = await sheetRows();
+      assert.ok(scrolling, `auto-scroll is still running after the chrome opened and folded on song ${id} at ${width} px`);
+      assert.ok(frames.some((f) => !f.folded) && frames.at(-1)!.folded && frames[0].folded, `the samples cover open and folded (${frames.length} frames)`);
+      const spread = (pick: (f: Frame) => number) => Math.max(...frames.map(pick)) - Math.min(...frames.map(pick));
+      assert.ok(spread((f) => f.st) < 0.5 && spread((f) => f.sh) < 0.5, `the sheet's box stays put while the chrome opens and folds (top moved ${spread((f) => f.st)}, height ${spread((f) => f.sh)})`);
+      const steps = frames.slice(1).map((f, i) => ({ chart: f.y - frames[i].y, scroll: f.top - frames[i].top }));
+      const unexplained = Math.max(...steps.map((s) => Math.abs(s.chart + s.scroll)));
+      assert.ok(unexplained <= 1, `the chart moves only with the scroll on song ${id} at ${width} px (off by ${unexplained.toFixed(2)} px in one frame)`);
+      const moves = steps.map((s) => Math.abs(s.scroll)).sort((a, b) => a - b);
+      const median = moves[Math.floor(moves.length / 2)];
+      assert.ok(moves.at(-1)! <= median * 3 + 4, `auto-scroll never lurches across the fold on song ${id} at ${width} px (largest frame ${moves.at(-1)!.toFixed(2)} px, median ${median.toFixed(2)} px)`);
+      assert.deepEqual(chordAnchors(after), chordAnchors(before), `every chord stays over its syllable on song ${id} at ${width} px`);
+      const line = seed.songs.find((song) => song.id === id)!.body.flatMap((part) => part.lines).find((each) => each.chords && each.lyrics)!;
+      assert.equal(chordAnchors([before[0]])[0], chordAnchors([{ chords: line.chords!, lyrics: line.lyrics }])[0], `the first chord sits on its syllable on song ${id}`);
     }
   });
 

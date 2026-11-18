@@ -10,11 +10,11 @@ import { gigHref } from "./route";
  */
 export type GigPosition = { index: number; canMove: boolean; goTo: (index: number) => void };
 
-/** The index each gig was last at on this phone, kept across the gig view and the sheet until the app reloads. */
+/** The index each gig was last at for each account on this phone, kept across the gig view and the sheet until the app reloads. */
 const lastIndex = new Map<string, number>();
 
 export function useGigPosition(gig: GigPlan | undefined, me: string | null, count: number, hashIndex: number | null): GigPosition {
-  const key = gig?.gigId ?? "";
+  const key = `${me}/${gig?.gigId}`;
   const canMove = gig !== undefined && me !== null && (gig.leader === me || gig.backup === me);
   const clamp = (index: number) => Math.max(0, Math.min(Math.max(count - 1, 0), index));
   const [, moved] = useReducer((n: number) => n + 1, 0);

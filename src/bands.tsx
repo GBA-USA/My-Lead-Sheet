@@ -385,11 +385,12 @@ function BandScreen({ me, bandId, section: asked, landing, inbox, onMessage, onS
     setError(message(caught));
   };
 
-  /** With no signal the page shows the band songs this phone holds, and the live sections say so. */
+  /** With no signal the page shows the band songs and gig packs this phone holds, and the live sections say so. */
   const loaded = (caught: unknown) => {
     if (!unreachable(caught)) return failed(caught);
     const mine = heldFor(me) ? allOnPhone("bandSongs") : Promise.resolve([]);
     mine.then((all) => setCached(all.filter((item) => item.bandId === bandId)), () => setCached([]));
+    if (heldFor(me)) allOnPhone("gigPacks").then((all) => setPacks(Object.fromEntries(all.filter((pack) => pack.gig.bandId === bandId).map((pack) => [pack.gig.gigId, pack]))), () => {});
   };
 
   const run = async (work: () => Promise<void>) => {
@@ -642,12 +643,22 @@ function BandScreen({ me, bandId, section: asked, landing, inbox, onMessage, onS
   };
 
   const badge = chatEntry && section !== "chat" ? unread(chatEntry) : 0;
+  /** The gigs this phone can run with no signal: every pack it holds for this band whose gig is not over. */
+  const held = Object.values(packs).filter((pack) => pack.gig.bandId === bandId && pack.gig.status !== "ended");
 
   const bodies: Record<PageView["name"], () => ReactNode> = {
     band: () => (
       <>
         {band && gigs ? (
           <NextGigCard band={band} me={me} gigs={gigs} packs={packs} library={library} busy={busy} onStart={(id) => (window.location.hash = gigHref(bandId, id))} onOpen={() => toSection("gigs")} onPlan={planFromTop} />
+        ) : held.length > 0 ? (
+          <section className="next-gig" aria-label="Gigs on this phone">
+            {held.map((pack) => (
+              <button key={pack.gig.gigId} type="button" className="account-primary" onClick={() => (window.location.hash = gigHref(bandId, pack.gig.gigId))}>
+                Open {pack.gig.name}
+              </button>
+            ))}
+          </section>
         ) : null}
         <div className="band-status-slot" />
         <div className="band-tabs" role="tablist" aria-label={name}>

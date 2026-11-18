@@ -176,7 +176,6 @@ export function App() {
   });
   const take = teaching && "take" in teaching ? teaching.take : null;
   const chrome = useSongChrome(activeSong?.ref ?? null, performance.scrolling, take != null, () => setMenu(null));
-  // On stage the band's timing from the pack leads when the band scrolls with the leader; else the player's own version.
   const bandTiming = gigRoute && pack?.scrollWithLeader ? (pack.songs[position.index]?.bandTiming ?? null) : null;
   const playing: ScrollVersion | null = bandTiming ?? (draft?.plan ? { name: "", ...draft.plan, ...(draft.learned ? { learned: draft.learned } : {}) } : null);
   const learned = take ? undefined : playing?.learned;

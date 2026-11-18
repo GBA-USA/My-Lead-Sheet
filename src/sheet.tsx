@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { chartColumns, chartFont, fitChartFont, wrapAligned, type ChartPiece } from "./chart-fit";
 import { usePlayingLearned } from "./cues";
 import { BeatDot, MetronomeControl, type MetronomeState } from "./metronome-view";
@@ -60,7 +60,7 @@ export function LeadSheet({
         </>
       ) : null}
 
-      <Chart song={song} scale={scale} semitones={semitones} notation={notation} />
+      <Chart key={song.ref} song={song} scale={scale} semitones={semitones} notation={notation} />
 
       {song.atAGlance ? (
         <>
@@ -162,6 +162,16 @@ function Chart({
     return () => observer.disconnect();
   }, []);
 
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element || notation !== "chords") return;
+    const measure = () => timeChords(element);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  });
+
   const playing = usePlayingLearned();
   const columns = chartColumns(width, chartFont(scale), charAdvance);
   const fontFor = (piece: ChartPiece) => `${fitChartFont(width, Math.max(piece.chords.length, piece.lyrics?.length ?? 0), scale, charAdvance)}px`;
@@ -193,6 +203,50 @@ function Chart({
   );
 }
 
+/**
+ * Gives each Chords only chord the stretch of the chart it plays over, as `--from` and `--to` in pixels down the
+ * chart, the unit `--playhead` moves in. A row's slot runs to the next row's, the first row's from its section's top.
+ * A chord starts at its share of its slot and plays until the next chord starts, the last one until the chart's end.
+ * `--ink-from` and `--ink-to` are where its letters' ink starts and ends across its box, so the fill covers the
+ * letters exactly over that stretch.
+ */
+function timeChords(chart: HTMLElement) {
+  const top = chart.getBoundingClientRect().top;
+  const below = (el: Element) => el.getBoundingClientRect().top - top;
+  const slots = [...chart.querySelectorAll(".chart-section")].flatMap((section) =>
+    [...section.querySelectorAll(".chords, .bars")].map((row, i) => ({ row, from: below(i === 0 ? section : row) })),
+  );
+  const starts = slots.flatMap(({ row, from }, i) => {
+    const to = slots[i + 1]?.from ?? chart.offsetHeight;
+    return [...row.querySelectorAll<HTMLElement>(".chord-fill")].map((chord) => ({ chord, at: from + (to - from) * Number(chord.dataset.at) }));
+  });
+  starts.forEach(({ chord, at }, i) => {
+    chord.style.setProperty("--from", String(at));
+    chord.style.setProperty("--to", String(Math.max(at + 0.01, starts[i + 1]?.at ?? chart.offsetHeight)));
+    const ink = textMetrics(chord.textContent ?? "", getComputedStyle(chord).font);
+    if (!ink || ink.width <= 0) return;
+    chord.style.setProperty("--ink-from", String(Math.max(0, -ink.actualBoundingBoxLeft / ink.width)));
+    chord.style.setProperty("--ink-to", String(Math.min(1, ink.actualBoundingBoxRight / ink.width)));
+  });
+}
+
+/** A Chords only line: each chord a span that fills as it plays, marked with its column's share of the row's `width`. */
+function TimedChords({ text, width }: { text: string; width: number }) {
+  const parts: ReactNode[] = [];
+  let cursor = 0;
+  for (const chord of text.matchAll(/[^\s|]+/g)) {
+    parts.push(text.slice(cursor, chord.index));
+    parts.push(
+      <span key={chord.index} className="chord-fill" data-at={chord.index / width}>
+        {chord[0]}
+      </span>,
+    );
+    cursor = chord.index + chord[0].length;
+  }
+  parts.push(text.slice(cursor));
+  return <>{parts}</>;
+}
+
 /** Kept heard bars as a bar row, blank where Learn was not sure: "Heard | A7 |    | E7 |". */
 function heardRow(heard: (string | null)[]): string {
   const width = Math.max(...heard.map((chord) => chord?.length ?? 0));
@@ -214,11 +268,21 @@ function ChartRow({
   semitones: number;
   notation: Notation;
 }) {
+  const chordsOnly = notation === "chords";
   return (
     <>
       {line.chords !== undefined ? (
         wrapAligned(displayChordLine(line.chords, song, semitones, notation), line.lyrics, columns).map((piece, index) => {
           const mono = { fontSize: fontFor(piece) };
+          if (chordsOnly) {
+            return piece.chords.trim() ? (
+              <div className="pair" key={index}>
+                <div className="chords" style={mono}>
+                  <TimedChords text={piece.chords} width={Math.max(piece.chords.length, piece.lyrics?.length ?? 0)} />
+                </div>
+              </div>
+            ) : null;
+          }
           return (
             <div className="pair" key={index}>
               <div className="chords" style={mono}>
@@ -232,13 +296,13 @@ function ChartRow({
             </div>
           );
         })
-      ) : line.lyrics !== undefined ? (
+      ) : line.lyrics !== undefined && !chordsOnly ? (
         <p className="lyric-only">{line.lyrics}</p>
       ) : null}
       {line.bars !== undefined
         ? wrapAligned(displayChordLine(line.bars, song, semitones, notation), undefined, columns).map((piece, index) => (
             <div className="bars" style={{ fontSize: fontFor(piece) }} key={index}>
-              {piece.chords}
+              {chordsOnly ? <TimedChords text={piece.chords} width={piece.chords.length} /> : piece.chords}
             </div>
           ))
         : null}
@@ -249,11 +313,15 @@ function ChartRow({
 
 let measureCanvas: CanvasRenderingContext2D | null | undefined;
 
-function charAdvance(size: number): number {
+function textMetrics(text: string, font: string): TextMetrics | null {
   if (measureCanvas === undefined) {
     measureCanvas = document.createElement("canvas").getContext("2d");
   }
-  if (!measureCanvas) return size * 0.6;
-  measureCanvas.font = `500 ${size}px "IBM Plex Mono", ui-monospace, monospace`;
-  return measureCanvas.measureText("0").width;
+  if (!measureCanvas) return null;
+  measureCanvas.font = font;
+  return measureCanvas.measureText(text);
+}
+
+function charAdvance(size: number): number {
+  return textMetrics("0", `500 ${size}px "IBM Plex Mono", ui-monospace, monospace`)?.width ?? size * 0.6;
 }

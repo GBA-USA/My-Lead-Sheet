@@ -70,6 +70,8 @@ export function useAutoScroll(
  * Runs `runScroll` over the chord section, measured afresh every frame so a text size or window change keeps the
  * same progress. When the section has moved since the last frame, the browser shifted or clamped the scroll for
  * the new layout, so that scroll event is not passed on as the player scrolling.
+ * Each timed frame sets `--playhead` on the chart: how far down it, in pixels, the song is. A timed motion goes down
+ * the chart with its progress; a learned one is at the reading line, where each heading arrives as its section starts.
  */
 export function scrollChart(
   el: HTMLElement,
@@ -97,7 +99,13 @@ export function scrollChart(
     }
   };
   el.addEventListener("scroll", relaid, { passive: true });
-  const stop = runScroll(el, motion, section, clock, onStop, time);
+  const playhead = (progress: number) => {
+    const found = chart();
+    if (!found || !last) return;
+    const at = motion.current.kind === "learned" ? el.scrollTop + READING_LINE - last.start : progress * found.offsetHeight;
+    found.style.setProperty("--playhead", String(at));
+  };
+  const stop = runScroll(el, motion, section, clock, onStop, time, playhead);
   return () => {
     stop();
     el.removeEventListener("scroll", relaid);

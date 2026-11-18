@@ -1,7 +1,9 @@
 import type { BassNote, KeyMode, Song } from "./types";
 
-/** Notes mode shows letter names. Nashville mode shows numbers and does not follow transpose. */
-export type Notation = "notes" | "nashville";
+/** Notes shows letter names. Nashville shows numbers and does not follow transpose. Chords only shows letter names and no lyrics. */
+export const NOTATIONS = ["notes", "nashville", "chords"] as const;
+export type Notation = (typeof NOTATIONS)[number];
+export const isNotation = (value: unknown): value is Notation => NOTATIONS.includes(value as Notation);
 
 export const SCROLL_MIN = 20;
 export const SCROLL_MAX = 200;

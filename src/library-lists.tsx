@@ -3,6 +3,7 @@ import { bandSongRef } from "./band-library-model";
 import { PRIVACY_HREF } from "./data-kinds";
 import { GigSong } from "./gig-plan";
 import type { useMetronome } from "./metronome-view";
+import type { Notation } from "./music";
 import { allOnPhone, heldFor, onPhoneChange, phoneGeneration, type CachedBandSong } from "./phone-db";
 import { songHref, type TabName } from "./route";
 import { groupedSongs, keyName, matchingSetlists, NO_CHIPS } from "./search";
@@ -83,7 +84,7 @@ export function SongBody({
   songRef: SongRef;
   scale: number;
   semitones: number;
-  notation: "notes" | "nashville";
+  notation: Notation;
   metronome: ReturnType<typeof useMetronome>;
 }) {
   const song = songByRef(library.songs, songRef);

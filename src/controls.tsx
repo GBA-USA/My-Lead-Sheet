@@ -58,20 +58,18 @@ const NOTATION_LABELS: [Notation, string][] = [
 /** On a narrow phone the switch scrolls sideways, and the mode in use is scrolled into view. */
 function NotationSwitch({ value, onChange }: { value: Notation; onChange: (next: Notation) => void }) {
   const ref = useRef<HTMLDivElement>(null);
+  const pressed = useRef<HTMLButtonElement>(null);
 
   useLayoutEffect(() => {
-    const el = ref.current;
-    const on = el?.querySelector("[aria-pressed=true]");
-    if (!el || !on) return;
-    const [box, button] = [el.getBoundingClientRect(), on.getBoundingClientRect()];
-    if (button.left < box.left) el.scrollLeft -= box.left - button.left;
-    else if (button.right > box.right) el.scrollLeft += button.right - box.right;
+    const [box, on] = [ref.current, pressed.current];
+    if (!box || !on) return;
+    box.scrollLeft = Math.min(Math.max(box.scrollLeft, on.offsetLeft + on.offsetWidth - box.clientWidth), on.offsetLeft);
   }, [value]);
 
   return (
     <div className="notes-switch" role="group" aria-label="Notes or Nashville" ref={ref}>
       {NOTATION_LABELS.map(([notation, label]) => (
-        <button key={notation} type="button" aria-pressed={value === notation} onClick={() => onChange(notation)}>
+        <button key={notation} type="button" aria-pressed={value === notation} ref={value === notation ? pressed : undefined} onClick={() => onChange(notation)}>
           {label}
         </button>
       ))}

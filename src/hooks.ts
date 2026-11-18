@@ -37,6 +37,14 @@ export function useScrolling(songRef: SongRef | null) {
   return { scrolling, setScrolling, stopScroll: () => setScrolling(false) };
 }
 
+const playheads = new Set<(at: number) => void>();
+
+/** Hears, every timed frame of auto-scroll, how far down the chart the song is, in pixels. */
+export function onPlayhead(listener: (at: number) => void): () => void {
+  playheads.add(listener);
+  return () => void playheads.delete(listener);
+}
+
 /**
  * Scrolls #sheet-scroll by `motion`. A timed motion moves #chord-section only: from its top at the top of the
  * view to its bottom at the bottom. A learned one brings each heading, then the chart's end, to the reading line.
@@ -60,9 +68,8 @@ export function useAutoScroll(
     if (!active) return;
     const el = document.getElementById("sheet-scroll");
     if (!el) return;
-    const chart = () => document.getElementById("chord-section");
-    const playhead = (at: number) => chart()?.style.setProperty("--playhead", String(at));
-    return scrollChart(el, chart, motionRef, clock, (reason) => onStopRef.current(reason), time, playhead);
+    const playhead = (at: number) => playheads.forEach((listener) => listener(at));
+    return scrollChart(el, () => document.getElementById("chord-section"), motionRef, clock, (reason) => onStopRef.current(reason), time, playhead);
   }, [active, plan, time]);
 
   return clock;

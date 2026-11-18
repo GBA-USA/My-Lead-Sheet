@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { chartColumns, chartFont, fitChartFont, wrapAligned, type ChartPiece } from "./chart-fit";
 import { usePlayingLearned } from "./cues";
+import { onPlayhead } from "./hooks";
 import { BeatDot, MetronomeControl, type MetronomeState } from "./metronome-view";
 import {
   displayBassNote,
@@ -177,6 +178,11 @@ function Chart({
     observer.observe(element);
     return () => observer.disconnect();
   }, [notation, columns, song, semitones, scale, playing]);
+
+  useLayoutEffect(() => {
+    if (notation !== "chords") return;
+    return onPlayhead((at) => ref.current?.style.setProperty("--playhead", String(at)));
+  }, [notation]);
 
   return (
     <div className="chart" id="chord-section" ref={ref}>

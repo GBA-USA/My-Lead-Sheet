@@ -627,6 +627,7 @@ a:focus-visible {
 }
 
 .notes-switch {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 2px;

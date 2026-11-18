@@ -22,10 +22,11 @@ import { openSite } from "./chrome.ts";
  * gig for everyone?" with Yes, end and Keep going, then lands on `#/band/<bandId>`. Offline, End is disabled with
  * "Needs a connection". With no pack on this phone the view says "This song isn't on this phone." with Get ready.
  *
- * The gig-mode sheet at `#/gig/<bandId>/<gigId>/<index>` and the setlist's `#/live/<id>/<index>` show `LeadSheet`
- * (`.sheet .sheet-name`) under the song header and a bottom bar `.live-nav` with Prev, "Scroll: On|Off" and Next at
- * 64 px, with no `.controls`, Key, Notes, Metronome pill or Send. Back from the sheet is the gig view at the same index.
- * The gig routes and `#/live` keep the stage palette under day mode (`.app` is `.gig-stage`); leaving restores it.
+ * The gig-mode sheet at `#/gig/<bandId>/<gigId>/<index>` shows `LeadSheet` (`.sheet .sheet-name`) under the song
+ * header and a bottom bar `.live-nav` with Prev, "Scroll: On|Off" and Next at 64 px, with no `.controls`, Key, Notes,
+ * Metronome pill or Send. Back from the sheet is the gig view at the same index. The setlist's `#/live/<id>/<index>`
+ * gets the same bottom bar under its own song chrome, with the setlist count in `.live-count`, no `.band-status-slot`
+ * and no End. The gig routes keep the stage palette under day mode (`.app` is `.gig-stage`); leaving restores it.
  *
  * `POST /api/bands/gig/end { bandId, gigId }`: the leader, backup or an admin ends the gig; `gig/open` then returns
  * `status: "ended"`. Anyone else is `403 not-allowed`; a stranger `403 not-a-member`.
@@ -442,7 +443,9 @@ try {
   await check("`#/live` shows the same bar without the status slot and without End", async () => {
     const live = seed.setlists[0];
     await go(`#/live/${live.id}/0`, `!!document.querySelector(".sheet .sheet-name") && !!document.querySelector(".live-nav")`, "a setlist live");
-    await stageBar("#/live");
+    const bar = await barButtons();
+    assert.deepEqual(bar.map((b) => b.text.split(":")[0]), ["Prev", "Scroll", "Next"], `#/live: the bar has Prev, Scroll, Next (${js(bar)})`);
+    for (const button of bar) assert.ok(button.height >= 63.5, `#/live: ${button.text} is 64 px tall (${button.height})`);
     assert.match(await text(".live-nav .live-count"), /· 1\/\d+$/, "the bar still counts the setlist");
     assert.ok(!(await has(".band-status-slot")), "no status slot");
     assert.ok(!(await buttons()).includes("End"), "no End");

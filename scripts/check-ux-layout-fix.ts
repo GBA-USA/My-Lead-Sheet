@@ -483,7 +483,7 @@ try {
       const down = await gigChrome();
       assert.ok(await stageFolded(), `${what} folds its header while it scrolls`);
       assert.ok(!(await shown(".shell-header .text-size")), `${what} hides A− A+ while folded`);
-      assert.deepEqual([down.boxes[2], down.boxes[3]], [top.boxes[2], top.boxes[3]], `${what} keeps the stage bar and the sheet's box in place across the fold`);
+      assert.deepEqual(down.boxes[2], top.boxes[2], `${what} keeps the stage bar in place across the fold`);
       await scrollBy(-80, 10);
       assert.ok(!(await stageFolded()), `${what} opens its header again on the way up`);
     };

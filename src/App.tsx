@@ -153,7 +153,8 @@ export function App() {
   const inbox = useInbox(owner ?? null, route.name, () => setAccount(null));
   const bandRoute = route.name === "band-song" || route.name === "band-live";
   const gigRoute = route.name === "gig" ? route : null;
-  const onStage = gigRoute !== null || route.name === "live" || route.name === "band-live";
+  const onStage = gigRoute !== null;
+  const liveRoute = route.name === "live" || route.name === "band-live";
   const showTabs = !["live", "band-live", "gig", "settings", "messages", "room"].includes(route.name);
   const tab: TabName =
     route.name === "bands" || route.name === "band" || route.name === "band-song" || route.name === "band-plan" || route.name === "gig" ? "bands" : route.name === "setlists" || (route.name === "song" && route.from === "setlists") ? "setlists" : "songs";
@@ -161,7 +162,7 @@ export function App() {
   const play = useBandPlay(route, owner ?? null);
   const pack = useGigPack(owner ?? null, gigRoute?.gigId ?? "");
   const position = useGigPosition(pack?.gig, owner ?? null, pack?.songs.length ?? 0, gigRoute?.index ?? null);
-  const stage = onStage ? stageSetOf(route, library, play, pack, position) : null;
+  const stage = onStage || liveRoute ? stageSetOf(route, library, play, pack, position) : null;
   const activeSong = route.name === "song" ? songByRef(library.songs, localRef(route.id)) : route.name === "band-song" ? play.song : stage?.song;
 
   const performance = useScrolling(activeSong?.ref ?? null);
@@ -296,7 +297,7 @@ export function App() {
           {activeSong ? <TextSizeButtons index={textIndex} count={TEXT_SCALES.length} onChange={changeText} /> : null}
           {activeSong ? (
             <OverflowMenu label="More" size="shell" open={menu === "shell"} onToggle={() => toggleMenu("shell")} onClose={closeMenu} onSongData={bandRoute || gigRoute ? undefined : () => setEditing(true)}>
-              {route.name === "song" ? sendSong.item(activeSong, closeMenu) : null}
+              {bandRoute || gigRoute ? null : sendSong.item(activeSong, closeMenu)}
             </OverflowMenu>
           ) : route.name === "settings" ? null : (
             <button type="button" className="icon-btn gear-btn" aria-label="Settings" onClick={() => (window.location.hash = settingsHref(tab))}>

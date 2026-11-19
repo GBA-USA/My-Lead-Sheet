@@ -530,7 +530,19 @@ a:focus-visible {
   display: contents;
 }
 
-.song-chrome-bar[data-folded] {
+.song-chrome.is-list {
+  --song-chrome-folded: calc(env(safe-area-inset-top) + 50px);
+}
+
+.song-chrome-bar[data-folded="list"] {
+  height: var(--song-chrome-folded);
+}
+
+.song-chrome-bar[data-folded="list"] .tabs {
+  display: none;
+}
+
+.song-chrome-bar[data-folded="song"] {
   box-sizing: border-box;
   height: var(--song-chrome-folded);
   display: grid;
@@ -542,19 +554,19 @@ a:focus-visible {
   padding: calc(8px + env(safe-area-inset-top)) 12px 6px;
 }
 
-.song-chrome-bar[data-folded] :is(.shell-header, .controls, .control-row + .control-row) {
+.song-chrome-bar[data-folded="song"] :is(.shell-header, .controls, .control-row + .control-row) {
   display: contents;
 }
 
-.song-chrome-bar[data-folded] :is(.tabs, .text-size, .song-line, .song-line-error, .scroll-caret, .send-btn, .key-kicker, .shell-header > .menu-anchor) {
+.song-chrome-bar[data-folded="song"] :is(.tabs, .text-size, .song-line, .song-line-error, .scroll-caret, .send-btn, .key-kicker, .shell-header > .menu-anchor) {
   display: none;
 }
 
-.song-chrome-bar[data-folded] .shell-header > .icon-btn:first-child {
+.song-chrome-bar[data-folded="song"] .shell-header > .icon-btn:first-child {
   grid-area: back;
 }
 
-.song-chrome-bar[data-folded] .shell-title {
+.song-chrome-bar[data-folded="song"] .shell-title {
   grid-area: title;
   min-width: 0;
   font-size: 16px;
@@ -564,31 +576,31 @@ a:focus-visible {
   text-align: left;
 }
 
-.song-chrome-bar[data-folded] .scroll-pill {
+.song-chrome-bar[data-folded="song"] .scroll-pill {
   grid-area: scroll;
   padding: 0 12px;
 }
 
-.song-chrome-bar[data-folded] .scroll-pill svg {
+.song-chrome-bar[data-folded="song"] .scroll-pill svg {
   display: none;
 }
 
-.song-chrome-bar[data-folded] .metronome-pill {
+.song-chrome-bar[data-folded="song"] .metronome-pill {
   grid-area: metro;
   padding: 0 12px;
 }
 
-.song-chrome-bar[data-folded] .controls > .control-row:first-child {
+.song-chrome-bar[data-folded="song"] .controls > .control-row:first-child {
   grid-area: keys;
 }
 
 @media (min-width: 430px) {
-  .song-chrome-bar[data-folded] {
+  .song-chrome-bar[data-folded="song"] {
     grid-template-columns: 48px minmax(0, 1fr) auto auto 48px;
     grid-template-areas: "back title scroll metro more" "keys keys keys keys keys";
   }
 
-  .song-chrome-bar[data-folded] .shell-header > .menu-anchor {
+  .song-chrome-bar[data-folded="song"] .shell-header > .menu-anchor {
     display: block;
     grid-area: more;
   }

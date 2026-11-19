@@ -29,7 +29,7 @@ import { MySetlistCodeSheet, SetlistCopySheet } from "./setlist-code";
 import { GearIcon, SettingsScreen } from "./settings";
 import { LeadSheet } from "./sheet";
 import type { Account } from "./sign-in-methods";
-import { SongChromeRoom, SongChromeSlot, useSongChrome } from "./song-chrome";
+import { FOLDS, SongChromeRoom, SongChromeSlot, useSongChrome } from "./song-chrome";
 import { SongDataEditor } from "./song-data-editor";
 import { useSongVersion } from "./song-version";
 import { StageBar, stageSetOf } from "./stage-bar";
@@ -176,7 +176,8 @@ export function App() {
     setBpm: (bpm) => { setFollowed(null); songVersion.set({ bpm }); },
   });
   const take = teaching && "take" in teaching ? teaching.take : null;
-  const chrome = useSongChrome(activeSong?.ref ?? null, performance.scrolling, take != null, () => setMenu(null));
+  const fold = FOLDS[route.name] ?? (activeSong ? "song" : undefined);
+  const chrome = useSongChrome(fold === "song" ? (activeSong?.ref ?? null) : fold ? hash : null, performance.scrolling, take != null, () => setMenu(null));
   const bandTiming = gigRoute && pack?.scrollWithLeader ? (pack.songs[position.index]?.bandTiming ?? null) : null;
   const playing: ScrollVersion | null = bandTiming ?? (draft?.plan ? { name: "", ...draft.plan, ...(draft.learned ? { learned: draft.learned } : {}) } : null);
   const learned = take ? undefined : playing?.learned;
@@ -278,7 +279,7 @@ export function App() {
 
   return (
     <div className={onStage ? "app gig-stage" : "app"}>
-      <SongChromeSlot chrome={chrome}>
+      <SongChromeSlot chrome={chrome} list={fold === "list"}>
         <header className={activeSong ? "shell-header song-header" : "shell-header"}>
           <button
             type="button"

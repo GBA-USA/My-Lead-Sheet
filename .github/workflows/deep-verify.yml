@@ -1,0 +1,133 @@
+# Every check:* in package.json after each merge to mls-int, split 4 ways (CI-1, Terry t567u).
+# Free minutes only: the guard skips everything on a private repo unless the box set DEEP_CI_PRIVATE_OK.
+# The box waits on this run with tools/ci-deep/ci-deep.sh and reads the deep-summary artifact.
+
+name: Deep verify
+
+on:
+  push:
+    branches: [mls-int-20261113]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Commit to test (default the branch head)
+        required: false
+        type: string
+  pull_request:
+    paths:
+      - .github/workflows/deep-verify.yml
+      - scripts/check-ci-deep.ts
+      - scripts/ci-shard.mjs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deep-verify-${{ github.ref }}-${{ inputs.sha }}
+  cancel-in-progress: true
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      ok: ${{ steps.free.outputs.ok }}
+    steps:
+      - name: Run only on free minutes
+        id: free
+        env:
+          REPO_PRIVATE: ${{ github.event.repository.private }}
+          PRIVATE_OK: ${{ vars.DEEP_CI_PRIVATE_OK }}
+        run: |
+          if [ "$REPO_PRIVATE" = false ]; then
+            echo "public repo: standard runners are free"; echo ok=true >> "$GITHUB_OUTPUT"
+          elif [ "$REPO_PRIVATE" = true ] && [ "$PRIVATE_OK" = true ]; then
+            echo "private repo and DEEP_CI_PRIVATE_OK=true: free minutes left"; echo ok=true >> "$GITHUB_OUTPUT"
+          else
+            echo "private repo (or unknown) and DEEP_CI_PRIVATE_OK is not true: skipping; the box runs the deep verify"; echo ok=false >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: guard
+    if: needs.guard.outputs.ok == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      shards: ${{ steps.plan.outputs.shards }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha || github.sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Split the checks into 4 shards
+        id: plan
+        run: echo "shards=$(node scripts/ci-shard.mjs plan 4)" >> "$GITHUB_OUTPUT"
+
+  shard:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    name: shard ${{ matrix.shard }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.build.outputs.shards) }}
+    env:
+      VERIFY_LOG_DIR: ci-logs
+      VERIFY_CHECK_TIMEOUT: 480
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha || github.sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Run this shard through scripts/verify.sh
+        env:
+          NAMES: ${{ matrix.names }}
+        run: bash scripts/verify.sh $NAMES
+      - name: Keep this shard's summary for the report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: summary-${{ matrix.shard }}
+          path: ci-logs/summary.tsv
+          retention-days: 1
+      - name: Keep this shard's logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: logs-shard-${{ matrix.shard }}
+          path: ci-logs/
+          retention-days: 7
+
+  report:
+    needs: [guard, build, shard]
+    if: always() && needs.guard.outputs.ok == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha || github.sha }}
+      - uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          pattern: summary-*
+          path: shard-summaries
+      - name: Merge the shard summaries into one pass or fail
+        run: node scripts/ci-shard.mjs merge shard-summaries summary.tsv 4
+      - name: Keep the merged summary
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: deep-summary
+          path: summary.tsv
+          retention-days: 7

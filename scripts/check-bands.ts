@@ -209,20 +209,15 @@ async function appChecks() {
     await app.until(`document.querySelector(".account-sheet")?.dataset.step === "nudge"`, "the add-a-password nudge");
     assert.ok(!(await site.evaluate<boolean>(`!!document.querySelector(".bands-sheet")`)), "a new player sees the add-a-password nudge before the band opens");
     await app.click("Not now");
-    await app.click("✕");
-    await view("code");
-    assert.equal(await app.text(".bands-sheet .codes-words"), "The Blue Notes Invited by Terry Bass", "after sign-up the code shows the band and who invited you");
-    await fitsPhone("Join a band");
-    await app.shot(shots && `${shots}/bands-join.png`);
-    await app.click("Join");
     await view("band");
+    assert.ok(!(await site.evaluate<boolean>(`!!document.querySelector(".account-sheet[data-step], .bands-sheet")`)), "after Not now the sign-in sheet closes itself, with no Join step on the way");
     assert.deepEqual(await app.texts(".band-page .band-tabs [role=tab]"), ["Songs", "Setlists", "Chat", "Gigs", "Members"], "the band page's sections are Songs, Setlists, Chat, Gigs and Members, in that order");
     await noticed("You joined The Blue Notes\\.");
     assert.deepEqual(await members(), ["Terry BassAdmin", "Sam Rivera"], "Sam is in the band, with Terry as its admin");
     assert.deepEqual(await namesIn(terry, blueNotes), ["Terry Bass (admin)", "Sam Rivera"], "and Terry's phone sees Sam joined");
     const memberButtons = await app.texts(".band-page button");
     assert.ok(memberButtons.includes("Invite") && !memberButtons.includes("Band settings") && !memberButtons.includes("Reset link"), `a member sees Invite but no Band settings or Reset link (${JSON.stringify(memberButtons)})`);
-    pass("a band link opened signed out joins after sign-up, in the app");
+    pass("a band link opened signed out joins right after sign-up, with no Join step");
 
     await site.evaluate(`location.hash = "#/songs"`);
     assert.deepEqual(await app.openMenu(), ["Account", "Friends", "Messages"], "signed in, Settings has no Bands row: the Bands tab is the one way in");

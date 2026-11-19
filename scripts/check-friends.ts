@@ -256,12 +256,14 @@ async function appChecks() {
 
     await site.send("Page.navigate", { url: (await mike.call("/api/codes", { kind: "friend-link" })).body.link });
     await app.until(`document.querySelector(".account-sheet")?.dataset.step === "start"`, "the sign-in screen a friend link opens");
+    assert.equal(await app.text(".account-sheet .account-top + *"), "Sign in to add your friend.", "the sign-in screen says signing in adds the friend");
     await app.click("✕");
     await settle(1500);
     assert.ok(!(await site.evaluate<boolean>(`!!document.querySelector(".account-sheet")`)), "a signed-out visitor can close the sign-in screen a friend link opened");
+    assert.equal(await site.evaluate<string | null>(`localStorage.getItem("leadSheetsPendingInvite")`), null, "and closing it leaves no invite waiting");
     assert.deepEqual(await app.openMenu(), ["Sign in"], "and is back in the app, still signed out");
     await app.closeMenu();
-    pass("a signed-out visitor on a friend link is asked to sign in once");
+    pass("a signed-out visitor on a friend link is asked to sign in once, and closing drops the invite");
 
     assert.deepEqual(await app.errors(), [], "no page errors");
   } finally {

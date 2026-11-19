@@ -211,14 +211,11 @@ async function scannerChecks() {
       source: `new MutationObserver(() => { if (document.querySelector(".account-sheet:not(.friends-sheet)")) window.sawSignIn = true; }).observe(document, { childList: true, subtree: true });`,
     });
     await site.send("Page.navigate", { url: shared.link });
-    await view("code");
-    assert.equal(await site.evaluate("window.sawSignIn ?? false"), false, "a signed-in phone opening the link goes straight to Friends, with no sign-in sheet on the way");
-    await app.until(`!!document.querySelector(".friends-sheet .codes-words")`, "who the link adds");
-    assert.equal(await site.evaluate<string>("location.search"), "", "the landed code leaves the address bar");
-    await app.click("Add friend");
     await app.until(`/You and Terry Bass are friends\./.test(document.querySelector(".friends-notice")?.textContent ?? "")`, "the friends notice");
-    assert.deepEqual(await app.texts(".friends-friends li > span:first-child"), ["Terry Bass@terrybass"], "Terry is on Sam's list");
-    pass("the same link opens from a plain browser address and lands on Friends");
+    assert.equal(await site.evaluate("window.sawSignIn ?? false"), false, "a signed-in phone opening the link goes straight to Friends, with no sign-in sheet on the way");
+    assert.equal(await site.evaluate<string>("location.search"), "", "the landed code leaves the address bar");
+    assert.deepEqual(await app.texts(".friends-friends li > span:first-child"), ["Terry Bass@terrybass"], "Terry is on Sam's list with no Add friend tap");
+    pass("the same link opens from a plain browser address, lands on Friends and adds the friend at once");
 
     await site.send("Page.navigate", { url: shared.link.replace(/.$/, (last: string) => (last === "A" ? "B" : "A")) });
     await app.until(`document.body?.textContent.includes("This code doesn't work")`, "the refused link's page");

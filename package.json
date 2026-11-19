@@ -68,7 +68,8 @@
     "check:ux-chords-only": "node --experimental-strip-types scripts/check-ux-chords-only.ts",
     "check:ux-collapse-everywhere": "tsc -p worker && node --experimental-strip-types scripts/check-ux-collapse-everywhere.ts",
     "check:ux-datamuse-fix": "node --experimental-strip-types scripts/check-ux-datamuse-fix.ts",
-    "check:ux-passkey-msg-fix": "tsc -p worker && node --experimental-strip-types scripts/check-ux-passkey-msg-fix.ts"
+    "check:ux-passkey-msg-fix": "tsc -p worker && node --experimental-strip-types scripts/check-ux-passkey-msg-fix.ts",
+    "check:ux-invite-links": "tsc -p worker && node --experimental-strip-types scripts/check-ux-invite-links.ts"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.5",

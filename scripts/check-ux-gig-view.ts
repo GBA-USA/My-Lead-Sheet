@@ -26,7 +26,8 @@ import { openSite } from "./chrome.ts";
  * header and a bottom bar `.live-nav` with Prev, "Scroll: On|Off" and Next at 64 px, with no `.controls`, Key, Notes,
  * Metronome pill or Send. Back from the sheet is the gig view at the same index. The setlist's `#/live/<id>/<index>`
  * gets the same bottom bar under its own song chrome, with the setlist count in `.live-count`, no `.band-status-slot`
- * and no End. The gig routes keep the stage palette under day mode (`.app` is `.gig-stage`); leaving restores it.
+ * and no End. Band Live keeps an enabled Prev and Next on a song that is not on this phone. The gig routes keep the
+ * stage palette under day mode (`.app` is `.gig-stage`); leaving restores it.
  *
  * `POST /api/bands/gig/end { bandId, gigId }`: the leader, backup or an admin ends the gig; `gig/open` then returns
  * `status: "ended"`. Anyone else is `403 not-allowed`; a stranger `403 not-a-member`.
@@ -454,7 +455,32 @@ try {
     await app.shot(shots && `${shots}/live-sheet.png`);
   });
 
-  await check("no page errors", async () => assert.deepEqual(await app.errors(), [], "the page logged no errors"));
+  await check("band Live with a song not on this phone keeps an enabled Next that reaches the next song", async () => {
+    const setlists = `${bandPage(bandId)}?.querySelectorAll(".band-library-setlists .band-library-row")`;
+    await go(`#/band/${bandId}?s=setlists`, `[...(${setlists} ?? [])].some((b) => b.textContent.includes("Friday set"))`, "the Friday set row");
+    await site.evaluate(`[...${setlists}].find((b) => b.textContent.includes("Friday set")).click()`);
+    await app.until(`!!${bandPage(bandId)}?.querySelector(".band-setlist-view")`, "the band setlist view", 15000);
+    await settle(1500);
+    const missing = `${bandId}/${shared[1]}`;
+    const had = await site.evaluate<boolean>(`(async () => {
+      const db = await new Promise((done, fail) => { const r = indexedDB.open("mls-phone"); r.onsuccess = () => done(r.result); r.onerror = () => fail(r.error); });
+      try {
+        const had = await new Promise((done) => { const r = db.transaction("bandSongs").objectStore("bandSongs").get(${js(missing)}); r.onsuccess = () => done(!!r.result); r.onerror = () => done(false); });
+        await new Promise((done, fail) => { const t = db.transaction("bandSongs", "readwrite"); t.objectStore("bandSongs").delete(${js(missing)}); t.oncomplete = () => done(null); t.onerror = () => fail(t.error); });
+        return had;
+      } finally { db.close(); }
+    })()`);
+    assert.ok(had, "the second song was on this phone before the check took it off");
+    await go(`#/live/band/${bandId}/${setlistId}/0`, `document.querySelector(".sheet .sheet-name")?.textContent === ${js(TITLES[0])} && !!document.querySelector(".live-nav")`, "band Live at the first song");
+    await app.click("Next", `document.querySelector(".live-nav")`);
+    await app.until(`location.hash === ${js(`#/live/band/${bandId}/${setlistId}/1`)} && (document.querySelector(".missing")?.textContent ?? "").includes("That song isn't on this phone.")`, "the missing-song words on the second song");
+    await app.until(`!!document.querySelector(".live-nav [aria-label='Next song']:not([disabled])")`, `an enabled Next on the missing song (bar: ${js(await text(".live-nav"))})`, 5000);
+    assert.match(await text(".live-nav .live-count"), /Friday set · 2\/3$/, "the bar counts the band setlist");
+    await app.click("Next", `document.querySelector(".live-nav")`);
+    await app.until(`document.querySelector(".sheet .sheet-name")?.textContent === ${js(TITLES[2])}`, "Next past the missing song reaches the third song");
+  });
+
+  await check("no page errors", async () =>assert.deepEqual(await app.errors(), [], "the page logged no errors"));
 } finally {
   await site.close();
   await worker.dispose();

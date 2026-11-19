@@ -163,6 +163,7 @@ export function App() {
   const pack = useGigPack(owner ?? null, gigRoute?.gigId ?? "");
   const position = useGigPosition(pack?.gig, owner ?? null, pack?.songs.length ?? 0, gigRoute?.index ?? null);
   const stage = onStage || liveRoute ? stageSetOf(route, library, play, pack, position) : null;
+  const stageCanMove = !gigRoute || position.canMove;
   const activeSong = route.name === "song" ? songByRef(library.songs, localRef(route.id)) : route.name === "band-song" ? play.song : stage?.song;
 
   const performance = useScrolling(activeSong?.ref ?? null);
@@ -486,8 +487,8 @@ export function App() {
         {learned ? <div style={{ height: `calc(100% - ${READING_LINE}px)` }} /> : null}
       </div>
 
-      {stage && stage.count > 0 && (activeSong || position.canMove) ? (
-        <StageBar set={stage} canMove={!gigRoute || position.canMove} scroll={activeSong ? { on: performance.scrolling, toggle: () => (take ? stopTake(take) : performance.setScrolling((on) => !on)) } : undefined} />
+      {stage && stage.count > 0 && (activeSong || stageCanMove) ? (
+        <StageBar set={stage} canMove={stageCanMove} scroll={activeSong ? { on: performance.scrolling, toggle: () => (take ? stopTake(take) : performance.setScrolling((on) => !on)) } : undefined} />
       ) : null}
     </div>
   );

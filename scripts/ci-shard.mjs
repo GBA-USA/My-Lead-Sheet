@@ -6,14 +6,20 @@ const SHARDS = 4;
 const DEFAULT_SECONDS = 20;
 
 const SECONDS = {
-  "check:ux-sheet-controls-save": 118, "check:ux-layout-fix": 81, "check:heard": 64, "check:bands": 56,
-  "check:ux-band-page": 49, "check:ux-chords-only": 48, "check:offline": 38, "check:ux-shell-settings": 38,
-  "check:chat": 35, "check:learn": 34, "check:setlist-code": 32, "check:password": 30, "check:spike-links": 29,
-  "check:search": 24, "check:ux-chat-rooms": 22, "check:gig-plan": 19, "check:friends": 18, "check:band-library": 16,
-  "check:auth": 15, "check:learned": 15, "check:headers": 13, "check:time": 13, "check:send-song": 12,
-  "check:band-move": 11, "check:band-settings": 11, "check:chords": 11, "check:backup": 10, "check:codes": 10,
-  "check:bar": 9, "check:spike-server": 8, "check:teach-screen": 8, "check:account": 7, "check:google": 7,
-  "check:ux-theme-tokens": 7, "check:api": 3, "check:beat-red": 3, "check:privacy": 3, "check:ci-deep": 1,
+  "check:ux-collapse-everywhere": 150, "check:ux-sheet-controls-save": 128, "check:heard": 91, "check:bands": 80,
+  "check:ux-layout-fix": 80, "check:ux-chords-only": 54, "check:ux-band-page": 49, "check:ux-shell-settings": 39,
+  "check:offline": 38, "check:learn": 37, "check:chat": 34, "check:password": 32, "check:setlist-code": 31,
+  "check:search": 22, "check:ux-plan-gig-route": 22, "check:ux-chat-rooms": 21, "check:gig-plan": 20,
+  "check:spike-links": 20, "check:friends": 19, "check:auth": 16, "check:band-library": 14, "check:send-song": 14,
+  "check:time": 14, "check:band-move": 12, "check:band-settings": 12, "check:codes": 12, "check:headers": 12,
+  "check:learned": 12, "check:chords": 11, "check:bar": 10, "check:ux-passkey-msg-fix": 10,
+  "check:ux-theme-tokens": 10, "check:spike-server": 9, "check:backup": 8, "check:account": 7, "check:google": 7,
+  "check:teach-screen": 7, "check:ux-datamuse-fix": 5, "check:ux-settings-only-old-build": 5, "check:beat-red": 4,
+  "check:privacy": 4, "check:api": 3, "check:portable": 2, "check:bpm": 1, "check:data": 1, "check:fit": 1,
+  "check:music": 1, "check:one-copy": 1, "check:personal-settings": 1, "check:screens": 1, "check:scroll": 1,
+  "check:storage": 1, "check:band-status": 0, "check:ci-deep": 0, "check:gig": 0, "check:look-ahead": 0,
+  "check:metronome": 0, "check:share-guard": 0, "check:share-rule": 0, "check:spend-guard": 0,
+  "check:sync-rating": 0, "check:teach": 0,
 };
 
 const BOX_ONLY = {};

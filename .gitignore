@@ -3,3 +3,5 @@ dist
 .DS_Store
 *.local
 .verify-logs/
+.dev.vars
+.env*

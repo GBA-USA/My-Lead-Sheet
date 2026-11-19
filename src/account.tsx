@@ -143,14 +143,17 @@ const afterCreate = (account: Account, config: AuthConfig | null): Step =>
 
 const added = (ms: number) => new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 
+/** `invite` says what signing in will do for a link that is waiting. Once signed in, the sheet closes itself so the link can finish. */
 export function AccountSheet({
   account,
   backup,
+  invite,
   onAccount,
   onClose,
 }: {
   account: Account | null;
   backup: BackupResult | null;
+  invite?: string;
   onAccount: (account: Account | null) => void;
   onClose: () => void;
 }) {
@@ -209,6 +212,10 @@ export function AccountSheet({
   }, [onAccount, returned]);
 
   useEscape(onClose);
+
+  useEffect(() => {
+    if (invite && account && step.name === "account") onClose();
+  }, [invite, account, step.name]);
 
   const go = (next: Step) => {
     setError("");
@@ -506,6 +513,7 @@ export function AccountSheet({
             ✕
           </button>
         </header>
+        {invite && !account ? <p className="account-note">{invite}</p> : null}
         {body}
         {error ? (
           <p className="account-error" role="alert">

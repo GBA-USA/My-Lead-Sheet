@@ -39,6 +39,7 @@ The plan is `/workspace/mls-social-plan-2026-11-13/PLAN.md`. Where this file and
 5. Sharing and privacy are judged by ids and lineage (`worker/share-guard.ts` `lineage`, `checkSend`), never by
    matching content or print. Two players can hold identical charts, such as the built-in library.
 6. A friend code scanned in person sends a request the other person accepts. Never instant friends.
+   A tapped `friend-link` or band link is pre-approved by the person who shared it, so it adds or joins with no confirm step.
 
 ## Current patterns, one example each
 

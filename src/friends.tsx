@@ -11,7 +11,8 @@ type Lists = { friends: Person[]; requests: Person[] };
 type Outcome = "requested" | "friends" | "already-friends";
 type Preview = { kind: "friend-now" | "friend-link"; name: string; handle: string };
 
-type View = { name: "list" } | { name: "show"; kind: "friend-now" | "friend-link" } | { name: "scan" } | { name: "code"; code: string };
+/** A `tapped` code came in on a link. A tapped friend link adds at once, since its owner shared it; anything scanned asks first. */
+type View = { name: "list" } | { name: "show"; kind: "friend-now" | "friend-link" } | { name: "scan" } | { name: "code"; code: string; tapped: boolean };
 
 const MESSAGES: Record<string, string> = {
   ...CODE_REFUSED,
@@ -46,7 +47,7 @@ function PersonRow({ person, children }: { person: Person; children: ReactNode }
 
 /**
  * Friends: the list, requests waiting, Add by @name, Show my code, Share link and Scan a code. `code` is a friend code
- * to open first, and `onMessage` opens the DM with a friend.
+ * from a tapped link to open first, and `onMessage` opens the DM with a friend.
  */
 export function FriendsSheet({
   account,
@@ -63,7 +64,7 @@ export function FriendsSheet({
 }) {
   const titleId = useId();
   const handleId = useId();
-  const [view, setView] = useState<View>(code ? { name: "code", code } : { name: "list" });
+  const [view, setView] = useState<View>(code ? { name: "code", code, tapped: true } : { name: "list" });
   const [lists, setLists] = useState<Lists | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [handle, setHandle] = useState("");
@@ -93,7 +94,16 @@ export function FriendsSheet({
   useEffect(() => {
     setPreview(null);
     if (view.name === "list") api<Lists>("/api/friends").then(setLists, failed);
-    if (view.name === "code") api<Preview>("/api/friends/code", { code: view.code }).then(setPreview, failed);
+    if (view.name !== "code") return;
+    let live = true;
+    api<Preview>("/api/friends/code", { code: view.code }).then((found) => {
+      if (!live) return;
+      if (view.tapped && found.kind === "friend-link") add(view.code, found.name);
+      else setPreview(found);
+    }, failed);
+    return () => {
+      live = false;
+    };
   }, [view]);
 
   useEscape(onClose);
@@ -118,9 +128,11 @@ export function FriendsSheet({
       setNotice(OUTCOME[reply.outcome](name));
     });
 
+  const add = (code: string, name: string) => ask("/api/friends/add-by-code", { code }, name);
+
   const scanned = (payload: string) => {
     const fields = readPayload(payload);
-    if (fields && CODE_SCREEN[fields.kind] === "friends") go({ name: "code", code: payload });
+    if (fields && CODE_SCREEN[fields.kind] === "friends") go({ name: "code", code: payload, tapped: false });
     else setError(`This code opens a part of ${APP_NAME} that isn't in this version yet.`);
   };
 
@@ -247,7 +259,7 @@ export function FriendsSheet({
             {preview.name} <small>@{preview.handle}</small>
           </p>
           <p className="account-note">{preview.kind === "friend-now" ? `${preview.name} gets a request to accept.` : `${preview.name} shared this link, so you'll be friends right away.`}</p>
-          <button type="button" className="account-primary" disabled={busy} onClick={() => view.name === "code" && ask("/api/friends/add-by-code", { code: view.code }, preview.name)}>
+          <button type="button" className="account-primary" disabled={busy} onClick={() => view.name === "code" && add(view.code, preview.name)}>
             {preview.kind === "friend-now" ? "Send request" : "Add friend"}
           </button>
           {back}

@@ -5,7 +5,6 @@ import { BandPlayMissing, useBandPlay } from "./band-setlist-view";
 import { BandPage, BandsSheet, BandsTab, PlanGigScreen, type BandLanding } from "./bands";
 import { goneWords, openDm, queueOwner, useInbox } from "./chat";
 import { readPayload, type CodeScreen } from "./code-link";
-import { clearLanding, landedCode } from "./codes";
 import { BackIcon, OverflowMenu, SongControls, TextSizeButtons } from "./controls";
 import { LearnedCues } from "./cues";
 import { APP_NAME } from "./data-kinds";
@@ -15,7 +14,7 @@ import { SetlistList, SongBody, SongList, Tabs } from "./library-lists";
 import { useSendSong } from "./send-song";
 import { initialMetronomeBpm } from "./metronome";
 import { MessagesScreen } from "./messages";
-import { clearInvite, holdInvite, pendingInvite } from "./pending-invite";
+import { useInvite } from "./pending-invite";
 import { useMetronome } from "./metronome-view";
 import { clampScrollPercent, displayKeyLabel } from "./music";
 import type { PersonalDefaults } from "./personal-settings-model";
@@ -82,12 +81,8 @@ export function App() {
   const [notice, setNotice] = useState("");
   const [setlistCode, setSetlistCode] = useState<Setlist | null>(null);
   const [setlistCopy, setSetlistCopy] = useState<{ code: string } | null>(null);
-  const [invite, setInvite] = useState(() => {
-    const landed = landedCode();
-    return landed ? holdInvite(landed.code) : pendingInvite();
-  });
+  const { invite, dropInvite } = useInvite();
 
-  useEffect(clearLanding, []);
   useEffect(() => queueOwner(account?.userId ?? null), [account?.userId]);
 
   const landings: Record<CodeScreen, (code: string) => void> = {
@@ -95,11 +90,6 @@ export function App() {
     bands: (code) => setBands({ code }),
     gig: (code) => setBands({ code }),
     setlists: (code) => (readPayload(code)?.kind === "my-setlist" ? setSetlistCopy({ code }) : setBands({ code })),
-  };
-
-  const dropInvite = () => {
-    clearInvite();
-    setInvite(null);
   };
 
   useEffect(() => {

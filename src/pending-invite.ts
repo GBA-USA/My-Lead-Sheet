@@ -1,4 +1,6 @@
+import { useEffect, useState } from "react";
 import { CODE_SCREEN, readPayload, type CodeKind, type CodeScreen } from "./code-link";
+import { clearLanding, landedCode } from "./codes";
 import { PENDING_INVITE_KEY, readRaw, removeRaw, writeRaw } from "./storage";
 
 const KEEP_MS = 24 * 60 * 60 * 1000;
@@ -29,19 +31,33 @@ const inviteOf = (code: string): Invite | null => {
 };
 
 /** Keeps a landed code for after a sign-in or the Google redirect. The invite still works on this page if the phone refuses the write. */
-export function holdInvite(code: string): Invite | null {
+function holdInvite(code: string): Invite | null {
   writeRaw(PENDING_INVITE_KEY, JSON.stringify({ code, at: Date.now() } satisfies Held));
   return inviteOf(code);
 }
 
-export const clearInvite = () => removeRaw(PENDING_INVITE_KEY);
+const clearInvite = () => removeRaw(PENDING_INVITE_KEY);
 
 /** The invite waiting on this phone, or null. One older than a day is dropped here, as it is read. */
-export function pendingInvite(): Invite | null {
+function pendingInvite(): Invite | null {
   const raw = readRaw(PENDING_INVITE_KEY);
   if (raw === null) return null;
   const held = parseHeld(raw);
   const invite = held && Date.now() - held.at < KEEP_MS ? inviteOf(held.code) : null;
   if (!invite) clearInvite();
   return invite;
+}
+
+/** The invite a `/c/` link just landed with, or the one still waiting from before a sign-in. `dropInvite` forgets it. */
+export function useInvite() {
+  const [invite, setInvite] = useState(() => {
+    const landed = landedCode();
+    return landed ? holdInvite(landed.code) : pendingInvite();
+  });
+  useEffect(clearLanding, []);
+  const dropInvite = () => {
+    clearInvite();
+    setInvite(null);
+  };
+  return { invite, dropInvite };
 }

@@ -50,11 +50,11 @@ function pendingInvite(): Invite | null {
 
 /** The invite a `/c/` link just landed with, or the one still waiting from before a sign-in. `dropInvite` forgets it. */
 export function useInvite() {
-  const [invite, setInvite] = useState(() => {
-    const landed = landedCode();
-    return landed ? holdInvite(landed.code) : pendingInvite();
-  });
-  useEffect(clearLanding, []);
+  const [landed] = useState(landedCode);
+  const [invite, setInvite] = useState(() => (landed ? holdInvite(landed.code) : pendingInvite()));
+  useEffect(() => {
+    if (landed) clearLanding();
+  }, []);
   const dropInvite = () => {
     clearInvite();
     setInvite(null);

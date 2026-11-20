@@ -413,6 +413,42 @@ try {
     assert.deepEqual(await phone.glyphs(), [], "no glyph at an ok level in cb-rg");
   });
 
+  await check("at 390 px nothing the beat pill paints covers the title or any chart text, and it stays a 48 px tap target", async () => {
+    await phone.width(390);
+    for (const [level, theme] of [[null, "stage"], [0.15, "cb-rg"]] as const) {
+      await batteryPhone(level, theme);
+      for (const scrollTop of [0, 600, 1200, 1800, 2400]) {
+        await phone.evaluate(`document.getElementById("sheet-scroll").scrollTop = ${scrollTop}`);
+        await sleep(400);
+        const seen = await phone.evaluate<{ hit: { w: number; h: number; r: number; tappable: boolean }; covered: string[]; contrast: number }>(`(() => {
+          const pill = document.querySelector(${js(BEAT_PILL)});
+          const filled = (style) => !/rgba\\(.*, 0\\)|transparent/.test(style.backgroundColor);
+          const shows = (style) => filled(style) || parseFloat(style.borderTopWidth) > 0 || style.boxShadow !== "none";
+          const backdrop = (el) => { while (el && !filled(getComputedStyle(el))) el = el.parentElement; return el ? getComputedStyle(el).backgroundColor : "rgb(255, 255, 255)"; };
+          const painted = [...(shows(getComputedStyle(pill)) ? [pill] : []), ...pill.querySelectorAll("*")].map((el) => el.getBoundingClientRect()).filter((r) => r.width > 0 && r.height > 0);
+          const covered = [];
+          const walker = document.createTreeWalker(document.querySelector("article.sheet"), NodeFilter.SHOW_TEXT);
+          for (let node; (node = walker.nextNode()); ) {
+            if (!node.nodeValue.trim() || node.parentElement.closest(".beat-rail")) continue;
+            const range = document.createRange();
+            range.selectNodeContents(node);
+            for (const t of range.getClientRects()) {
+              if (painted.some((p) => t.left < p.right && t.right > p.left && t.top < p.bottom && t.bottom > p.top)) covered.push(node.nodeValue.trim().slice(-16) + " (" + node.parentElement.className + ")");
+            }
+          }
+          const lum = (css) => { const [r, g, b] = css.match(/\\d+(\\.\\d+)?/g).slice(0, 3).map((v) => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+          const icon = pill.querySelector("svg");
+          const [a, b] = [lum(getComputedStyle(icon).color), lum(backdrop(icon))].sort((x, y) => y - x);
+          const box = pill.getBoundingClientRect();
+          return { hit: { w: box.width, h: box.height, r: box.right, tappable: document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.closest(".beat-pill") === pill }, covered, contrast: (a + 0.05) / (b + 0.05) };
+        })()`);
+        assert.deepEqual(seen.covered, [], `${theme}, scrolled to ${scrollTop}: the pill paints over no text (${js(seen.covered)})`);
+        assert.ok(seen.hit.w >= 47.5 && seen.hit.h >= 47.5 && seen.hit.r <= 390 && seen.hit.tappable, `${theme}, scrolled to ${scrollTop}: the pill is still a 48 px tap target inside the screen (${js(seen.hit)})`);
+        assert.ok(seen.contrast >= 3, `${theme}: the speaker icon reads against what is behind it (contrast ${seen.contrast.toFixed(2)})`);
+      }
+    }
+  });
+
   await check("the bpm the sheet sets is part of the song's draft", async () => {
     await phone.fresh();
     assert.ok(!(await phone.has("Save", HEADER)), "no Save before a change");

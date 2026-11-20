@@ -1,5 +1,4 @@
-:root,
-.gig-stage {
+:root {
   --bg: #13120d;
   --surface: #2a2620;
   --surface-2: #322c24;
@@ -285,11 +284,11 @@ html[data-theme="contrast"] {
   box-sizing: border-box;
 }
 
-html[data-theme="contrast"] :is(button, input, select, textarea):not(.gig-stage *) {
+html[data-theme="contrast"] :is(button, input, select, textarea):not([hidden]) {
   border: var(--control-border);
 }
 
-html[data-theme="contrast"] input:is([type="checkbox"], [type="radio"]):not(.gig-stage *) {
+html[data-theme="contrast"] input:is([type="checkbox"], [type="radio"]):not([hidden]) {
   appearance: none;
   flex: none;
   width: 24px;
@@ -299,11 +298,11 @@ html[data-theme="contrast"] input:is([type="checkbox"], [type="radio"]):not(.gig
   background: var(--bg);
 }
 
-html[data-theme="contrast"] input[type="radio"]:not(.gig-stage *) {
+html[data-theme="contrast"] input[type="radio"]:not([hidden]) {
   border-radius: 50%;
 }
 
-html[data-theme="contrast"] input:is([type="checkbox"], [type="radio"]):checked:not(.gig-stage *) {
+html[data-theme="contrast"] input:is([type="checkbox"], [type="radio"]):checked:not([hidden]) {
   background: var(--accent);
   box-shadow: inset 0 0 0 4px var(--bg);
 }

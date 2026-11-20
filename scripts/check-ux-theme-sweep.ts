@@ -33,12 +33,13 @@ const SIMULATED_THEMES: Theme[] = ["stage", "cb-rg", "cb-by"];
 const CASES = {
   contrast: "every route in each of the five themes meets 4.5:1 for text and 3:1 for large text, and 7:1 in high contrast",
   overflow: "no element overflows the viewport at 390 and 768 in any theme",
-  gigStage: "the gig screens are stage under day and take the other three",
+  gigStage: "the gig screens take the device theme under all five themes",
   shapes: "under the deuteranopia, protanopia and tritanopia matrices the four chord bands, amber status, low battery and Save still differ by shape or text",
   bandTablet: "at 768 the band page shows two columns and the sheet one",
   gigTablet: "at 768 the gig view shows Now, Next and Later left and the status panel right",
   settingsTablet: "at 768 Settings is one column no wider than 560 px",
   borders: "in high contrast every control has a 2 px border",
+  sharedTheme: "no band, gig or room payload sets the theme",
 } as const;
 type Case = keyof typeof CASES;
 const problems = Object.fromEntries(Object.keys(CASES).map((key) => [key, [] as string[]])) as Record<Case, string[]>;
@@ -146,13 +147,42 @@ const BORDERS = `(() => {
   return { count: controls.length, thin };
 })()`;
 
-/** Runs in the page: the custom properties of the `:root, .gig-stage` block, and their values on html and on `.app`. */
+/** Runs in the page: the custom properties of the stage block (the one on `:root`), and their values on html and on `.app`. */
 const TOKENS = `(() => {
   const keys = new Set();
-  for (const sheet of document.styleSheets) for (const rule of sheet.cssRules) if (rule.selectorText && rule.selectorText.replace(/\\s+/g, "") === ":root,.gig-stage") for (const name of rule.style) if (name.startsWith("--")) keys.add(name);
+  for (const sheet of document.styleSheets) for (const rule of sheet.cssRules) if (rule.selectorText?.split(",").some((part) => part.trim() === ":root")) for (const name of rule.style) if (name.startsWith("--")) keys.add(name);
   const read = (el) => { const style = getComputedStyle(el); return Object.fromEntries([...keys].map((key) => [key, style.getPropertyValue(key).trim()])); };
   const app = document.querySelector(".app");
   return { keys: [...keys], html: read(document.documentElement), app: app ? read(app) : null };
+})()`;
+
+const DEVICE_THEME: Theme = "cb-by";
+const SHARED_THEME: Theme = "day";
+
+/** Runs before the app: every JSON reply from /api/ and every room socket message gets theme fields on each object. */
+const THEME_BAIT = `(() => {
+  window.__themeBait = [];
+  const bait = (value) => {
+    if (Array.isArray(value)) value.forEach(bait);
+    else if (value && typeof value === "object") {
+      for (const child of Object.values(value)) bait(child);
+      for (const key of ["theme", "dataTheme", "leadSheetsTheme"]) if (!(key in value)) value[key] = ${js(SHARED_THEME)};
+    }
+    return value;
+  };
+  const json = Response.prototype.json;
+  Response.prototype.json = async function () {
+    const body = await json.call(this);
+    const path = new URL(this.url).pathname;
+    if (path.startsWith("/api/")) { window.__themeBait.push(path); bait(body); }
+    return body;
+  };
+  const data = Object.getOwnPropertyDescriptor(MessageEvent.prototype, "data").get;
+  Object.defineProperty(MessageEvent.prototype, "data", { configurable: true, get() {
+    const raw = data.call(this);
+    if (!(this.target instanceof WebSocket) || typeof raw !== "string") return raw;
+    try { const parsed = JSON.parse(raw); window.__themeBait.push("socket"); return JSON.stringify(bait(parsed)); } catch { return raw; }
+  } });
 })()`;
 
 type Rect = { left: number; right: number; top: number; bottom: number; width: number; height: number };
@@ -453,6 +483,32 @@ try {
   await shapes({ name: "band page probes", hash: `#/band/${bandId}`, ready: bandReady }, false);
   await shapes({ name: "Save", hash: SONG, ready: `!!document.querySelector("[aria-label='Transpose up']")` }, true);
 
+  const { identifier: bait } = await site.send("Page.addScriptToEvaluateOnNewDocument", { source: THEME_BAIT });
+  await site.evaluate(`localStorage.setItem("leadSheetsTheme", ${js(DEVICE_THEME)})`);
+  const baited = new Set<string>();
+  try {
+    for (const name of ["band page Gigs", "gig view", "gig sheet", "band room"]) {
+      const stop = signedIn.find((candidate) => candidate.name === name)!;
+      await visit(stop);
+      if (name === "band room") {
+        await site.evaluate(`document.querySelector(".room .chat-composer textarea").focus()`);
+        await site.send("Input.insertText", { text: "Load in at five" });
+        await site.evaluate(`document.querySelector(".room .chat-composer button[type=submit]").click()`);
+        await app.until(`[...document.querySelectorAll(".chat-bubble")].some((b) => b.textContent.includes("Load in at five")) && window.__themeBait.some((where) => where === "socket")`, "the message back over the room socket", 15000);
+      }
+      await settle(500);
+      const seen = await site.evaluate<{ theme: string | undefined; stored: string | null; baited: string[] }>(`({ theme: document.documentElement.dataset.theme, stored: localStorage.getItem("leadSheetsTheme"), baited: window.__themeBait })`);
+      for (const where of seen.baited) baited.add(where);
+      measured.sharedTheme += 1;
+      if (seen.theme !== DEVICE_THEME || seen.stored !== DEVICE_THEME) fail("sharedTheme", `${name}: replies said theme "${SHARED_THEME}" and the phone now shows data-theme=${seen.theme}, stored ${seen.stored}, wanted ${DEVICE_THEME}`);
+    }
+    const kinds = { band: /^\/api\/bands(\/(?!gig\/)|$)/, gig: /^\/api\/bands\/gig\//, room: /^(socket|\/api\/chat\b)/ };
+    for (const [kind, pattern] of Object.entries(kinds)) if (![...baited].some((where) => pattern.test(where))) fail("sharedTheme", `no ${kind} reply carried the theme fields (${js([...baited])})`);
+  } finally {
+    await site.send("Page.removeScriptToEvaluateOnNewDocument", { identifier: bait });
+    await site.evaluate(`localStorage.removeItem("leadSheetsTheme")`);
+  }
+
   const stageValues = gigTokens.map((line) => JSON.parse(line)).find((entry) => entry.theme === "stage")?.html ?? {};
   for (const line of gigTokens) {
     const entry = JSON.parse(line) as { stop: string; theme: Theme; keys: string[]; html: Record<string, string>; app: Record<string, string> | null };
@@ -461,10 +517,9 @@ try {
       fail("gigStage", `${entry.stop} ${entry.theme}: no .app or no tokens`);
       continue;
     }
-    const want = entry.theme === "stage" || entry.theme === "day" ? stageValues : entry.html;
-    const off = entry.keys.filter((key) => entry.app![key] !== want[key]);
-    if (entry.theme === "day" && entry.html["--bg"] === stageValues["--bg"]) fail("gigStage", `${entry.stop} day: the shell itself is not in day`);
-    if (off.length) fail("gigStage", `${entry.stop} ${entry.theme}: the gig screen should be ${entry.theme === "day" ? "stage" : entry.theme} but differs on ${off.slice(0, 6).join(" ")}${off.length > 6 ? ` and ${off.length - 6} more` : ""} (--bg ${entry.app["--bg"]}, wanted ${want["--bg"]})`);
+    const off = entry.keys.filter((key) => entry.app![key] !== entry.html[key]);
+    if (entry.theme !== "stage" && entry.html["--bg"] === stageValues["--bg"]) fail("gigStage", `${entry.stop} ${entry.theme}: the shell itself is not in ${entry.theme}`);
+    if (off.length) fail("gigStage", `${entry.stop} ${entry.theme}: the gig screen should be ${entry.theme} but differs on ${off.slice(0, 6).join(" ")}${off.length > 6 ? ` and ${off.length - 6} more` : ""} (--bg ${entry.app["--bg"]}, wanted ${entry.html["--bg"]})`);
   }
 
   for (const theme of THEMES) {

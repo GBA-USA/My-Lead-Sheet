@@ -153,7 +153,9 @@ export async function codeLanding(sql: SqlStorage, env: Env, payload: string): P
   } catch (error) {
     if (!(error instanceof Refused) || !(error.reason in CODE_REFUSED)) throw error;
     const text = CODE_REFUSED[error.reason as keyof typeof CODE_REFUSED];
-    const page = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${APP_NAME}</title><p>${escapeHtml(text)}</p><p><a href="${escapeHtml(origin)}/">Open ${APP_NAME}</a></p></html>`;
+    /** A link typed in by hand or cut short in a message looks the same as a made-up one, so say what to check. */
+    const hint = error.reason === "bad-code" ? "<p>If someone sent you this link, check that you copied the whole link, or ask them for a fresh one.</p>" : "";
+    const page = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${APP_NAME}</title><p>${escapeHtml(text)}</p>${hint}<p><a href="${escapeHtml(origin)}/">Open ${APP_NAME}</a></p></html>`;
     return new Response(page, { status: error.status, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
   }
 }

@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { CODE_SCREEN, readPayload, type CodeKind, type CodeScreen } from "./code-link";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { CODE_SCREEN, codeInText, readPayload, type CodeKind, type CodeScreen } from "./code-link";
 import { APP_NAME } from "./data-kinds";
 import { scanCamera } from "./qr-scan";
 import { qrSvg } from "./qr-svg";
@@ -44,16 +44,19 @@ type CodeRequest = { kind: CodeKind } & Record<string, unknown>;
 
 /**
  * A code for `request`, made when the screen opens and made again when it ends, so a tap can use the link at once.
- * `problem` is why the last try failed. `retry` tries again.
+ * A null `request` asks for nothing, for a player the server would refuse. `problem` is why the last try failed. `retry` tries again.
  */
-export function useCode(request: CodeRequest, onError?: (error: unknown) => void) {
+export function useCode(request: CodeRequest | null, onError?: (error: unknown) => void) {
   const [shown, setShown] = useState<ShownCode | null>(null);
   const [problem, setProblem] = useState<unknown>(null);
   const [round, setRound] = useState(0);
 
   useEffect(() => {
+    if (!request) return;
     if (shown && shown.expiresAt > Date.now()) {
-      const timer = setTimeout(() => setShown(null), shown.expiresAt - Date.now());
+      // A browser keeps a timer's delay in 32 bits, so a code that never ends would wrap to a timer that fires at once.
+      // Asking again after a day is harmless: the old code still works, and most kinds hand back the same one.
+      const timer = setTimeout(() => setShown(null), Math.min(shown.expiresAt - Date.now(), DAY_MS));
       return () => clearTimeout(timer);
     }
     let live = true;
@@ -72,7 +75,7 @@ export function useCode(request: CodeRequest, onError?: (error: unknown) => void
     return () => {
       live = false;
     };
-  }, [shown, round]);
+  }, [shown, round, request === null]);
 
   const retry = () => {
     setShown(null);
@@ -90,20 +93,33 @@ export function shareLink(link: string, title: string): Promise<boolean> {
     navigator.share({ title, url: link }).catch(() => {});
     return Promise.resolve(false);
   }
-  return navigator.clipboard ? navigator.clipboard.writeText(link).then(() => true, () => false) : Promise.resolve(false);
+  return copyLink(link);
 }
+
+/** Puts the link on the clipboard. Resolves false where the browser refuses, such as a page not on https. */
+const copyLink = (link: string): Promise<boolean> => (navigator.clipboard ? navigator.clipboard.writeText(link).then(() => true, () => false) : Promise.resolve(false));
 
 /**
  * Show my code: a big black-on-white QR code with the plain words under it and its end time.
+ * With `share`, the whole link as text with Copy link, for a bandmate on a computer, and Share link where the phone has a share sheet.
  * `request` is the body for `POST /api/codes`. A code that ends is swapped for a fresh one while the screen is open.
  */
 export function ShowCode({ request, words, share, onStopped, onError }: { request: CodeRequest; words: string; share?: true; onStopped: () => void; onError: (error: unknown) => void }) {
   const { shown } = useCode(request, onError);
-  const [copied, setCopied] = useState(false);
+  const linkText = useRef<HTMLParagraphElement>(null);
+  /** The code whose link was copied, so a fresh code shows Copy link again. */
+  const [copied, setCopied] = useState<string | null>(null);
+  const [copyRefused, setCopyRefused] = useState(false);
 
   if (!shown) return <p className="account-note">Making your code…</p>;
 
   const stop = () => api("/api/codes/stop", { code: shown.code }).then(onStopped, onError);
+  const copy = () =>
+    copyLink(shown.link).then((done) => {
+      setCopyRefused(!done);
+      if (done) return setCopied(shown.code);
+      if (linkText.current) getSelection()?.selectAllChildren(linkText.current);
+    });
 
   return (
     <>
@@ -112,10 +128,22 @@ export function ShowCode({ request, words, share, onStopped, onError }: { reques
       <p className="account-note">{endLine(shown.expiresAt)}</p>
       {share ? (
         <>
-          <p className="codes-link">{shown.link}</p>
-          <button type="button" className="account-primary" onClick={() => shareLink(shown.link, words).then((done) => done && setCopied(true))}>
-            {copied ? "Link copied" : "Share link"}
+          <p ref={linkText} className="codes-link">
+            {shown.link}
+          </p>
+          {copyRefused ? (
+            <p className="account-note" role="alert">
+              This browser won't copy for the app. The link is selected, so copy it yourself.
+            </p>
+          ) : null}
+          <button type="button" className="account-primary" onClick={copy}>
+            {copied === shown.code ? "Copied" : "Copy link"}
           </button>
+          {typeof navigator.share === "function" ? (
+            <button type="button" className="account-secondary" onClick={() => shareLink(shown.link, words)}>
+              Share link
+            </button>
+          ) : null}
         </>
       ) : null}
       <button type="button" className="account-secondary" onClick={stop}>
@@ -125,25 +153,66 @@ export function ShowCode({ request, words, share, onStopped, onError }: { reques
   );
 }
 
-/** Scan a code: the camera, until it sees a code link. */
+/**
+ * Scan a code: the camera, until it sees a code link, and Paste a link for a computer or a link sent in a message.
+ * Both hand `onCode` the same payload, so a pasted link opens what a scan of its QR code opens.
+ */
 export function ScanCode({ onCode }: { onCode: (payload: string) => void }) {
   const video = useRef<HTMLVideoElement>(null);
+  const pasteId = useId();
   const [problem, setProblem] = useState("");
+  const [pasted, setPasted] = useState("");
+  const [notALink, setNotALink] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
     scanCamera(video.current!, controller.signal).then(onCode, () => {
-      if (!controller.signal.aborted) setProblem("Can't open the camera. Allow camera access for this site, or open the code with your phone's camera app.");
+      if (!controller.signal.aborted) setProblem("Can't open the camera. Allow camera access for this site, or paste the link below.");
     });
     return () => controller.abort();
   }, []);
 
+  const open = (event: FormEvent) => {
+    event.preventDefault();
+    const payload = codeInText(pasted);
+    if (payload) onCode(payload);
+    else setNotALink(true);
+  };
+
   return (
     <>
-      <video ref={video} className="codes-camera" muted playsInline />
+      <video ref={video} className="codes-camera" muted playsInline hidden={!!problem} />
       <p className="account-note" role={problem ? "alert" : undefined}>
         {problem || `Point the camera at a ${APP_NAME} code.`}
       </p>
+      <form className="account-form" onSubmit={open}>
+        <label className="account-field" htmlFor={pasteId}>
+          Paste a link
+        </label>
+        <input
+          id={pasteId}
+          className="account-input"
+          inputMode="url"
+          autoCapitalize="none"
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
+          placeholder={`${location.origin}/c/…`}
+          value={pasted}
+          onChange={(event) => {
+            setPasted(event.target.value);
+            setNotALink(false);
+          }}
+        />
+        {notALink ? (
+          <p className="account-error" role="alert">
+            That isn't a whole {APP_NAME} link. Copy all of it, then paste it again.
+          </p>
+        ) : null}
+        <button type="submit" className="account-secondary" disabled={!pasted.trim()}>
+          Open link
+        </button>
+      </form>
     </>
   );
 }

@@ -1,7 +1,6 @@
 import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 import { CODE_REFUSED, CODE_SCREEN, readPayload } from "./code-link";
 import { ScanCode, ShowCode } from "./codes";
-import { APP_NAME } from "./data-kinds";
 import { useEscape } from "./hooks";
 import { ApiError, api, type Account } from "./sign-in-methods";
 import "./friends.css";
@@ -133,7 +132,7 @@ export function FriendsSheet({
   const scanned = (payload: string) => {
     const fields = readPayload(payload);
     if (fields && CODE_SCREEN[fields.kind] === "friends") go({ name: "code", code: payload, tapped: false });
-    else setError(`This code opens a part of ${APP_NAME} that isn't in this version yet.`);
+    else setError(`${MESSAGES["not-a-friend-code"]} Open band, gig and setlist codes from Bands.`);
   };
 
   const addByName = (event: FormEvent) => {

@@ -31,6 +31,7 @@ type PageView = { name: "band" } | { name: "invite" } | { name: "settings" } | {
 const SECTION_LABELS: Record<BandSection, string> = { songs: "Songs", setlists: "Setlists", chat: "Chat", gigs: "Gigs", members: "Members" };
 
 const OFFLINE = "Can't reach the server. Check your connection and try again.";
+const ASK_AN_ADMIN = "Only a band admin can invite. Ask an admin to send you the link.";
 
 const MESSAGES: Record<string, string> = {
   ...CODE_REFUSED,
@@ -340,7 +341,9 @@ function BandScreen({ me, bandId, section: asked, landing, inbox, onMessage, onS
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState(landing?.notice ?? "");
   const [error, setError] = useState("");
-  const invite = useCode({ kind: "band", bandId });
+  const isAdmin = band?.role === "admin";
+  /** Only an admin's phone asks for the invite code, since the server refuses anyone else. */
+  const invite = useCode(isAdmin ? { kind: "band", bandId } : null);
 
   const toSection = (next: BandSection) => {
     setEditing(undefined);
@@ -464,6 +467,7 @@ function BandScreen({ me, bandId, section: asked, landing, inbox, onMessage, onS
   const shareInvite = () => {
     setError("");
     setNotice("");
+    if (!isAdmin) return setError(band ? ASK_AN_ADMIN : OFFLINE);
     if (!invite.shown) {
       setError(invite.problem ? message(invite.problem) : "Making the link. Try again in a moment.");
       return invite.retry();
@@ -473,7 +477,6 @@ function BandScreen({ me, bandId, section: asked, landing, inbox, onMessage, onS
 
   const name = band?.name ?? cached?.[0]?.bandName ?? "Band";
   const chatEntry = inbox.chats?.find((c) => c.roomId === bandId);
-  const isAdmin = band?.role === "admin";
   const loading = <p className="account-note">Loading…</p>;
   const cannotReach = <p className="account-note">{OFFLINE}</p>;
   const backToBand = (
@@ -659,7 +662,12 @@ function BandScreen({ me, bandId, section: asked, landing, inbox, onMessage, onS
       </>
     ),
     invite: () =>
-      band ? (
+      band && !isAdmin ? (
+        <>
+          <p className="account-note">{ASK_AN_ADMIN}</p>
+          {backToBand}
+        </>
+      ) : band ? (
         <>
           <ShowCode
             key={inviteRound}

@@ -1,4 +1,4 @@
-import type { Song } from "./types";
+import type { BassNote, KeyMode, Song } from "./types";
 
 /** Notes mode shows letter names. Nashville mode shows numbers and does not follow transpose. */
 export type Notation = "notes" | "nashville";
@@ -7,7 +7,12 @@ export const SCROLL_MIN = 20;
 export const SCROLL_MAX = 200;
 export const SCROLL_STEP = 5;
 
-const PREFERRED_TONICS = ["C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
+const TONICS: Record<KeyMode, string[]> = {
+  major: ["C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"],
+  minor: ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "G#", "A", "Bb", "B"],
+};
+/** Keys with flats in the signature but none in the tonic name. */
+const FLAT_KEYS = new Set(["F major", "C minor", "D minor", "F minor", "G minor"]);
 const SHARP_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const FLAT_NAMES = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
 /** Semitone offset from the major tonic. Offset 8 is b6, matching East to West. */
@@ -60,22 +65,29 @@ export function pitchClass(note: string): number {
   return pc;
 }
 
-export function prefersFlats(tonic: string): boolean {
-  return tonic.includes("b") || tonic === "F";
-}
-
 function mod12(n: number): number {
   return ((n % 12) + 12) % 12;
 }
 
-export function transposedTonic(keyRoot: string, semitones: number): string {
-  return PREFERRED_TONICS[mod12(pitchClass(keyRoot) + semitones)];
+/** The destination tonic and whether its key signature spells flats (G minor → Bb, Eb). */
+function transposedKey(song: Song, semitones: number): { tonic: string; flats: boolean } {
+  const tonic = TONICS[song.keyMode][mod12(pitchClass(song.keyRoot) + semitones)];
+  return { tonic, flats: tonic.includes("b") || FLAT_KEYS.has(`${tonic} ${song.keyMode}`) };
 }
 
+/** The original key's name while transposed, for text that stays in that key. Null when not transposed. */
+export function originalKey(song: Song, semitones: number): string | null {
+  return mod12(semitones) === 0 ? null : `${song.keyRoot} ${song.keyMode}`;
+}
+
+/** A caveat after the tonic ("A (practice version — …)") stays, with its note names moved too. */
 export function displayKeyLabel(song: Song, semitones: number): string {
   if (mod12(semitones) === 0) return song.keyLabel;
-  const tonic = transposedTonic(song.keyRoot, semitones);
-  return `${tonic} ${song.keyMode}`;
+  const { tonic, flats } = transposedKey(song, semitones);
+  const name = `${song.keyRoot} ${song.keyMode}`;
+  const prefix = song.keyLabel.startsWith(name) ? name : song.keyLabel.startsWith(song.keyRoot) ? song.keyRoot : "";
+  const caveat = prefix ? transposeNoteNames(song.keyLabel.slice(prefix.length), semitones, flats) : "";
+  return `${tonic} ${song.keyMode}${caveat}`;
 }
 
 export function degree(note: string, tonic: string): string {
@@ -150,32 +162,33 @@ export function transposeChordSymbol(symbol: string, semitones: number, flats: b
 }
 
 /**
- * Replace chord tokens without moving later tokens when the number is shorter.
- * A longer number (b7 for D) uses the spaces that already follow the token.
+ * Replace chord tokens and keep each one over its original column where the spacing allows.
+ * A longer token (Bb for A) pushes the line right; later spaces and shorter tokens take the push back.
+ * A run of spaces before more text always keeps one space, so two tokens never merge.
  */
 export function replaceChordTokens(line: string, replacer: (token: string) => string): string {
-  const flags = CHORD_RE.flags.includes("g") ? CHORD_RE.flags : `${CHORD_RE.flags}g`;
-  const re = new RegExp(CHORD_RE.source, flags);
   let out = "";
   let cursor = 0;
-  for (const match of line.matchAll(re)) {
+  let drift = 0;
+  const absorb = (gap: string, atEnd: boolean) =>
+    gap.replace(/ +/g, (run, offset: number) => {
+      const keep = atEnd && offset + run.length === gap.length ? 0 : 1;
+      const take = Math.min(drift, run.length - keep);
+      drift -= take;
+      return run.slice(take);
+    });
+  for (const match of line.matchAll(CHORD_RE)) {
     const start = match.index ?? 0;
     const token = match[0];
-    out += line.slice(cursor, start);
+    out += absorb(line.slice(cursor, start), false);
     const next = replacer(token);
-    if (next.length <= token.length) {
-      out += next + " ".repeat(token.length - next.length);
-      cursor = start + token.length;
-      continue;
-    }
-    out += next;
-    const extra = next.length - token.length;
-    let spaces = 0;
-    while (spaces < extra && line[start + token.length + spaces] === " ") spaces += 1;
-    cursor = start + token.length + spaces;
+    drift += next.length - token.length;
+    const pad = Math.max(0, -drift);
+    drift = Math.max(0, drift);
+    out += next + " ".repeat(pad);
+    cursor = start + token.length;
   }
-  out += line.slice(cursor);
-  return out;
+  return out + absorb(line.slice(cursor), true);
 }
 
 export function displayChordLine(
@@ -188,7 +201,7 @@ export function displayChordLine(
     return replaceChordTokens(line, (token) => toNashvilleSymbol(token, song));
   }
   if (mod12(semitones) === 0) return line;
-  const flats = prefersFlats(transposedTonic(song.keyRoot, semitones));
+  const { flats } = transposedKey(song, semitones);
   return replaceChordTokens(line, (token) => transposeChordSymbol(token, semitones, flats));
 }
 
@@ -204,14 +217,21 @@ export function transposeNoteNames(text: string, semitones: number, flats: boole
 export function displayBassNote(note: string, song: Song, semitones: number, notation: Notation): string {
   if (notation === "nashville") return convertNoteNames(note, song.keyRoot);
   if (mod12(semitones) === 0) return note;
-  const flats = prefersFlats(transposedTonic(song.keyRoot, semitones));
+  const { flats } = transposedKey(song, semitones);
   return transposeNoteNames(note, semitones, flats);
 }
 
-/** Stored nashville text for the table. Letters in the chord column use this in Nashville mode. */
-export function displayChordCell(chord: string, nashville: string, song: Song, semitones: number, notation: Notation): string {
-  if (notation === "nashville") return nashville;
-  return displayChordLine(chord, song, semitones, "notes");
+/**
+ * The table's Nashville number. A slash chord gets the key-relative bass (G/B in C → 5/7),
+ * because its stored text is a teaching phrase ("5 over 3"), which the table shows as a hint.
+ */
+export function nashvilleNumber(row: BassNote, song: Song): string {
+  return parseChord(row.chord.trim())?.bass ? toNashvilleSymbol(row.chord.trim(), song) : row.nashville;
+}
+
+export function displayChordCell(row: BassNote, song: Song, semitones: number, notation: Notation): string {
+  if (notation === "nashville") return nashvilleNumber(row, song);
+  return displayChordLine(row.chord, song, semitones, "notes");
 }
 
 /**

@@ -10,8 +10,12 @@ import {
 import {
   convertNoteNames,
   degree,
+  displayBassNote,
+  displayChordCell,
   displayChordLine,
   displayKeyLabel,
+  nashvilleNumber,
+  originalKey,
   parseChord,
   scrollPixelsPerSecond,
   toNashvilleSymbol,
@@ -85,9 +89,7 @@ const transposedNumbers = displayChordLine(original, chain, 1, "nashville");
 if (transposedNumbers !== converted) fail("nashville numbers moved when transposed");
 const letters = displayChordLine(original, chain, 1, "notes");
 if (!letters.includes("Db")) fail(`notes transpose ${letters}`);
-if (letters.includes("C ") || letters.endsWith("C")) {
-  /* original C should be gone; a padded line may still be fine */
-}
+if (/(?<![A-Za-z])C(?![A-Za-z#b])/.test(letters)) fail(`original C left after transpose: ${letters}`);
 if (displayChordLine("C", chain, 1, "notes") !== "Db") fail("single C");
 
 if (scrollPixelsPerSecond(78, 100) !== 19.5) fail("chain pace");
@@ -133,4 +135,78 @@ if (toNashvilleSymbol("A", east) !== "b3") fail("east A");
 if (toNashvilleSymbol("E", east) !== "b7") fail("east E");
 if (toNashvilleSymbol("F#m", east) !== "1") fail("east tonic");
 
-console.log("music ok: degrees match stored nashville, Chain Breaker is 1-4-5, transpose keeps numbers");
+const problems: string[] = [];
+function expect(got: unknown, want: unknown, label: string) {
+  if (got !== want) problems.push(`${label}: got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
+}
+
+expect(displayChordLine("E7                 Asus4 A", possum, 1, "notes"), "F7                 Bbsus4 Bb", "Possum +1");
+expect(displayChordLine("| A | E | F#m | F#m |", fire, 1, "notes"), "| Bb | F | Gm | Gm  |", "Fire Away bars +1");
+expect(displayChordLine("A / Asus4", possum, 1, "notes"), "Bb / Bbsus4", "Possum alias +1");
+expect(
+  displayChordLine(chain.atAGlance, chain, 1, "notes").includes("(Ab/C and Db/F slash chords)"),
+  true,
+  "Chain Breaker at a glance +1",
+);
+
+const words = (line: string) => [...line.matchAll(/\S+/g)].map((match) => ({ text: match[0], column: match.index ?? 0 }));
+for (const song of library.songs) {
+  const lines = [song.atAGlance, ...song.body.flatMap((section) => section.lines.flatMap((line) => [line.chords, line.bars]))];
+  for (const line of lines) {
+    if (!line) continue;
+    const before = words(line);
+    for (let semitones = 0; semitones < 12; semitones += 1) {
+      for (const notation of ["notes", "nashville"] as const) {
+        const out = displayChordLine(line, song, semitones, notation);
+        const shape = before
+          .map((word) => {
+            const pieces = words(displayChordLine(word.text, song, semitones, notation));
+            return `(${pieces.map((piece) => piece.text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(" *")})`;
+          })
+          .join(" +");
+        const match = new RegExp(`^ *${shape} *$`, "d").exec(out);
+        const where = `${song.title} ${notation} +${semitones} ${JSON.stringify(line)} -> ${JSON.stringify(out)}`;
+        if (!match) problems.push(`tokens merged: ${where}`);
+        else if (before.some((word, k) => match.indices![k + 1][0] < word.column)) problems.push(`token moved left of its word: ${where}`);
+      }
+    }
+  }
+}
+
+const minorKeys = ["F# minor", "G minor", "G# minor", "A minor", "Bb minor", "B minor", "C minor", "C# minor", "D minor", "Eb minor", "E minor", "F minor"];
+const majorKeys = ["C major", "Db major", "D major", "Eb major", "E major", "F major", "F# major", "G major", "Ab major", "A major", "Bb major", "B major"];
+for (let semitones = 0; semitones < 12; semitones += 1) {
+  expect(displayKeyLabel(east, semitones), minorKeys[semitones], `East to West +${semitones} key`);
+  expect(displayKeyLabel(chain, semitones), majorKeys[semitones], `Chain Breaker +${semitones} key`);
+}
+expect(displayChordLine("D E F#m A D", east, 1, "notes"), "Eb F Gm Bb Eb", "G minor spells flats");
+expect(displayChordLine("D E F#m A D", east, 2, "notes"), "E F# G#m B E", "G# minor spells sharps");
+expect(displayChordLine("D E F#m A D", east, 9, "notes"), "B Db Ebm Gb B", "Eb minor spells flats");
+expect(displayBassNote("A", east, 1, "notes"), "Bb", "G minor bass note");
+
+expect(displayKeyLabel(half, 0), "A (practice version — recording key unverified)", "No Half Steppin' key");
+expect(displayKeyLabel(half, 1), "Bb major (practice version — recording key unverified)", "No Half Steppin' +1 key");
+expect(displayKeyLabel(possum, 1), "F major (F-centered)", "Possum Kingdom +1 key");
+
+const toTable = library.songs.find((song) => song.id === 9)!;
+const row = (song: Song, chord: string) => song.bassNotes.find((note) => note.chord === chord)!;
+expect(nashvilleNumber(row(chain, "G/B"), chain), "5/7", "Chain Breaker G/B table number");
+expect(nashvilleNumber(row(chain, "C/E"), chain), "1/3", "Chain Breaker C/E table number");
+expect(nashvilleNumber(row(toTable, "E/G#"), toTable), "5/7", "To The Table E/G# table number");
+expect(displayChordCell(row(chain, "G/B"), chain, 0, "nashville"), "5/7", "Chain Breaker G/B chord cell in Nashville");
+expect(displayChordCell(row(chain, "G/B"), chain, 1, "notes"), "Ab/C", "Chain Breaker G/B chord cell +1");
+expect(nashvilleNumber(row(half, "A7 pattern notes"), half), "5 / b7", "pattern notes keep stored degrees");
+for (const song of library.songs) {
+  for (const note of song.bassNotes) {
+    if (!parseChord(note.chord)?.bass) expect(nashvilleNumber(note, song), note.nashville, `${song.title} ${note.chord}`);
+  }
+}
+
+expect(originalKey(fire, 0), null, "untransposed has no original-key label");
+expect(originalKey(fire, 12), null, "an octave is not a transpose");
+expect(originalKey(fire, 1), "A major", "Fire Away +1 original key");
+expect(originalKey(half, -2), "A major", "No Half Steppin' -2 original key");
+
+if (problems.length > 0) fail(problems.join("\n"));
+
+console.log("music ok: degrees match stored nashville, Chain Breaker is 1-4-5, transpose keeps numbers, spacing, spelling, caveats and slash numbers");

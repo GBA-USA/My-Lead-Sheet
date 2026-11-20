@@ -39,6 +39,11 @@ export const DATA_KINDS: readonly DataKind[] = [
     what: "Which account this phone signed in to, so the app checks your account when it opens and, with no signal, keeps your settings and unsaved changes with that account. Signing out removes it.",
   },
   {
+    key: "leadSheetsPendingInvite",
+    place: "phone",
+    what: "A link you opened while signed out, such as a friend or band invite, with the time it arrived, kept so it can finish once you sign in or create an account. Removed when it is used or refused, when you close the sign-in screen, or after a day.",
+  },
+  {
     key: "leadSheetsBackup",
     place: "phone",
     what: "While you are signed in: which account this phone backs up to, and what it last sent and received, so it only sends changes. Removed when you sign out.",

@@ -10,11 +10,12 @@ export const TEXT_SCALE_KEY = "leadSheetsTextScale";
 export const SCROLL_PERCENT_KEY = "leadSheetsScrollPercent";
 /** Per-song Notes/Nashville choice, stored under `leadSheetsNotation.<ref key>`. The spec does not name the key. */
 export const NOTATION_KEY = "leadSheetsNotation";
+export const PENDING_INVITE_KEY = "leadSheetsPendingInvite";
 
 /** Sheet body scale. 100% is the default. Steps are a Phase 1 stand-in; the spec doesn't set them. */
 export const TEXT_SCALES = [0.85, 1, 1.15, 1.3, 1.5, 1.7] as const;
 
-function readRaw(key: string): string | null {
+export function readRaw(key: string): string | null {
   try {
     return localStorage.getItem(key);
   } catch {
@@ -23,7 +24,7 @@ function readRaw(key: string): string | null {
 }
 
 /** Returns false when the browser refused the write. Private mode and some embedded webviews throw. */
-function writeRaw(key: string, value: string): boolean {
+export function writeRaw(key: string, value: string): boolean {
   try {
     localStorage.setItem(key, value);
     return true;
@@ -425,7 +426,7 @@ function isPositive(value: unknown): boolean {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
-function removeRaw(key: string): boolean {
+export function removeRaw(key: string): boolean {
   try {
     localStorage.removeItem(key);
     return true;

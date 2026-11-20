@@ -69,6 +69,7 @@
     "check:ux-collapse-everywhere": "tsc -p worker && node --experimental-strip-types scripts/check-ux-collapse-everywhere.ts",
     "check:ux-datamuse-fix": "node --experimental-strip-types scripts/check-ux-datamuse-fix.ts",
     "check:ux-passkey-msg-fix": "tsc -p worker && node --experimental-strip-types scripts/check-ux-passkey-msg-fix.ts",
+    "check:ux-invite-links": "tsc -p worker && node --experimental-strip-types scripts/check-ux-invite-links.ts",
     "check:ux-gig-view": "tsc -p worker && node --experimental-strip-types scripts/check-ux-gig-view.ts",
     "check:ci-deep": "node --experimental-strip-types scripts/check-ci-deep.ts"
   },

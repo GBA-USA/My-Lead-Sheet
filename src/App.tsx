@@ -5,7 +5,6 @@ import { BandPlayMissing, useBandPlay } from "./band-setlist-view";
 import { BandPage, BandsSheet, BandsTab, PlanGigScreen, type BandLanding } from "./bands";
 import { goneWords, openDm, queueOwner, useInbox } from "./chat";
 import { readPayload, type CodeScreen } from "./code-link";
-import { clearLanding, landedCode } from "./codes";
 import { BackIcon, OverflowMenu, SongControls, TextSizeButtons } from "./controls";
 import { LearnedCues } from "./cues";
 import { APP_NAME } from "./data-kinds";
@@ -17,6 +16,7 @@ import { SetlistList, SongBody, SongList, Tabs } from "./library-lists";
 import { useSendSong } from "./send-song";
 import { initialMetronomeBpm } from "./metronome";
 import { MessagesScreen } from "./messages";
+import { useInvite } from "./pending-invite";
 import { useMetronome } from "./metronome-view";
 import { clampScrollPercent, displayKeyLabel } from "./music";
 import type { PersonalDefaults } from "./personal-settings-model";
@@ -85,11 +85,8 @@ export function App() {
   const [notice, setNotice] = useState("");
   const [setlistCode, setSetlistCode] = useState<Setlist | null>(null);
   const [setlistCopy, setSetlistCopy] = useState<{ code: string } | null>(null);
-  const [landed, setLanded] = useState(landedCode);
+  const { invite, dropInvite } = useInvite();
 
-  useEffect(() => {
-    if (landed) clearLanding();
-  }, []);
   useEffect(() => queueOwner(account?.userId ?? null), [account?.userId]);
 
   const landings: Record<CodeScreen, (code: string) => void> = {
@@ -100,12 +97,12 @@ export function App() {
   };
 
   useEffect(() => {
-    if (!landed || checking) return;
+    if (!invite || checking) return;
     if (!account) return setAccountOpen(true);
     if (accountOpen) return;
-    landings[landed.screen](landed.code);
-    setLanded(null);
-  }, [landed, account, checking, accountOpen]);
+    dropInvite();
+    landings[invite.screen](invite.code);
+  }, [invite, account, checking, accountOpen]);
 
   const [backup, setBackup] = useState<BackupResult | null>(null);
 
@@ -383,10 +380,11 @@ export function App() {
         <AccountSheet
           account={account}
           backup={backup}
+          invite={invite?.line}
           onAccount={onAccount}
           onClose={() => {
             setAccountOpen(false);
-            if (!account) setLanded(null);
+            if (!account) dropInvite();
           }}
         />
       ) : null}

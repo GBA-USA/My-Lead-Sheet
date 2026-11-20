@@ -6,9 +6,8 @@ import { BandSettings } from "./band-settings";
 import type { BandPreview, BandSummary, BandView } from "./bands-model";
 import type { Inbox } from "./chat";
 import { unread } from "./chat-model";
-import { CODE_REFUSED, codeInText, readPayload, type CodeKind } from "./code-link";
+import { CODE_REFUSED, readPayload, type CodeKind } from "./code-link";
 import { ScanCode, ShowCode, shareLink, useCode } from "./codes";
-import { APP_NAME } from "./data-kinds";
 import { downloadPack, packsOnPhone, type GigPack } from "./gig-pack";
 import { GigCard, GigPlanForm, newGigId } from "./gig-plan";
 import type { GigDraft, GigView } from "./gig-plan-model";
@@ -24,7 +23,8 @@ import "./friends.css";
 /** Where a sheet sends the player once a code or a new band leads to a band: the section, a notice, a setlist to mark. */
 export type BandLanding = { bandId: string; section?: BandSection; notice?: string; setlistId?: string };
 
-type SheetView = { name: "list" } | { name: "scan" } | { name: "code"; code: string } | { name: "gig-code"; code: string } | { name: "setlist-code"; code: string };
+/** A `tapped` band code came in on a link and joins at once. A scanned one shows the band and asks first. */
+type SheetView = { name: "list" } | { name: "scan" } | { name: "code"; code: string; tapped: boolean } | { name: "gig-code"; code: string } | { name: "setlist-code"; code: string };
 
 type PageView = { name: "band" } | { name: "invite" } | { name: "settings" } | { name: "setlist"; setlistId: string };
 
@@ -58,15 +58,15 @@ const PACK_OFFLINE = "Can't download now · try on Wi-Fi";
 
 const unreachable = (error: unknown) => error instanceof ApiError && (error.reason === "offline" || error.status >= 500);
 
-const CODE_VIEWS: Partial<Record<CodeKind, (code: string) => SheetView>> = {
-  band: (code) => ({ name: "code", code }),
+const CODE_VIEWS: Partial<Record<CodeKind, (code: string, tapped: boolean) => SheetView>> = {
+  band: (code, tapped) => ({ name: "code", code, tapped }),
   gig: (code) => ({ name: "gig-code", code }),
   "band-setlist": (code) => ({ name: "setlist-code", code }),
 };
 
-const codeView = (code: string): SheetView | null => {
+const codeView = (code: string, tapped: boolean): SheetView | null => {
   const kind = readPayload(code)?.kind;
-  return kind ? (CODE_VIEWS[kind]?.(code) ?? null) : null;
+  return kind ? (CODE_VIEWS[kind]?.(code, tapped) ?? null) : null;
 };
 
 const message = (error: unknown) => {
@@ -98,8 +98,8 @@ function Status({ notice, error }: { notice: string; error: string }) {
 }
 
 /**
- * The Bands sheet, for what comes before a band page: New band, join by link, Scan a code, and a band, gig or setlist
- * code opened from a link. `code` is the code to open first. `onBand` goes to the band page the code or new band leads to.
+ * The Bands sheet, for what comes before a band page: New band, Scan a code, and a band, gig or setlist code opened
+ * from a link. `code` is the tapped code to open first. `onBand` goes to the band page the code or new band leads to.
  */
 export function BandsSheet({
   code,
@@ -116,12 +116,10 @@ export function BandsSheet({
 }) {
   const titleId = useId();
   const nameId = useId();
-  const linkId = useId();
-  const [view, setView] = useState<SheetView>(() => (code ? (codeView(code) ?? { name: "list" }) : { name: "list" }));
+  const [view, setView] = useState<SheetView>(() => (code ? (codeView(code, true) ?? { name: "list" }) : { name: "list" }));
   const [bands, setBands] = useState<BandSummary[] | null>(null);
   const [preview, setPreview] = useState<BandPreview | null>(null);
   const [newName, setNewName] = useState("");
-  const [link, setLink] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -155,7 +153,15 @@ export function BandsSheet({
     if (view.name === "list") api<{ bands: BandSummary[] }>("/api/bands").then((reply) => setBands(listed(reply.bands)), failed);
     if (view.name === "code") {
       setPreview(null);
-      api<BandPreview>("/api/bands/code", { code: view.code }).then(setPreview, failed);
+      let live = true;
+      api<BandPreview>("/api/bands/code", { code: view.code }).then((found) => {
+        if (!live) return;
+        if (view.tapped) join(view.code, found);
+        else setPreview(found);
+      }, failed);
+      return () => {
+        live = false;
+      };
     }
     if (view.name === "gig-code") api<GigView>("/api/bands/gig/code", { code: view.code }).then((opened) => onBand({ bandId: opened.gig.bandId, section: "gigs" }), failed);
     if (view.name === "setlist-code")
@@ -165,8 +171,14 @@ export function BandsSheet({
   useEscape(onClose);
   useCloseOnSong(onClose);
 
+  const join = (code: string, found: BandPreview) =>
+    run(async () => {
+      const joined = await api<BandView>("/api/bands/join", { code });
+      onBand({ bandId: joined.bandId, notice: found.member ? `You're already in ${joined.name}.` : `You joined ${joined.name}.` });
+    });
+
   const opened = (payload: string) => {
-    const next = codeView(payload);
+    const next = codeView(payload, false);
     if (next) go(next);
     else if (readPayload(payload)?.kind === "my-setlist") onSetlistCopy(payload);
     else setError("That isn't a band, gig or setlist code.");
@@ -179,14 +191,6 @@ export function BandsSheet({
       setNewName("");
       onBand({ bandId: made.bandId });
     });
-  };
-
-  const openLink = (event: FormEvent) => {
-    event.preventDefault();
-    const payload = codeInText(link);
-    setLink("");
-    if (payload) opened(payload);
-    else setError(`That link isn't a ${APP_NAME} code.`);
   };
 
   const backToList = (
@@ -237,15 +241,6 @@ export function BandsSheet({
               Create band
             </button>
           </form>
-          <form className="account-form" onSubmit={openLink}>
-            <label className="account-field" htmlFor={linkId}>
-              Join by link
-            </label>
-            <input id={linkId} className="account-input" autoCapitalize="none" autoComplete="off" placeholder="Paste the link" value={link} onChange={(event) => setLink(event.target.value)} />
-            <button type="submit" className="account-secondary" disabled={!link.trim()}>
-              Open link
-            </button>
-          </form>
           <button type="button" className="account-primary" onClick={() => go({ name: "scan" })}>
             Scan a code
           </button>
@@ -270,18 +265,7 @@ export function BandsSheet({
           <p className="codes-words">
             {preview.name} <small>Invited by {preview.invitedBy}</small>
           </p>
-          <button
-            type="button"
-            className="account-primary"
-            disabled={busy}
-            onClick={() =>
-              view.name === "code" &&
-              run(async () => {
-                const joined = await api<BandView>("/api/bands/join", { code: view.code });
-                onBand({ bandId: joined.bandId, notice: preview.member ? `You're already in ${joined.name}.` : `You joined ${joined.name}.` });
-              })
-            }
-          >
+          <button type="button" className="account-primary" disabled={busy} onClick={() => view.name === "code" && join(view.code, preview)}>
             {preview.member ? "Open band" : "Join"}
           </button>
           {backToList}

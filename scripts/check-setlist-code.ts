@@ -425,11 +425,7 @@ try {
 
     const pStopped = ok(await pTerry.call("/api/codes", { kind: "band-setlist", bandId: pBand, setlistId: pFriday }), "Terry's code on the phone's server").link as string;
     ok(await pTerry.call("/api/codes/stop", { code: pStopped.split("/c/")[1] }), "Terry stops it");
-    await topTab("bands");
-    await app.click("+ New band", `document.querySelector(".bands-tab")`);
-    await bandsView("list");
-    await app.type("Join by link", pStopped);
-    await app.click("Open link", `document.querySelector(".bands-sheet")`);
+    await site.send("Page.navigate", { url: `${origin}/?open=setlists&code=${pStopped.split("/c/")[1]}` });
     await app.until(`document.querySelector(".bands-sheet")?.textContent.includes("This code was stopped. Ask for a fresh one.")`, "the stopped words in the app");
     assert.ok(!(await sheetText(".bands-sheet")).includes("Friday set"), "the refusal names no setlist");
     await closeSheets();

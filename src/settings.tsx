@@ -3,7 +3,7 @@ import { backupLine } from "./account";
 import type { BackupResult } from "./backup";
 import { PRIVACY_HREF } from "./data-kinds";
 import type { MetronomePrefs } from "./metronome";
-import { CLICK_PREFS, clickOf, type PersonalDefaults } from "./personal-settings-model";
+import type { PersonalDefaults } from "./personal-settings-model";
 import { YourSettings } from "./personal-settings";
 import type { Account } from "./sign-in-methods";
 import { THEMES, loadTheme, saveTheme, type Theme } from "./storage";
@@ -105,8 +105,8 @@ export function SettingsScreen({
       </section>
 
       <YourSettings
-        click={clickOf(metronome.prefs)}
-        onClick={(click) => metronome.setPrefs(CLICK_PREFS[click])}
+        click={metronome.prefs}
+        onClick={metronome.setPrefs}
         textIndex={textIndex}
         onTextIndex={(index) => saved(onTextIndex(index))}
         personal={personal}

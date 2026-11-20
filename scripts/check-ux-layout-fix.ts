@@ -359,14 +359,14 @@ try {
       Notes: `[...document.querySelectorAll(".controls button")].find((b) => b.textContent.trim() === "Notes")`,
       Nashville: `[...document.querySelectorAll(".controls button")].find((b) => b.textContent.trim() === "Nashville")`,
       Scroll: `[...document.querySelectorAll(".controls button")].find((b) => /^Scroll: (On|Off)$/.test(b.textContent.trim()))`,
-      Metronome: `[...document.querySelectorAll(".controls button")].find((b) => b.textContent.trim() === "Metronome")`,
+      Metronome: `document.querySelector(".controls .metronome-pill")`,
     };
     for (const width of WIDTHS) {
       await phone(width);
       await openSong(`#/song/${TIMED}`);
       await toTop();
-      await site.evaluate(`document.querySelector(".sheet .metro-pad").click()`);
-      await app.until(`!!document.querySelector(".metro-pad.is-on") && !!document.querySelector(".beat-dot")`, "the metronome on with its beat dot");
+      await site.evaluate(`(async () => { const wait = () => new Promise((done) => setTimeout(done, 150)); document.querySelector(".controls .metronome-pill").click(); await wait(); document.querySelector("[role=dialog] .metro-pad").click(); await wait(); document.querySelector("[role=dialog] [aria-label=Close]").click(); await wait(); })()`);
+      await app.until(`/ bpm$/.test(document.querySelector(".controls .metronome-pill")?.textContent.trim() ?? "") && !!document.querySelector(".beat-dot")`, "the metronome on with its beat dot");
       assert.ok(await foldSong(), `the chrome folds at ${width} px`);
       const missing = await site.evaluate<string[]>(`Object.entries({ ${Object.entries(KEEP).map(([name, el]) => `${js(name)}: ${el}`).join(", ")} }).filter(([, el]) => !__look.shown(el)).map(([name]) => name)`);
       assert.deepEqual(missing, [], `the folded chrome shows every playing control at ${width} px`);
@@ -381,8 +381,8 @@ try {
       assert.ok(dot.inSheet, "the beat dot still lives in the sheet");
       assert.ok(!dot.underChrome, `the folded chrome does not cover the beat dot at ${width} px (${js(dot)})`);
       assert.ok(dot.box.t >= dot.scroller.t - 0.5 && dot.box.t <= dot.scroller.t + 40 && dot.box.r <= width && dot.box.l >= width * 0.75, `the beat dot sits in the top-right corner of the sheet at ${width} px (${js(dot)})`);
-      await site.evaluate(`document.querySelector(".sheet .metro-pad").click()`);
-      await app.until(`!document.querySelector(".metro-pad.is-on")`, "the metronome off");
+      await site.evaluate(`(async () => { const wait = () => new Promise((done) => setTimeout(done, 150)); document.querySelector(".controls .metronome-pill").click(); await wait(); document.querySelector("[role=dialog] .metro-pad").click(); await wait(); document.querySelector("[role=dialog] [aria-label=Close]").click(); await wait(); })()`);
+      await app.until(`document.querySelector(".controls .metronome-pill")?.textContent.trim() === "Metronome"`, "the metronome off");
     }
   });
 

@@ -1,14 +1,3 @@
-.metro-top {
-  display: flex;
-  gap: 6px;
-}
-
-.metro-top .metro-pad {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.metro-settings,
 .metro-segments button {
   min-height: 44px;
   padding: 0 12px;
@@ -21,11 +10,6 @@
   touch-action: manipulation;
 }
 
-.metro-settings {
-  flex: none;
-}
-
-.metro-settings[aria-expanded="true"],
 .metro-segments button[aria-pressed="true"] {
   background: var(--ink);
   border-color: var(--ink);
@@ -57,12 +41,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.metro-panel {
-  margin-top: 8px;
-  padding-top: 2px;
-  border-top: 1.5px solid var(--paper-border);
-}
-
 .metro-segments {
   display: flex;
   gap: 4px;
@@ -71,4 +49,82 @@
 .metro-segments button {
   min-height: 40px;
   min-width: 52px;
+}
+
+.beat-pill {
+  position: absolute;
+  top: 0;
+  right: -26px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  width: 48px;
+  height: 48px;
+  padding: 6px 0 0;
+  border: var(--control-border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  touch-action: manipulation;
+}
+
+.beat-dot[data-battery="ok"] {
+  background: var(--battery-ok);
+}
+
+.beat-dot[data-battery="low"] {
+  background: var(--battery-low);
+}
+
+.battery-mark {
+  position: absolute;
+  top: 3px;
+  right: 7px;
+  line-height: 1;
+}
+
+.battery-mark::before {
+  content: var(--battery-low-mark);
+  color: var(--battery-low);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.metronome-sheet :is(.metro-pad, .metro-step, .metro-input, .metro-segments button) {
+  min-height: 48px;
+  border: var(--control-border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.metronome-sheet .metro-pad.is-on {
+  background: var(--accent-wash);
+}
+
+.metronome-sheet .metro-name {
+  color: var(--accent-text);
+}
+
+.metronome-sheet .metro-segments button[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.metronome-sheet .metro-step {
+  width: 48px;
+}
+
+.metronome-sheet .metro-segments button {
+  min-width: 56px;
+}
+
+.metronome-sheet .metro-input {
+  flex: none;
+  width: 4.5em;
+}
+
+.metronome-sheet :is(.metro-choice-label, .metro-unit, .metro-hint) {
+  color: var(--text-dim);
 }

@@ -16,6 +16,7 @@ const entry = `
   export * as model from "./src/metronome.ts";
   export { METRONOME_PREFS_KEY } from "./src/storage.ts";
   export { LeadSheet } from "./src/sheet.tsx";
+  export { MetronomeSheet } from "./src/metronome-sheet.tsx";
   export { useMetronome } from "./src/metronome-view.tsx";
   export * as band from "./src/band-time.ts";
   export * as gig from "./src/gig-state.ts";
@@ -159,10 +160,11 @@ type Ui = {
   model: typeof import("../src/metronome.ts");
   METRONOME_PREFS_KEY: string;
   LeadSheet: unknown;
+  MetronomeSheet: unknown;
   useMetronome: typeof import("../src/metronome-view.tsx").useMetronome;
   band: typeof import("../src/band-time.ts");
   gig: typeof import("../src/gig-state.ts");
-  createElement: (type: unknown, props?: object) => unknown;
+  createElement: (type: unknown, props?: object | null, ...children: unknown[]) => unknown;
   createRoot: (container: unknown) => { render: (element: unknown) => void; unmount: () => void };
 };
 const ui: Ui = await import(pathToFileURL(bundle).href);
@@ -303,7 +305,12 @@ const song = library.songs.find((each) => each.tempo === 90) ?? fail("no 90 bpm 
 const beat = model.metronomeBeatSeconds(90);
 function Sheet() {
   const metronome = ui.useMetronome(song.id, song.tempo);
-  return ui.createElement(ui.LeadSheet, { song, scale: 1, semitones: 0, notation: "notes", metronome });
+  return ui.createElement(
+    "div",
+    null,
+    ui.createElement(ui.LeadSheet, { song, scale: 1, semitones: 0, notation: "notes", metronome }),
+    ui.createElement(ui.MetronomeSheet, { songTempo: song.tempo, metronome, onClose() {} }),
+  );
 }
 let root = ui.createRoot(dom.container);
 root.render(ui.createElement(Sheet));
@@ -354,16 +361,14 @@ resumeRejects = false;
 console.log("sheet: a refused resume, on tap or on return to the page, leaves the pad Off and no dot; a working start shows On and lights the dot");
 
 await tap(pad());
-await tap(buttonIn(byClass("metronome"), "Settings"));
-if (!byClass("metro-panel")) fail("Settings must open the metronome settings panel");
 
-await tap(choice("Beat dot", "Off"));
+await tap(choice("Dot", "Off"));
 const quietDot = started.length;
 if (run(2, sheetDot).some((frame) => frame.state !== "none")) fail("beat dot off must remove the dot");
 if (started.length <= quietDot) fail("beat dot off must not stop the click");
 if (savedPrefs()?.indicator !== false) fail("beat dot off was not saved");
 console.log(`beat dot off: no dot for 2 s while ${started.length - quietDot} clicks still sounded; saved`);
-await tap(choice("Beat dot", "On"));
+await tap(choice("Dot", "On"));
 
 await tap(choice("Sound", "Off"));
 run(0.2, sheetDot);
@@ -420,9 +425,9 @@ run(1.1, sheetDot);
 await settle();
 if (syncShown()) fail("Off must hide dot sync even at 200 ms");
 await tap(choice("Dot sync", "On"));
-await tap(choice("Beat dot", "Off"));
+await tap(choice("Dot", "Off"));
 if (syncShown()) fail("dot sync must hide while the beat dot is off");
-await tap(choice("Beat dot", "On"));
+await tap(choice("Dot", "On"));
 console.log("on and off: On shows dot sync without detection, Off hides it at 200 ms");
 
 root.unmount();
@@ -430,9 +435,8 @@ root = ui.createRoot(dom.container);
 root.render(ui.createElement(Sheet));
 await settle();
 if (byLabel("Dot sync offset")?.textContent !== "+50 ms") fail("dot sync offset did not persist across a reload");
-await tap(buttonIn(byClass("metronome"), "Settings"));
 const pressed = (group: string) => elements().find((el) => el.getAttribute("aria-label") === group)?.elements.find((el) => el.getAttribute("aria-pressed") === "true")?.textContent;
-if (pressed("Beat dot") !== "On" || pressed("Sound") !== "On" || pressed("Dot sync") !== "On") fail("settings did not reload as saved");
+if (pressed("Dot") !== "On" || pressed("Sound") !== "On" || pressed("Dot sync") !== "On") fail("settings did not reload as saved");
 store.set(ui.METRONOME_PREFS_KEY, JSON.stringify({ indicator: false, sound: "loud", syncMode: "maybe", syncOffsetMs: 9999 }));
 const parsed = model.parseMetronomePrefs(JSON.parse(store.get(ui.METRONOME_PREFS_KEY)!));
 if (parsed.indicator !== false || parsed.sound !== true || parsed.syncMode !== "auto" || parsed.syncOffsetMs !== model.SYNC_OFFSET_MAX_MS) fail("bad saved fields must fall back one by one");

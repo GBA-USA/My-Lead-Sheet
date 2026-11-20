@@ -56,10 +56,10 @@ test("settings persist per account on a shared phone", () => {
   return problems;
 });
 
-test("joinGig keeps the player's own click and text size", () => {
-  const mine: PersonalSettings = { click: "dot-only", textSize: 4, chordStyle: "nashville", transpose: -1 };
+test("joinGig keeps the player's own Sound, Dot and text size", () => {
+  const mine: PersonalSettings = { sound: false, indicator: false, textSize: 4, chordStyle: "nashville", transpose: -1 };
   const before = JSON.stringify(mine);
-  const joined = joinGig(mine, { gigId: "gig-1", imposed: { connectionRoute: "hotspot", scrollWithLeader: true }, attempted: { click: "out-loud", textSize: 0 } });
+  const joined = joinGig(mine, { gigId: "gig-1", imposed: { connectionRoute: "hotspot", scrollWithLeader: true }, attempted: { sound: true, indicator: true, textSize: 0 } });
   const problems: string[] = [];
   if (!same(joined.personal, mine)) problems.push(`the gig changed the player's settings to ${JSON.stringify(joined.personal)}`);
   if (JSON.stringify(mine) !== before) problems.push("joinGig changed the settings it was given");

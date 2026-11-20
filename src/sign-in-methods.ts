@@ -51,11 +51,17 @@ export async function api<T>(path: string, body?: object): Promise<T> {
   return reply as T;
 }
 
-/** What this server offers, from `GET /api/auth/config`. Google stays hidden until the Worker has a Google client, and passwords until it has a pepper. */
+/**
+ * What this server offers, from `GET /api/auth/config`. Google stays hidden until the Worker has a Google client, and passwords until it has a pepper.
+ * `previewOpen` is only there on a Preview server that gives each signed-out phone its own account with no sign-in.
+ */
 export interface AuthConfig {
   google: boolean;
   password: boolean;
+  previewOpen?: true;
 }
+
+export const enterPreview = () => api<SignedIn>("/api/preview-enter", {});
 
 /** A sheet screen a way opens when it needs typing first, instead of finishing in one tap. */
 export type FormStep = "password" | "make-password" | "set-password";

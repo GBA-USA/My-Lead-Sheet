@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import type { BackupResult } from "./backup";
 import { APP_NAME, PRIVACY_HREF } from "./data-kinds";
 import { handleFromName } from "./handle";
@@ -10,6 +10,7 @@ import {
   SIGN_IN_METHODS,
   api,
   createWithPassword,
+  enterPreview,
   setPassword,
   signInWithPassword,
   WrongAddress,
@@ -79,6 +80,37 @@ export function useAccount(): { account: Account | null; setAccount: (account: A
   }, []);
   const owner = account ? account.userId : mark === UNNAMED ? undefined : mark;
   return { account, setAccount: remember, checking, owner };
+}
+
+type Entry = "ask" | "asking" | "retry" | "done";
+
+/**
+ * On a Preview server open to everyone, a signed-out phone that `wants` an account gets its own with no sign-in screen,
+ * once per launch. True while that is under way, so the screen waits instead of showing Sign in.
+ */
+export function usePreviewEntry(wants: boolean, owner: Owner, checking: boolean, onAccount: (account: Account) => void): boolean {
+  const [entry, setEntry] = useState<Entry>("ask");
+  const sent = useRef(false);
+  const start = wants && owner === null && !checking && entry === "ask";
+  useEffect(() => {
+    if (!start || sent.current) return;
+    sent.current = true;
+    setEntry("asking");
+    api<AuthConfig>("/api/auth/config")
+      .then(async (config) => {
+        if (config.previewOpen) onAccount((await enterPreview()).account);
+        setEntry("done");
+      })
+      .catch((error) => setEntry(error instanceof ApiError && error.status > 0 && error.status < 500 ? "done" : "retry"))
+      .finally(() => (sent.current = false));
+  }, [start]);
+  useEffect(() => {
+    if (entry !== "retry") return;
+    const again = () => setEntry("ask");
+    addEventListener("online", again);
+    return () => removeEventListener("online", again);
+  }, [entry]);
+  return start || entry === "asking";
 }
 
 const MESSAGES: Record<string, string> = {

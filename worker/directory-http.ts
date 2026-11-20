@@ -26,7 +26,7 @@ export interface Context {
 export type Reply = ({ body: unknown; googleReturn?: undefined } | { googleReturn: string; body?: undefined }) & { signIn?: User; signOut?: true; cookies?: string[] };
 
 /** The caller's users row as it is now, or null once another request has moved its `session_version` on. */
-function currentUser(sql: SqlStorage, session: Session | null): User | null {
+export function currentUser(sql: SqlStorage, session: Session | null): User | null {
   const user = session ? userById(sql, session.userId) : undefined;
   return user && user.session_version === session?.version ? user : null;
 }

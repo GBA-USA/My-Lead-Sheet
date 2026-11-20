@@ -354,20 +354,26 @@ try {
     await nothingPending("after the setlist copy link");
   });
 
-  await check("no paste box exists on Bands or Friends", async () => {
+  // Terry t40s3 (Nov 20, 2026) reversed t834u: Bands and Friends Scan a code get a Paste a link field.
+  await check("a Paste a link field exists on Bands and Friends", async () => {
     await fresh();
     await app.signUp("Xan Paste");
     await app.openBands();
     await waitFor(`!document.querySelector(".bands-sheet").textContent.includes("Loading")`, "the Bands sheet list");
-    assert.deepEqual(await app.texts(".bands-sheet label"), ["New band"], "the Bands sheet has one field, New band");
-    assert.ok((await app.texts(".bands-sheet button")).includes("Scan a code"), "and Scan a code");
+    await app.click("Scan a code", `document.querySelector(".bands-sheet")`);
+    await waitFor(`document.querySelector(".bands-sheet")?.dataset.view === "scan"`, "Bands Scan a code");
+    assert.ok((await app.texts(".bands-sheet label")).includes("Paste a link"), "Bands Scan a code has a Paste a link field");
+    assert.ok((await app.texts(".bands-sheet button")).includes("Open link"), "with Open link");
     await app.click("✕", `document.querySelector(".bands-sheet")`);
     await site.evaluate(`location.hash = "#/songs"`);
     await app.openMenu();
     await app.pick("Friends");
     await waitFor(`document.querySelector(".friends-sheet")?.dataset.view === "list" && !document.querySelector(".friends-sheet").textContent.includes("Loading")`, "the Friends list");
-    assert.deepEqual(await app.texts(".friends-sheet label"), ["Add by @name"], "the Friends sheet has one field, Add by @name");
-    assert.ok((await app.texts(".friends-sheet button")).includes("Scan a code"), "and Scan a code");
+    await app.click("Scan a code", `document.querySelector(".friends-sheet")`);
+    await waitFor(`document.querySelector(".friends-sheet")?.dataset.view === "scan"`, "Friends Scan a code");
+    assert.ok((await app.texts(".friends-sheet label")).includes("Paste a link"), "Friends Scan a code has a Paste a link field");
+    assert.ok((await app.texts(".friends-sheet button")).includes("Open link"), "with Open link");
+    await app.click("✕", `document.querySelector(".friends-sheet")`);
   });
 
   await check("a second account on the same phone never inherits the first's pending invite", async () => {

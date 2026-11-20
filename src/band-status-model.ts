@@ -58,7 +58,6 @@ export function heardText(ms: number): string {
   return `Heard ${Math.round(ms / 1000)} s ago`;
 }
 
-/** One panel row. `bars` is null until a live gig measures the player's sync. */
 export type StatusRow = {
   id: string;
   name: string;

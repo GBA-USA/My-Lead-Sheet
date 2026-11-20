@@ -1,4 +1,5 @@
 import { useId, useState } from "react";
+import { createPortal } from "react-dom";
 import { statusRows, type Player } from "./band-status-model";
 import { useEscape } from "./hooks";
 import "./band-status.css";
@@ -13,7 +14,6 @@ const initials = (name: string) =>
     .map((word) => [...word][0].toUpperCase())
     .join("");
 
-/** The panel over the band page or the gig view: one row per lineup player. */
 export function BandStatusPanel({ players, onClose }: { players: Player[]; onClose: () => void }) {
   const titleId = useId();
   useEscape(onClose);
@@ -59,9 +59,9 @@ export function BandStatusPanel({ players, onClose }: { players: Player[]; onClo
   );
 }
 
-/** The strip of faces, one per lineup player, with the leader ringed. Any face opens the panel. With no players there is no strip. */
+/** The panel mounts on `.app`, because `.scroll` is its own stacking context under the shell header. */
 export function BandStatusFaces({ players }: { players: Player[] }) {
-  const [open, setOpen] = useState(false);
+  const [sheetHost, setSheetHost] = useState<Element | null>(null);
   if (players.length === 0) return null;
 
   return (
@@ -73,13 +73,13 @@ export function BandStatusFaces({ players }: { players: Player[] }) {
             type="button"
             className={["band-status-face", row.leader && "band-status-face-leader", row.amber && "band-status-face-amber"].filter(Boolean).join(" ")}
             aria-label={row.leader ? `${row.name}, leader` : row.name}
-            onClick={() => setOpen(true)}
+            onClick={(event) => setSheetHost(event.currentTarget.closest(".app") ?? document.body)}
           >
             {initials(row.name)}
           </button>
         ))}
       </div>
-      {open ? <BandStatusPanel players={players} onClose={() => setOpen(false)} /> : null}
+      {sheetHost ? createPortal(<BandStatusPanel players={players} onClose={() => setSheetHost(null)} />, sheetHost) : null}
     </>
   );
 }

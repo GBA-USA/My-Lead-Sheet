@@ -472,14 +472,20 @@ try {
 
     const gigChrome = () =>
       site.evaluate<{ boxes: (Box | null)[]; tabs: boolean }>(`({ boxes: [".shell-header", ".controls", ".live-nav", "#sheet-scroll", ".shell-header .shell-title", "[aria-label='Transpose up']", "[aria-label='Scroll settings']"].map((s) => { const el = document.querySelector(s); return el && el.getClientRects().length ? __look.box(el) : null; }), tabs: !!document.querySelector(".tabs") })`);
+    const stageFolded = () => site.evaluate<boolean>(`!!document.querySelector(".song-chrome-bar[data-folded]")`);
     const steady = async (what: string) => {
       await toTop();
       const top = await gigChrome();
+      assert.equal(top.tabs, false, `${what} has no library tabs`);
+      assert.ok(!(await stageFolded()), `${what} opens with its header open`);
+      assert.ok(await shown(".shell-header .text-size"), `${what} shows A− A+ while open`);
       await scrollBy(600, 20);
       const down = await gigChrome();
+      assert.ok(await stageFolded(), `${what} folds its header while it scrolls`);
+      assert.ok(!(await shown(".shell-header .text-size")), `${what} hides A− A+ while folded`);
+      assert.deepEqual(down.boxes[2], top.boxes[2], `${what} keeps the stage bar in place across the fold`);
       await scrollBy(-80, 10);
-      assert.equal(top.tabs, false, `${what} has no library tabs`);
-      assert.deepEqual(down, top, `${what} keeps its own chrome unchanged while it scrolls`);
+      assert.ok(!(await stageFolded()), `${what} opens its header again on the way up`);
     };
     const live = seed.setlists[0];
     await go(`#/live/${live.id}/0`, `!!document.querySelector(".live-nav") && !!document.querySelector(".sheet .sheet-name")`, "a setlist live");

@@ -13,8 +13,9 @@ export function nextGig(gigs: GigView[]): GigView | undefined {
 
 /**
  * The next gig on the band page: its name and day, how many songs and how much of its pack this phone holds, Start gig
- * for whoever can lead it, Open gig for the rest of the lineup, and Plan gig for an admin. Until the gig screen lands,
- * Start gig and Open gig open the gig's card in Gigs (`onOpen`). Plan gig starts from the next gig's setlist when there is one.
+ * for whoever can lead it, Open gig for the rest of the lineup, and Plan gig for an admin. Start gig opens the gig view
+ * (`onStart`); Open gig opens the gig's card in Gigs (`onOpen`), where a song button opens it on stage. Plan gig starts
+ * from the next gig's setlist when there is one.
  */
 export function NextGigCard({
   band,
@@ -23,6 +24,7 @@ export function NextGigCard({
   packs,
   library,
   busy,
+  onStart,
   onOpen,
   onPlan,
 }: {
@@ -32,6 +34,7 @@ export function NextGigCard({
   packs: Record<string, GigPack>;
   library: BandLibrary | null;
   busy: boolean;
+  onStart: (gigId: string) => void;
   onOpen: (gigId: string) => void;
   onPlan: (setlistId?: string) => void;
 }) {
@@ -56,7 +59,8 @@ export function NextGigCard({
   const songs = pack?.songs.length ?? library?.setlists.find((item) => item.setlistId === gig.setlistId)?.songIds.length;
   const playing = gig.lineup.includes(me);
   const held = pack && pack.packRev >= next.packRev ? pack.songs.length : 0;
-  const open = gig.leader === me || gig.backup === me || admin ? "Start gig" : playing ? "Open gig" : null;
+  const leads = gig.leader === me || gig.backup === me || admin;
+  const open = leads ? "Start gig" : playing ? "Open gig" : null;
   return (
     <section className="next-gig" data-next-gig={gig.gigId} aria-label={`Next gig: ${gig.name}`}>
       <h3>
@@ -70,7 +74,7 @@ export function NextGigCard({
       {open || plan ? (
         <div className="account-row">
           {open ? (
-            <button type="button" className="account-primary" onClick={() => onOpen(gig.gigId)}>
+            <button type="button" className="account-primary" onClick={() => (leads ? onStart : onOpen)(gig.gigId)}>
               {open}
             </button>
           ) : null}

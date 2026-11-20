@@ -301,15 +301,19 @@ try {
     const mine = packs.find((p) => p.gig.gigId === g1)!;
     assert.deepEqual(mine.songs.map((s) => s.song.title), SET_SONGS.map((s) => s.title), "the pack holds the setlist's songs in order");
     assert.equal(typeof mine.secret, "string", "with the gig secret, since Sam is on the lineup");
+    await tap(SET_SONGS[1].title, card(g1));
+    await app.until(`location.hash === ${js(`#/gig/${bandId}/${g1}/1`)} && document.querySelector(".sheet .sheet-name")?.textContent === ${js(SET_SONGS[1].title)}`, "a song button opening the gig-mode sheet at that song");
+    await site.evaluate(`document.querySelector(".shell-header [aria-label=Back]").click()`);
+    await app.until(`location.hash === ${js(`#/gig/${bandId}/${g1}`)} && !!document.querySelector(${js(`.gig-view[data-gig="${g1}"]`)})`, "back on the gig view");
     await offline(true);
     try {
-      for (const song of SET_SONGS) {
-        await tap(song.title, card(g1));
+      for (const [index, song] of SET_SONGS.entries()) {
+        await site.evaluate(`location.hash = ${js(`#/gig/${bandId}/${g1}/${index}`)}`);
         await app.until(`document.querySelector(".sheet .sheet-name")?.textContent === ${js(song.title)} && !!document.querySelector(".chart")`, `${song.title} rendered with no signal`);
         await app.shot(shots && `${shots}/gig-pack-${song.title.replace(/\W+/g, "-")}.png`);
-        await app.click("Back");
-        await app.until(`!!${card(g1)}`, "back on the card");
       }
+      await site.evaluate(`document.querySelector(".shell-header [aria-label=Back]").click()`);
+      await app.until(`document.querySelector(".gig-now .gig-title")?.textContent === ${js(SET_SONGS[2].title)}`, "back on the gig view at the last song with no signal");
     } finally {
       await offline(false);
     }

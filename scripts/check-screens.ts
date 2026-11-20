@@ -65,13 +65,13 @@ const attrs = (html: string, tag: RegExp) => [...html.matchAll(tag)].map((match)
 const attr = (element: string, name: string) => element.match(new RegExp(`${name}="([^"]*)"`))?.[1];
 
 const firstSetlist = seed.setlists[0];
-const routes = ["#/songs", "#/setlists", "#/bands", `#/song/${seed.songs[0].id}`, "#/song/999", `#/live/${firstSetlist.id}/0`, `#/live/${firstSetlist.id}/99`, "#/live/77/0", "#/live/404/0", "#/settings", "#/band/band_x", "#/band/band_x/plan/gig_x?setlist=set_x", "#/messages", "#/messages/dm_x"];
+const routes = ["#/songs", "#/setlists", "#/bands", `#/song/${seed.songs[0].id}`, "#/song/999", `#/live/${firstSetlist.id}/0`, `#/live/${firstSetlist.id}/99`, "#/live/77/0", "#/live/404/0", "#/settings", "#/band/band_x", "#/band/band_x/plan/gig_x?setlist=set_x", "#/gig/band_x/gig_x", "#/gig/band_x/gig_x/0", "#/messages", "#/messages/dm_x"];
 
 for (const hash of routes) {
   const html = render(hash);
   check(count(html, /<h1[ >]/) === 1, `${hash} has exactly one h1 (found ${count(html, /<h1[ >]/)})`);
   const tabs = attrs(html, /<a [^>]*role="tab"[^>]*>/g);
-  if (hash.startsWith("#/live") || hash.startsWith("#/settings") || hash.startsWith("#/messages")) {
+  if (hash.startsWith("#/live") || hash.startsWith("#/gig") || hash.startsWith("#/settings") || hash.startsWith("#/messages")) {
     check(tabs.length === 0, `${hash} shows no tabs`);
     continue;
   }

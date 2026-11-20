@@ -9,6 +9,8 @@ import { clearLanding, landedCode } from "./codes";
 import { BackIcon, OverflowMenu, SongControls, TextSizeButtons } from "./controls";
 import { LearnedCues } from "./cues";
 import { APP_NAME } from "./data-kinds";
+import { useGigPosition } from "./gig-position";
+import { GigSongMissing, GigViewScreen, useGigPack } from "./gig-view";
 import { useAutoScroll, useScrolling, useStored, useWakeLock } from "./hooks";
 import { LearnSong } from "./learn-song";
 import { SetlistList, SongBody, SongList, Tabs } from "./library-lists";
@@ -18,7 +20,7 @@ import { MessagesScreen } from "./messages";
 import { useMetronome } from "./metronome-view";
 import { clampScrollPercent, displayKeyLabel } from "./music";
 import type { PersonalDefaults } from "./personal-settings-model";
-import { backHref, bandHref, bandLiveHref, messagesHref, parseHash, roomHref, settingsHref, type Route, type TabName } from "./route";
+import { backHref, bandHref, messagesHref, parseHash, roomHref, settingsHref, type Route, type TabName } from "./route";
 import { Room } from "./room";
 import { READING_LINE, changeTempo, evenPlan, scrollMotion, startTake, toggleHold, type ScrollVersion, type Take } from "./scroll-timing";
 import { ScrollSheet } from "./scroll-sheet";
@@ -30,6 +32,7 @@ import type { Account } from "./sign-in-methods";
 import { FOLDS, SongChromeRoom, SongChromeSlot, useSongChrome } from "./song-chrome";
 import { SongDataEditor } from "./song-data-editor";
 import { useSongVersion } from "./song-version";
+import { StageBar, stageSetOf } from "./stage-bar";
 import {
   TEXT_SCALES,
   loadLibrary,
@@ -41,6 +44,7 @@ import {
   saveSongData,
   saveTextScaleIndex,
   songByRef,
+  tempoText,
   withSongData,
 } from "./storage";
 import { SongLine, TakeBar, taughtPlan, useFollowTempo, type LineMenu } from "./teach";
@@ -148,26 +152,19 @@ export function App() {
   const route = parseHash(hash);
   const inbox = useInbox(owner ?? null, route.name, () => setAccount(null));
   const bandRoute = route.name === "band-song" || route.name === "band-live";
-  const showTabs = !["live", "band-live", "settings", "messages", "room"].includes(route.name);
+  const gigRoute = route.name === "gig" ? route : null;
+  const onStage = gigRoute !== null;
+  const liveRoute = route.name === "live" || route.name === "band-live";
+  const showTabs = !["live", "band-live", "gig", "settings", "messages", "room"].includes(route.name);
   const tab: TabName =
-    route.name === "bands" || route.name === "band" || route.name === "band-song" || route.name === "band-plan" ? "bands" : route.name === "setlists" || (route.name === "song" && route.from === "setlists") ? "setlists" : "songs";
+    route.name === "bands" || route.name === "band" || route.name === "band-song" || route.name === "band-plan" || route.name === "gig" ? "bands" : route.name === "setlists" || (route.name === "song" && route.from === "setlists") ? "setlists" : "songs";
   const back = backHref(route);
   const play = useBandPlay(route, owner ?? null);
-
-  const liveSetlist = route.name === "live" ? library.setlists.find((set) => set.id === route.setlistId) : undefined;
-  const liveIndex =
-    route.name === "live" && liveSetlist
-      ? Math.min(Math.max(route.index, 0), Math.max(liveSetlist.songRefs.length - 1, 0))
-      : 0;
-  const liveSong =
-    route.name === "live" && liveSetlist ? songByRef(library.songs, liveSetlist.songRefs[liveIndex]) : undefined;
-  const activeSong = route.name === "song" ? songByRef(library.songs, localRef(route.id)) : route.name === "live" ? liveSong : play.song;
-  const liveList =
-    route.name === "live" && liveSetlist
-      ? { name: liveSetlist.name, count: liveSetlist.songRefs.length, index: liveIndex, href: (index: number) => `#/live/${route.setlistId}/${index}` }
-      : route.name === "band-live" && play.setlist
-        ? { name: play.setlist.name, count: play.setlist.songIds.length, index: play.index, href: (index: number) => bandLiveHref(route.bandId, route.setlistId, index) }
-        : null;
+  const pack = useGigPack(owner ?? null, gigRoute?.gigId ?? "");
+  const position = useGigPosition(pack?.gig, owner ?? null, pack?.songs.length ?? 0, gigRoute?.index ?? null);
+  const stage = onStage || liveRoute ? stageSetOf(route, library, play, pack, position) : null;
+  const stageCanMove = !gigRoute || position.canMove;
+  const activeSong = route.name === "song" ? songByRef(library.songs, localRef(route.id)) : route.name === "band-song" ? play.song : stage?.song;
 
   const performance = useScrolling(activeSong?.ref ?? null);
   const songVersion = useSongVersion(activeSong ?? null, owner, personal);
@@ -180,9 +177,10 @@ export function App() {
     setBpm: (bpm) => { setFollowed(null); songVersion.set({ bpm }); },
   });
   const take = teaching && "take" in teaching ? teaching.take : null;
-  const fold = FOLDS[route.name];
+  const fold = FOLDS[route.name] ?? (activeSong ? "song" : undefined);
   const chrome = useSongChrome(fold === "song" ? (activeSong?.ref ?? null) : fold ? hash : null, performance.scrolling, take != null, () => setMenu(null));
-  const playing: ScrollVersion | null = draft?.plan ? { name: "", ...draft.plan, ...(draft.learned ? { learned: draft.learned } : {}) } : null;
+  const bandTiming = gigRoute && pack?.scrollWithLeader ? (pack.songs[position.index]?.bandTiming ?? null) : null;
+  const playing: ScrollVersion | null = bandTiming ?? (draft?.plan ? { name: "", ...draft.plan, ...(draft.learned ? { learned: draft.learned } : {}) } : null);
   const learned = take ? undefined : playing?.learned;
   const even = shownSong ? evenPlan(shownSong) : null;
   // The metronome's speed against the plan's BPM scales the timed scroll, so a tempo change applies at once.
@@ -193,7 +191,7 @@ export function App() {
   const clock = useAutoScroll(
     performance.scrolling && activeSong != null,
     motion,
-    take ? "take" : playing ? `version ${JSON.stringify(draft?.plan)}` : `even ${shownSong?.officialRuntimeSec} ${shownSong?.tempo}`,
+    take ? "take" : playing ? `version ${JSON.stringify(bandTiming ?? draft?.plan)}` : `even ${shownSong?.officialRuntimeSec} ${shownSong?.tempo}`,
     (reason) => (take ? (reason === "end" ? finishTake(take) : stopTake(take)) : performance.stopScroll()),
   );
   useWakeLock();
@@ -281,7 +279,7 @@ export function App() {
   };
 
   return (
-    <div className="app">
+    <div className={onStage ? "app gig-stage" : "app"}>
       <SongChromeSlot chrome={chrome} list={fold === "list"}>
         <header className={activeSong ? "shell-header song-header" : "shell-header"}>
           <button
@@ -293,11 +291,15 @@ export function App() {
           >
             <BackIcon />
           </button>
-          {activeSong ? <p className="shell-title">{APP_NAME}</p> : <h1 className="shell-title">{SCREEN_TITLES[route.name] ?? APP_NAME}</h1>}
+          {activeSong ? (
+            <p className="shell-title">{gigRoute && stage && shownSong && draft ? `${stage.index + 1} of ${stage.count} · ${displayKeyLabel(shownSong, draft.semitones)} · ${tempoText(shownSong.tempo)}` : APP_NAME}</p>
+          ) : (
+            <h1 className="shell-title">{SCREEN_TITLES[route.name] ?? APP_NAME}</h1>
+          )}
           {activeSong ? <TextSizeButtons index={textIndex} count={TEXT_SCALES.length} onChange={changeText} /> : null}
           {activeSong ? (
-            <OverflowMenu label="More" size="shell" open={menu === "shell"} onToggle={() => toggleMenu("shell")} onClose={closeMenu} onSongData={bandRoute ? undefined : () => setEditing(true)}>
-              {bandRoute ? null : sendSong.item(activeSong, closeMenu)}
+            <OverflowMenu label="More" size="shell" open={menu === "shell"} onToggle={() => toggleMenu("shell")} onClose={closeMenu} onSongData={bandRoute || gigRoute ? undefined : () => setEditing(true)}>
+              {bandRoute || gigRoute ? null : sendSong.item(activeSong, closeMenu)}
             </OverflowMenu>
           ) : route.name === "settings" ? null : (
             <button type="button" className="icon-btn gear-btn" aria-label="Settings" onClick={() => (window.location.hash = settingsHref(tab))}>
@@ -305,12 +307,12 @@ export function App() {
               {inbox.unread > 0 ? <span className="chat-badge">{inbox.unread}</span> : null}
             </button>
           )}
-          {activeSong ? <SongLine key={activeSong.ref} state={songVersion} menu={menu} onToggleMenu={toggleMenu} onCloseMenu={closeMenu} /> : null}
+          {activeSong && !onStage ? <SongLine key={activeSong.ref} state={songVersion} menu={menu} onToggleMenu={toggleMenu} onCloseMenu={closeMenu} /> : null}
         </header>
 
         {showTabs ? <Tabs tab={tab} /> : null}
 
-        {activeSong && shownSong && draft ? (
+        {activeSong && shownSong && draft && !onStage ? (
           <SongControls
             keyLabel={displayKeyLabel(shownSong, draft.semitones)}
             onTransposeDown={() => songVersion.set((current) => ({ semitones: current.semitones - 1 }))}
@@ -411,20 +413,6 @@ export function App() {
       ) : null}
       {sendSong.sheet}
 
-      {liveList && liveList.count > 0 ? (
-        <div className="live-nav">
-          <button type="button" aria-label="Previous song" disabled={liveList.index <= 0} onClick={() => (window.location.hash = liveList.href(liveList.index - 1))}>
-            Prev
-          </button>
-          <span className="live-count">
-            {liveList.name} · {liveList.index + 1}/{liveList.count}
-          </span>
-          <button type="button" aria-label="Next song" disabled={liveList.index >= liveList.count - 1} onClick={() => (window.location.hash = liveList.href(liveList.index + 1))}>
-            Next
-          </button>
-        </div>
-      ) : null}
-
       <div
         className="scroll"
         id="sheet-scroll"
@@ -472,7 +460,10 @@ export function App() {
             metronome={metronome}
           />
         ) : null}
-        {route.name === "live" || bandRoute ? (
+        {gigRoute && gigRoute.index === null ? (
+          <GigViewScreen key={`${owner}/${gigRoute.gigId}`} me={owner ?? null} bandId={gigRoute.bandId} gigId={gigRoute.gigId} pack={pack} position={position} onSignIn={() => setAccountOpen(true)} onSignedOut={() => setAccount(null)} />
+        ) : null}
+        {route.name === "live" || bandRoute || (gigRoute && gigRoute.index !== null) ? (
           shownSong ? (
             <LeadSheet
               song={shownSong}
@@ -481,11 +472,13 @@ export function App() {
               notation={draft?.notation ?? "notes"}
               metronome={metronome}
             />
+          ) : gigRoute ? (
+            <GigSongMissing bandId={gigRoute.bandId} gigId={gigRoute.gigId} pack={pack} />
           ) : bandRoute ? (
             <BandPlayMissing play={play} back={back ?? "#/bands"} />
           ) : (
             <div className="missing">
-              <p>{liveSetlist?.songRefs.length === 0 ? "This setlist is empty." : "That setlist isn't in this library."}</p>
+              <p>{stage?.count === 0 ? "This setlist is empty." : "That setlist isn't in this library."}</p>
               <a href="#/setlists">Back to Setlists</a>
             </div>
           )
@@ -493,6 +486,10 @@ export function App() {
         {/* Room below the sheet, so a learned version can bring the chart's end up to the reading line. */}
         {learned ? <div style={{ height: `calc(100% - ${READING_LINE}px)` }} /> : null}
       </div>
+
+      {stage && stage.count > 0 && (activeSong || stageCanMove) ? (
+        <StageBar set={stage} canMove={stageCanMove} scroll={activeSong ? { on: performance.scrolling, toggle: () => (take ? stopTake(take) : performance.setScrolling((on) => !on)) } : undefined} />
+      ) : null}
     </div>
   );
 }

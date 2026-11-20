@@ -16,7 +16,8 @@ export type Route =
   | { name: "band"; bandId: string; section: BandSection | null }
   | { name: "band-song"; bandId: string; songId: string }
   | { name: "band-plan"; bandId: string; gigId: string; setlistId: string | null }
-  | { name: "band-live"; bandId: string; setlistId: string; index: number };
+  | { name: "band-live"; bandId: string; setlistId: string; index: number }
+  | { name: "gig"; bandId: string; gigId: string; index: number | null };
 
 const ID = "([\\w-]+)";
 
@@ -24,6 +25,8 @@ export function parseHash(hash: string): Route {
   const raw = hash.replace(/^#/, "");
   const path = (raw.split("?")[0] || "/songs").replace(/\/$/, "") || "/songs";
   const query = new URLSearchParams(raw.includes("?") ? raw.slice(raw.indexOf("?") + 1) : "");
+  const gig = path.match(new RegExp(`^/gig/${ID}/${ID}(?:/(\\d+))?$`));
+  if (gig) return { name: "gig", bandId: gig[1], gigId: gig[2], index: gig[3] === undefined ? null : Number(gig[3]) };
   const bandLive = path.match(new RegExp(`^/live/band/${ID}/${ID}(?:/(\\d+))?$`));
   if (bandLive) return { name: "band-live", bandId: bandLive[1], setlistId: bandLive[2], index: Number(bandLive[3] ?? 0) };
   const live = path.match(/^\/live\/(\d+)(?:\/(\d+))?$/);
@@ -68,11 +71,14 @@ export const bandPlanHref = (bandId: string, gigId: string, setlistId: string | 
 export const messagesHref = "#/messages";
 export const roomHref = (roomId: string) => `#/messages/${roomId}`;
 export const bandLiveHref = (bandId: string, setlistId: string, index: number) => `#/live/band/${bandId}/${setlistId}/${index}`;
+/** The gig view, or with `index` the gig-mode sheet at that song. */
+export const gigHref = (bandId: string, gigId: string, index?: number) => `#/gig/${bandId}/${gigId}${index === undefined ? "" : `/${index}`}`;
 
-/** Where the header's Back goes from each screen, or null on a tab, which has no Back. */
+/** Where the header's Back goes from each screen, or null on a tab, which has no Back. Back from the gig view leaves the gig live. */
 export function backHref(route: Route): string | null {
   if (route.name === "song") return route.from === "setlists" ? "#/setlists" : "#/songs";
   if (route.name === "live") return "#/setlists";
+  if (route.name === "gig") return route.index === null ? bandHref(route.bandId) : gigHref(route.bandId, route.gigId);
   if (route.name === "settings") return `#/${route.from}`;
   if (route.name === "band") return "#/bands";
   if (route.name === "messages") return "#/settings";

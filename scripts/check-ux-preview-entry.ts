@@ -48,7 +48,7 @@ try {
   await site.send("Page.addScriptToEvaluateOnNewDocument", {
     source: `window.__login = new Set();
       new MutationObserver(() => {
-        if (document.querySelector(".account-sheet")) __login.add("the sign-in sheet");
+        if (document.querySelector(".account-sheet[data-step]")) __login.add("the sign-in sheet");
         if ([...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Sign in")) __login.add("a Sign in button");
         const hit = (document.body?.innerText ?? "").match(/Continue as|Sign in to|Sign in with|Create an account|Face ID|fingerprint|[Pp]asskey|[Pp]assword/);
         if (hit) __login.add(hit[0]);

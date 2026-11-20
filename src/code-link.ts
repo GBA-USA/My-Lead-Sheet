@@ -14,11 +14,24 @@ export const CODE_SCREEN: Record<CodeKind, CodeScreen> = {
   "friend-link": "friends",
 };
 
-export const CODE_REFUSED: Record<"bad-code" | "code-ended" | "code-stopped", string> = {
-  "bad-code": "This code doesn't work. Ask for a fresh one.",
+/**
+ * Why a code is refused, in the player's words. `bad-code` is a signature that doesn't check out: a typo, a link cut
+ * short, or one signed before a key change. `code-replaced` is a real signature whose code the server no longer holds.
+ */
+export const CODE_REFUSED: Record<"bad-code" | "code-replaced" | "code-ended" | "code-stopped", string> = {
+  "bad-code": "This link is incomplete or out of date. Copy it again, or ask for a fresh one.",
+  "code-replaced": "This link was replaced. Ask for a fresh one.",
   "code-ended": "This code has ended. Ask for a fresh one.",
   "code-stopped": "This code was stopped. Ask for a fresh one.",
 };
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * How long a code on screen waits before checking its end again. A browser keeps a timer's delay in 32 bits, so a
+ * never-ending code's ten years would wrap to a timer that fires at once; a day is under the limit and is re-armed.
+ */
+export const refreshDelay = (expiresAt: number, now: number) => Math.max(0, Math.min(expiresAt - now, DAY_MS));
 
 /** What a code link carries, and nothing else: no band, song or person. */
 export interface CodeFields {

@@ -29,6 +29,7 @@ const ONE_COPY: { what: string; pattern: RegExp; home: string; dir?: string }[] 
   { what: "the room socket", pattern: /new WebSocket\(/, home: "src/chat.tsx", dir: "src/" },
   { what: "the stage bar: Prev, Scroll, Next at 64 px", pattern: /function StageBar\b/, home: "src/stage-bar.tsx" },
   { what: "LeadSheet is the only sheet renderer", pattern: /className="sheet"/, home: "src/sheet.tsx", dir: "src/" },
+  { what: "ROUTE_WORDS, the words for each kind of live link", pattern: /relay: "Through the relay"/, home: "src/routes.ts", dir: "src/" },
 ];
 
 for (const { what, pattern, home, dir } of ONE_COPY) {

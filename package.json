@@ -71,6 +71,7 @@
     "check:ux-passkey-msg-fix": "tsc -p worker && node --experimental-strip-types scripts/check-ux-passkey-msg-fix.ts",
     "check:ux-invite-links": "tsc -p worker && node --experimental-strip-types scripts/check-ux-invite-links.ts",
     "check:ux-gig-view": "tsc -p worker && node --experimental-strip-types scripts/check-ux-gig-view.ts",
+    "check:ux-band-status": "tsc -p worker && node --experimental-strip-types scripts/check-ux-band-status.ts",
     "check:ci-deep": "node --experimental-strip-types scripts/check-ci-deep.ts"
   },
   "dependencies": {

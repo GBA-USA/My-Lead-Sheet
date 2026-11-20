@@ -965,39 +965,226 @@ a:focus-visible {
   position: relative;
   z-index: 3;
   flex: none;
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 8px;
-  padding: 2px 10px 6px;
-  min-width: 0;
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+  background: var(--bg);
+  border-top: 1px solid var(--divider);
 }
 
-.live-nav button {
-  flex: none;
-  height: 32px;
-  min-width: 64px;
-  padding: 0 10px;
+.live-nav .stage-step,
+.live-nav .scroll-pill {
+  height: var(--touch-stage);
+  min-height: var(--touch-stage);
+  min-width: var(--touch-stage);
+  padding: 0 16px;
   border: var(--control-border);
   border-radius: 999px;
-  background: var(--surface);
-  color: var(--text);
   font-weight: 700;
-  font-size: 14px;
+  font-size: 17px;
 }
 
-.live-nav button:disabled {
+.live-nav .stage-step {
+  width: 100%;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.live-nav .stage-step:disabled {
   opacity: 0.35;
 }
 
-.live-count {
-  flex: 1;
+.live-nav .scroll-pill {
+  justify-content: center;
+}
+
+.stage-middle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
   min-width: 0;
+}
+
+.live-count {
+  max-width: 100%;
   text-align: center;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.gig-stage .song-chrome {
+  --song-chrome-folded: calc(env(safe-area-inset-top) + 58px);
+}
+
+.gig-stage .song-chrome-bar[data-folded] {
+  grid-template-columns: 48px minmax(0, 1fr) 48px;
+  grid-template-rows: 48px;
+  grid-template-areas: "back title more";
+  padding: calc(8px + env(safe-area-inset-top)) 12px 2px;
+}
+
+.gig-stage .song-chrome-bar[data-folded] .shell-header > .menu-anchor {
+  display: block;
+  grid-area: more;
+}
+
+.gig-view {
+  display: grid;
+  gap: 12px;
+  padding: 12px 16px 24px;
+  color: var(--text);
+}
+
+.gig-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.gig-top h2 {
+  margin: 0;
+  font-size: 20px;
+  overflow-wrap: anywhere;
+}
+
+.gig-ask {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.gig-ask p {
+  margin: 0;
+  font-weight: 700;
+}
+
+.gig-count {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.gig-progress {
+  display: flex;
+  gap: 4px;
+}
+
+.gig-progress span {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-2);
+}
+
+.gig-progress span[aria-current="step"] {
+  background: var(--accent);
+}
+
+.gig-now,
+.gig-next {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.gig-now {
+  border: 2px solid var(--accent);
+}
+
+.gig-kicker {
+  margin: 0;
+  color: var(--text-kicker);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.gig-now .gig-title {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+.gig-next .gig-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.gig-meta {
+  margin: 0;
+  color: var(--text-dim);
+}
+
+.gig-now .account-row {
+  margin-top: 8px;
+}
+
+.gig-view .account-primary,
+.gig-view .account-secondary,
+.gig-ask .account-primary {
+  min-height: var(--touch-stage);
+}
+
+.gig-set h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+  color: var(--text-kicker);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.gig-set ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gig-set li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: var(--touch-stage);
+  border-bottom: 1px solid var(--row-rule);
+  font-size: 17px;
+}
+
+.gig-set li[aria-current="true"] {
+  color: var(--accent-text);
+  font-weight: 700;
+}
+
+.gig-set-number {
+  flex: none;
+  min-width: 24px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.gig-set li button {
+  flex: 1;
+  min-height: var(--touch-stage);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
 }
 
 .setlist ol {

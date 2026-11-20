@@ -59,14 +59,14 @@
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  gap: 4px;
+  gap: 3px;
   width: 48px;
-  height: 48px;
-  padding: 6px 0 0;
-  border: var(--control-border);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--text);
+  min-height: 48px;
+  /* The hit area reaches over the text column, so the dot, glyph and icon keep to the 16 px right of the text edge. */
+  padding: 6px 10px 6px 22px;
+  border: 0;
+  background: none;
+  color: var(--ink);
   touch-action: manipulation;
 }
 
@@ -79,9 +79,6 @@
 }
 
 .battery-mark {
-  position: absolute;
-  top: 3px;
-  right: 7px;
   line-height: 1;
 }
 

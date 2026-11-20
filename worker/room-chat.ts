@@ -10,7 +10,7 @@ type MessageRow = { seq: number; msg_id: string; author: string; author_name: st
 /** Columns added after a table first shipped. A room made before them has its table as it was, so each is added there once. */
 const MESSAGE_COLUMNS_ADDED: Record<string, string> = { kind: "TEXT NOT NULL DEFAULT 'text'", ref: "TEXT" };
 
-function addColumns(sql: SqlStorage, table: string, columns: Record<string, string>) {
+export function addColumns(sql: SqlStorage, table: string, columns: Record<string, string>) {
   const have = new Set(sql.exec<{ name: string }>(`PRAGMA table_info(${table})`).toArray().map((row) => row.name));
   for (const [name, type] of Object.entries(columns)) if (!have.has(name)) sql.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
 }

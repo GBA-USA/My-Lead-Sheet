@@ -112,7 +112,6 @@ function freeHandle(sql: SqlStorage, name: string): string {
   }
 }
 
-/** Only a Preview Worker deployed with `PREVIEW_OPEN_ACCESS` exactly "1" lets a phone in with no sign-in. */
 const previewOpen = (env: Env) => env.PREVIEW_OPEN_ACCESS === "1";
 
 function previewHandle(sql: SqlStorage): string {

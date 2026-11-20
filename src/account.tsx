@@ -82,7 +82,6 @@ export function useAccount(): { account: Account | null; setAccount: (account: A
   return { account, setAccount: remember, checking, owner };
 }
 
-/** `retry` waits for the phone to come back online after the server gave no answer. */
 type Entry = "ask" | "asking" | "retry" | "done";
 
 /**

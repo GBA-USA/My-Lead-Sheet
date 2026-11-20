@@ -72,6 +72,7 @@
     "check:ux-invite-links": "tsc -p worker && node --experimental-strip-types scripts/check-ux-invite-links.ts",
     "check:ux-gig-view": "tsc -p worker && node --experimental-strip-types scripts/check-ux-gig-view.ts",
     "check:ux-band-status": "tsc -p worker && node --experimental-strip-types scripts/check-ux-band-status.ts",
+    "check:ux-metronome-sheet": "node --experimental-strip-types scripts/check-ux-metronome-sheet.ts",
     "check:ci-deep": "node --experimental-strip-types scripts/check-ci-deep.ts"
   },
   "dependencies": {

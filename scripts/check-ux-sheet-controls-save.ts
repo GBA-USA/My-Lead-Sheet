@@ -17,7 +17,8 @@ const seed = JSON.parse(readFileSync(join(root, "data/library.json"), "utf8")) a
 const CHAIN_BREAKER = 10;
 const TAKE_ME_OUT = 5;
 const WIDTHS = [390, 1280];
-const FIRST_CHORD_IN_CARD: Record<number, { x: number; y: number }> = { 390: { x: 109.59, y: 1471.02 }, 1280: { x: 121.59, y: 870.05 } };
+/** U3b took the metronome block (158.38 px at 390, 142.19 px at 1280 with its margin) off the card, above the chart. */
+const FIRST_CHORD_IN_CARD: Record<number, { x: number; y: number }> = { 390: { x: 109.59, y: 1312.64 }, 1280: { x: 121.59, y: 727.86 } };
 const js = (value: unknown) => JSON.stringify(value);
 const settle = (ms = 250) => new Promise((done) => setTimeout(done, ms));
 
@@ -388,7 +389,14 @@ try {
 
   await test("changing the metronome bpm, the scroll speed or Notes | Nashville shows Save, and Save as keeps all three in the new version", async () => {
     await freshPhone();
-    const bpm = () => evaluate<string>(`document.querySelector(".metronome")?.dataset.bpm ?? ""`);
+    const inMetronome = async <T>(run: () => Promise<T>) => {
+      await evaluate(`document.querySelector(".controls .metronome-pill").click()`);
+      await until(`!!${DIALOG}?.querySelector(".metro-pad")`, "the Metronome sheet");
+      const out = await run();
+      await tap("Close", DIALOG);
+      return out;
+    };
+    const bpm = () => inMetronome(() => evaluate<string>(`${DIALOG}.querySelector("input[aria-label='Metronome speed in bpm']").value`));
     const percent = async () => {
       await tap("Scroll settings", CONTROLS);
       const shown = await evaluate<string>(`${DIALOG}?.querySelector(".percent")?.textContent?.trim() ?? ""`);
@@ -398,7 +406,7 @@ try {
     };
     const notation = () => evaluate<string>(`document.querySelector("[role=group][aria-label='Notes or Nashville'] [aria-pressed=true]")?.textContent ?? ""`);
     const start = { bpm: await bpm(), percent: await percent(), notation: await notation() };
-    await tap("Faster metronome");
+    await inMetronome(() => tap("Faster metronome", DIALOG));
     expect(await saveShown(), "a metronome change does not show Save");
     await tap("Revert", HEADER);
     await tap("Scroll settings", CONTROLS);
@@ -409,7 +417,7 @@ try {
     await tap("Revert", HEADER);
     await tap("Nashville", CONTROLS);
     expect(await saveShown(), "Notes | Nashville does not show Save");
-    await tap("Faster metronome");
+    await inMetronome(() => tap("Faster metronome", DIALOG));
     await tap("Scroll settings", CONTROLS);
     await tap("Scroll faster", DIALOG);
     await evaluate(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }))`);

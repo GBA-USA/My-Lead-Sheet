@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type Dispatch, type SetStateAction } from "react";
 import { parseHash } from "./route";
-import { READING_LINE, runScroll, type Motion, type Section, type TimeSource } from "./scroll-timing";
+import { READING_LINE, SUNG_READING, atSpeed, chordCount, runScroll, type LaidSection, type Motion, type Section, type TimeSource } from "./scroll-timing";
 import { onStorageChange, storageGeneration } from "./storage";
 import type { SongRef } from "./types";
 
@@ -30,11 +30,30 @@ export function useScrolling(songRef: SongRef | null) {
   }
 
   useEffect(() => {
+    setSpeed(1);
     if (songRef == null) return;
     document.getElementById("sheet-scroll")?.scrollTo(0, 0);
   }, [songRef]);
 
   return { scrolling, setScrolling, stopScroll: () => setScrolling(false) };
+}
+
+let speed = 1;
+const speedListeners = new Set<() => void>();
+const onSpeed = (listener: () => void) => {
+  speedListeners.add(listener);
+  return () => void speedListeners.delete(listener);
+};
+const speedNow = () => speed;
+function setSpeed(next: number) {
+  if (next === speed) return;
+  speed = next;
+  speedListeners.forEach((listener) => listener());
+}
+
+/** The live − / + speed: 1 is the song's own pace. It lasts this session only, and a new song starts back at 1. */
+export function useScrollSpeed(): [number, (next: number) => void] {
+  return [useSyncExternalStore(onSpeed, speedNow, speedNow), setSpeed];
 }
 
 const playheads = new Set<(at: number) => void>();
@@ -48,8 +67,9 @@ export function onPlayhead(listener: (at: number) => void): () => void {
 /**
  * Scrolls #sheet-scroll by `motion`. A timed motion moves #chord-section only: from its top at the top of the
  * view to its bottom at the bottom. A learned one brings each heading, then the chart's end, to the reading line.
- * Grabbing or a manual scroll pauses. A new `plan` re-syncs from where the sheet is. Returns the timed clock, in
- * seconds at the plan's BPM. `time` is band time in a gig; solo leaves it out.
+ * Grabbing or a manual scroll pauses. A new `plan` re-syncs from where the sheet is. The live speed scales the motion
+ * from the next frame on. Returns the timed clock, in seconds at the plan's BPM. `time` is band time in a gig; solo
+ * leaves it out.
  */
 export function useAutoScroll(
   active: boolean,
@@ -58,8 +78,9 @@ export function useAutoScroll(
   onStop: (reason: "user" | "end") => void,
   time?: TimeSource,
 ) {
+  const [speed] = useScrollSpeed();
   const motionRef = useRef(motion);
-  motionRef.current = motion;
+  motionRef.current = atSpeed(motion, speed);
   const onStopRef = useRef(onStop);
   onStopRef.current = onStop;
   const clock = useRef(0);
@@ -80,7 +101,8 @@ export function useAutoScroll(
  * same progress. When the section has moved since the last frame, the browser shifted or clamped the scroll for
  * the new layout, so that scroll event is not passed on as the player scrolling.
  * Each timed frame tells `onPlayhead` how far down the chart, in pixels, the song is. A timed motion goes down the
- * chart with its progress; a learned one is at the reading line, where each heading arrives as its section starts.
+ * chart with its progress; a learned one is at the reading line, where each heading arrives as its section starts;
+ * the song's own pace is at the sheet's middle, where the line being sung sits.
  */
 export function scrollChart(
   el: HTMLElement,
@@ -99,7 +121,20 @@ export function scrollChart(
     const start = found.getBoundingClientRect().top - origin;
     last = { start, end: start + found.offsetHeight - el.clientHeight };
     const tops = () => [...found.querySelectorAll(".chart-heading")].map((heading) => heading.getBoundingClientRect().top - origin);
-    return { ...last, lines: () => [...tops(), start + found.offsetHeight].map((top) => top - READING_LINE) };
+    const box = (child: Element) => {
+      const rect = child.getBoundingClientRect();
+      return { top: rect.top - origin, height: rect.height };
+    };
+    // A stand-in chart with no rows to measure keeps the motion's even pace or page speed.
+    const laid = (): LaidSection[] =>
+      [...(found.querySelectorAll?.(".chart-section") ?? [])].map((part) => {
+        const [heading, ...rows] = [...part.children];
+        return {
+          heading: box(heading),
+          rows: rows.map((row) => ({ kind: row.className, chords: chordCount((row.querySelector(".chords") ?? row).textContent ?? ""), ...box(row) })),
+        };
+      });
+    return { ...last, lines: () => [...tops(), start + found.offsetHeight].map((top) => top - READING_LINE), laid };
   };
   const relaid = (event: Event) => {
     const before = last;
@@ -112,7 +147,9 @@ export function scrollChart(
   const playhead = (progress: number) => {
     const found = chart();
     if (!found || !last || !onPlayhead) return;
-    onPlayhead(motion.current.kind === "learned" ? el.scrollTop + READING_LINE - last.start : progress * found.offsetHeight);
+    const current = motion.current;
+    const reading = current.kind === "learned" ? READING_LINE : current.sung ? el.clientHeight * SUNG_READING : null;
+    onPlayhead(reading == null ? progress * found.offsetHeight : el.scrollTop + reading - last.start);
   };
   const stop = runScroll(el, motion, section, clock, onStop, time, playhead);
   return () => {

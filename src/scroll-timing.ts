@@ -1,5 +1,5 @@
 import { scrollPixelsPerSecond } from "./music";
-import type { Song } from "./types";
+import type { ChartLine, Song } from "./types";
 
 /** `at` seconds into the song (at the plan's BPM), the chord section is `progress` (0 to 1) of the way through. */
 export interface Mark {
@@ -60,9 +60,37 @@ export interface Take {
 /** How far below the top of the sheet a learned section's heading sits as its music starts: about two lines. */
 export const READING_LINE = 40;
 
-/** What the scroll loop follows. Songs without a runtime and tempo keep the fixed page speed. */
+/** Where the song's own pace holds the line being sung, as a share of the sheet's height: the middle. */
+export const SUNG_READING = 0.5;
+
+/** A chart line's place in the song, in seconds at the song's BPM, and the chords its rows show, to find them on the sheet. */
+interface SungLine {
+  at: number;
+  length: number;
+  pairChords?: number;
+  lyricOnly: boolean;
+  barChords?: number;
+  note: boolean;
+}
+
+interface SungSection {
+  at: number;
+  length: number;
+  lines: SungLine[];
+}
+
+/** The pace the song itself sets, from its BPM, time signature and bars. `rate` runs its clock like a plan's. */
+export interface Sung {
+  sections: SungSection[];
+  rate: number;
+}
+
+/**
+ * What the scroll loop follows. `sung`, when the sheet's rows can be measured, wins over the even plan or page speed
+ * it rides on: those remain for a song without a BPM, and for a sheet with no chart rows to measure.
+ */
 export type Motion =
-  | { kind: "pace"; pxPerSec: number }
+  | { kind: "pace"; pxPerSec: number; sung?: Sung }
   | {
       kind: "timed";
       progressAt: (clock: number) => number;
@@ -70,6 +98,7 @@ export type Motion =
       rate: number;
       /** False when the clock itself is meaningful, as with a live take or a tempo map, so `runScroll` never re-times it. */
       holdOpening: boolean;
+      sung?: Sung;
     }
   | {
       /** Each heading reaches the reading line as its section starts, and the chart's end as the song ends. */
@@ -84,6 +113,78 @@ export function evenPlan(song: Song): ScrollPlan | null {
   const { officialRuntimeSec: runtime, tempo } = song;
   if (runtime == null || runtime <= 0 || tempo == null || tempo <= 0) return null;
   return { bpm: tempo, marks: [{ at: 0, progress: 0 }, { at: runtime, progress: 1 }] };
+}
+
+const CHORD = /[^\s|]+/g;
+
+/** The chord symbols in a chord or bar line, as written or as the sheet shows them: transposing keeps the count. */
+export function chordCount(text: string): number {
+  return text.match(CHORD)?.length ?? 0;
+}
+
+/** "| A | E | F#m  D | A |" is 4 bars; a bar line with no bar marks is a bar per chord. */
+function barCount(text: string): number {
+  return text.includes("|") ? text.split("|").filter((cell) => cell.trim()).length : chordCount(text);
+}
+
+/** A sung line lasts the 1, 2 or 4 bars nearest this long: 4 bars of 3/4 at 116, 2 bars of 4/4 at 102. */
+const PHRASE_SECONDS = 6;
+
+/** A bar line is its bars, a sung line its phrase or two chords a bar if longer, a note the bars it writes out. */
+function lineBars(line: ChartLine, phrase: number): number {
+  if (line.bars !== undefined) return barCount(line.bars);
+  if (line.chords !== undefined || line.lyrics !== undefined) return Math.max(phrase, Math.ceil(chordCount(line.chords ?? "") / 2));
+  const written = line.note?.match(/\|.*\|/)?.[0];
+  return written ? barCount(written) : 0;
+}
+
+const PLAYS: [RegExp, number][] = [
+  [/\btwice\b/i, 2],
+  [/\bthree times\b/i, 3],
+  [/\bfour times\b/i, 4],
+];
+
+/** How many times a section is played: "repeat twice", "three times", "(x2)". */
+function plays(heading: string): number {
+  const times = heading.match(/\bx\s?(\d)\b|\b(\d)x\b/i);
+  if (times) return Number(times[1] ?? times[2]);
+  return PLAYS.find(([words]) => words.test(heading))?.[1] ?? 1;
+}
+
+/**
+ * When each chart line plays, from bars × beats per bar × 60 / BPM summed in play order, so a late section does not
+ * drift. A section played twice gives each of its lines twice the time. A heading with no lines, as "CHORUS — repeat",
+ * lasts as long as the last section under the same first word. Null without a BPM.
+ */
+export function songPace(song: Song): { bpm: number; sections: SungSection[] } | null {
+  const { tempo } = song;
+  if (tempo == null || tempo <= 0) return null;
+  const bar = ((Number.parseInt(song.timeSignature, 10) || 4) * 60) / tempo;
+  const phrase = [1, 2, 4].reduce((best, n) => (Math.abs(n * bar - PHRASE_SECONDS) < Math.abs(best * bar - PHRASE_SECONDS) ? n : best));
+  const once = new Map<string, number>();
+  let at = 0;
+  const sections = song.body.map((section) => {
+    const times = plays(section.heading);
+    const word = section.heading.trim().split(/\W/)[0].toUpperCase();
+    const start = at;
+    const lines = section.lines.map((line) => {
+      const length = lineBars(line, phrase) * bar * times;
+      const placed = {
+        at,
+        length,
+        ...(line.chords !== undefined ? { pairChords: chordCount(line.chords) } : {}),
+        lyricOnly: line.chords === undefined && line.lyrics !== undefined,
+        ...(line.bars !== undefined ? { barChords: chordCount(line.bars) } : {}),
+        note: line.note !== undefined,
+      };
+      at += length;
+      return placed;
+    });
+    if (lines.length === 0) at += (once.get(word) ?? 0) * times;
+    else once.set(word, (at - start) / times);
+    return { at: start, length: at - start, lines };
+  });
+  return { bpm: tempo, sections };
 }
 
 /** How fast a plan's clock runs: faster with the metronome, slower or faster with the scroll percent. */
@@ -173,16 +274,18 @@ export function clockAt(tempo: Tempo[], planBpm: number, heard: number): number 
 }
 
 /**
- * A take while teaching, else the chosen version, else the even pace, else the old fixed page speed.
- * `bpm` is the metronome's current speed; null leaves the plan at its own BPM.
+ * A take while teaching, else the chosen version (taught, learned or the band's), else the song's own pace, riding on
+ * the even pace or the old fixed page speed. `bpm` is the metronome's current speed; null leaves the plan at its own BPM.
  */
 export function scrollMotion(song: Song, version: ScrollVersion | null, take: Take | null, bpm: number | null, percent: number): Motion {
   if (take) {
     const rate = clockRate(take.bpm, bpm ?? take.bpm, percent);
     return { kind: "timed", rate, progressAt: (at) => takeProgress(take, at), startAt: () => 0, holdOpening: false };
   }
+  const pace = version ? null : songPace(song);
+  const sung = pace ? { sung: { sections: pace.sections, rate: clockRate(pace.bpm, bpm ?? pace.bpm, percent) } } : {};
   const plan = version ?? evenPlan(song);
-  if (!plan) return { kind: "pace", pxPerSec: scrollPixelsPerSecond(song.tempo, percent) };
+  if (!plan) return { kind: "pace", pxPerSec: scrollPixelsPerSecond(song.tempo, percent), ...sung };
   const rate = clockRate(plan.bpm, bpm ?? plan.bpm, percent);
   if (version?.learned) {
     const end = plan.marks[plan.marks.length - 1].at;
@@ -194,7 +297,26 @@ export function scrollMotion(song: Song, version: ScrollVersion | null, take: Ta
     progressAt: (at) => progressAt(plan.marks, at),
     startAt: (progress, slack) => timeAt(plan.marks, progress, slack),
     holdOpening: !plan.tempo,
+    ...sung,
   };
+}
+
+export const SPEED_MIN = 0.5;
+export const SPEED_MAX = 1.5;
+const STEPS_PER_UNIT = 20;
+
+/** One tap of the live − or +: 5% of the song's pace, kept between 50% and 150%, on exact twentieths so taps undo. */
+export function stepSpeed(speed: number, step: 1 | -1): number {
+  return Math.min(SPEED_MAX, Math.max(SPEED_MIN, (Math.round(speed * STEPS_PER_UNIT) + step) / STEPS_PER_UNIT));
+}
+
+/** `motion` at `speed` times its pace. The scroll's clock adds up the rate frame by frame, so a change never jumps the sheet. */
+export function atSpeed(motion: Motion, speed: number): Motion {
+  if (speed === 1) return motion;
+  if (motion.kind === "learned") return { ...motion, rate: motion.rate * speed };
+  const sung = motion.sung ? { sung: { ...motion.sung, rate: motion.sung.rate * speed } } : {};
+  if (motion.kind === "pace") return { ...motion, pxPerSec: motion.pxPerSec * speed, ...sung };
+  return { ...motion, rate: motion.rate * speed, ...sung };
 }
 
 /** V1, V2, V3 … skipping a name already taken by a rename. */
@@ -205,17 +327,103 @@ export function nextVersionName(versions: { name: string }[]): string {
   return `V${n}`;
 }
 
+interface Box {
+  top: number;
+  height: number;
+}
+
+/** A row the sheet draws (a `.pair`, `.bars`, `.lyric-only` or `.chart-note`), in px down the scroller, with its chord count. */
+export interface LaidRow extends Box {
+  kind: string;
+  chords: number;
+}
+
+/** A chart section as laid out: its heading, then its rows in order. */
+export interface LaidSection {
+  heading: Box;
+  rows: LaidRow[];
+}
+
 export interface Section {
   start: number;
   end: number;
   /** The scroll positions that put each heading, then the chart's end, on the reading line. */
   lines?: () => number[];
+  /** The chart's sections as laid out this frame, for the song's own pace. */
+  laid?: () => LaidSection[];
 }
 
-/** Where a timed motion goes in the sheet as laid out this frame. */
+/** Where a timed motion goes in the sheet as laid out this frame, and how fast its clock runs. */
 interface Track extends Section {
   progressAt: (clock: number) => number;
   startAt: (progress: number, slack: number) => number;
+}
+
+interface Path extends Track {
+  rate: number;
+  sung?: true;
+}
+
+/**
+ * Finds each line's rows the way the sheet draws a line: chord rows until they hold the line's chords (and any
+ * lyric-only tail of its wrap), a lyric-only row, bar rows likewise, then its note. Null for a line the sheet hides,
+ * as lyrics in Chords only.
+ */
+function lineBoxes(lines: SungLine[], rows: LaidRow[]): ({ top: number; bottom: number } | null)[] {
+  let next = 0;
+  const take = (kind: string, chords: number | undefined) => {
+    if (chords === undefined) return;
+    let seen = 0;
+    while (rows[next]?.kind === kind && (seen < chords || rows[next].chords === 0)) seen += rows[next++].chords;
+  };
+  return lines.map((line) => {
+    const from = next;
+    take("pair", line.pairChords);
+    if (line.lyricOnly && rows[next]?.kind === "lyric-only") next += 1;
+    take("bars", line.barChords);
+    if (line.note && rows[next]?.kind === "chart-note") next += 1;
+    if (next === from) return null;
+    const last = rows[next - 1];
+    return { top: rows[from].top, bottom: last.top + last.height };
+  });
+}
+
+/**
+ * The chart y that should be on the reading line at each moment: a line's top as it starts the song, each line's
+ * middle halfway through it, the last line's bottom as the song ends. A section with no line on the sheet, as a
+ * "CHORUS — repeat" heading, holds on its heading for its time.
+ */
+function sungPoints(sections: SungSection[], laid: LaidSection[]): { at: number; y: number }[] {
+  type Placed = { line: { at: number; length: number }; box: { top: number; bottom: number } };
+  const placed = sections.flatMap((section, i): Placed[] => {
+    const shown = laid[i];
+    if (!shown) return [];
+    const boxes = lineBoxes(section.lines, shown.rows);
+    const lines = section.lines.flatMap((line, j): Placed[] => {
+      const box = boxes[j];
+      return box && line.length > 0 ? [{ line, box }] : [];
+    });
+    const heading = { top: shown.heading.top, bottom: shown.heading.top + shown.heading.height };
+    return lines.length ? lines : section.length > 0 ? [{ line: section, box: heading }] : [];
+  });
+  if (placed.length === 0) return [];
+  const first = placed[0];
+  const last = placed[placed.length - 1];
+  return [
+    { at: 0, y: first.box.top },
+    ...placed.map(({ line, box }) => ({ at: line.at + line.length / 2, y: (box.top + box.bottom) / 2 })),
+    { at: last.line.at + last.line.length, y: last.box.bottom },
+  ];
+}
+
+/** The sheet puts each point's y on the reading line at its time, in straight lines between. */
+function sungTrack(points: { at: number; y: number }[], reading: number, clamp: (at: number) => number): Track {
+  const lines = points.map((point) => clamp(point.y - reading));
+  const start = lines[0];
+  const end = lines[lines.length - 1];
+  const songEnd = points[points.length - 1].at;
+  const marks = points.map((point, i) => ({ at: point.at, progress: end > start ? (lines[i] - start) / (end - start) : point.at / songEnd }));
+  return { start, end, progressAt: (at) => progressAt(marks, at), startAt: (fraction, slack) => timeAt(marks, fraction, slack) };
 }
 
 /**
@@ -261,9 +469,10 @@ interface Scroller {
  * `motion` and `section` are read every frame, so a BPM, percent or text size change applies at once.
  * The timed clock is written to `clock` for teach taps. It moves with `time`, so in a gig every frame lands where
  * band time puts it however late the frame is.
- * The even pace started from the top of the chord section holds there for its first 2 seconds, so the first chords
- * can be read, and plays the rest a touch faster to still end on time. A taught version keeps its own timing, and
- * a resume or a live take does not hold. `onProgress` hears how far through the chord section each timed frame is.
+ * The song's own pace holds the line being sung on the sheet's middle, so lines ahead are below it and lines just
+ * played above. The even pace started from the top of the chord section holds there for its first 2 seconds, so the
+ * first chords can be read, and plays the rest a touch faster to still end on time. A taught version keeps its own
+ * timing, and a resume or a live take does not hold. `onProgress` hears how far through its path each timed frame is.
  */
 export function runScroll(
   el: Scroller,
@@ -275,20 +484,26 @@ export function runScroll(
   onProgress?: (progress: number) => void,
 ): () => void {
   const limit = () => Math.max(0, el.scrollHeight - el.clientHeight);
-  const track = (current: Exclude<Motion, { kind: "pace" }>): Track => {
+  /** Null for the page speed. */
+  const track = (current: Motion): Path | null => {
     const max = limit();
     const clamp = (at: number) => Math.min(max, Math.max(0, at));
-    const found = section() ?? { start: 0, end: max };
-    if (current.kind === "learned") return learnedTrack(current.arrivals, (found.lines?.() ?? [found.start, found.end]).map(clamp));
-    const start = clamp(found.start);
-    return { start, end: Math.max(start, clamp(found.end)), progressAt: current.progressAt, startAt: current.startAt };
+    const found = section();
+    const sung = current.kind === "learned" ? undefined : current.sung;
+    const points = sung ? sungPoints(sung.sections, found?.laid?.() ?? []) : [];
+    if (sung && points.length) return { ...sungTrack(points, el.clientHeight * SUNG_READING, clamp), rate: sung.rate, sung: true };
+    if (current.kind === "pace") return null;
+    const box = found ?? { start: 0, end: max };
+    if (current.kind === "learned") return { ...learnedTrack(current.arrivals, (box.lines?.() ?? [box.start, box.end]).map(clamp)), rate: current.rate };
+    const start = clamp(box.start);
+    return { start, end: Math.max(start, clamp(box.end)), progressAt: current.progressAt, startAt: current.startAt, rate: current.rate };
   };
 
   // scrollTop is integer on some browsers, and 78 BPM is only ~19px/s,
   // so a per-frame bump of a fraction of a pixel would be rounded away.
   let position = el.scrollTop;
   const initial = motion.current;
-  const first = initial.kind === "pace" ? null : track(initial);
+  const first = track(initial);
   if (first) {
     const { start, end } = first;
     const progress = end > start ? (position - start) / (end - start) : 0;
@@ -299,7 +514,11 @@ export function runScroll(
   }
   const length = first ? first.startAt(1, 0) : 0;
   const even =
-    initial.kind === "timed" && initial.holdOpening && length > 2 && [0.25, 0.5, 0.75].every((f) => Math.abs(initial.progressAt(length * f) - f) < 1e-6);
+    !first?.sung &&
+    initial.kind === "timed" &&
+    initial.holdOpening &&
+    length > 2 &&
+    [0.25, 0.5, 0.75].every((f) => Math.abs(initial.progressAt(length * f) - f) < 1e-6);
   const hold = even && clock.current === 0 ? 2 : 0;
   const planTime = (at: number) => (hold ? (Math.max(0, at - hold) * length) / (length - hold) : at);
   let expected = position;
@@ -329,14 +548,14 @@ export function runScroll(
     const dt = (now - last) / 1000;
     last = now;
     const current = motion.current;
-    if (current.kind !== "pace") {
-      clock.current += dt * current.rate;
-      const path = track(current);
+    const path = track(current);
+    if (path) {
+      clock.current += dt * path.rate;
       const progress = path.progressAt(planTime(clock.current));
       place(path.start + (path.end - path.start) * progress);
       onProgress?.(progress);
       if (progress >= 1) return onStop("end");
-    } else {
+    } else if (current.kind === "pace") {
       const max = limit();
       place(Math.min(max, position + current.pxPerSec * dt));
       if (position >= max - 0.5) {

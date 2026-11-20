@@ -29,7 +29,8 @@
         "PRIVACY_CONTACT": "",
         "CF_ACCOUNT_ID": "",
         "TURN_KEY_ID": "",
-        "RELAY_CAP_GB": "50"
+        "RELAY_CAP_GB": "50",
+        "PREVIEW_OPEN_ACCESS": ""
       }
     },
     "production": {
@@ -50,7 +51,8 @@
         "PRIVACY_CONTACT": "",
         "CF_ACCOUNT_ID": "",
         "TURN_KEY_ID": "",
-        "RELAY_CAP_GB": "50"
+        "RELAY_CAP_GB": "50",
+        "PREVIEW_OPEN_ACCESS": ""
       }
     }
   }

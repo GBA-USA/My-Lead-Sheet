@@ -23,10 +23,11 @@ export interface Env {
   PASSWORD_PEPPER?: string;
   PASSWORD_MINUTE_MS?: string;
   CODE_MINUTE_MS?: string;
+  PREVIEW_OPEN_ACCESS?: string;
 }
 
 const ROOM_PATH = /^\/api\/rooms\/([A-Za-z0-9_-]{1,64})$/;
-const DIRECTORY_PATH = /^\/api\/(auth|me|codes|friends|bands|chat)(\/|$)/;
+const DIRECTORY_PATH = /^\/api\/(auth|me|codes|friends|bands|chat|preview-enter)(\/|$)/;
 
 const refuse = (error: string, status: number) => Response.json({ error }, { status });
 

@@ -4,7 +4,7 @@ import { counterKey, hasPepper, KEY_BYTES, keyMac, madeUpSalt, passwordSecrets, 
 import { clientChallenge, creationOptions, relyingParty, requestOptions, verifyAssertion, verifyRegistration, type Ceremony } from "./auth-passkey";
 import { fromBase64Url, randomBytes, toBase64Url } from "./bytes";
 import type { Env } from "./index";
-import { signedIn, userById, type Context, type Reply, type Route, type User } from "./directory-http";
+import { currentUser, signedIn, userById, type Context, type Reply, type Route, type User } from "./directory-http";
 import { Refused } from "./refused";
 import { cookieValue } from "./session";
 
@@ -82,6 +82,7 @@ const ROOM_CLOSE_RETRY_MS = 30 * 1000;
 const GOOGLE_COOKIE = "mls_google";
 const GOOGLE_COOKIE_ATTRIBUTES = "Path=/api/auth/google; HttpOnly; Secure; SameSite=Lax";
 const PASSWORD_WAY_ID = "password";
+const PREVIEW_NAME = "Band member";
 
 const crockford = (bytes: Uint8Array) => Array.from(bytes, (byte) => CROCKFORD[byte & 31]).join("");
 
@@ -108,6 +109,16 @@ function freeHandle(sql: SqlStorage, name: string): string {
   for (let n = 1; ; n += 1) {
     const handle = n === 1 ? base : `${base}${n}`;
     if (!taken.has(handle)) return handle;
+  }
+}
+
+/** Only a Preview Worker deployed with `PREVIEW_OPEN_ACCESS` exactly "1" lets a phone in with no sign-in. */
+const previewOpen = (env: Env) => env.PREVIEW_OPEN_ACCESS === "1";
+
+function previewHandle(sql: SqlStorage): string {
+  for (;;) {
+    const handle = `preview${crockford(randomBytes(4)).toLowerCase()}`;
+    if (!sql.exec(`SELECT 1 FROM users WHERE handle = ?`, handle).toArray().length) return handle;
   }
 }
 
@@ -387,7 +398,15 @@ export const ACCOUNT_ROUTES: Record<string, Route> = {
   },
 
   async "GET /api/auth/config"(c) {
-    return { body: { google: googleClient(c.env) !== null, password: hasPepper(c.env) } };
+    return { body: { google: googleClient(c.env) !== null, password: hasPepper(c.env), ...(previewOpen(c.env) ? { previewOpen: true } : {}) } };
+  },
+
+  async "POST /api/preview-enter"(c) {
+    if (!previewOpen(c.env)) throw new Refused("not-found", 404);
+    const current = currentUser(c.sql, c.session);
+    if (current) return { body: { account: accountView(c.sql, current) } };
+    const user = insertUser(c, ulid(c.now), PREVIEW_NAME, previewHandle(c.sql));
+    return { body: { account: accountView(c.sql, user) }, signIn: user };
   },
 
   async "POST /api/auth/google/start"(c) {

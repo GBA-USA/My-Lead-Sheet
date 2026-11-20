@@ -441,11 +441,7 @@ export function App() {
             onMessages={() => (window.location.hash = messagesHref)}
           />
         ) : null}
-        {holding ? (
-          <div className="bands-tab">
-            <p className="bands-tab-note">Checking…</p>
-          </div>
-        ) : null}
+        {holding ? <div className="bands-tab"><p className="bands-tab-note">Checking…</p></div> : null}
         {route.name === "bands" && !holding ? <BandsTab me={owner ?? null} notice={notice} onNew={() => setBands({})} onSignIn={() => setAccountOpen(true)} onSignedOut={() => setAccount(null)} /> : null}
         {route.name === "band" && !holding ? (
           <BandPage key={`${owner}/${route.bandId}`} me={owner ?? null} bandId={route.bandId} section={route.section} landing={landing?.bandId === route.bandId ? landing : undefined}

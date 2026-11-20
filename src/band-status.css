@@ -1,0 +1,65 @@
+:root {
+  --band-status-font: 16px;
+}
+
+.band-status-faces {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.band-status-face {
+  box-sizing: border-box;
+  width: 48px;
+  height: 48px;
+  min-height: 48px;
+  padding: 0;
+  border: 2px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--band-status-font);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.band-status-face-leader {
+  border-color: var(--accent);
+}
+
+.band-status-face-amber {
+  border-color: var(--danger);
+}
+
+.band-status-rows {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.band-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--row-rule);
+  color: var(--text);
+  font-size: var(--band-status-font);
+}
+
+.band-status-name {
+  font-weight: 600;
+}
+
+.band-status-tag,
+.band-status-route,
+.band-status-heard {
+  color: var(--text-dim);
+}
+
+.band-status-amber {
+  color: var(--danger);
+}

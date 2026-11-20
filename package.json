@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "check:data": "node scripts/check-library.mjs",
-    "check:music": "node --experimental-strip-types scripts/check-music.ts"
+    "check:music": "node --experimental-strip-types scripts/check-music.ts",
+    "check:storage": "node --experimental-strip-types scripts/check-storage.ts"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.5",

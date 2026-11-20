@@ -309,8 +309,8 @@ try {
         await toTop();
         const rest = await reach();
         if (screen.song) {
-          await site.evaluate(`document.querySelector(".sheet .metro-pad").click()`);
-          await app.until(`!!document.querySelector(".metro-pad.is-on") && !!document.querySelector(".beat-dot")`, `the metronome on with its beat dot, ${where}`);
+          await site.evaluate(`(async () => { const wait = () => new Promise((done) => setTimeout(done, 150)); document.querySelector(".controls .metronome-pill").click(); await wait(); document.querySelector("[role=dialog] .metro-pad").click(); await wait(); document.querySelector("[role=dialog] [aria-label=Close]").click(); await wait(); })()`);
+          await app.until(`/ bpm$/.test(document.querySelector(".controls .metronome-pill")?.textContent.trim() ?? "") && !!document.querySelector(".beat-dot")`, `the metronome on with its beat dot, ${where}`);
         }
         await scrollBy(600, 20);
         if ((await reach()) > rest - FOLD_BY) wrong.push(`${where}: the top did not fold`);
@@ -324,8 +324,8 @@ try {
             return { underTop: !hit || !!hit.closest(".shell-header, .tabs, .controls, .song-chrome"), box: __look.box(dot), scroller: __look.box(document.getElementById("sheet-scroll")) };
           })()`);
           if (dot.underTop || dot.box.r > at.width || dot.box.t < dot.scroller.t - 0.5) wrong.push(`${where}: the four-state dot is not clear of the folded bar (${js(dot)})`);
-          await site.evaluate(`document.querySelector(".sheet .metro-pad").click()`);
-          await app.until(`!document.querySelector(".metro-pad.is-on")`, "the metronome off");
+          await site.evaluate(`(async () => { const wait = () => new Promise((done) => setTimeout(done, 150)); document.querySelector(".controls .metronome-pill").click(); await wait(); document.querySelector("[role=dialog] .metro-pad").click(); await wait(); document.querySelector("[role=dialog] [aria-label=Close]").click(); await wait(); })()`);
+          await app.until(`document.querySelector(".controls .metronome-pill")?.textContent.trim() === "Metronome"`, "the metronome off");
         }
         const last = await lowest();
         await painted(4);

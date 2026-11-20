@@ -61,7 +61,7 @@ try {
   await site.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
   await site.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
   await settle();
-  const metronome = await site.evaluate<string>(`document.querySelector(".metronome")?.dataset.bpm ?? ""`);
+  const metronome = await site.evaluate<string>(`document.querySelector(".teach-bar input[aria-label=BPM]")?.value ?? ""`);
   const focused = await site.evaluate<boolean>(`document.activeElement?.getAttribute("aria-label") === "BPM"`);
   check(metronome === "117", `typing 117 and Enter in a real browser sets the metronome (${metronome})`);
   check(!focused, "Enter leaves the field, so the phone keyboard closes");
@@ -71,10 +71,16 @@ try {
   await site.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
   await site.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
   await settle();
-  const kept = await site.evaluate<string>(`document.querySelector(".metronome")?.dataset.bpm ?? ""`);
+  const kept = await site.evaluate<string>(`document.querySelector(".teach-bar input[aria-label=BPM]")?.value ?? ""`);
   check(kept === "117", `Escape throws a typed 90 away in a real browser (${kept})`);
 
   check(await click("Done"), "Done");
+  await settle();
+  check(await site.evaluate<boolean>(`(() => { const el = document.querySelector(".controls .metronome-pill"); el?.click(); return !!el; })()`), "the Metronome pill is back after Done");
+  await settle();
+  const sheetBpm = await site.evaluate<string>(`document.querySelector("[role=dialog] input[aria-label='Metronome speed in bpm']")?.value ?? ""`);
+  check(sheetBpm === "117", `the Metronome sheet holds the 117 typed in the take bar (${sheetBpm})`);
+  await tapLabel("Close");
   await settle();
   const save = await box(".shell-header .song-line .save-btn");
   check(!!save && save.h >= 48 && save.w >= 48 && save.x + save.w <= 390, `Save in the header is a 48px touch target on the phone (${JSON.stringify(save)})`);

@@ -1,12 +1,13 @@
 import { useId } from "react";
 import { TextSizeButtons } from "./controls";
+import type { ClickPrefs } from "./metronome";
 import type { Notation } from "./music";
-import { TRANSPOSE_LIMIT, type ClickMode, type PersonalDefaults } from "./personal-settings-model";
+import { TRANSPOSE_LIMIT, type PersonalDefaults } from "./personal-settings-model";
 import { TEXT_SCALES } from "./storage";
 
-const CLICKS: [ClickMode, string][] = [
-  ["out-loud", "Out loud"],
-  ["dot-only", "Dot only"],
+const ON_OFF: ["on" | "off", string][] = [
+  ["on", "On"],
+  ["off", "Off"],
 ];
 const CHORDS: [Notation, string][] = [
   ["notes", "Notes"],
@@ -35,8 +36,8 @@ export function YourSettings({
   personal,
   onPersonal,
 }: {
-  click: ClickMode;
-  onClick: (next: ClickMode) => void;
+  click: ClickPrefs;
+  onClick: (patch: Partial<ClickPrefs>) => void;
   textIndex: number;
   onTextIndex: (index: number) => void;
   personal: PersonalDefaults;
@@ -47,8 +48,12 @@ export function YourSettings({
     <section className="settings-group" aria-labelledby={titleId}>
       <h2 id={titleId}>Your settings</h2>
       <div className="settings-field">
-        <h3>Click</h3>
-        <Choice label="Click" value={click} options={CLICKS} onChange={onClick} />
+        <h3>Sound</h3>
+        <Choice label="Sound" value={click.sound ? "on" : "off"} options={ON_OFF} onChange={(next) => onClick({ sound: next === "on" })} />
+      </div>
+      <div className="settings-field">
+        <h3>Dot</h3>
+        <Choice label="Dot" value={click.indicator ? "on" : "off"} options={ON_OFF} onChange={(next) => onClick({ indicator: next === "on" })} />
       </div>
       <div className="settings-field">
         <h3>Chords</h3>

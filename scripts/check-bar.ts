@@ -32,6 +32,7 @@ const STAND_INS = `(() => {
   addEventListener("error", (event) => window.__errors.push(String(event.message)));
   addEventListener("unhandledrejection", (event) => window.__errors.push(String(event.reason)));
   Object.defineProperty(navigator.mediaDevices, "getUserMedia", { value: async () => ({ getTracks: () => [{ stop() {} }] }) });
+  delete Navigator.prototype.getBattery;
   addEventListener("click", () => (window.__tapping = true), true);
   addEventListener("click", () => (window.__tapping = false));
   const Real = AudioContext;
@@ -335,8 +336,16 @@ try {
 
   await scenario("the beat dot", async () => {
     await openSong(CHAIN_BREAKER, null);
-    await tap(".metro-pad", (await evaluate<string>(`document.querySelector(".metro-pad").innerText.trim()`)));
-    const running = await evaluate<boolean>(`document.querySelector(".metro-pad").getAttribute("aria-pressed") === "true"`);
+    const metronome = async () => {
+      await tap(".controls .metronome-pill", (await evaluate<string>(`document.querySelector(".controls .metronome-pill").innerText.trim()`)));
+      await until(`!!document.querySelector("[role=dialog] .metro-pad")`, "the Metronome sheet");
+      await tap("[role=dialog] .metro-pad", (await evaluate<string>(`document.querySelector("[role=dialog] .metro-pad").innerText.trim()`)));
+      const on = await evaluate<boolean>(`document.querySelector("[role=dialog] .metro-pad").getAttribute("aria-pressed") === "true"`);
+      await tap("[role=dialog] [aria-label=Close]", "✕");
+      await until(`!document.querySelector("[role=dialog]")`, "the Metronome sheet to close");
+      return on;
+    };
+    const running = await metronome();
     const dot = () => evaluate<{ top: number; right: number; sheetTop: number; sheetRight: number; size: number; color: string } | null>(`(() => {
       const dot = document.querySelector(".beat-dot");
       if (!dot) return null;
@@ -362,7 +371,7 @@ try {
     check(JSON.stringify(seen[1]) === JSON.stringify(seen[2]), "once the sheet scrolls the dot stays put");
     await evaluate(`document.getElementById("sheet-scroll").scrollTop = 0`);
     await pause(100);
-    await tap(".metro-pad", (await evaluate<string>(`document.querySelector(".metro-pad").innerText.trim()`)));
+    await metronome();
     check(!(await dot()), "stopping the metronome removes the dot");
   });
 } finally {

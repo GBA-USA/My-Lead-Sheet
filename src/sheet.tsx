@@ -1,8 +1,9 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { chartColumns, chartFont, fitChartFont, wrapAligned, type ChartPiece } from "./chart-fit";
+import { useBattery } from "./battery";
 import { usePlayingLearned } from "./cues";
 import { onPlayhead } from "./hooks";
-import { BeatDot, MetronomeControl, type MetronomeState } from "./metronome-view";
+import { BeatDot, type MetronomeState } from "./metronome-view";
 import {
   displayBassNote,
   displayChordCell,
@@ -35,10 +36,11 @@ export function LeadSheet({
   const notes = [song.keyNote, song.tempoNote].filter((note) => note.trim().length > 0);
   const atAGlance = song.atAGlance ? displayChordLine(song.atAGlance, song, semitones, notation) : "";
   const inOriginalKey = <OriginalKeyHint song={song} semitones={semitones} />;
+  const battery = useBattery();
 
   return (
     <article className="sheet" style={{ fontSize: `calc(16px * ${scale})` }}>
-      {metronome.playing && metronome.prefs.indicator ? <BeatDot offsetMs={metronome.prefs.syncOffsetMs} /> : null}
+      {metronome.playing ? <BeatDot metronome={metronome} battery={battery} /> : null}
       <h1 className="sheet-title">
         <span className="sheet-name">{song.title}</span>
         <span className="sheet-artist"> — {song.artist}</span>
@@ -49,8 +51,6 @@ export function LeadSheet({
       <p className="meta">
         Key: {displayKeyLabel(song, semitones)} • Time: {song.timeSignature} • Tempo: {tempoText(song.tempo)}
       </p>
-
-      <MetronomeControl key={song.id} songTempo={song.tempo} metronome={metronome} />
 
       {song.feel ? <p className="feel">Feel: {song.feel}</p> : null}
 

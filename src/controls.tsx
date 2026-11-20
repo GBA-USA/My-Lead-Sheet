@@ -1,4 +1,7 @@
-import { useEffect, useId, useLayoutEffect, useRef, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { MetronomeSheet } from "./metronome-sheet";
+import { useSharedMetronome } from "./metronome-view";
 import type { Notation } from "./music";
 
 export function TextSizeButtons({
@@ -221,7 +224,8 @@ export function OverflowMenu({
 
 /**
  * The song's two control rows. Row 1: the key and Notes | Nashville | Chords only. Row 2: the Scroll pill with its caret to the
- * Scroll sheet, the Metronome pill, and Send when `onSend` is given. A take puts `take` in row 2's place.
+ * Scroll sheet, the Metronome pill and its sheet, and Send when `onSend` is given. A take puts `take` in row 2's place.
+ * `onMetronome` is unused since the pill opens its own sheet; App still passes it.
  */
 export function SongControls({
   keyLabel,
@@ -233,7 +237,6 @@ export function SongControls({
   scrolling,
   onToggleScroll,
   onScrollSheet,
-  onMetronome,
   onSend,
   take,
 }: {
@@ -250,6 +253,9 @@ export function SongControls({
   onSend?: () => void;
   take?: ReactNode;
 }) {
+  const shared = useSharedMetronome();
+  const [metronomeSheet, setMetronomeSheet] = useState(false);
+  const bpm = shared?.metronome.playing ? shared.metronome.bpm : null;
   return (
     <div className="controls">
       <div className="control-row">
@@ -265,8 +271,8 @@ export function SongControls({
           <button type="button" className="scroll-caret" aria-label="Scroll settings" aria-haspopup="dialog" onClick={onScrollSheet}>
             <CaretIcon />
           </button>
-          <button type="button" className="metronome-pill" onClick={onMetronome}>
-            Metronome
+          <button type="button" className="metronome-pill" aria-haspopup="dialog" onClick={() => setMetronomeSheet(true)}>
+            {bpm == null ? "Metronome" : `${bpm} bpm`}
           </button>
           {onSend ? (
             <button type="button" className="send-btn" aria-label="Send" onClick={onSend}>
@@ -275,6 +281,9 @@ export function SongControls({
           ) : null}
         </div>
       )}
+      {metronomeSheet && shared
+        ? createPortal(<MetronomeSheet songTempo={shared.songTempo} metronome={shared.metronome} onClose={() => setMetronomeSheet(false)} />, document.body)
+        : null}
     </div>
   );
 }

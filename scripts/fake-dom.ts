@@ -121,6 +121,9 @@ class FakeDocument extends FakeElement {
   createElement(name: string) {
     return new FakeElement(1, name.toUpperCase(), this);
   }
+  createElementNS(_namespace: string, name: string) {
+    return new FakeElement(1, name, this);
+  }
   createTextNode(text: string) {
     const node = new FakeNode(3, "#text", this);
     node.nodeValue = text;

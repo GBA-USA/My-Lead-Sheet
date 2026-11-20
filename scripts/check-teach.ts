@@ -174,7 +174,15 @@ async function enter(field: FakeElement | undefined, text: string) {
   await fire(field, "focusout");
 }
 const field = (label: string) => elements().find((el) => el.nodeName === "INPUT" && el.getAttribute("aria-label") === label);
-const metronomeBpm = () => Number(elements().find((el) => el.getAttribute("class") === "metronome")?.getAttribute("data-bpm"));
+const pageElements = () => dom.document.body.elements;
+const metronomeSheet = () => pageElements().find((el) => el.getAttribute("role") === "dialog" && (el.getAttribute("class") ?? "").includes("metronome-sheet"));
+/** The metronome's bpm in the Metronome sheet, which the pill opens over the page and ✕ closes. */
+async function metronomeBpm() {
+  await tap(elements().find((el) => el.getAttribute("class") === "metronome-pill"), "the Metronome pill");
+  const bpm = Number(metronomeSheet()?.elements.find((el) => el.getAttribute("class") === "metronome")?.getAttribute("data-bpm"));
+  await tap(button("Close", metronomeSheet), "Close");
+  return bpm;
+}
 
 const marks = (...at: [number, number][]) => at.map(([time, progress]) => ({ at: time, progress }));
 const V1 = { name: "V1", bpm: 78, marks: marks([0, 0], [40, 0.2], [48, 0.2], [RUNTIME + 8, 1]) };
@@ -352,10 +360,10 @@ await scenario("BPM changes while teaching", async () => {
   check(["Discard", "Done", "Hold"].every((name) => !!button(name, bar)), "Discard, Done and Hold stay in the bar");
   await play(30);
   await enter(field("BPM"), "117");
-  check(metronomeBpm() === 117 && field("BPM")?.value === "117", `entering 117 moves the metronome at once (${metronomeBpm()})`);
+  check(field("BPM")?.value === "117", `entering 117 moves the metronome at once, which the take bar's BPM shows (${field("BPM")?.value})`);
   await play(30);
   await enter(field("BPM"), "78");
-  check(metronomeBpm() === 78, `entering 78 brings the metronome back (${metronomeBpm()})`);
+  check(field("BPM")?.value === "78", `entering 78 brings the metronome back (${field("BPM")?.value})`);
   await play(WALL_END - 60 - 1);
   check(scrollOn() && !saveButton(), "the take is still going a second before the faster section's end time");
   await play(2);
@@ -375,26 +383,29 @@ await scenario("BPM changes while teaching", async () => {
   await open({ versions: [V1], selected: null });
   await teach();
   await play(20);
-  for (let i = 0; i < 3; i++) await tap(button("Faster metronome"), "Faster metronome");
+  for (const bpm of ["79", "80", "81"]) await enter(field("BPM"), bpm);
   await play(10);
   await tap(button("Done", bar), "Done");
   await choose("Save", "Save as…");
   await tap(button("Save", dialog), "Save");
   const nudged = saved().versions[1]?.tempo ?? [];
-  check(nudged.length === 2 && nudged[1].bpm === 81 && near(nudged[1].at, 20), `three quick + taps on the metronome are one change, to 81 (${JSON.stringify(nudged)})`);
+  check(nudged.length === 2 && nudged[1].bpm === 81 && near(nudged[1].at, 20), `three quick BPM entries in the take bar are one change, to 81 (${JSON.stringify(nudged)})`);
 });
 
 await scenario("A saved tempo map plays back", async () => {
   await open(MAPPED);
   await tap(button("Scroll: Off"), "Scroll: Off");
   await play(29);
-  check(metronomeBpm() === 78, `the metronome opens at 78 (${metronomeBpm()})`);
+  const opening = await metronomeBpm();
+  check(opening === 78, `the metronome opens at 78 (${opening})`);
   const want = 1000 + 2200 * (29 / RUNTIME);
   check(Math.abs(sheet.scrollTop - want) < 3, `the chart is on the clock with no 2 s opening hold, so a change lands on its taught spot (${sheet.scrollTop.toFixed(1)}px, want ${want.toFixed(1)}px)`);
   await play(2);
-  check(metronomeBpm() === 117, `at 0:30 it moves to 117 (${metronomeBpm()})`);
+  const faster = await metronomeBpm();
+  check(faster === 117, `at 0:30 it moves to 117 (${faster})`);
   await play(30);
-  check(metronomeBpm() === 78, `and back to 78 at the end of that section (${metronomeBpm()})`);
+  const back = await metronomeBpm();
+  check(back === 78, `and back to 78 at the end of that section (${back})`);
   await play(WALL_END - 61 - 1);
   check(scrollOn(), "the scroll is still going a second before the end");
   await play(2);
@@ -422,11 +433,14 @@ await scenario("Editing the tempo map later", async () => {
 
   await tap(button("Scroll: Off"), "Scroll: Off");
   await play(31);
-  check(metronomeBpm() === 135, `playback follows the edit: 135 from 0:30 (${metronomeBpm()})`);
+  const edited135 = await metronomeBpm();
+  check(edited135 === 135, `playback follows the edit: 135 from 0:30 (${edited135})`);
   await play(56 - 31 + 1);
-  check(metronomeBpm() === 78, `and 78 from 0:56 heard (${metronomeBpm()})`);
+  const edited78 = await metronomeBpm();
+  check(edited78 === 78, `and 78 from 0:56 heard (${edited78})`);
   await play(120 - 57 + 1);
-  check(metronomeBpm() === 90, `and 90 from 2:00 heard (${metronomeBpm()})`);
+  const edited90 = await metronomeBpm();
+  check(edited90 === 90, `and 90 from 2:00 heard (${edited90})`);
   await tap(button("Scroll: On"), "Scroll: On");
 
   await chooseVersion("Edit tempo…");

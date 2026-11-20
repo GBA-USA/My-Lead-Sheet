@@ -1,6 +1,8 @@
 import { useEffect, useId, useState, useSyncExternalStore } from "react";
 import { plural } from "./band-library";
 import { bandSong } from "./band-setlist-view";
+import { BandStatusFaces } from "./band-status";
+import { playersFrom } from "./band-status-model";
 import type { BandView } from "./bands-model";
 import { downloadPack, type GigPack } from "./gig-pack";
 import type { GigView } from "./gig-plan-model";
@@ -251,7 +253,7 @@ export function GigViewScreen({ me, bandId, gigId, pack, position, onSignIn, onS
           <p className="gig-meta">{meta(next)}</p>
         </section>
       ) : null}
-      <div className="band-status-slot" />
+      <div className="band-status-slot">{opened && band ? <BandStatusFaces players={playersFrom(opened, band, me)} /> : null}</div>
       {songs.length > 0 ? (
         <section className="gig-set">
           <h3>Set</h3>

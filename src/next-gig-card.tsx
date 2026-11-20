@@ -1,5 +1,7 @@
 import { plural } from "./band-library";
 import type { BandLibrary } from "./band-library-model";
+import { BandStatusFaces } from "./band-status";
+import { playersFrom } from "./band-status-model";
 import type { BandView } from "./bands-model";
 import type { GigPack } from "./gig-pack";
 import { shownDate } from "./gig-plan";
@@ -15,7 +17,7 @@ export function nextGig(gigs: GigView[]): GigView | undefined {
  * The next gig on the band page: its name and day, how many songs and how much of its pack this phone holds, Start gig
  * for whoever can lead it, Open gig for the rest of the lineup, and Plan gig for an admin. Start gig opens the gig view
  * (`onStart`); Open gig opens the gig's card in Gigs (`onOpen`), where a song button opens it on stage. Plan gig starts
- * from the next gig's setlist when there is one.
+ * from the next gig's setlist when there is one. Under the card, the band status strip shows the gig's lineup.
  */
 export function NextGigCard({
   band,
@@ -62,25 +64,30 @@ export function NextGigCard({
   const leads = gig.leader === me || gig.backup === me || admin;
   const open = leads ? "Start gig" : playing ? "Open gig" : null;
   return (
-    <section className="next-gig" data-next-gig={gig.gigId} aria-label={`Next gig: ${gig.name}`}>
-      <h3>
-        {gig.name} <small>{shownDate(gig.date)}</small>
-      </h3>
-      {songs === undefined ? null : (
-        <p className="account-note">
-          {plural(songs, "song")} · {playing || admin ? `Pack ${held} of ${songs} downloaded` : "You're not playing this one."}
-        </p>
-      )}
-      {open || plan ? (
-        <div className="account-row">
-          {open ? (
-            <button type="button" className="account-primary" onClick={() => (leads ? onStart : onOpen)(gig.gigId)}>
-              {open}
-            </button>
-          ) : null}
-          {plan}
-        </div>
-      ) : null}
-    </section>
+    <>
+      <section className="next-gig" data-next-gig={gig.gigId} aria-label={`Next gig: ${gig.name}`}>
+        <h3>
+          {gig.name} <small>{shownDate(gig.date)}</small>
+        </h3>
+        {songs === undefined ? null : (
+          <p className="account-note">
+            {plural(songs, "song")} · {playing || admin ? `Pack ${held} of ${songs} downloaded` : "You're not playing this one."}
+          </p>
+        )}
+        {open || plan ? (
+          <div className="account-row">
+            {open ? (
+              <button type="button" className="account-primary" onClick={() => (leads ? onStart : onOpen)(gig.gigId)}>
+                {open}
+              </button>
+            ) : null}
+            {plan}
+          </div>
+        ) : null}
+      </section>
+      <div className="band-status-slot">
+        <BandStatusFaces players={playersFrom(next, band, me)} />
+      </div>
+    </>
   );
 }

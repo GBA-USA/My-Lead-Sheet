@@ -148,6 +148,7 @@ export function App() {
   const tab: TabName =
     route.name === "bands" || route.name === "band" || route.name === "band-song" || route.name === "band-plan" || route.name === "gig" ? "bands" : route.name === "setlists" || (route.name === "song" && route.from === "setlists") ? "setlists" : "songs";
   const entering = usePreviewEntry(tab === "bands" || invite !== null, owner, checking, onAccount);
+  const holding = entering && tab === "bands";
 
   useEffect(() => {
     if (!invite || checking || entering) return;
@@ -440,17 +441,17 @@ export function App() {
             onMessages={() => (window.location.hash = messagesHref)}
           />
         ) : null}
-        {entering && tab === "bands" ? (
+        {holding ? (
           <div className="bands-tab">
             <p className="bands-tab-note">Checking…</p>
           </div>
         ) : null}
-        {route.name === "bands" && !entering ? <BandsTab me={owner ?? null} notice={notice} onNew={() => setBands({})} onSignIn={() => setAccountOpen(true)} onSignedOut={() => setAccount(null)} /> : null}
-        {route.name === "band" && !entering ? (
+        {route.name === "bands" && !holding ? <BandsTab me={owner ?? null} notice={notice} onNew={() => setBands({})} onSignIn={() => setAccountOpen(true)} onSignedOut={() => setAccount(null)} /> : null}
+        {route.name === "band" && !holding ? (
           <BandPage key={`${owner}/${route.bandId}`} me={owner ?? null} bandId={route.bandId} section={route.section} landing={landing?.bandId === route.bandId ? landing : undefined}
             inbox={inbox} onMessage={messageUser} onSignIn={() => setAccountOpen(true)} onSignedOut={() => setAccount(null)} onGone={(words) => gone("#/bands", words)} />
         ) : null}
-        {route.name === "band-plan" && !entering ? <PlanGigScreen key={`${owner}/${route.bandId}/${route.gigId}`} me={owner ?? null} bandId={route.bandId} gigId={route.gigId} setlistId={route.setlistId} onSignIn={() => setAccountOpen(true)} onSignedOut={() => setAccount(null)} onDone={(next) => openBand(next, true)} /> : null}
+        {route.name === "band-plan" && !holding ? <PlanGigScreen key={`${owner}/${route.bandId}/${route.gigId}`} me={owner ?? null} bandId={route.bandId} gigId={route.gigId} setlistId={route.setlistId} onSignIn={() => setAccountOpen(true)} onSignedOut={() => setAccount(null)} onDone={(next) => openBand(next, true)} /> : null}
         {route.name === "messages" || (route.name === "room" && !owner) ? <MessagesScreen me={owner ?? null} inbox={inbox} notice={notice} onSignIn={() => setAccountOpen(true)} /> : null}
         {route.name === "room" && owner ? (
           <Room key={`${owner}/${route.roomId}`} me={owner} roomId={route.roomId} entry={inbox.chats?.find((c) => c.roomId === route.roomId)} onEntry={inbox.change} onGone={(error) => gone(messagesHref, goneWords(route.roomId, error))} onSignedOut={() => setAccount(null)} />
@@ -465,10 +466,10 @@ export function App() {
             metronome={metronome}
           />
         ) : null}
-        {gigRoute && gigRoute.index === null ? (
+        {gigRoute && gigRoute.index === null && !holding ? (
           <GigViewScreen key={`${owner}/${gigRoute.gigId}`} me={owner ?? null} bandId={gigRoute.bandId} gigId={gigRoute.gigId} pack={pack} position={position} onSignIn={() => setAccountOpen(true)} onSignedOut={() => setAccount(null)} />
         ) : null}
-        {route.name === "live" || bandRoute || (gigRoute && gigRoute.index !== null) ? (
+        {!holding && (route.name === "live" || bandRoute || (gigRoute && gigRoute.index !== null)) ? (
           shownSong ? (
             <LeadSheet
               song={shownSong}

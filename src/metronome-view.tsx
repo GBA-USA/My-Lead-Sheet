@@ -1,4 +1,5 @@
-import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
+import type { Battery } from "./battery";
 import {
   highLatencyOutput,
   secondsSinceHeardClick,
@@ -17,7 +18,9 @@ import {
   clampMetronomeBpm,
   clampSyncOffsetMs,
   initialMetronomeBpm,
+  nextClick,
   parseMetronomePrefs,
+  type ClickPrefs,
   type MetronomePrefs,
   type SyncMode,
 } from "./metronome";
@@ -108,13 +111,83 @@ export function useMetronome(songId: number | null, tempo: number | null, held?:
     saveMetronomePrefs(next);
   };
 
-  return { bpm, playing, setBpm, nudge, toggle, stop, prefs, setPrefs };
+  const state: MetronomeState = { bpm, playing, setBpm, nudge, toggle, stop, prefs, setPrefs };
+  const [owner] = useState(() => ({}));
+  useLayoutEffect(() => {
+    if (songId != null) share({ owner, metronome: state, songTempo: tempo });
+    else unshare(owner);
+  });
+  useLayoutEffect(() => () => unshare(owner), [owner]);
+  return state;
 }
 
-export type MetronomeState = ReturnType<typeof useMetronome>;
+export type MetronomeState = {
+  bpm: number | null;
+  playing: boolean;
+  setBpm: (next: number | null) => void;
+  nudge: (delta: number) => void;
+  toggle: () => void;
+  stop: () => void;
+  prefs: MetronomePrefs;
+  setPrefs: (patch: Partial<MetronomePrefs>) => void;
+};
 
-/** Mount only while the metronome plays. Each frame reads the audio clock, so the dot never re-renders React. */
-export function BeatDot({ offsetMs }: { offsetMs: number }) {
+/**
+ * App runs the song's metronome and hands the song controls nothing of it, so the Metronome pill and its sheet read it
+ * here: the latest state and the song tempo the sheet's bpm field falls back to. Only a metronome bound to a song
+ * shares itself; a band song opened from a gig plan search runs its own with no song id.
+ */
+type Shared = { owner: object; metronome: MetronomeState; songTempo: number | null };
+let shared: Shared | null = null;
+const sharedListeners = new Set<() => void>();
+function share(next: Shared | null) {
+  shared = next;
+  for (const listener of sharedListeners) listener();
+}
+function unshare(owner: object) {
+  if (shared?.owner === owner) share(null);
+}
+function onShared(listener: () => void) {
+  sharedListeners.add(listener);
+  return () => void sharedListeners.delete(listener);
+}
+const sharedNow = () => shared;
+export const useSharedMetronome = () => useSyncExternalStore(onShared, sharedNow, sharedNow);
+
+/** #sheet-scroll pauses auto-scroll on pointerdown. React's listener runs too late to stop that, so block the native event. */
+function useKeepsScrolling<T extends HTMLElement>() {
+  const ref = useRef<T>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const block = (event: Event) => event.stopPropagation();
+    el.addEventListener("pointerdown", block);
+    return () => el.removeEventListener("pointerdown", block);
+  }, []);
+  return ref;
+}
+
+const clickName = ({ sound, indicator }: ClickPrefs) => (sound ? (indicator ? "Sound and dot" : "Sound only") : indicator ? "Dot only" : "No sound or dot");
+
+/**
+ * Mount only while the metronome plays: the pill in the card's top-right corner. A tap moves Sound and Dot on to the
+ * next of the four states. With Dot on it holds the beat dot, in the battery's color where the phone reports one.
+ */
+export function BeatDot({ metronome, battery }: { metronome: MetronomeState; battery: Battery }) {
+  const { prefs, setPrefs } = metronome;
+  const ref = useKeepsScrolling<HTMLButtonElement>();
+  return (
+    <div className="beat-rail">
+      <button ref={ref} type="button" className="beat-pill" aria-label={`${clickName(prefs)}. Tap to change.`} onClick={() => setPrefs(nextClick(prefs))}>
+        {prefs.indicator ? <Flash offsetMs={prefs.syncOffsetMs} battery={battery} /> : null}
+        <SpeakerIcon on={prefs.sound} />
+      </button>
+    </div>
+  );
+}
+
+/** Each frame reads the audio clock, so the dot never re-renders React. */
+function Flash({ offsetMs, battery }: { offsetMs: number; battery: Battery }) {
   const ref = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
@@ -130,9 +203,23 @@ export function BeatDot({ offsetMs }: { offsetMs: number }) {
   }, [offsetMs]);
 
   return (
-    <div className="beat-rail" aria-hidden="true">
-      <span ref={ref} className="beat-dot" data-beat="off" />
-    </div>
+    <>
+      <span ref={ref} className="beat-dot" data-beat="off" data-battery={battery ? (battery.low ? "low" : "ok") : undefined} />
+      {battery?.low ? <span className="battery-mark" aria-hidden="true" /> : null}
+    </>
+  );
+}
+
+function SpeakerIcon({ on }: { on: boolean }) {
+  return (
+    <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+      <path d="M2 6h3l4-3v10L5 10H2z" fill="currentColor" />
+      {on ? (
+        <path d="M11 5.5a3.5 3.5 0 0 1 0 5M12.5 3.5a6 6 0 0 1 0 9" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      ) : (
+        <path d="M11 6l4 4M15 6l-4 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      )}
+    </svg>
   );
 }
 
@@ -203,26 +290,12 @@ function offsetText(ms: number): string {
 
 export function MetronomeControl({ songTempo, metronome }: { songTempo: number | null; metronome: MetronomeState }) {
   const { bpm, playing, prefs, setPrefs } = metronome;
-  const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const draftRef = useRef<string | null>(null);
   const [draft, setDraft] = useState<string | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const panelId = useId();
   const highLatency = useHighLatencyOutput(prefs.syncMode === "auto");
   const syncShown = prefs.indicator && (prefs.syncMode === "on" || (prefs.syncMode === "auto" && highLatency));
   const offset = prefs.syncOffsetMs;
-
-  useEffect(() => {
-    const el = rootRef.current;
-    if (!el) return;
-    // #sheet-scroll pauses auto-scroll on pointerdown. React's listener runs
-    // too late to stop that, so block the native event here. Speed changes
-    // and start/stop must not pause or retune the scroll.
-    const block = (event: Event) => event.stopPropagation();
-    el.addEventListener("pointerdown", block);
-    return () => el.removeEventListener("pointerdown", block);
-  }, []);
 
   const shown = draft != null ? draft : bpm == null ? "" : String(bpm);
 
@@ -264,42 +337,30 @@ export function MetronomeControl({ songTempo, metronome }: { songTempo: number |
 
   return (
     <div
-      ref={rootRef}
       className="metronome"
       data-bpm={bpm ?? ""}
       data-playing={playing ? "true" : "false"}
     >
-      <div className="metro-top">
-        <button
-          type="button"
-          className={playing ? "metro-pad is-on" : "metro-pad"}
-          style={bpm != null ? ({ "--metro-bpm": String(bpm) } as CSSProperties) : undefined}
-          aria-pressed={playing}
-          aria-label={
-            bpm == null
-              ? "Metronome off. No tempo stored. Tap to set a speed."
-              : playing
-                ? `Metronome on at ${bpm} bpm. Tap to turn off.`
-                : `Metronome off, ${bpm} bpm. Tap to turn on.`
-          }
-          onClick={onPadClick}
-        >
-          <span className="metro-name">Metronome</span>
-          <span className="metro-status">
-            <span className="metro-lamp" aria-hidden="true" />
-            {status}
-          </span>
-        </button>
-        <button
-          type="button"
-          className="metro-settings"
-          aria-expanded={settingsOpen}
-          aria-controls={settingsOpen ? panelId : undefined}
-          onClick={() => setSettingsOpen(!settingsOpen)}
-        >
-          Settings
-        </button>
-      </div>
+      <button
+        type="button"
+        className={playing ? "metro-pad is-on" : "metro-pad"}
+        style={bpm != null ? ({ "--metro-bpm": String(bpm) } as CSSProperties) : undefined}
+        aria-pressed={playing}
+        aria-label={
+          bpm == null
+            ? "Metronome off. No tempo stored. Tap to set a speed."
+            : playing
+              ? `Metronome on at ${bpm} bpm. Tap to turn off.`
+              : `Metronome off, ${bpm} bpm. Tap to turn on.`
+        }
+        onClick={onPadClick}
+      >
+        <span className="metro-name">Metronome</span>
+        <span className="metro-status">
+          <span className="metro-lamp" aria-hidden="true" />
+          {status}
+        </span>
+      </button>
       <div className="metronome-controls">
         <button
           type="button"
@@ -390,14 +451,10 @@ export function MetronomeControl({ songTempo, metronome }: { songTempo: number |
         </div>
       ) : null}
       <p className="metro-hint">{hint}</p>
-      {settingsOpen ? (
-        <div className="metro-panel" id={panelId}>
-          <Choice label="Beat dot" value={prefs.indicator} options={ON_OFF} onChange={(indicator) => setPrefs({ indicator })} />
-          <Choice label="Sound" value={prefs.sound} options={ON_OFF} onChange={(sound) => setPrefs({ sound })} />
-          <Choice label="Dot sync" value={prefs.syncMode} options={SYNC_MODES} onChange={(syncMode) => setPrefs({ syncMode })} />
-          <p className="metro-hint">Auto shows Dot sync when the browser reports a delayed output, like Bluetooth.</p>
-        </div>
-      ) : null}
+      <Choice label="Sound" value={prefs.sound} options={ON_OFF} onChange={(sound) => setPrefs({ sound })} />
+      <Choice label="Dot" value={prefs.indicator} options={ON_OFF} onChange={(indicator) => setPrefs({ indicator })} />
+      <Choice label="Dot sync" value={prefs.syncMode} options={SYNC_MODES} onChange={(syncMode) => setPrefs({ syncMode })} />
+      <p className="metro-hint">Auto shows Dot sync when the browser reports a delayed output, like Bluetooth.</p>
     </div>
   );
 }

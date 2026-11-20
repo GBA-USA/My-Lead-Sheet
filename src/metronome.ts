@@ -59,6 +59,22 @@ export interface MetronomePrefs {
 
 export const DEFAULT_METRONOME_PREFS: MetronomePrefs = { indicator: true, sound: true, syncMode: "auto", syncOffsetMs: 0 };
 
+/** Sound and Dot, the two switches Settings, the Metronome sheet and the beat pill share. Both may be off. */
+export type ClickPrefs = Pick<MetronomePrefs, "sound" | "indicator">;
+
+/** The beat pill's tap order (t162u): both on, sound only, dot only, both off, then round again. */
+const CLICK_CYCLE: readonly ClickPrefs[] = [
+  { sound: true, indicator: true },
+  { sound: true, indicator: false },
+  { sound: false, indicator: true },
+  { sound: false, indicator: false },
+];
+
+export function nextClick({ sound, indicator }: ClickPrefs): ClickPrefs {
+  const at = CLICK_CYCLE.findIndex((each) => each.sound === sound && each.indicator === indicator);
+  return CLICK_CYCLE[(at + 1) % CLICK_CYCLE.length];
+}
+
 /**
  * +400 ms covers a Bluetooth delay the browser does not report at all (Safari has no outputLatency).
  * −50 ms trims an over-report; clicks are scheduled only about 100 ms ahead, so the dot cannot lead by much more.

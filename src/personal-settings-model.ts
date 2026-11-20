@@ -1,10 +1,9 @@
-import type { MetronomePrefs } from "./metronome";
+import type { ClickPrefs } from "./metronome";
 import type { Notation } from "./music";
 
-export type ClickMode = "out-loud" | "dot-only";
 /** What the player set for themselves. `textSize` is an index into `TEXT_SCALES`. */
-export type PersonalSettings = { click: ClickMode; textSize: number; chordStyle: Notation; transpose: number };
-/** The part of the player's settings kept per account. Click lives in the metronome prefs, text size in `leadSheetsTextScale`. */
+export type PersonalSettings = ClickPrefs & { textSize: number; chordStyle: Notation; transpose: number };
+/** The part of the player's settings kept per account. Sound and Dot live in the metronome prefs, text size in `leadSheetsTextScale`. */
 export type PersonalDefaults = Pick<PersonalSettings, "chordStyle" | "transpose">;
 export type GigImposed = { connectionRoute: "wifi" | "hotspot" | "internet"; scrollWithLeader: boolean };
 export type GigJoin = { gigId: string; imposed: GigImposed; attempted?: Partial<PersonalSettings> };
@@ -19,13 +18,6 @@ export function parsePersonal(value: unknown): PersonalDefaults {
     transpose: typeof transpose === "number" && Number.isFinite(transpose) ? clampTranspose(transpose) : 0,
   };
 }
-
-export const clickOf = (prefs: Pick<MetronomePrefs, "sound">): ClickMode => (prefs.sound ? "out-loud" : "dot-only");
-
-export const CLICK_PREFS: Record<ClickMode, Partial<MetronomePrefs>> = {
-  "out-loud": { sound: true },
-  "dot-only": { sound: false, indicator: true },
-};
 
 export function joinGig(personal: PersonalSettings, join: GigJoin): { personal: PersonalSettings; imposed: GigImposed } {
   return {

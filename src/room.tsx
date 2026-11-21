@@ -61,8 +61,8 @@ const hardwareKeyboard = () => matchMedia("(hover: hover) and (pointer: fine)").
 /** A band song as the band page holds it, from the server's library or this phone's copy of it. */
 type RoomSong = { songId: string; song: { title: string; artist: string } };
 
-/** What a band thread knows of its band: the other members to @mention, and its songs, null until they load. */
-export type RoomBand = { members: Member[]; songs: RoomSong[] | null };
+/** What a band thread knows of its band: the other members to @mention, its songs (null until they load), and a way to fetch them again. */
+export type RoomBand = { members: Member[]; songs: RoomSong[] | null; reload: () => Promise<unknown> };
 
 /** A message's words, with each http(s) link tappable. A link to this app opens in place; another site opens in a new tab. */
 function Words({ text }: { text: string }) {
@@ -78,9 +78,9 @@ function Words({ text }: { text: string }) {
 }
 
 /** A band song someone pointed at. It opens the band's copy, or says the band no longer has it. */
-function BandSongLink({ message, bandId, songs }: { message: ChatMessage; bandId: string; songs: RoomSong[] | null | undefined }) {
+function BandSongLink({ message, bandId, gone }: { message: ChatMessage; bandId: string; gone: boolean }) {
   const songId = message.ref ?? "";
-  if (songs && !songs.some((item) => item.songId === songId)) {
+  if (gone) {
     return (
       <span className="chat-bubble chat-band-song">
         {message.text}
@@ -246,6 +246,18 @@ export function Room({
   const now = Date.now();
   const muted = entry ? isMuted(entry, now) : false;
 
+  /** Card songs the band's songs lack. A miss may be a song shared since they loaded, so each one asks for them once, and reads as gone only if that fetch lacks it too. */
+  const songIds = band?.songs && new Set(band.songs.map((item) => item.songId));
+  const missing = songIds ? [...new Set((messages ?? []).flatMap((m) => (m.kind === "band-song" && m.ref && !songIds.has(m.ref) ? [m.ref] : [])))] : [];
+  const asked = useRef(new Set<string>());
+  const [checked, setChecked] = useState<ReadonlySet<string>>(new Set());
+  useEffect(() => {
+    const fresh = missing.filter((ref) => !asked.current.has(ref));
+    if (!band || fresh.length === 0) return;
+    for (const ref of fresh) asked.current.add(ref);
+    band.reload().then(() => setChecked((was) => new Set([...was, ...fresh])), () => {});
+  }, [missing.join(" ")]);
+
   useEffect(() => {
     const list = listRef.current;
     if (list) list.scrollTop = list.scrollHeight;
@@ -305,7 +317,7 @@ export function Room({
             ) : line.message.kind === "setlist" ? (
               <SetlistCard message={line.message} me={me} />
             ) : line.message.kind === "band-song" ? (
-              <BandSongLink message={line.message} bandId={roomId} songs={band?.songs} />
+              <BandSongLink message={line.message} bandId={roomId} gone={!!line.message.ref && missing.includes(line.message.ref) && checked.has(line.message.ref)} />
             ) : (
               <span className="chat-bubble">
                 <Words text={line.message.text} />

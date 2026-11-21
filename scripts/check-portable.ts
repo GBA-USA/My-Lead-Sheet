@@ -23,16 +23,19 @@ const SCANNED_FILES = ["index.html", "vite.config.ts", "package.json", "tsconfig
 const SKIPPED = /(^|\/)(node_modules|\.wrangler)(\/|$)|\.(md|ico|png|jpe?g|webp|woff2?)$/;
 const WRANGLER_CONFIG = "worker/wrangler.jsonc";
 
+const toPosix = (path: string) => path.replaceAll("\\", "/");
+
 function filesIn(root: string, path: string): string[] {
-  const full = join(root, path);
+  const rel = toPosix(path);
+  const full = join(root, rel);
   let stat;
   try {
     stat = statSync(full);
   } catch {
     return [];
   }
-  if (stat.isFile()) return SKIPPED.test(path) ? [] : [path];
-  return readdirSync(full).flatMap((name) => filesIn(root, join(path, name)));
+  if (stat.isFile()) return SKIPPED.test(rel) ? [] : [rel];
+  return readdirSync(full).flatMap((name) => filesIn(root, `${rel}/${name}`));
 }
 
 function varsValues(root: string): string[] {
@@ -50,17 +53,19 @@ function scanText(file: string, text: string, rules: Rule[]): Finding[] {
   );
 }
 
+function scanFile(root: string, path: string): Finding[] {
+  const file = toPosix(path);
+  const text = readFileSync(join(root, file), "utf8");
+  if (file !== WRANGLER_CONFIG) return scanText(file, text, RULES);
+  const withoutVars = varsValues(root).reduce((rest, value) => rest.replaceAll(JSON.stringify(value), '""'), text);
+  return [
+    ...scanText(file, text, RULES.filter((rule) => !rule.allowedInVars)),
+    ...scanText(file, withoutVars, RULES.filter((rule) => rule.allowedInVars)),
+  ];
+}
+
 function scan(root: string): Finding[] {
-  const files = [...SCANNED_DIRS, ...SCANNED_FILES].flatMap((path) => filesIn(root, path));
-  return files.flatMap((file) => {
-    const text = readFileSync(join(root, file), "utf8");
-    if (file !== WRANGLER_CONFIG) return scanText(file, text, RULES);
-    const withoutVars = varsValues(root).reduce((rest, value) => rest.replaceAll(JSON.stringify(value), '""'), text);
-    return [
-      ...scanText(file, text, RULES.filter((rule) => !rule.allowedInVars)),
-      ...scanText(file, withoutVars, RULES.filter((rule) => rule.allowedInVars)),
-    ];
-  });
+  return [...SCANNED_DIRS, ...SCANNED_FILES].flatMap((path) => filesIn(root, path)).flatMap((file) => scanFile(root, file));
 }
 
 function plantTree(files: Record<string, string>): string {
@@ -101,6 +106,8 @@ function checkPlantedFixtures() {
   const ownerVars = { APP_ORIGIN: "https://leadsheets.example.net", CF_ACCOUNT_ID: accountId, PRIVACY_CONTACT: "owner@example.org" };
   const filled = plantTree({ [WRANGLER_CONFIG]: wranglerWithVars(ownerVars), "worker/README.md": `${accountId} x.pages.dev Terry` });
   assert.deepEqual(scan(filled), [], "owner values in env vars slots and docs are allowed");
+  assert.deepEqual(scanFile(filled, "worker\\wrangler.jsonc"), [], "a Windows path to the wrangler config keeps its vars allowlist");
+  assert.ok(filesIn(filled, "worker").every((file) => !file.includes("\\")), "scanned paths use / on every OS");
   rmSync(filled, { recursive: true });
 
   const outsideVars = plantTree({ [WRANGLER_CONFIG]: wranglerWithVars({}, "rooms.someone.workers.dev/*") });

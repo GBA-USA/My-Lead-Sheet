@@ -19,6 +19,9 @@ import { openSite } from "./chrome.ts";
  * 1.0 matrices (applied to linear RGB). A pixel is ink where it differs from the probe's background after simulation,
  * so two cues that differ only in color draw the same ink and fail.
  *
+ * The beat pill case starts the metronome and compares a screenshot with the pill against one without it, so a border,
+ * shadow, outline or pseudo-element counts as paint whichever rule draws it.
+ *
  * Set CHROME to a Chromium binary. Signs up one phone with a passkey, no password, so no auth lock is needed.
  */
 
@@ -39,6 +42,7 @@ const CASES = {
   gigTablet: "at 768 the gig view shows Now, Next and Later left and the status panel right",
   settingsTablet: "at 768 Settings is one column no wider than 560 px",
   borders: "in high contrast every control has a 2 px border",
+  beatPill: "in all five themes nothing the beat pill paints is over the chart's text column, and in high contrast its 2 px border is in the 16 px gutter",
   sharedTheme: "no band, gig or room payload sets the theme",
 } as const;
 type Case = keyof typeof CASES;
@@ -147,6 +151,70 @@ const BORDERS = `(() => {
   return { count: controls.length, thin };
 })()`;
 
+type PillPaint = { unstable: number; pixels: number; left: number; textEdge: number; cardRight: number; covered: string[]; borders: { el: string; left: number; right: number; color: string; contrast: number }[] };
+
+/** Runs in the page: what the beat pill paints, from a screenshot with it and two without it, and the 2 px borders it shows. */
+const PILL_PAINT = `(async (shown, hidden, again) => {
+  const load = async (data) => {
+    const image = new Image();
+    image.src = "data:image/png;base64," + data;
+    await image.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = image.width;
+    canvas.height = image.height;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    context.drawImage(image, 0, 0);
+    return context;
+  };
+  const pill = document.querySelector("article.sheet .beat-pill");
+  const card = document.querySelector("article.sheet").getBoundingClientRect();
+  const textEdge = pill.parentElement.getBoundingClientRect().right;
+  const box = pill.getBoundingClientRect();
+  const x0 = Math.max(0, Math.floor(box.left) - 8), y0 = Math.max(0, Math.floor(box.top) - 8);
+  const x1 = Math.min(innerWidth, Math.ceil(box.right) + 8), y1 = Math.min(innerHeight, Math.ceil(box.bottom) + 8);
+  const w = x1 - x0, h = y1 - y0;
+  const [a, b, c] = (await Promise.all([shown, hidden, again].map(load))).map((context) => context.getImageData(x0, y0, w, h).data);
+  const differs = (p, q, i) => Math.abs(p[i] - q[i]) + Math.abs(p[i + 1] - q[i + 1]) + Math.abs(p[i + 2] - q[i + 2]) > 12;
+  let unstable = 0, left = Infinity, pixels = 0;
+  const painted = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    if (differs(b, c, i * 4)) unstable += 1;
+    if (!differs(a, b, i * 4)) continue;
+    painted[i] = 1;
+    pixels += 1;
+    left = Math.min(left, x0 + (i % w));
+  }
+  const covered = [];
+  const walker = document.createTreeWalker(document.querySelector("article.sheet"), NodeFilter.SHOW_TEXT);
+  for (let node; (node = walker.nextNode()); ) {
+    if (!node.nodeValue.trim() || node.parentElement.closest(".beat-rail")) continue;
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    for (const t of range.getClientRects()) {
+      let hit = false;
+      for (let y = Math.max(y0, Math.floor(t.top)); y < Math.min(y1, Math.ceil(t.bottom)) && !hit; y++)
+        for (let x = Math.max(x0, Math.floor(t.left)); x < Math.min(x1, Math.ceil(t.right)) && !hit; x++) hit = painted[(y - y0) * w + (x - x0)] === 1;
+      if (hit) covered.push(node.nodeValue.trim().slice(-16) + " (" + node.parentElement.className + ")");
+    }
+  }
+  const lin = (c) => { const v = c / 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+  const lum = (css) => { const [r, g, b] = css.match(/\\d+(\\.\\d+)?/g).slice(0, 3).map(Number); return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b); };
+  const filled = (style) => !/rgba\\(.*, 0\\)|transparent/.test(style.backgroundColor);
+  const backdrop = (el) => { while (el && !filled(getComputedStyle(el))) el = el.parentElement; return el ? getComputedStyle(el).backgroundColor : "rgb(255, 255, 255)"; };
+  const borders = [pill, ...pill.querySelectorAll("*")].flatMap((el) => {
+    const style = getComputedStyle(el);
+    if (!["Top", "Right", "Bottom", "Left"].every((side) => parseFloat(style["border" + side + "Width"]) >= 2 && style["border" + side + "Style"] !== "none")) return [];
+    const r = el.getBoundingClientRect();
+    const [hi, lo] = [lum(style.borderTopColor), lum(backdrop(el.parentElement))].sort((p, q) => q - p);
+    return [{ el: el.className || el.tagName.toLowerCase(), left: r.left, right: r.right, color: style.borderTopColor, contrast: Math.round(((hi + 0.05) / (lo + 0.05)) * 100) / 100 }];
+  });
+  return { unstable, pixels, left, textEdge, cardRight: card.right, covered: [...new Set(covered)], borders };
+})`;
+
+/** Runs before the app: this phone reports the battery level it is given, not charging. */
+const batteryAt = (level: number) =>
+  `(() => { const manager = new EventTarget(); Object.assign(manager, { level: ${level}, charging: false, chargingTime: Infinity, dischargingTime: Infinity }); Object.defineProperty(navigator, "getBattery", { configurable: true, value: () => Promise.resolve(manager) }); })()`;
+
 /** Runs in the page: the custom properties of the stage block (the one on `:root`), and their values on html and on `.app`. */
 const TOKENS = `(() => {
   const keys = new Set();
@@ -211,7 +279,7 @@ const SCREEN_ROUTES = ["#/songs", "#/setlists", "#/bands", `#/song/${seed.songs[
 const SONG = `#/song/${seed.songs[0].id}`;
 
 let apiBase = "";
-const site = await openSite(root, "check-ux-theme-sweep", () => apiBase);
+const site = await openSite(root, "check-ux-theme-sweep", () => apiBase, ["--autoplay-policy=no-user-gesture-required"]);
 const origin = site.origin.replace("127.0.0.1", "localhost");
 const { worker, base } = await startApi({ APP_ORIGIN: origin, RP_ID: "localhost", PASSWORD_PEPPER });
 apiBase = base;
@@ -406,6 +474,48 @@ try {
     await setTheme("stage");
   };
 
+  /** The beat pill on the card while the metronome plays, at 390 in all five themes, at an ok and a low battery. */
+  const beatPill = async (sheet: Stop) => {
+    await setWidth(390);
+    const shot = async () => (await site.send("Page.captureScreenshot", { format: "png" })).data as string;
+    const pill = `document.querySelector("article.sheet .beat-pill")`;
+    for (const level of [0.5, 0.15]) {
+      const { identifier } = await site.send("Page.addScriptToEvaluateOnNewDocument", { source: batteryAt(level) });
+      try {
+        await visit(sheet);
+        await site.evaluate(`document.querySelector(".metronome-sheet .metro-pad").click()`);
+        await app.until(`document.querySelector(".metronome-sheet .metro-pad")?.getAttribute("aria-pressed") === "true"`, "the metronome to play", 10000);
+        await site.evaluate(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }))`);
+        await app.until(`!document.querySelector(".metronome-sheet") && !!${pill}?.querySelector(".beat-dot")`, "the beat pill on the card", 10000);
+        await site.evaluate(`(() => { const style = document.createElement("style"); style.textContent = ".beat-dot { visibility: visible !important; }"; document.head.append(style); })()`);
+        for (const theme of THEMES) {
+          await setTheme(theme);
+          for (const scrollTop of [0, 600, 1200, 1800, 2400]) {
+            await site.evaluate(`document.getElementById("sheet-scroll").scrollTop = ${scrollTop}`);
+            await settle(300);
+            const shown = await shot();
+            await site.evaluate(`${pill}.style.opacity = "0"`);
+            const hidden = await shot();
+            const again = await shot();
+            await site.evaluate(`${pill}.style.opacity = ""`);
+            const seen = await site.evaluate<PillPaint>(`${PILL_PAINT}(${js(shown)}, ${js(hidden)}, ${js(again)})`);
+            const where = `${theme}, battery ${level}, scrolled to ${scrollTop}`;
+            measured.beatPill += 1;
+            if (seen.unstable) fail("beatPill", `${where}: the page changed between two screenshots without the pill (${seen.unstable} px), so the measurement is not sound`);
+            if (seen.pixels === 0) fail("beatPill", `${where}: the pill painted nothing, so nothing was measured`);
+            if (seen.left < seen.textEdge - 0.5) fail("beatPill", `${where}: the pill paints from x ${seen.left}, ${Math.round(seen.textEdge - seen.left)} px over the text column that ends at ${seen.textEdge}`);
+            if (seen.covered.length) fail("beatPill", `${where}: the pill paints over ${js(seen.covered)}`);
+            if (theme === "contrast" && !seen.borders.some((border) => border.left >= seen.textEdge - 0.5 && border.right <= seen.cardRight + 0.5 && border.contrast >= 3))
+              fail("beatPill", `${where}: no 2 px border in the gutter that reads against the paper (borders found: ${js(seen.borders)})`);
+          }
+        }
+      } finally {
+        await site.send("Page.removeScriptToEvaluateOnNewDocument", { identifier });
+      }
+    }
+    await setTheme("stage");
+  };
+
   await site.send("Page.navigate", { url: `${origin}/#/songs` });
   await app.library();
 
@@ -482,6 +592,8 @@ try {
 
   await shapes({ name: "band page probes", hash: `#/band/${bandId}`, ready: bandReady }, false);
   await shapes({ name: "Save", hash: SONG, ready: `!!document.querySelector("[aria-label='Transpose up']")` }, true);
+
+  await beatPill(signedOut.find((stop) => stop.name === "Metronome sheet")!);
 
   const { identifier: bait } = await site.send("Page.addScriptToEvaluateOnNewDocument", { source: THEME_BAIT });
   await site.evaluate(`localStorage.setItem("leadSheetsTheme", ${js(DEVICE_THEME)})`);

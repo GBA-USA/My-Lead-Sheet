@@ -9,8 +9,8 @@ import { unread } from "./chat-model";
 import { CODE_REFUSED, readPayload, type CodeKind } from "./code-link";
 import { ScanCode, ShowCode, shareLink, useCode } from "./codes";
 import { downloadPack, packsOnPhone, type GigPack } from "./gig-pack";
-import { GigCard, GigPlanForm, newGigId } from "./gig-plan";
-import type { GigDraft, GigView } from "./gig-plan-model";
+import { DraftOffer, draftsIn, dropDraft, GigCard, GigPlanForm, keepDraft, newGigId, PastGigCard, planAgainHref, readDraft, type SendFailure } from "./gig-plan";
+import { fitDraft, newDraft, planBody, type GigDraft, type GigList, type GigView, type KeptDraft } from "./gig-plan-model";
 import { useCloseOnSong, useEscape } from "./hooks";
 import { NextGigCard, nextGig } from "./next-gig-card";
 import { allOnPhone, clearBand, heldFor, holdBandSongs, keepBandsOnPhone, type CachedBandSong } from "./phone-db";
@@ -31,7 +31,6 @@ type PageView = { name: "band" } | { name: "invite" } | { name: "settings" } | {
 const SECTION_LABELS: Record<BandSection, string> = { songs: "Songs", setlists: "Setlists", chat: "Chat", gigs: "Gigs", members: "Members" };
 
 const OFFLINE = "Can't reach the server. Check your connection and try again.";
-const ASK_AN_ADMIN = "Only a band admin can invite. Ask an admin to send you the link.";
 
 const MESSAGES: Record<string, string> = {
   ...CODE_REFUSED,
@@ -54,6 +53,9 @@ const MESSAGES: Record<string, string> = {
   "not-in-band": SETLIST_CODE_MESSAGES["not-in-band"],
   "not-a-setlist-code": SETLIST_CODE_MESSAGES["not-a-setlist-code"],
 };
+
+/** What a member who isn't an admin sees on Invite and Show as QR, with no request to the server. */
+const ASK_AN_ADMIN = `${MESSAGES["not-admin"]} Ask an admin to send you the link.`;
 
 const PACK_OFFLINE = "Can't download now · try on Wi-Fi";
 
@@ -333,6 +335,7 @@ function BandScreen({ me, bandId, section: asked, landing, inbox, onMessage, onS
   const [band, setBand] = useState<BandView | null>(null);
   const [library, setLibrary] = useState<BandLibrary | null>(null);
   const [gigs, setGigs] = useState<GigView[] | null>(null);
+  const [past, setPast] = useState<GigView[]>([]);
   const [packs, setPacks] = useState<Record<string, GigPack>>({});
   const [cached, setCached] = useState<CachedBandSong[] | null>(null);
   const [editing, setEditing] = useState<BandSetlist | undefined>(undefined);
@@ -403,9 +406,10 @@ function BandScreen({ me, bandId, section: asked, landing, inbox, onMessage, onS
 
   /** The band's gigs and the packs this phone holds for them, set together so a card never pairs a gig with a pack it lacks. */
   const loadGigs = async () => {
-    const { gigs: list } = await api<{ gigs: GigView[] }>("/api/bands/gig/list", { bandId });
+    const { gigs: list, past: ended } = await api<GigList>("/api/bands/gig/list", { bandId });
     setPacks(await packsOnPhone(me, list.map((item) => item.gig.gigId)));
     setGigs(list);
+    setPast(ended);
   };
 
   useEffect(() => {
@@ -624,6 +628,14 @@ function BandScreen({ me, bandId, section: asked, landing, inbox, onMessage, onS
               Plan a gig
             </button>
           ) : null}
+          {past.length > 0 ? (
+            <>
+              <h3 className="gig-past-head">Past</h3>
+              {past.map((item) => (
+                <PastGigCard key={item.gig.gigId} view={item} band={band} onPlanAgain={isAdmin ? () => (window.location.hash = planAgainHref(me, item.gig)) : undefined} />
+              ))}
+            </>
+          ) : null}
         </>
       ),
     members: () => (band ? members(band) : cannotReach),
@@ -792,32 +804,76 @@ export function PlanGigScreen(props: PlanProps) {
   return props.me ? <PlanGig {...props} me={props.me} /> : <SignInToBands onSignIn={props.onSignIn} />;
 }
 
+/** What Plan gig opens on: the form from where it starts, or first the offer of another unsent plan for this band. */
+type Opening = { name: "form"; start: GigDraft } | { name: "offer"; kept: KeptDraft };
+
+const SEND_TIMEOUT_MS = 15_000;
+const STALE_TAB = "You're signed in as someone else in another tab. Reload to continue.";
+/** Send to band's own words: here `not-allowed` can only mean the planner is no longer an admin. */
+const SEND_WORDS: Record<string, string> = { "not-allowed": MESSAGES["not-admin"], "timed-out": "Taking too long. Try again." };
+const sendWords = (error: unknown) => (error instanceof ApiError && error.status < 500 && SEND_WORDS[error.reason]) || message(error);
+
+/** `work`, or a `timed-out` ApiError once `ms` pass with no answer. The request itself may still land; the gig id makes that safe. */
+function within<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, fail) => {
+    timer = setTimeout(() => fail(new ApiError("timed-out")), ms);
+  });
+  return Promise.race([work, late]).finally(() => clearTimeout(timer));
+}
+
 function PlanGig({ me, bandId, gigId, setlistId, onSignedOut, onDone }: PlanProps & { me: string }) {
   const titleId = useId();
-  const [loaded, setLoaded] = useState<{ band: BandView; library: BandLibrary } | null>(null);
+  const [loaded, setLoaded] = useState<{ band: BandView; library: BandLibrary; opening: Opening } | null>(null);
   const [problem, setProblem] = useState<unknown>(null);
   const [round, setRound] = useState(0);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [failure, setFailure] = useState<SendFailure | null>(null);
 
   const refused = (caught: unknown) => (caught instanceof ApiError && caught.status === 401 ? onSignedOut() : setProblem(caught));
 
+  /** This gig's own kept plan opens as it was left; else another unsent plan for the band is offered; else a new form. */
+  const openingFor = (band: BandView, library: BandLibrary): Opening => {
+    const memberIds = band.members.map((member) => member.userId);
+    const own = readDraft(me, gigId);
+    if (own) return { name: "form", start: fitDraft(own.draft, memberIds) };
+    const other = draftsIn(me, bandId).find((kept) => kept.gigId !== gigId && library.setlists.some((setlist) => setlist.setlistId === kept.setlistId));
+    return other ? { name: "offer", kept: other } : { name: "form", start: newDraft(memberIds, me) };
+  };
+
   useEffect(() => {
     setProblem(null);
-    Promise.all([api<BandView>("/api/bands/open", { bandId }), api<BandLibrary>("/api/bands/library", { bandId })]).then(([band, library]) => setLoaded({ band, library }), refused);
+    Promise.all([api<BandView>("/api/bands/open", { bandId }), api<BandLibrary>("/api/bands/library", { bandId })]).then(([band, library]) => setLoaded({ band, library, opening: openingFor(band, library) }), refused);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- PlanGigScreen is keyed by owner, band and gig, so bandId is fixed; refused is a new closure each render
   }, [round]);
 
-  const send = (draft: GigDraft) => {
-    setBusy(true);
-    setError("");
-    api<GigView>("/api/bands/gig/plan", { bandId, setlistId, gigId, ...draft }).then(
-      (made) => onDone({ bandId, section: "gigs", notice: `Sent ${made.gig.name} to the band.` }),
-      (caught) => {
-        setBusy(false);
-        if (caught instanceof ApiError && caught.status === 401) return onSignedOut();
-        setError(message(caught));
-      },
+  /** The form as typed, kept for this account and gig while it differs from a new one. */
+  const keep = (draft: GigDraft, changed: boolean) => (changed ? keepDraft(me, { bandId, gigId, setlistId, savedAt: Date.now(), draft }) : dropDraft(me, gigId));
+
+  /** A refusal can come from another account signed in on this browser since the tab opened, so ask once who is signed in now. */
+  const failureOf = async (caught: unknown): Promise<SendFailure> => {
+    const words = { words: sendWords(caught), reload: false };
+    if (!(caught instanceof ApiError) || caught.status < 400 || caught.status >= 500) return words;
+    const now = await api<{ account: { userId: string } | null }>("/api/me").then(
+      (reply) => reply.account?.userId ?? null,
+      () => me,
     );
+    return now !== me ? { words: STALE_TAB, reload: true } : words;
+  };
+
+  /** Ends in the band page, the words beside Send, or Sign in. A retry sends the same gig id, so the band gets one gig. */
+  const send = async (draft: GigDraft) => {
+    setBusy(true);
+    setFailure(null);
+    try {
+      const made = await within(api<GigView>("/api/bands/gig/plan", { bandId, setlistId, gigId, ...planBody(draft) }), SEND_TIMEOUT_MS);
+      dropDraft(me, gigId);
+      onDone({ bandId, section: "gigs", notice: `Sent ${made.gig.name} to the band.` });
+    } catch (caught) {
+      if (caught instanceof ApiError && caught.status === 401) return onSignedOut();
+      setFailure(await failureOf(caught));
+      setBusy(false);
+    }
   };
 
   const back = (
@@ -846,12 +902,41 @@ function PlanGig({ me, bandId, gigId, setlistId, onSignedOut, onDone }: PlanProp
         ? stop(OFFLINE, <button type="button" className="account-secondary" onClick={() => setRound((n) => n + 1)}>Try again</button>)
         : stop(message(problem));
     if (!loaded) return <p className="account-note">Loading…</p>;
-    const { band, library } = loaded;
+    const { band, library, opening } = loaded;
     if (band.role !== "admin") return stop(MESSAGES["not-admin"]);
     if (!setlistId) return stop(library.setlists.length === 0 ? "Share a setlist first. Then tap Plan a gig on it." : "Pick a setlist in Setlists, then tap Plan a gig on it.", toSetlists);
     const setlist = library.setlists.find((item) => item.setlistId === setlistId);
     if (!setlist) return stop(MESSAGES["not-found"], toSetlists);
-    return <GigPlanForm band={band} me={me} setlistName={setlist.name} busy={busy} onSend={send} onCancel={() => onDone({ bandId })} />;
+    if (opening.name === "offer") {
+      const { kept } = opening;
+      return (
+        <DraftOffer
+          kept={kept}
+          setlistName={library.setlists.find((item) => item.setlistId === kept.setlistId)?.name ?? setlist.name}
+          onKeep={() => window.location.replace(bandPlanHref(bandId, kept.gigId, kept.setlistId))}
+          onStartOver={() => {
+            dropDraft(me, kept.gigId);
+            setLoaded({ ...loaded, opening: { name: "form", start: newDraft(band.members.map((member) => member.userId), me) } });
+          }}
+        />
+      );
+    }
+    return (
+      <GigPlanForm
+        band={band}
+        me={me}
+        setlistName={setlist.name}
+        start={opening.start}
+        busy={busy}
+        failure={failure}
+        onDraft={keep}
+        onSend={send}
+        onCancel={() => {
+          dropDraft(me, gigId);
+          onDone({ bandId });
+        }}
+      />
+    );
   };
 
   return (
@@ -859,7 +944,6 @@ function PlanGig({ me, bandId, gigId, setlistId, onSignedOut, onDone }: PlanProp
       <header className="band-page-top">
         <h2 id={titleId}>Plan gig</h2>
       </header>
-      <Status notice="" error={error} />
       {body()}
     </section>
   );

@@ -296,12 +296,14 @@ export function BandLibraryTab({ band, me, tab, library, reload, busy, run, noti
       </li>
     );
     const unsendable = (song: Song | undefined) => song?.copy?.canSendOn === false;
+    const found = matchingSongs(myLibrary.songs, query);
     return (
       <div className="account-form band-library-pick">
         {tab === "songs" ? <LabeledInput label="Find a song" value={query} onChange={setQuery} /> : null}
+        {tab === "songs" && found.length === 0 && query.trim() ? <p className="account-note">No songs match "{query.trim()}"</p> : null}
         <ul className="friends-list">
           {tab === "songs"
-            ? matchingSongs(myLibrary.songs, query).map((song) =>
+            ? found.map((song) =>
                 pickRow(
                   song.ref,
                   <>

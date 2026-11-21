@@ -1,9 +1,24 @@
-import { BACKUP_KINDS, MAX_VALUE_CHARS, SONG_SETTING_KEYS, backupKindOf, songIdOf, validBackupKey, type BackupKind } from "./backup-keys";
+import { BACKUP_KINDS, MAX_VALUE_CHARS, PER_ACCOUNT, SONG_SETTING_KEYS, backupKindOf, songIdOf, validBackupKey, type BackupKind } from "./backup-keys";
 import { ApiError, api } from "./sign-in-methods";
-import { LIBRARY_KEY, SETLIST_ROW, SONG_ROW, copiedOwnItem, freeOwnId, ownLibraryItems, setlistWithSongMoved, storageChanged, withOwnLibraryItems } from "./storage";
-
-/** This phone's sync state for the signed-in account. Present only while signed in, so a signed-out phone never syncs. */
-export const BACKUP_KEY = "leadSheetsBackup";
+import {
+  BACKUP_KEY,
+  LEFT_BY_KEY,
+  LIBRARY_KEY,
+  LIBRARY_MODE_KEY,
+  SETLIST_ROW,
+  SET_ASIDE_KEY,
+  SONG_ROW,
+  copiedOwnItem,
+  freeOwnId,
+  leftByOthers,
+  ownLibraryItems,
+  readLeftBy,
+  setlistWithSongMoved,
+  storageChanged,
+  valuePrint,
+  withOwnLibraryItems,
+  type LeftBy,
+} from "./storage";
 
 type Value = string | null;
 /** How two values of one key combine when both phones changed it since they last synced. */
@@ -75,6 +90,8 @@ interface Reply {
   rev: number;
   rows: Row[];
   counts: Record<string, number>;
+  /** There when the server keeps My Songs per account (`MY_SONGS_PER_ACCOUNT`). */
+  library?: typeof PER_ACCOUNT;
 }
 
 export interface BackupResult {
@@ -116,7 +133,8 @@ const writeState = (state: State) => localStorage.setItem(BACKUP_KEY, JSON.strin
 /** This phone's backed-up values by key: its localStorage entries, with the library as one entry per own song and setlist. */
 type Local = Map<string, string>;
 
-function readLocal(): Local {
+/** Every backed-up value on this phone, whichever account left it. */
+function readAll(): Local {
   const local: Local = new Map();
   for (let i = 0; i < localStorage.length; i += 1) {
     const key = localStorage.key(i);
@@ -127,11 +145,17 @@ function readLocal(): Local {
   return local;
 }
 
+/** The values that are `account`'s to back up: everything but what another account left here unchanged. */
+function readLocal(account: string): Local {
+  const local = readAll();
+  for (const key of leftByOthers(local, account).keys()) local.delete(key);
+  return local;
+}
+
 const isLibraryItem = (key: string) => key.startsWith(`${SONG_ROW}.`) || key.startsWith(`${SETLIST_ROW}.`);
 
-/** Writes one reply's changes, the songs and setlists as one library write, then tells every screen to read again. */
-function writeLocal(writes: Map<string, Value>) {
-  if (writes.size === 0) return;
+/** Sets or removes values, the songs and setlists as one library write. */
+function putValues(writes: Map<string, Value>) {
   const items = new Map([...writes].filter(([key]) => isLibraryItem(key)));
   for (const [key, value] of writes) {
     if (items.has(key)) continue;
@@ -139,6 +163,88 @@ function writeLocal(writes: Map<string, Value>) {
     else localStorage.setItem(key, value);
   }
   if (items.size > 0) localStorage.setItem(LIBRARY_KEY, withOwnLibraryItems(localStorage.getItem(LIBRARY_KEY), items));
+}
+
+const setAsideKey = (account: string) => `${SET_ASIDE_KEY}.${account}`;
+
+function readSetAside(account: string): Record<string, string> {
+  try {
+    const kept: unknown = JSON.parse(localStorage.getItem(setAsideKey(account)) ?? "{}");
+    return kept && typeof kept === "object" && !Array.isArray(kept) ? (kept as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Moves what other accounts left at `keys` into each one's set-aside entry, so `account`'s values can take the keys.
+ * A song takes its per-song settings along. Each goes back when its account signs in on this phone again.
+ */
+function setAside(keys: string[], account: string) {
+  const all = readAll();
+  const leftBy = readLeftBy();
+  const others = leftByOthers(all, account, leftBy);
+  const moving = new Map<string, string>();
+  for (const key of keys) {
+    const owner = others.get(key);
+    if (owner === undefined) continue;
+    moving.set(key, owner);
+    const song = key.startsWith(`${SONG_ROW}.`) ? songIdOf(key) : undefined;
+    for (const setting of song === undefined ? [] : SONG_SETTING_KEYS) if (others.get(`${setting}.${song}`) === owner) moving.set(`${setting}.${song}`, owner);
+  }
+  if (moving.size === 0) return;
+  for (const owner of new Set(moving.values())) {
+    const kept = readSetAside(owner);
+    for (const [key, from] of moving) if (from === owner) kept[key] = all.get(key)!;
+    localStorage.setItem(setAsideKey(owner), JSON.stringify(kept));
+  }
+  for (const key of moving.keys()) delete leftBy[key];
+  localStorage.setItem(LEFT_BY_KEY, JSON.stringify(leftBy));
+  putValues(new Map([...moving.keys()].map((key) => [key, null])));
+}
+
+/** Writes one reply's changes, after moving aside what another account left at those keys, then tells every screen to read again. */
+function writeLocal(writes: Map<string, Value>, account: string) {
+  if (writes.size === 0) return;
+  setAside([...writes.keys()], account);
+  putValues(writes);
+  storageChanged();
+}
+
+/** Marks every value this account may back up as left by it, so the next account here neither backs it up nor, per account, sees it. */
+function leave(account: string) {
+  const leftBy = readLeftBy();
+  const all = readAll();
+  const others = leftByOthers(all, account, leftBy);
+  const next: LeftBy = {};
+  for (const [key, value] of all) next[key] = others.has(key) ? leftBy[key] : [account, valuePrint(value)];
+  localStorage.setItem(LEFT_BY_KEY, JSON.stringify(next));
+}
+
+/**
+ * What this account left here is its own again, and what was set aside goes back, moving aside what other accounts
+ * left in its place. A key someone changed since, signed out, keeps that change.
+ */
+function arrive(account: string) {
+  const leftBy = readLeftBy();
+  const mine = Object.keys(leftBy).filter((key) => leftBy[key]?.[0] === account);
+  for (const key of mine) delete leftBy[key];
+  if (mine.length > 0) localStorage.setItem(LEFT_BY_KEY, JSON.stringify(leftBy));
+  const kept = readSetAside(account);
+  const keys = Object.keys(kept);
+  if (keys.length === 0) return;
+  setAside(keys, account);
+  const all = readAll();
+  putValues(new Map(keys.filter((key) => !all.has(key)).map((key) => [key, kept[key]])));
+  localStorage.removeItem(setAsideKey(account));
+}
+
+/** Remembers whether the server keeps My Songs per account, so the list knows even signed out. */
+function noteMode(reply: Reply) {
+  const perAccount = reply.library === PER_ACCOUNT;
+  if (perAccount === (localStorage.getItem(LIBRARY_MODE_KEY) === PER_ACCOUNT)) return;
+  if (perAccount) localStorage.setItem(LIBRARY_MODE_KEY, PER_ACCOUNT);
+  else localStorage.removeItem(LIBRARY_MODE_KEY);
   storageChanged();
 }
 
@@ -221,7 +327,7 @@ const itemText = (value: string) => {
  * new id with its per-song settings and this phone's unsent setlists. Returns how many keys still need another round.
  */
 function apply(state: State, sent: Map<string, Value>, reply: Reply, changed: Set<string>): number {
-  const local = readLocal();
+  const local = readLocal(state.account);
   const writes = new Map<string, Value>();
   const write = (key: string, value: Value) => {
     if ((local.get(key) ?? null) === value) return;
@@ -282,7 +388,7 @@ function apply(state: State, sent: Map<string, Value>, reply: Reply, changed: Se
     state.synced[row.key] = [row.rev, print(row.value)];
   }
   state.pulled = Math.max(state.pulled, reply.rev);
-  writeLocal(writes);
+  if (stillOn(state)) writeLocal(writes, state.account);
   return conflicts;
 }
 
@@ -300,10 +406,11 @@ async function syncOnce(state: State): Promise<BackupResult> {
     let conflicts = 0;
     const sentThisRound = new Set<string>();
     for (;;) {
-      const left = new Map([...pending(state, readLocal()).changes].filter(([key]) => !sentThisRound.has(key)));
+      const left = new Map([...pending(state, readLocal(state.account)).changes].filter(([key]) => !sentThisRound.has(key)));
       const batch = nextBatch(left);
       const changes = [...batch].map(([key, value]) => ({ key, kind: backupKindOf(key), value, base: state.synced[key]?.[0] ?? 0 }));
       const reply = await api<Reply>("/api/backup", { since: state.pulled, changes });
+      if (stillOn(state)) noteMode(reply);
       conflicts += apply(state, batch, reply, changed);
       serverCounts = reply.counts;
       save(state);
@@ -312,7 +419,7 @@ async function syncOnce(state: State): Promise<BackupResult> {
     }
     if (conflicts === 0) break;
   }
-  const local = readLocal();
+  const local = readLocal(state.account);
   const { changes, held } = pending(state, local);
   if (changes.size === 0 && sameCounts(serverCounts, counts(state, local, held))) state.at = Date.now();
   save(state);
@@ -329,7 +436,7 @@ let running: Promise<BackupResult> | null = null;
 export function syncBackup({ onlyIfChanged = false } = {}): Promise<BackupResult> {
   const state = readState();
   if (!state || running) return running ?? Promise.resolve({ changed: [], at: null, ok: true, heldBack: 0 });
-  if (onlyIfChanged && pending(state, readLocal()).changes.size === 0) return Promise.resolve({ changed: [], at: state.at, ok: true, heldBack: 0 });
+  if (onlyIfChanged && pending(state, readLocal(state.account)).changes.size === 0) return Promise.resolve({ changed: [], at: state.at, ok: true, heldBack: 0 });
   running = syncOnce(state)
     .catch((error): BackupResult => {
       if (error instanceof ApiError && error.status === 401 && stillOn(state)) {
@@ -343,12 +450,23 @@ export function syncBackup({ onlyIfChanged = false } = {}): Promise<BackupResult
   return running;
 }
 
-/** Turns backup on for this account. Another account on this phone starts over, so this phone's data goes to it too. */
+/**
+ * Turns backup on for this account. Another account on this phone starts over with what this phone holds, except what
+ * an earlier account left here: that stays out of this account's backup, and comes back when its own account signs in.
+ */
 export function backupOn(account: string) {
-  if (readState()?.account !== account) writeState({ account, pulled: 0, synced: {}, at: null });
+  const state = readState();
+  if (state?.account === account) return;
+  if (state) leave(state.account);
+  arrive(account);
+  writeState({ account, pulled: 0, synced: {}, at: null });
+  storageChanged();
 }
 
-/** Signing out stops backup. Nothing else on the phone is removed. */
+/** Signing out stops backup. Nothing is removed from the phone, but what this account holds here is marked as left by it. */
 export function backupOff() {
+  const state = readState();
+  if (state) leave(state.account);
   localStorage.removeItem(BACKUP_KEY);
+  storageChanged();
 }

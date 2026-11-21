@@ -1,5 +1,5 @@
 import seedLibrary from "../data/library.json";
-import { PER_ACCOUNT } from "./backup-keys";
+import { PER_ACCOUNT, SONG_SETTING_KEYS } from "./backup-keys";
 import { clampScrollPercent, isNotation, pitchClass, type Notation } from "./music";
 import { parsePersonal, type PersonalDefaults } from "./personal-settings-model";
 import type { Learned, Mark, ScrollPlan, Span, Tempo } from "./scroll-timing";
@@ -336,6 +336,42 @@ export function addOwnSetlist(setlist: Omit<StoredSetlist, "id">): number | null
 
 /** Puts a new chart in an own song's place, read from what is stored now. */
 export const replaceOwnSong = (id: number, song: Omit<Song, "ref" | "id">) => writeOwnSong(readRaw(LIBRARY_KEY), id, song);
+
+const SEED_SONG_IDS = new Set(seedLibrary.songs.map((song) => song.id));
+
+/** A song the player made: not a built-in song, edited or not, and not a copy from a band or a friend. Only these can be edited or deleted. */
+export const madeHere = (song: Pick<Song, "id" | "copy">) => !SEED_SONG_IDS.has(song.id) && song.copy === undefined;
+
+/**
+ * Removes a song the player made from the library, from every own setlist, and its per-song settings and drafts, so
+ * a song added later under the same id starts clean. Backup sends each removed key as gone. False for any other song,
+ * or when the browser refused the write.
+ */
+export function removeOwnSong(id: number): boolean {
+  const raw = readRaw(LIBRARY_KEY);
+  const song = storedLibrary(parseStored(raw)).songs.find((item) => item.id === id);
+  if (!song || !madeHere(song)) return false;
+  const changes = new Map<string, string | null>([[`${SONG_ROW}.${id}`, null]]);
+  for (const [key, value] of ownLibraryItems(raw)) {
+    if (!key.startsWith(`${SETLIST_ROW}.`)) continue;
+    const entry = JSON.parse(value) as OwnEntry<StoredSetlist>;
+    if (entry.item.songIds.includes(id)) changes.set(key, JSON.stringify({ ...entry, item: { ...entry.item, songIds: entry.item.songIds.filter((each) => each !== id) } }));
+  }
+  if (!writeRaw(LIBRARY_KEY, withOwnLibraryItems(raw, changes))) return false;
+  const draft = `${SONG_DRAFT_KEY}.${id}`;
+  const keys = [...SONG_SETTING_KEYS.map((key) => `${key}.${id}`), ...storedKeys().filter((key) => key === draft || key.startsWith(`${draft}.`))];
+  for (const key of keys) removeRaw(key);
+  storageChanged();
+  return true;
+}
+
+function storedKeys(): string[] {
+  try {
+    return Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index)).filter((key): key is string => key !== null);
+  } catch {
+    return [];
+  }
+}
 
 /** An own song or setlist entry copied to a new id, named "<name> · from <phone>". It is an added item, so it has no seed print. */
 export function copiedOwnItem(value: string, id: number, phone: string): string {

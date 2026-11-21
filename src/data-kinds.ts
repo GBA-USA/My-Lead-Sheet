@@ -146,7 +146,7 @@ export const DATA_KINDS: readonly DataKind[] = [
   {
     key: "messages",
     place: "server",
-    what: "In each band or DM room: every message posted, with who wrote it, their name at the time, the text, when it was sent, the id your phone gave it so a resend is stored once, what kind of message it is (words, a note from the app, or a song, setlist or gig card), and which song share, setlist or gig a card points at. A song card holds the chart and only the timing versions and song data the sender ticked.",
+    what: "In each band or DM room: every message posted, with who wrote it, their name at the time, the text, when it was sent, the id your phone gave it so a resend is stored once, what kind of message it is (words, a note from the app, or a song, setlist, gig or band song card), which song share, setlist, gig or band song a card points at, and in a band the ids of the members its words mention by name. A band song card holds only the title and artist of the song, never its chart. A song card holds the chart and only the timing versions and song data the sender ticked.",
   },
   {
     key: "mls-phone",

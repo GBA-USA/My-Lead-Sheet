@@ -791,6 +791,39 @@ a:focus-visible {
   opacity: 0.35;
 }
 
+.scroll-speed {
+  position: fixed;
+  right: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: 0 2px 12px var(--shadow);
+}
+
+.scroll-speed .step {
+  width: 56px;
+  height: 56px;
+  min-width: 56px;
+  min-height: 56px;
+}
+
+.speed-readout {
+  min-width: 56px;
+  height: 56px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-weight: 700;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
 .percent {
   min-width: 40px;
   text-align: center;
@@ -1039,6 +1072,10 @@ a:focus-visible {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.app:has(> .live-nav) .scroll-speed {
+  bottom: calc(var(--touch-stage) + 42px + env(safe-area-inset-bottom));
 }
 
 .gig-stage .song-chrome {

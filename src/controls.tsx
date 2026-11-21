@@ -1,8 +1,10 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { useScrollSpeed } from "./hooks";
 import { MetronomeSheet } from "./metronome-sheet";
 import { useSharedMetronome } from "./metronome-view";
 import type { Notation } from "./music";
+import { SPEED_MAX, SPEED_MIN, stepSpeed } from "./scroll-timing";
 
 export function TextSizeButtons({
   index,
@@ -223,8 +225,27 @@ export function OverflowMenu({
 }
 
 /**
+ * Live − and + for the scroll while it runs, held in the bottom corner where a thumb reaches them, folded bar or not.
+ * The middle shows the speed against the song's own pace; a tap puts it back to 100%.
+ */
+function ScrollSpeed() {
+  const [speed, setSpeed] = useScrollSpeed();
+  const percent = Math.round(speed * 100);
+  return (
+    <div className="scroll-speed" role="group" aria-label="Scroll speed">
+      <StepButton label="Scroll slower" onClick={() => setSpeed(stepSpeed(speed, -1))} disabled={speed <= SPEED_MIN} />
+      <button type="button" className="speed-readout" aria-label={`Speed ${percent}%. Tap for 100%.`} onClick={() => setSpeed(1)}>
+        {percent}%
+      </button>
+      <StepButton label="Scroll faster" onClick={() => setSpeed(stepSpeed(speed, 1))} disabled={speed >= SPEED_MAX} />
+    </div>
+  );
+}
+
+/**
  * The song's two control rows. Row 1: the key and Notes | Nashville | Chords only. Row 2: the Scroll pill with its caret to the
  * Scroll sheet, the Metronome pill and its sheet, and Send when `onSend` is given. A take puts `take` in row 2's place.
+ * While the scroll runs, outside a take, the live speed group shows too.
  * `onMetronome` is unused since the pill opens its own sheet; App still passes it.
  */
 export function SongControls({
@@ -281,6 +302,7 @@ export function SongControls({
           ) : null}
         </div>
       )}
+      {scrolling && !take ? <ScrollSpeed /> : null}
       {metronomeSheet && shared
         ? createPortal(<MetronomeSheet songTempo={shared.songTempo} metronome={shared.metronome} onClose={() => setMetronomeSheet(false)} />, document.body)
         : null}

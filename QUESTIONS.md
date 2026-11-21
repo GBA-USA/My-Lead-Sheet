@@ -2,6 +2,8 @@
 
 ## Two setup bugs in commit 1 (e1997b9). May CoS apply this setup-only patch to `scripts/check-gig-plan-record.ts`?
 
+Resolved Nov 21, 2026: applied as written in the corrective for ux-p2-gig-plan-verify (pre-approved, runbook step 9). The full box run is 15 of 15 ok. The `chrome.ts` bug below was already fixed on the base.
+
 The build (1096d39) is committed and complete. Per the queue rules I did not edit the commit-1 test after the build.
 No assertion changes. Both fixes are setup.
 

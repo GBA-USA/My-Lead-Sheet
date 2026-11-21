@@ -1,5 +1,6 @@
 html {
   --band-status-font: 16px;
+  --band-status-amber-mark: "!";
 }
 
 .band-status-faces {
@@ -24,12 +25,14 @@ html {
   cursor: pointer;
 }
 
-.band-status-face-leader {
+.band-status-faces .band-status-face.band-status-face-leader {
   border-color: var(--accent);
 }
 
-.band-status-face-amber {
+.band-status-faces .band-status-face.band-status-face-amber {
+  border-style: dashed;
   border-color: var(--danger);
+  background: transparent;
 }
 
 .band-status-sheet {
@@ -69,4 +72,10 @@ html {
 
 .band-status-amber {
   color: var(--danger);
+}
+
+.band-status-amber .band-status-name::before {
+  content: var(--band-status-amber-mark);
+  margin-right: 6px;
+  font-weight: 800;
 }

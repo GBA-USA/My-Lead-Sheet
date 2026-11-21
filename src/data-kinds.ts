@@ -120,7 +120,7 @@ export const DATA_KINDS: readonly DataKind[] = [
   {
     key: "song_notes",
     place: "server",
-    what: "For each band: every note an admin pinned to a band song, with the words, who wrote it, their name at the time, and when. A deleted note is kept marked as deleted and never shown or exported. Notes stay in the band: they are never part of a chart or a share.",
+    what: "For each band: every note an admin pinned to a band song, with the words, who wrote it, their name at the time, and when, and for a note that came in a band file, which band and note it came from so importing that file again adds it once. A deleted note is kept marked as deleted and never shown or exported. Notes stay in the band: they are never part of a chart or a share.",
   },
   { key: "band_setlists", place: "server", what: "For each band: every setlist a member shared into it, with its name, songs in order, tags, who shared it, and when it last changed." },
   {

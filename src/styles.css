@@ -361,6 +361,9 @@ a:focus-visible {
   overflow: hidden;
   background: var(--bg);
   color: var(--text);
+  --shell-icon: 44px;
+  --shell-pad-top: 8px;
+  --shell-pad-bottom: 2px;
 }
 
 .shell-header {
@@ -368,9 +371,9 @@ a:focus-visible {
   z-index: 4;
   flex: none;
   display: grid;
-  grid-template-columns: 44px 1fr 44px;
+  grid-template-columns: var(--shell-icon) 1fr var(--shell-icon);
   align-items: center;
-  padding: calc(8px + env(safe-area-inset-top)) 12px 2px;
+  padding: calc(var(--shell-pad-top) + env(safe-area-inset-top)) 12px var(--shell-pad-bottom);
 }
 
 .shell-header .menu-anchor,
@@ -379,9 +382,9 @@ a:focus-visible {
 }
 
 .shell-header .icon-btn {
-  width: 44px;
-  height: 44px;
-  min-width: 44px;
+  width: var(--shell-icon);
+  height: var(--shell-icon);
+  min-width: var(--shell-icon);
 }
 
 .song-header {
@@ -560,7 +563,7 @@ a:focus-visible {
 }
 
 .song-chrome.is-list {
-  --song-chrome-folded: calc(env(safe-area-inset-top) + 50px);
+  --song-chrome-folded: calc(env(safe-area-inset-top) + var(--shell-pad-top) + var(--shell-icon) + var(--shell-pad-bottom));
 }
 
 .song-chrome-bar[data-folded="list"] {

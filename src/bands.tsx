@@ -31,7 +31,6 @@ type PageView = { name: "band" } | { name: "invite" } | { name: "settings" } | {
 const SECTION_LABELS: Record<BandSection, string> = { songs: "Songs", setlists: "Setlists", chat: "Chat", gigs: "Gigs", members: "Members" };
 
 const OFFLINE = "Can't reach the server. Check your connection and try again.";
-const ASK_AN_ADMIN = "Only a band admin can invite. Ask an admin to send you the link.";
 
 const MESSAGES: Record<string, string> = {
   ...CODE_REFUSED,
@@ -54,6 +53,9 @@ const MESSAGES: Record<string, string> = {
   "not-in-band": SETLIST_CODE_MESSAGES["not-in-band"],
   "not-a-setlist-code": SETLIST_CODE_MESSAGES["not-a-setlist-code"],
 };
+
+/** What a member who isn't an admin sees on Invite and Show as QR, with no request to the server. */
+const ASK_AN_ADMIN = `${MESSAGES["not-admin"]} Ask an admin to send you the link.`;
 
 const PACK_OFFLINE = "Can't download now · try on Wi-Fi";
 

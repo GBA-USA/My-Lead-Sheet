@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
-import { CODE_SCREEN, codeInText, readPayload, type CodeKind, type CodeScreen } from "./code-link";
+import { CODE_SCREEN, codeInText, readPayload, refreshDelay, type CodeKind, type CodeScreen } from "./code-link";
 import { APP_NAME } from "./data-kinds";
 import { scanCamera } from "./qr-scan";
 import { qrSvg } from "./qr-svg";
@@ -54,9 +54,8 @@ export function useCode(request: CodeRequest | null, onError?: (error: unknown) 
   useEffect(() => {
     if (!request) return;
     if (shown && shown.expiresAt > Date.now()) {
-      // A browser keeps a timer's delay in 32 bits, so a code that never ends would wrap to a timer that fires at once.
-      // Asking again after a day is harmless: the old code still works, and most kinds hand back the same one.
-      const timer = setTimeout(() => setShown(null), Math.min(shown.expiresAt - Date.now(), DAY_MS));
+      // While the end is still ahead a new round only re-arms the timer, so a never-ending code is asked for once.
+      const timer = setTimeout(() => (shown.expiresAt > Date.now() ? setRound((n) => n + 1) : setShown(null)), refreshDelay(shown.expiresAt, Date.now()));
       return () => clearTimeout(timer);
     }
     let live = true;
@@ -133,7 +132,7 @@ export function ShowCode({ request, words, share, onStopped, onError }: { reques
           </p>
           {copyRefused ? (
             <p className="account-note" role="alert">
-              This browser won't copy for the app. The link is selected, so copy it yourself.
+              Select the link above and copy it.
             </p>
           ) : null}
           <button type="button" className="account-primary" onClick={copy}>
@@ -206,7 +205,7 @@ export function ScanCode({ onCode }: { onCode: (payload: string) => void }) {
         />
         {notALink ? (
           <p className="account-error" role="alert">
-            That isn't a whole {APP_NAME} link. Copy all of it, then paste it again.
+            That isn't a {APP_NAME} link. Copy the whole link, then paste it again.
           </p>
         ) : null}
         <button type="submit" className="account-secondary" disabled={!pasted.trim()}>

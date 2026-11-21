@@ -30,7 +30,8 @@
         "CF_ACCOUNT_ID": "",
         "TURN_KEY_ID": "",
         "RELAY_CAP_GB": "50",
-        "PREVIEW_OPEN_ACCESS": ""
+        "PREVIEW_OPEN_ACCESS": "",
+        "MY_SONGS_PER_ACCOUNT": ""
       }
     },
     "production": {
@@ -52,7 +53,8 @@
         "CF_ACCOUNT_ID": "",
         "TURN_KEY_ID": "",
         "RELAY_CAP_GB": "50",
-        "PREVIEW_OPEN_ACCESS": ""
+        "PREVIEW_OPEN_ACCESS": "",
+        "MY_SONGS_PER_ACCOUNT": ""
       }
     }
   }

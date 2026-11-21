@@ -7,7 +7,7 @@ import { signedIn, who, type Context, type Person, type Route, type User } from 
 import { deliver } from "./directory-inbox";
 import { fromRoom, Refused, roomRefused as refused } from "./refused";
 import { addColumns, chatRoom, type Posted } from "./room-chat";
-import { isText } from "./room-library";
+import { bandSongsOnly, isText, MAX_SETLIST_SONGS } from "./room-library";
 import { bandIdIn, inRoom, roomOf, type RoomStore } from "./room-members";
 import { hmacKey } from "./session";
 
@@ -65,16 +65,18 @@ export function createGigTables(sql: SqlStorage) {
 }
 
 /** Who may change what on a planned gig (PLAN.md 6). Reading the plan is open to every member. */
-type Change = "lineup" | "backup" | "route";
+type Change = "lineup" | "backup" | "route" | "songs";
 type Caller = { admin: boolean; leader: boolean; planned: boolean };
 const MAY: Record<Change, (caller: Caller) => boolean> = {
   lineup: ({ admin, leader, planned }) => admin || (leader && planned),
   backup: ({ admin, leader }) => admin || leader,
   route: ({ admin }) => admin,
+  songs: ({ admin }) => admin,
 };
 
 const gigRow = (sql: SqlStorage, gigId: string) => sql.exec<GigRow>(`SELECT * FROM gigs WHERE gig_id = ?`, gigId).toArray()[0];
 const lineupOf = (row: GigRow): string[] => JSON.parse(row.lineup);
+const songsOf = (row: GigRow): string[] => JSON.parse(row.song_order);
 const activeIds = (sql: SqlStorage) => new Set(sql.exec<{ user_id: string }>(`SELECT user_id FROM members WHERE state = 'active'`).toArray().map((row) => row.user_id));
 const isAdmin = (sql: SqlStorage, userId: string) => sql.exec(`SELECT 1 FROM members WHERE user_id = ? AND state = 'active' AND role = 'admin'`, userId).toArray().length > 0;
 
@@ -104,7 +106,8 @@ function viewOf({ sql, bandId }: RoomStore, row: GigRow): GigView {
     .toArray()
     .filter((receipt) => lineup.includes(receipt.user_id))
     .map((receipt): PackReceipt => ({ userId: receipt.user_id, packRev: receipt.pack_rev, at: receipt.at }));
-  return { gig: planOf(row, bandId), packRev: row.rev, receipts, songCount: (JSON.parse(row.song_order) as string[]).length };
+  const songIds = songsOf(row);
+  return { gig: planOf(row, bandId), packRev: row.rev, receipts, songIds, songCount: songIds.length };
 }
 
 /** A lineup of active members, each once. The leader must be on it. */
@@ -240,6 +243,20 @@ export const gigRoom = {
   },
 
   /**
+   * An admin sets a planned gig's own songs and their order. The setlist it came from stays as it was. A live gig's set
+   * is locked until phones can follow a change on stage (C21). The same order again changes nothing, so a retry after a
+   * lost reply raises the pack rev once. The secret stays, since the lineup did not change.
+   */
+  setSongs(band: RoomStore, userId: string, gigId: string, songIds: string[]): GigView {
+    const row = changeable(band, userId, gigId, "songs");
+    if (row.status === "live") throw refused("set-locked");
+    bandSongsOnly(band.sql, songIds);
+    if (JSON.stringify(songIds) === JSON.stringify(songsOf(row))) return viewOf(band, row);
+    band.sql.exec(`UPDATE gigs SET song_order = ?, rev = rev + 1 WHERE gig_id = ?`, JSON.stringify(songIds), gigId);
+    return viewOf(band, gigRow(band.sql, gigId));
+  },
+
+  /**
    * The pack for a lineup player, with the secret and a receipt for this pack rev. An admin who isn't playing may read it,
    * with no secret and no receipt. A song no longer in the band is left out. The reads and the receipt happen before the
    * first await, so the pack, its rev and its secret all come from one moment.
@@ -250,7 +267,7 @@ export const gigRoom = {
     if (!row) throw refused("not-found");
     const playing = lineupOf(row).includes(userId);
     if (!playing && me.role !== "admin") throw refused("not-on-lineup");
-    const songs = (JSON.parse(row.song_order) as string[]).flatMap((songId): PackSong[] => {
+    const songs = songsOf(row).flatMap((songId): PackSong[] => {
       const song = band.sql.exec<{ song: string }>(`SELECT song FROM band_songs WHERE song_id = ?`, songId).toArray()[0];
       return song ? [{ songId, song: JSON.parse(song.song), bandTiming: null }] : [];
     });
@@ -315,6 +332,14 @@ function userIdOrNull(value: unknown): string | null {
 
 function lineupIn(value: unknown): string[] {
   if (!Array.isArray(value) || value.length > MAX_LINEUP || !value.every((id) => typeof id === "string" && id.length <= 64)) throw new Refused("bad-request");
+  return value;
+}
+
+/** A gig's songs: 1 to 200 ids, each once. An empty set is refused, since a gig with no songs cannot start. */
+function songIdsIn(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length < 1 || value.length > MAX_SETLIST_SONGS || !value.every((id) => typeof id === "string" && id.length <= 64) || new Set(value).size !== value.length) {
+    throw new Refused("bad-request");
+  }
   return value;
 }
 
@@ -438,6 +463,11 @@ export const GIG_ROUTES: Record<string, Route> = {
   async "POST /api/bands/gig/route"(c) {
     const { room, gigId, me } = inGig(c);
     return { body: await fromRoom(room.gigRoute(me, gigId, routeIn(c.body.route))) };
+  },
+
+  async "POST /api/bands/gig/songs"(c) {
+    const { room, gigId, me } = inGig(c);
+    return { body: await fromRoom(room.gigSongs(me, gigId, songIdsIn(c.body.songIds))) };
   },
 
   async "POST /api/bands/gig/end"(c) {

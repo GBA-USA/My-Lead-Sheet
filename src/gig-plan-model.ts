@@ -36,14 +36,25 @@ export type GigPlan = {
 /** A player's newest download of a gig's pack (PLAN.md 5 `pack_receipts`). */
 export type PackReceipt = { userId: string; packRev: number; at: number };
 
-/** What the gig routes answer: the plan, the pack rev a fresh download gets, the lineup's receipts, and how many songs the set has. */
-export type GigView = { gig: GigPlan; packRev: number; receipts: PackReceipt[]; songCount: number };
+/** What the gig routes answer: the plan, the pack rev a fresh download gets, the lineup's receipts, and the gig's own song order. */
+export type GigView = { gig: GigPlan; packRev: number; receipts: PackReceipt[]; songIds: string[]; songCount: number };
 
 /** `gig/list`: the gigs not yet ended, soonest first, and the ended ones, newest first. */
 export type GigList = { gigs: GigView[]; past: GigView[] };
 
 /** Whether `userId` holds the pack as it is now, so the card can say Downloaded ✓ once per player, however many phones they have. */
 export const downloaded = (view: GigView, userId: string) => view.receipts.some((receipt) => receipt.userId === userId && receipt.packRev === view.packRev);
+
+/** The set with the song at `from` moved to `to`. A move off either end leaves it as it was. */
+export function reorder(songIds: string[], from: number, to: number): string[] {
+  const next = [...songIds];
+  if (to < 0 || to >= next.length) return next;
+  next.splice(to, 0, ...next.splice(from, 1));
+  return next;
+}
+
+/** What Edit songs offers to add: the band songs not yet in the set, in library order. A player's own songs reach it by being shared with the band. */
+export const candidates = <T extends { songId: string }>(songs: T[], songIds: string[]): T[] => songs.filter((item) => !songIds.includes(item.songId));
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];

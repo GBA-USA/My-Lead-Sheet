@@ -121,7 +121,7 @@ function editable<T extends Shared>(band: RoomStore, userId: string, row: T | un
   return row;
 }
 
-function bandSongsOnly(sql: SqlStorage, songIds: string[]) {
+export function bandSongsOnly(sql: SqlStorage, songIds: string[]) {
   for (const id of songIds) if (!songRow(sql, id)) throw refused("not-a-band-song");
 }
 
@@ -330,7 +330,7 @@ export const selfCopies = {
 };
 
 const MAX_SONG_CHARS = 12_000;
-const MAX_SETLIST_SONGS = 200;
+export const MAX_SETLIST_SONGS = 200;
 export const isText = (value: unknown, max: number) => typeof value === "string" && value.trim().length > 0 && value.length <= max;
 
 export function choiceIn(body: Record<string, unknown>): ShareChoice {

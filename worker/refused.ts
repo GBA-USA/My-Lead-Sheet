@@ -27,6 +27,7 @@ const ROOM_REFUSALS = {
   "not-on-lineup": 403,
   "is-leader": 400,
   "gig-ended": 409,
+  "set-locked": 409,
 } as const;
 
 export const roomRefused = (reason: keyof typeof ROOM_REFUSALS) => new Refused(reason, ROOM_REFUSALS[reason]);

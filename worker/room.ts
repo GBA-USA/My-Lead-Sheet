@@ -193,6 +193,10 @@ export class Room extends DurableObject<Env> {
     return gigRoom.setRoute(this.band, userId, gigId, route);
   }
 
+  gigSongs(userId: string, gigId: string, songIds: string[]) {
+    return gigRoom.setSongs(this.band, userId, gigId, songIds);
+  }
+
   gigEnd(userId: string, gigId: string, now: number) {
     return gigRoom.end(this.band, userId, gigId, now);
   }

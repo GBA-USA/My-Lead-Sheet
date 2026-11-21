@@ -3,8 +3,9 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = new URL("..", import.meta.url).pathname;
+const root = fileURLToPath(new URL("..", import.meta.url));
 const WORKFLOW = ".github/workflows/deep-verify.yml";
 const SPLITTER = "scripts/ci-shard.mjs";
 const PAGES_SHA256 = "96f37f60ba6105fddd3513bc0443e296fb00db8dcd5022810e1fc8c9b2f8be99";

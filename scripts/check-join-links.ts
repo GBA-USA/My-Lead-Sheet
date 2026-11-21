@@ -10,15 +10,26 @@ import { appPage, PASSWORD_PEPPER, passwordPlayer, settle } from "./app-page.ts"
 import { openSite } from "./chrome.ts";
 
 /**
- * P1 persona-join-links: a remote bandmate on a desktop browser can always get into the band. One case per pass
- * condition, named by it. The landing-page case needs only the Worker; the rest drive the app in headless Chrome
- * (`CHROME` names the browser). Paths come from fileURLToPath and path.join so the script runs on Windows and Linux.
+ * P1 persona-join-links (and its P1b follow-up): a remote bandmate on a desktop browser can always get into the band.
+ * One case per pass condition, named by it. The pure cases need nothing; the landing-page case needs only the Worker;
+ * the rest drive the app in headless Chrome (`CHROME` names the browser). Paths come from fileURLToPath and path.join
+ * so the script runs on Windows and Linux.
  */
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const js = JSON.stringify;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WIDTHS = [344, 390, 820, 884, 1280];
+/** The day the landing page names, as the Worker writes it: the server can't know the visitor's time zone, so UTC. */
+const day = (ms: number) => new Date(ms).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
+const WHY = {
+  incomplete: "This link is incomplete or out of date. Copy it again, or ask for a fresh one.",
+  replaced: "This link was replaced. Ask for a fresh one.",
+  reset: (ms: number) => `This link was reset on ${day(ms)}. Ask for a fresh one.`,
+  ended: (ms: number) => `This link ended on ${day(ms)}. Ask for a fresh one.`,
+};
+const NOT_A_LINK = `That isn't a ${APP_NAME} link.`;
+const OFFLINE = "Can't reach the server. Check your connection and try again.";
 
 const seed = JSON.parse(readFileSync(join(root, "data", "library.json"), "utf8")) as { songs: (SongContent & { id: number })[] };
 const chart = (index: number, title: string): SongContent => {
@@ -43,37 +54,96 @@ const ok = (reply: Reply, what: string) => {
   return reply.body;
 };
 
-await check("bad-code landing page says to check the whole link and has Open the app", async () => {
-  const { worker, base } = await startApi();
+await check("refreshDelay caps a code's refresh timer at one day and keeps a short one as it is", async () => {
+  const link = (await import("../src/code-link.ts")) as Record<string, unknown>;
+  assert.equal(typeof link.refreshDelay, "function", "src/code-link.ts exports refreshDelay(expiresAt, now)");
+  const refreshDelay = link.refreshDelay as (expiresAt: number, now: number) => number;
+  const now = Date.UTC(2026, 10, 20, 19, 55);
+  assert.equal(refreshDelay(now + 10 * 365 * DAY_MS, now), DAY_MS, "a never-ending code waits one day, under the browser's 32-bit timer limit");
+  assert.equal(refreshDelay(now + 60000, now), 60000, "a code ending in a minute waits that minute");
+  assert.equal(refreshDelay(now + DAY_MS, now), DAY_MS, "a code ending in exactly a day waits that day");
+  assert.equal(refreshDelay(now - 1, now), 0, "a code already past its end waits no time");
+  assert.ok(refreshDelay(now + 10 * 365 * DAY_MS, now) <= 2147483647, "never over the timer limit");
+});
+
+await check("the refusal word table says why each code fails", async () => {
+  const { CODE_REFUSED } = (await import("../src/code-link.ts")) as { CODE_REFUSED: Record<string, string> };
+  assert.equal(CODE_REFUSED["bad-code"], WHY.incomplete, "a bad signature or a cut-off link says it is incomplete or out of date");
+  assert.equal(CODE_REFUSED["code-replaced"], WHY.replaced, "a real code whose row is gone says it was replaced");
+  assert.equal(CODE_REFUSED["code-stopped"], "This code was stopped. Ask for a fresh one.", "the in-app stopped words stay as earlier checks pin them");
+  assert.equal(CODE_REFUSED["code-ended"], "This code has ended. Ask for a fresh one.", "the in-app ended words stay as earlier checks pin them");
+});
+
+await check("every refused code says WHY on the /c/ landing page, with Open the app", async () => {
+  // A code minute on `home` is 10 ms, so a ten-minute in-person code ends in 100 ms.
+  const home = await startApi({ CODE_MINUTE_MS: "10" });
   try {
-    const terry = new Phone(base);
-    ok(await terry.createAccount("Terry Bass"), "Terry signs up");
-    const bandId = ok(await terry.call("/api/bands/create", { name: "The Low Tides" }), "Terry makes a band").bandId as string;
-    const code = ok(await terry.call("/api/codes", { kind: "band", bandId }), "Terry's invite").code as string;
-    const land = async (payload: string) => {
+    const land = async (base: string, payload: string) => {
       const reply = await fetch(new URL(`/c/${payload}`, base), { redirect: "manual" });
       return { status: reply.status, type: reply.headers.get("content-type") ?? "", text: await reply.text() };
     };
-    assert.equal((await land(code)).status, 302, "the whole link still goes on to the app");
+    const refusedPage = (page: Awaited<ReturnType<typeof land>>, what: string, status: number, headline: RegExp, why: string) => {
+      assert.equal(page.status, status, `${what} keeps its ${status}`);
+      assert.match(page.type, /^text\/html/, `${what} gets a page`);
+      assert.match(page.text, headline, `${what} keeps its headline (${page.text})`);
+      assert.ok(page.text.includes(why), `${what} says why: ${js(why)} (${page.text})`);
+      assert.match(page.text, new RegExp(`<a href="[^"]*/">Open ${APP_NAME}</a>`), `${what} has Open ${APP_NAME}`);
+      assert.ok(!/Terry|Low Tides/.test(page.text), `${what} names nobody and no band`);
+    };
+    const terry = new Phone(home.base);
+    ok(await terry.createAccount("Terry Bass"), "Terry signs up");
+    const bandId = ok(await terry.call("/api/bands/create", { name: "The Low Tides" }), "Terry makes a band").bandId as string;
+    const code = ok(await terry.call("/api/codes", { kind: "band", bandId }), "Terry's invite").code as string;
+    assert.equal((await land(home.base, code)).status, 302, "the whole link still goes on to the app");
+
     const mistyped = {
       "a link cut short": code.slice(0, -6),
       "a link with one character copied wrong": code.replace(/.(?=.{3}$)/, (c) => (c === "A" ? "B" : "A")),
     };
     for (const [what, bad] of Object.entries(mistyped)) {
-      const page = await land(bad);
-      assert.equal(page.status, 404, `${what} is still a 404`);
-      assert.match(page.type, /^text\/html/, `${what} gets a page`);
-      assert.match(page.text, /This code doesn't work/, `${what} says the code doesn't work`);
-      assert.match(page.text, /whole link/i, `${what} says to check the whole link was copied (${page.text})`);
-      assert.match(page.text, /fresh one/i, `${what} says to ask for a fresh one`);
-      assert.match(page.text, new RegExp(`<a href="[^"]*/">Open ${APP_NAME}</a>`), `${what} has Open ${APP_NAME}`);
-      assert.ok(!/Terry|Low Tides/.test(page.text), `${what} names nobody`);
+      refusedPage(await land(home.base, bad), what, 404, /This code doesn't work/, WHY.incomplete);
+      const scanned = await terry.call("/api/bands/code", { code: bad });
+      assert.deepEqual([scanned.status, scanned.body.error], [404, "bad-code"], `${what} is bad-code in the app`);
     }
-    ok(await terry.call("/api/codes/stop", { code }), "Terry stops the code");
-    const stopped = await land(code);
-    assert.deepEqual([stopped.status, /This code was stopped/.test(stopped.text)], [410, true], "a stopped code keeps its 410 and its words");
+
+    const rotated = await startApi({ SESSION_SECRET: "a-rotated-preview-session-secret-0123456789" });
+    try {
+      const old = new Phone(rotated.base);
+      ok(await old.createAccount("Old Key"), "a player on the server before the key changed");
+      const oldBand = ok(await old.call("/api/bands/create", { name: "Old Band" }), "a band there").bandId as string;
+      const signedBefore = ok(await old.call("/api/codes", { kind: "band", bandId: oldBand }), "an invite signed with the old key").code as string;
+      refusedPage(await land(home.base, signedBefore), "a link signed with an older key", 404, /This code doesn't work/, WHY.incomplete);
+    } finally {
+      await rotated.worker.dispose();
+    }
+
+    const elsewhere = await startApi();
+    try {
+      const lost = new Phone(elsewhere.base);
+      ok(await lost.createAccount("Gone Row"), "a player on a server whose codes table is not home's");
+      const goneBand = ok(await lost.call("/api/bands/create", { name: "Gone Band" }), "a band there").bandId as string;
+      const replaced = ok(await lost.call("/api/codes", { kind: "band", bandId: goneBand }), "an invite home has no row for").code as string;
+      refusedPage(await land(home.base, replaced), "a real link whose code is gone", 404, /This code doesn't work/, WHY.replaced);
+      const scanned = await terry.call("/api/bands/code", { code: replaced });
+      assert.deepEqual([scanned.status, scanned.body.error], [404, "code-replaced"], "and it is code-replaced in the app");
+      assert.ok(!js(scanned.body).includes("Gone"), "the refusal carries no band or person");
+    } finally {
+      await elsewhere.worker.dispose();
+    }
+
+    const before = Date.now();
+    ok(await terry.call("/api/codes/stop", { code }), "Terry resets the invite");
+    const stopped = await land(home.base, code);
+    const resetWords = [WHY.reset(before), WHY.reset(Date.now())].find((words) => stopped.text.includes(words)) ?? WHY.reset(before);
+    refusedPage(stopped, "a reset link", 410, /This code was stopped/, resetWords);
+    assert.equal((await terry.call("/api/bands/code", { code })).body.error, "code-stopped", "and it is code-stopped in the app");
+
+    const short = ok(await terry.call("/api/codes", { kind: "friend-now" }), "Terry's in-person code") as { code: string; expiresAt: number };
+    await settle(Math.max(0, short.expiresAt - Date.now()) + 200);
+    refusedPage(await land(home.base, short.code), "an ended link", 410, /This code has ended/, WHY.ended(short.expiresAt));
+    assert.equal((await terry.call("/api/friends/code", { code: short.code })).body.error, "code-ended", "and it is code-ended in the app");
   } finally {
-    await worker.dispose();
+    await home.worker.dispose();
   }
 });
 
@@ -89,7 +159,14 @@ apiBase = main.base;
 try {
   const app = await appPage(site);
   await site.send("Page.addScriptToEvaluateOnNewDocument", {
-    source: `window.__calls = []; window.__fetch = window.fetch.bind(window); window.fetch = (input, init) => { window.__calls.push(new URL(String(input instanceof Request ? input.url : input), location.href).pathname); return window.__fetch(input, init); };`,
+    // __calls is every path the page fetched; __links is each link the server handed back from /api/codes.
+    source: `window.__calls = []; window.__links = []; window.__fetch = window.fetch.bind(window); window.fetch = (input, init) => {
+      const path = new URL(String(input instanceof Request ? input.url : input), location.href).pathname;
+      window.__calls.push(path);
+      const reply = window.__fetch(input, init);
+      if (path === "/api/codes") reply.then((r) => r.clone().json()).then((body) => body.link && window.__links.push(body.link), () => {});
+      return reply;
+    };`,
   });
 
   const waitFor = async (expression: string, what: string, ms = 15000) => {
@@ -163,7 +240,7 @@ try {
     await openBand(lowTides);
     await settle(2000);
     await app.click("Invite", `${bandPage}.querySelector("header")`);
-    await waitFor(`[...${bandPage}.querySelectorAll("[role=alert], [role=status]")].some((el) => /admin/i.test(el.textContent))`, "words saying an admin invites");
+    await waitFor(`[...${bandPage}.querySelectorAll("[role=alert], [role=status]")].some((el) => el.textContent.includes("Only a band admin can do that."))`, "Only a band admin can do that.");
     await app.click("Show as QR", bandPage);
     await waitFor(`${bandPage}.dataset.view === "invite"`, "the invite view");
     await settle(1500);
@@ -194,7 +271,72 @@ try {
     assert.deepEqual(await site.evaluate<unknown[]>("window.__shared"), [], "Copy link copies even where a share sheet exists");
   });
 
-  await check("pasting a band, setlist or friend link (or a bare code) opens the same screen the camera scan opens", async () => {
+  await check("Copy link puts the server's link on the clipboard on the Invite page and every Share link page", async () => {
+    await site.send("Browser.grantPermissions", { origin, permissions: ["clipboardReadWrite", "clipboardSanitizedWrite"] });
+    await site.send("Page.bringToFront");
+    /** Copy link on the page in `scope`, after the server's code reply, and what the real clipboard then holds. */
+    const copyOn = async (scope: string, what: string) => {
+      await waitFor(`!!${scope}?.querySelector(".codes-link") && window.__links.length > 0`, `${what}: the link and the server's reply`);
+      const link = await site.evaluate<string>("window.__links.at(-1)");
+      assert.equal(await site.evaluate<string>(`${scope}.querySelector(".codes-link").textContent.trim()`), link, `${what}: the whole server link is on screen`);
+      await site.send("Page.bringToFront");
+      await site.evaluate(`navigator.clipboard.writeText("")`);
+      await app.click("Copy link", scope);
+      await waitFor(`[...${scope}.querySelectorAll("button")].some((b) => b.textContent.trim() === "Copied")`, `${what}: Copied`);
+      assert.equal(await site.evaluate<string>("navigator.clipboard.readText()"), link, `${what}: the clipboard holds the server's link`);
+    };
+    const fromNoLinks = () => site.evaluate("window.__links = []");
+
+    await openBand(trio);
+    await fromNoLinks();
+    await app.click("Show as QR", bandPage);
+    await copyOn(bandPage, "band Invite");
+
+    await site.evaluate(`location.hash = "#/songs"`);
+    await app.openMenu();
+    await app.pick("Friends");
+    await sheetView(".friends-sheet", "list");
+    await fromNoLinks();
+    await app.click("Share link", `document.querySelector(".friends-sheet")`);
+    await copyOn(`document.querySelector(".friends-sheet")`, "friend Share link");
+    await app.click("✕", `document.querySelector(".friends-sheet")`);
+
+    await openBand(lowTides);
+    await app.click("Setlists", `document.querySelector(".band-tabs")`);
+    const harbor = `document.querySelector(${js(`.band-library-setlists [data-setlist="${setlistId}"]`)})`;
+    await waitFor(`!!${harbor}`, "the Harbor set row");
+    await fromNoLinks();
+    await app.click("Show code", harbor);
+    await copyOn(bandPage, "band setlist Show code");
+
+    await site.send("Page.navigate", { url: `${origin}/?load=${(loads += 1)}#/songs` });
+    await app.library();
+    await site.evaluate(`document.getElementById("tab-setlists").click()`);
+    const worship = `document.querySelector("section.setlist[aria-label='Worship Set']")`;
+    await waitFor(`!!${worship}`, "the built-in Worship Set");
+    await app.click("Show code", worship);
+    await waitFor(`!!document.querySelector(".setlist-code-sheet")`, "the setlist code sheet");
+    await app.click("Public", `document.querySelector(".setlist-code-sheet")`);
+    await fromNoLinks();
+    await app.click("Show code", `document.querySelector(".setlist-code-sheet")`);
+    await copyOn(`document.querySelector(".setlist-code-sheet")`, "my-setlist Show code");
+    await app.click("✕", `document.querySelector(".setlist-code-sheet")`);
+  });
+
+  await check("when the clipboard is refused, Copy link selects the link and says to copy it", async () => {
+    await openBand(trio);
+    await app.click("Show as QR", bandPage);
+    await waitFor(`!!document.querySelector(".band-page .codes-link")`, "the invite link");
+    const link = (await app.text(".band-page .codes-link")).trim();
+    await site.evaluate(`Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: () => Promise.reject(new DOMException("Write permission denied.", "NotAllowedError")) } })`);
+    await site.evaluate("getSelection().removeAllRanges()");
+    await app.click("Copy link", bandPage);
+    await waitFor(`[...${bandPage}.querySelectorAll("[role=alert], [role=status], .account-note")].some((el) => el.textContent.trim() === "Select the link above and copy it.")`, "Select the link above and copy it.");
+    assert.equal((await site.evaluate<string>("getSelection().toString()")).trim(), link, "the whole link is selected for a hand copy");
+    assert.ok(!(await app.texts(".band-page button")).includes("Copied"), "and nothing claims it was copied");
+  });
+
+  await check("pasting a band, setlist, gig or friend link, or a bare code, opens the same screen the camera scan opens", async () => {
     const mikesBand = await linkOf(mike, { kind: "band", bandId: quartet });
     const toScan = async () => {
       await app.openBands();
@@ -219,12 +361,21 @@ try {
 
     await app.click("Back", `document.querySelector(".bands-sheet")`);
     await app.click("Scan a code", `document.querySelector(".bands-sheet")`);
-    await paste(".bands-sheet", mikesBand.link.slice(0, -5));
-    await waitFor(`!!document.querySelector(".bands-sheet [role=alert]")`, "words for a link cut short");
-    assert.equal(await site.evaluate<string>(`document.querySelector(".bands-sheet").dataset.view`), "scan", "a link cut short stays on Scan a code");
+    const notALink = `[...document.querySelectorAll(".bands-sheet [role=alert]")].some((el) => el.textContent.includes(${js(NOT_A_LINK)}))`;
+    for (const [what, text] of Object.entries({ "a link cut short": mikesBand.link.slice(0, -5), "plain words": "see you at the gig friday" })) {
+      await paste(".bands-sheet", text);
+      await waitFor(notALink, `${NOT_A_LINK} for ${what}`);
+      assert.equal(await site.evaluate<string>(`document.querySelector(".bands-sheet").dataset.view`), "scan", `${what} stays on Scan a code`);
+    }
 
     await paste(".bands-sheet", (await linkOf(terry, { kind: "band-setlist", bandId: lowTides, setlistId })).link);
     await waitFor(`!!document.querySelector(${js(`.band-library-setlists [data-setlist="${setlistId}"][aria-current="true"]`)})`, "the pasted setlist, open and marked");
+
+    const date = new Date(Date.now() + 7 * DAY_MS).toISOString().slice(0, 10);
+    const gigId = ok(await terry.call("/api/bands/gig/plan", { bandId: lowTides, setlistId, name: "Harbor night", date }), "Terry plans a gig with Sam on the lineup").gig.gigId as string;
+    await toScan();
+    await paste(".bands-sheet", (await linkOf(terry, { kind: "gig", bandId: lowTides, gigId })).link);
+    await waitFor(`!!document.querySelector(${js(`.band-page [data-gig="${gigId}"]`)})`, "the pasted gig on the band page");
 
     await site.evaluate(`location.hash = "#/songs"`);
     await app.openMenu();
@@ -239,6 +390,91 @@ try {
     await app.click("✕", `document.querySelector(".friends-sheet")`);
   });
 
+  await check("a refused or offline paste says why in the app and joins nobody", async () => {
+    const bandsSheet = `document.querySelector(".bands-sheet")`;
+    const alertSays = (words: string) => waitFor(`[...document.querySelectorAll(".bands-sheet [role=alert]")].some((el) => el.textContent.trim() === ${js(words)})`, js(words));
+    const toScan = async () => {
+      await site.send("Page.navigate", { url: `${origin}/?load=${(loads += 1)}#/songs` });
+      await app.library();
+      await app.openBands();
+      await sheetView(".bands-sheet", "list");
+      await app.click("Scan a code", bandsSheet);
+    };
+    const mikesBand = await linkOf(mike, { kind: "band", bandId: quartet });
+
+    await toScan();
+    await paste(".bands-sheet", mikesBand.link.replace(/.(?=.{3}$)/, (c) => (c === "A" ? "B" : "A")));
+    await alertSays(WHY.incomplete);
+
+    const elsewhere = await startApi({ APP_ORIGIN: origin, RP_ID: "localhost", PASSWORD_PEPPER });
+    try {
+      const lost = new Phone(elsewhere.base);
+      ok(await lost.createAccount("Gone Row"), "a player whose codes this server never saw");
+      const goneBand = ok(await lost.call("/api/bands/create", { name: "Gone Band" }), "a band there").bandId as string;
+      const replaced = await linkOf(lost, { kind: "band", bandId: goneBand });
+      await toScan();
+      await paste(".bands-sheet", replaced.link);
+      await alertSays(WHY.replaced);
+      assert.ok(!(await site.evaluate<string>(`${bandsSheet}.textContent`)).includes("Gone"), "the refusal names no band or person");
+    } finally {
+      await elsewhere.worker.dispose();
+    }
+
+    await toScan();
+    await site.send("Network.enable");
+    await site.send("Network.emulateNetworkConditions", { offline: true, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+    try {
+      await paste(".bands-sheet", mikesBand.link);
+      await alertSays(OFFLINE);
+    } finally {
+      await site.send("Network.emulateNetworkConditions", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+    }
+    await toScan();
+    await paste(".bands-sheet", mikesBand.link);
+    await waitFor(`document.querySelector(".bands-sheet .codes-words")?.textContent === "Mike's Quartet Invited by Mike Keys"`, "the band, once back online");
+    assert.ok(!(await membersOf(mike, quartet)).includes("Sam Rivera"), "no paste, offline or not, joined Sam");
+    await app.click("✕", bandsSheet);
+  });
+
+  await check("a band setlist code says up front who can open it and an empty setlist asks for a song first", async () => {
+    const membersOnly = "Only members of The Low Tides can open this code.";
+    const emptyId = ok(await terry.call("/api/bands/library/share-setlist", { bandId: lowTides, name: "Empty set", songIds: [], tags: [], choice: "public", localId: null }), "Terry shares an empty setlist")
+      .setlistId as string;
+    const row = (id: string) => `document.querySelector(${js(`.band-library-setlists [data-setlist="${id}"]`)})`;
+    await openBand(lowTides);
+    await app.click("Setlists", `document.querySelector(".band-tabs")`);
+    await waitFor(`!!${row(emptyId)} && !!${row(setlistId)}`, "the Harbor and Empty set rows");
+    assert.ok(!(await site.evaluate<string[]>(`[...${row(emptyId)}.querySelectorAll("button")].map((b) => b.textContent.trim())`)).includes("Show code"), "an empty setlist has no Show code");
+    assert.match(await site.evaluate<string>(`${row(emptyId)}.textContent`), /Add a song first/, "and says Add a song first");
+
+    const before = (await site.evaluate<string[]>("window.__calls")).length;
+    await site.evaluate("window.__links = []");
+    await app.click("Show code", row(setlistId));
+    await waitFor(`!!document.querySelector(".band-page .codes-qr svg") && window.__links.length > 0`, "the Harbor set code and the server's first reply");
+    const upFront = await site.evaluate<{ line: boolean; first: boolean }>(`(() => {
+      const line = [...document.querySelectorAll(".band-page p")].find((p) => p.textContent.trim() === ${js(membersOnly)});
+      const qr = document.querySelector(".band-page .codes-qr");
+      return { line: !!line, first: !!line && !!(line.compareDocumentPosition(qr) & Node.DOCUMENT_POSITION_FOLLOWING) };
+    })()`);
+    assert.deepEqual(upFront, { line: true, first: true }, `the code page says ${js(membersOnly)} above the code`);
+    await settle(3000);
+    const posts = (await site.evaluate<string[]>("window.__calls")).slice(before).filter((path) => path === "/api/codes");
+    assert.equal(posts.length, 1, `the never-ending code is asked for once in three seconds, not ${posts.length} times`);
+
+    const quartetSong = ok(await mike.call("/api/bands/library/share-song", { bandId: quartet, song: chart(1, "Quartet tune"), choice: "public", localId: null }), "Mike shares a song").songId as string;
+    const quartetSet = ok(await mike.call("/api/bands/library/share-setlist", { bandId: quartet, name: "Quartet set", songIds: [quartetSong], tags: [], choice: "public", localId: null }), "Mike shares a setlist")
+      .setlistId as string;
+    await site.send("Page.navigate", { url: `${origin}/?load=${(loads += 1)}#/songs` });
+    await app.library();
+    await app.openBands();
+    await sheetView(".bands-sheet", "list");
+    await app.click("Scan a code", `document.querySelector(".bands-sheet")`);
+    await paste(".bands-sheet", (await linkOf(mike, { kind: "band-setlist", bandId: quartet, setlistId: quartetSet })).link);
+    await waitFor(`[...document.querySelectorAll(".bands-sheet [role=alert]")].some((el) => el.textContent.trim() === "This setlist belongs to a band you're not in.")`, "the not-in-band words");
+    assert.ok(!(await site.evaluate<string>(`document.querySelector(".bands-sheet").textContent`)).includes("Quartet set"), "the refusal names no setlist");
+    await app.click("✕", `document.querySelector(".bands-sheet")`);
+  });
+
   await check("invite page and Scan a code sheets fit at 344, 390, 820, 884 and 1280 px", async () => {
     for (const width of WIDTHS) {
       await atWidth(width);
@@ -246,6 +482,12 @@ try {
       await app.click("Show as QR", bandPage);
       await waitFor(`!!document.querySelector(".band-page .codes-link")`, "the invite link");
       await fitsAt(width, "the invite page");
+      await openBand(lowTides);
+      await app.click("Setlists", `document.querySelector(".band-tabs")`);
+      await waitFor(`!!document.querySelector(${js(`.band-library-setlists [data-setlist="${setlistId}"]`)})`, "the Harbor set row");
+      await app.click("Show code", `document.querySelector(${js(`.band-library-setlists [data-setlist="${setlistId}"]`)})`);
+      await waitFor(`!!document.querySelector(".band-page .codes-link")`, "the band setlist code");
+      await fitsAt(width, "the band setlist code page");
       await app.openBands();
       await sheetView(".bands-sheet", "list");
       await app.click("Scan a code", `document.querySelector(".bands-sheet")`);

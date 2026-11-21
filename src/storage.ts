@@ -1,4 +1,5 @@
 import seedLibrary from "../data/library.json";
+import { PER_ACCOUNT, SONG_SETTING_KEYS } from "./backup-keys";
 import { clampScrollPercent, isNotation, pitchClass, type Notation } from "./music";
 import { parsePersonal, type PersonalDefaults } from "./personal-settings-model";
 import type { Learned, Mark, ScrollPlan, Span, Tempo } from "./scroll-timing";
@@ -11,6 +12,14 @@ export const SCROLL_PERCENT_KEY = "leadSheetsScrollPercent";
 /** Per-song Notes/Nashville choice, stored under `leadSheetsNotation.<ref key>`. The spec does not name the key. */
 export const NOTATION_KEY = "leadSheetsNotation";
 export const PENDING_INVITE_KEY = "leadSheetsPendingInvite";
+/** This phone's sync state for the signed-in account (`src/backup.ts`). Present only while signed in. */
+export const BACKUP_KEY = "leadSheetsBackup";
+/** Each backed-up value an account left on this phone when it signed out, by key: that account and a print of the value. */
+export const LEFT_BY_KEY = "leadSheetsLeftBy";
+/** `leadSheetsSetAside.<account id>`: that account's values moved off this phone's keys while another account's backup used them. */
+export const SET_ASIDE_KEY = "leadSheetsSetAside";
+/** Present when the server keeps My Songs per account, so the list shows only the signed-in account's own songs. */
+export const LIBRARY_MODE_KEY = "leadSheetsLibraryMode";
 
 /** Sheet body scale. 100% is the default. Steps are a Phase 1 stand-in; the spec doesn't set them. */
 export const TEXT_SCALES = [0.85, 1, 1.15, 1.3, 1.5, 1.7] as const;
@@ -182,15 +191,51 @@ function storedLibrary(stored: Partial<StoredLibrary> | null): StoredLibrary {
   return { ...seed, songs: songs.items, setlists: setlists.items, seedPrints: { songs: songs.prints, setlists: setlists.prints } };
 }
 
+/** The library as stored, and per account without what other accounts left here. Only the stored copy is written back. */
 export function loadLibrary(): Library {
   const raw = readRaw(LIBRARY_KEY);
   const library = storedLibrary(parseStored(raw));
   const next = JSON.stringify(library);
   if (next !== raw) writeRaw(LIBRARY_KEY, next);
+  const shown = readRaw(LIBRARY_MODE_KEY) === PER_ACCOUNT ? withoutOthers(library, next) : library;
   return {
-    songs: library.songs.map((song) => ({ ...song, ref: localRef(song.id) })),
-    setlists: library.setlists.map(({ songIds, ...setlist }) => ({ ...setlist, songRefs: songIds.map(localRef) })),
+    songs: shown.songs.map((song) => ({ ...song, ref: localRef(song.id) })),
+    setlists: shown.setlists.map(({ songIds, ...setlist }) => ({ ...setlist, songRefs: songIds.map(localRef) })),
   };
+}
+
+/** The library without the own songs and setlists other accounts left here. A seed song one of them edited shows as the seed. */
+function withoutOthers(library: StoredLibrary, raw: string): StoredLibrary {
+  const others = leftByOthers(ownLibraryItems(raw), backupAccount());
+  if (others.size === 0) return library;
+  const kept = (row: string) => (item: { id: number }) => !others.has(`${row}.${item.id}`);
+  return storedLibrary({ ...library, songs: library.songs.filter(kept(SONG_ROW)), setlists: library.setlists.filter(kept(SETLIST_ROW)) });
+}
+
+/** The account this phone backs up to, or null signed out. */
+export function backupAccount(): string | null {
+  const account = readObject(BACKUP_KEY).account;
+  return typeof account === "string" ? account : null;
+}
+
+export type LeftBy = Record<string, [account: string, print: string]>;
+
+export const valuePrint = (value: string) => fingerprint(value);
+
+export const readLeftBy = () => readObject(LEFT_BY_KEY) as LeftBy;
+
+/**
+ * The keys in `values` that another account left here and nobody changed since, each with that account: not
+ * `account`'s to back up, and per account not shown. A value changed after its account left was changed by whoever
+ * used the phone next, so it is theirs.
+ */
+export function leftByOthers(values: Map<string, string>, account: string | null, leftBy: LeftBy = readLeftBy()): Map<string, string> {
+  const others = new Map<string, string>();
+  for (const [key, value] of values) {
+    const entry = leftBy[key];
+    if (Array.isArray(entry) && typeof entry[0] === "string" && entry[0] !== account && entry[1] === valuePrint(value)) others.set(key, entry[0]);
+  }
+  return others;
 }
 
 /** Backup row names, not localStorage keys: each own song and setlist is backed up as its own row, `leadSheetsSong.<id>` or `leadSheetsSetlist.<id>`. */
@@ -291,6 +336,42 @@ export function addOwnSetlist(setlist: Omit<StoredSetlist, "id">): number | null
 
 /** Puts a new chart in an own song's place, read from what is stored now. */
 export const replaceOwnSong = (id: number, song: Omit<Song, "ref" | "id">) => writeOwnSong(readRaw(LIBRARY_KEY), id, song);
+
+const SEED_SONG_IDS = new Set(seedLibrary.songs.map((song) => song.id));
+
+/** A song the player made: not a built-in song, edited or not, and not a copy from a band or a friend. Only these can be edited or deleted. */
+export const madeHere = (song: Pick<Song, "id" | "copy">) => !SEED_SONG_IDS.has(song.id) && song.copy === undefined;
+
+/**
+ * Removes a song the player made from the library, from every own setlist, and its per-song settings and drafts, so
+ * a song added later under the same id starts clean. Backup sends each removed key as gone. False for any other song,
+ * or when the browser refused the write.
+ */
+export function removeOwnSong(id: number): boolean {
+  const raw = readRaw(LIBRARY_KEY);
+  const song = storedLibrary(parseStored(raw)).songs.find((item) => item.id === id);
+  if (!song || !madeHere(song)) return false;
+  const changes = new Map<string, string | null>([[`${SONG_ROW}.${id}`, null]]);
+  for (const [key, value] of ownLibraryItems(raw)) {
+    if (!key.startsWith(`${SETLIST_ROW}.`)) continue;
+    const entry = JSON.parse(value) as OwnEntry<StoredSetlist>;
+    if (entry.item.songIds.includes(id)) changes.set(key, JSON.stringify({ ...entry, item: { ...entry.item, songIds: entry.item.songIds.filter((each) => each !== id) } }));
+  }
+  if (!writeRaw(LIBRARY_KEY, withOwnLibraryItems(raw, changes))) return false;
+  const draft = `${SONG_DRAFT_KEY}.${id}`;
+  const keys = [...SONG_SETTING_KEYS.map((key) => `${key}.${id}`), ...storedKeys().filter((key) => key === draft || key.startsWith(`${draft}.`))];
+  for (const key of keys) removeRaw(key);
+  storageChanged();
+  return true;
+}
+
+function storedKeys(): string[] {
+  try {
+    return Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index)).filter((key): key is string => key !== null);
+  } catch {
+    return [];
+  }
+}
 
 /** An own song or setlist entry copied to a new id, named "<name> · from <phone>". It is an added item, so it has no seed print. */
 export function copiedOwnItem(value: string, id: number, phone: string): string {

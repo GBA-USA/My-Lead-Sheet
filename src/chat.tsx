@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { NOT_A_MEMBER_CLOSE, firstUnreadSeq, isMuted, newMsgId, previewText, unread, withMessages, type ChatEntry, type ChatMessage } from "./chat-model";
+import { NOT_A_MEMBER_CLOSE, firstUnreadSeq, isMuted, newMsgId, previewText, unread, withMessages, type BandSongCard, type ChatEntry, type ChatMessage } from "./chat-model";
 import { onDelivery, onQueueChange, queueMessage, queuedMessages, sendQueued, type Delivery } from "./chat-queue";
 export { queueOwner } from "./chat-queue";
 import type { Route } from "./route";
@@ -191,7 +191,7 @@ export function useRoomSocket({
     if (entry && last && entry.lastReadSeq < last.seq) markRead(last.seq);
   }, [entry?.lastReadSeq, last?.seq]);
 
-  const send = (text: string) => queueMessage({ msgId: newMsgId(), roomId, text, at: Date.now(), from: me });
+  const send = (text: string, card?: BandSongCard) => queueMessage({ msgId: newMsgId(), roomId, text, at: Date.now(), from: me, card });
 
   return { messages, waiting: queue.filter((item) => item.roomId === roomId), newLineAt, error, failed, send };
 }

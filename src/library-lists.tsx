@@ -124,7 +124,7 @@ function SongRowText({ song }: { song: Song }) {
  * account's never does. Each change to the phone's band data reads it again, so a sign-out that clears the phone
  * empties open results too.
  */
-export function SongList({ songs, userId }: { songs: Song[]; userId: string | null }) {
+export function SongList({ songs, userId, onAdd }: { songs: Song[]; userId: string | null; onAdd?: () => void }) {
   const [query, setQuery] = useState("");
   const [chips, setChips] = useState(NO_CHIPS);
   const [held, setHeld] = useState<CachedBandSong[]>([]);
@@ -177,12 +177,17 @@ export function SongList({ songs, userId }: { songs: Song[]; userId: string | nu
   return (
     <>
       <SearchBox label="Search songs" value={query} onChange={setQuery} />
+      {onAdd && !searching ? (
+        <button type="button" className="song-list-add" onClick={onAdd}>
+          + Add a song
+        </button>
+      ) : null}
       {searching ? <SearchChips keys={keys} bands={bands} chips={chips} onChange={setChips} /> : null}
       {!searching ? (
         <ul className="song-list">{songs.map(row)}</ul>
       ) : groups.length === 0 ? (
         <p className="search-empty" role="status">
-          Nothing matches
+          {query.trim() ? `Nothing matches "${query.trim()}"` : "Nothing matches"}
         </p>
       ) : (
         groups.map((group, index) => (

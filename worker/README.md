@@ -54,6 +54,7 @@ A removed member's open socket closes with code 4403 and their chat calls answer
 | `CF_ACCOUNT_ID` | Account whose relay usage the spend guard reads |
 | `TURN_KEY_ID` | Cloudflare Realtime TURN key id |
 | `RELAY_CAP_GB` | Monthly relay cap, 50 |
+| `MY_SONGS_PER_ACCOUNT` | `1` keeps My Songs per account: a phone lists only the signed-in account's own songs, the rows its backup holds. Empty (the default) keeps My Songs per phone. |
 
 Secrets go in with `wrangler secret put NAME --env production`, never in a file: `SESSION_SECRET`, `PASSWORD_PEPPER`, `CODE_SIGNING_KEY`, `GOOGLE_CLIENT_SECRET`, `TURN_API_TOKEN`, `CF_ANALYTICS_TOKEN`.
 

@@ -49,6 +49,7 @@ export function CodeOfferButton({ offer, busy, onShow }: { offer: CodeOffer; bus
 export function BandSetlistCode({ bandId, bandName, setlist, onBack, onError }: { bandId: string; bandName: string; setlist: BandSetlist; onBack: () => void; onError: (error: unknown) => void }) {
   return (
     <>
+      <p className="account-note">Only members of {bandName} can open this code.</p>
       <ShowCode
         request={{ kind: "band-setlist", bandId, setlistId: setlist.setlistId }}
         words={`${setlist.name} · ${bandName}`}
@@ -56,7 +57,6 @@ export function BandSetlistCode({ bandId, bandName, setlist, onBack, onError }: 
         onStopped={onBack}
         onError={onError}
       />
-      <p className="account-note">Only members of {bandName} can open it.</p>
       <button type="button" className="account-link" onClick={onBack}>
         Back
       </button>

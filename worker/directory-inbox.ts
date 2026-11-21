@@ -7,7 +7,7 @@ import { randomBytes, toBase64Url } from "./bytes";
 import { pairOf } from "./directory-friends";
 import { signedIn, userById, who, type Context, type Route, type User } from "./directory-http";
 import { fromRoom, Refused } from "./refused";
-import type { Posted } from "./room-chat";
+import type { Card, Posted } from "./room-chat";
 import { liveCode } from "./codes";
 import { choiceIn, guardContent, printOf, receivedCopy, record, selfRoom, setlistCopyFor, songIn } from "./room-library";
 
@@ -57,6 +57,20 @@ const entryOf = (row: InboxRow): ChatEntry => ({ roomId: row.room_id, kind: row.
 function roomIdIn(body: Record<string, unknown>): string {
   if (typeof body.roomId !== "string" || !ROOM_ID.test(body.roomId)) throw new Refused("bad-request");
   return body.roomId;
+}
+
+/** The shape of the ids a band song link takes (`ID` in `src/route.ts`), so a card's link always opens. */
+const BAND_SONG_ID = /^[\w-]{1,64}$/;
+
+/**
+ * The card a `POST /api/chat/send` may carry: a band-song card, in a band room. Its id is checked for shape, not looked
+ * up, so a card for a song the band no longer holds stays a card, which the phone shows as gone.
+ */
+function cardIn(body: Record<string, unknown>, roomId: string): Card | null {
+  if (body.card === undefined) return null;
+  const card = record(body.card);
+  if (!roomId.startsWith("band_") || card?.kind !== "band-song" || typeof card.songId !== "string" || !BAND_SONG_ID.test(card.songId)) throw new Refused("bad-request");
+  return { kind: "band-song", ref: card.songId };
 }
 
 function seqIn(value: unknown): number {
@@ -218,9 +232,10 @@ export const CHAT_ROUTES: Record<string, Route> = {
     const roomId = roomIdIn(c.body);
     const text = typeof c.body.text === "string" ? c.body.text.trim() : "";
     if (typeof c.body.msgId !== "string" || !MSG_ID.test(c.body.msgId) || text.length < 1 || text.length > MAX_MESSAGE_CHARS) throw new Refused("bad-request");
+    const card = cardIn(c.body, roomId);
     const me = signedIn(c);
     await allowRoom(c, me, roomId);
-    const posted = await fromRoom(c.env.ROOM.getByName(roomId).chatPost(who(me), c.body.msgId, text, c.now));
+    const posted = await fromRoom(c.env.ROOM.getByName(roomId).chatPost(who(me), c.body.msgId, text, c.now, card));
     deliver(c, roomId, posted);
     return { body: { message: posted.message } };
   },

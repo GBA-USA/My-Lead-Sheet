@@ -76,6 +76,7 @@
     "check:ux-metronome-sheet": "node --experimental-strip-types scripts/check-ux-metronome-sheet.ts",
     "check:join-links": "tsc -p worker && node --experimental-strip-types scripts/check-join-links.ts",
     "check:scroll-sync": "node --experimental-strip-types scripts/check-scroll-sync.ts",
+    "check:ux-scroll-sync": "node --experimental-strip-types scripts/check-ux-scroll-sync.ts",
     "check:ci-deep": "node --experimental-strip-types scripts/check-ci-deep.ts"
   },
   "dependencies": {

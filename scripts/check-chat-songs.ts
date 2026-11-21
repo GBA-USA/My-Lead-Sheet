@@ -17,7 +17,7 @@ import type { BandLibrary, SongContent } from "../src/band-library-model.ts";
  * - A band-song card is `kind: "band-song"`, `ref` the band song id, `text` the line "🎵 <title> · <artist>". It is
  *   posted with `POST /api/chat/send` and `card: { kind: "band-song", songId }`, and a queued one waits with `card`.
  *   The thread draws it as `.chat-band-song`: a link to `#/band/<bandId>/song/<songId>` while the song is in the band,
- *   and the words "No longer in this band" with no link when it is not.
+ *   and the words "No longer in this band" with no link when a library fetched after the card arrived lacks it.
  * - The band page's composer has a `+ Song` button that opens `.chat-song-picker`, one button per band song. Typing
  *   `@` opens `.chat-mentions`, one button per other band member, or the words "No band members match". A DM has neither.
  * - Every message carries `mentions`, the ids it names. A line that names the reader has the class `chat-line-mention`.
@@ -271,6 +271,19 @@ try {
     })()`);
     assert.deepEqual([shown.links, shown.buttons], [0, 0], `nothing to tap on it (${js(shown)})`);
     assert.equal(await site.evaluate<boolean>(`!!${inline}.querySelector("[role=alert]")`), false, "and no error shows");
+  });
+
+  await check("a band-song card for a song shared after the reader opened the thread still opens the band copy", async () => {
+    await openBandChat(bandId);
+    const nightDrive = await share(chart("Night Drive", "Terry Bass", "Drive all night long"), 203);
+    assert.equal((await post(terry, bandId, "🎵 Night Drive · Terry Bass", { kind: "band-song", songId: nightDrive })).status, 200, "Terry points the band at the song he just shared");
+    const card = `${lineWith(inline, "Night Drive")}?.querySelector("a.chat-band-song")`;
+    await app.until(`!!${card}`, "the new song's card as a link in Sam's open thread", 15000);
+    await settle(1000);
+    assert.equal(await site.evaluate<string | null>(`${card}?.getAttribute("href") ?? null`), `#/band/${bandId}/song/${nightDrive}`, "it stays a link to the band copy");
+    assert.equal(await site.evaluate<boolean>(`${lineWith(inline, "Night Drive")}.textContent.includes("No longer in this band")`), false, "and never says the song is gone");
+    await site.evaluate(`${card}.click()`);
+    await app.until(`document.body.textContent.includes("Drive all night long")`, "the band copy of Night Drive for Sam");
   });
 
   await check("@name autocompletes band members only; the message stores the mentioned user ids; the mentioned member's thread highlights the line and another member's does not", async () => {

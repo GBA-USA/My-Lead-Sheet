@@ -14,14 +14,14 @@ export type MovedNote = { id: string; songId: string; authorName: string; body: 
 
 export type NoteFields = { noteId: string; songId: string; body: string };
 
-/** The id a phone gives a note so a retry after a lost reply stores it once. An imported note's id holds a `/`, so the two never meet. */
-const PHONE_NOTE_ID = /^[A-Za-z0-9_-]{8,64}$/;
-const MAX_NOTE_ID = 300;
+/** Every note's id: one the phone made so a retry after a lost reply stores it once, or one made here for a note added without one or imported. */
+const NOTE_ID = /^[A-Za-z0-9_-]{8,64}$/;
+const newNoteId = () => `note_${toBase64Url(randomBytes(16))}`;
 
 export function createNoteTables(sql: SqlStorage) {
   sql.exec(`CREATE TABLE IF NOT EXISTS song_notes (
     note_id TEXT PRIMARY KEY, song_id TEXT NOT NULL, author TEXT NOT NULL, author_name TEXT NOT NULL,
-    body TEXT NOT NULL, created_at INTEGER NOT NULL, deleted_at INTEGER
+    body TEXT NOT NULL, created_at INTEGER NOT NULL, deleted_at INTEGER, moved_from TEXT UNIQUE
   )`);
   sql.exec(`CREATE INDEX IF NOT EXISTS song_notes_by_song ON song_notes (song_id, created_at)`);
 }
@@ -88,16 +88,21 @@ export const movedNotes = (sql: SqlStorage): MovedNote[] =>
     .toArray()
     .map((row) => ({ id: row.note_id, songId: row.song_id, authorName: row.author_name, body: row.body, createdAt: row.created_at }));
 
-/** Keeps an imported note under `noteId`, made from the source's ids, so importing the same file again adds nothing. The importing admin stands as its author. */
-export function keepMovedNote(sql: SqlStorage, noteId: string, songId: string, adminId: string, note: MovedNote) {
+/**
+ * Keeps an imported note under a new local id, so the band's own file names it by that id the way songs and setlists
+ * export theirs. `movedFrom`, made from the source's ids, is the key that makes importing the same file again add
+ * nothing. The importing admin stands as its author.
+ */
+export function keepMovedNote(sql: SqlStorage, movedFrom: string, songId: string, adminId: string, note: MovedNote) {
   sql.exec(
-    `INSERT OR IGNORE INTO song_notes (note_id, song_id, author, author_name, body, created_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, NULL)`,
-    noteId,
+    `INSERT OR IGNORE INTO song_notes (note_id, song_id, author, author_name, body, created_at, deleted_at, moved_from) VALUES (?, ?, ?, ?, ?, ?, NULL, ?)`,
+    newNoteId(),
     songId,
     adminId,
     note.authorName,
     note.body,
     note.createdAt,
+    movedFrom,
   );
 }
 
@@ -107,15 +112,11 @@ const songIdIn = (value: unknown) => {
 };
 
 function noteIdIn(value: unknown): string {
-  if (typeof value !== "string" || value.length < 1 || value.length > MAX_NOTE_ID) throw new Refused("bad-request");
+  if (typeof value !== "string" || !NOTE_ID.test(value)) throw new Refused("bad-request");
   return value;
 }
 
-function phoneNoteIdIn(value: unknown): string {
-  if (value === undefined) return `note_${toBase64Url(randomBytes(16))}`;
-  if (typeof value !== "string" || !PHONE_NOTE_ID.test(value)) throw new Refused("bad-request");
-  return value;
-}
+const phoneNoteIdIn = (value: unknown) => (value === undefined ? newNoteId() : noteIdIn(value));
 
 function bodyIn(value: unknown): string {
   if (!isText(value, NOTE_MAX_CHARS)) throw new Refused("bad-request");

@@ -74,6 +74,7 @@ socket.addEventListener("message", (event) => {
   else waiter.resolve(message.result);
 });
 let nextId = 0;
+// eslint-disable-next-line prefer-const -- send() reads it before Target.attachToTarget below assigns it, so a const breaks this check
 let sessionId: string | undefined;
 function send(method: string, params: object = {}): Promise<any> {
   const id = (nextId += 1);

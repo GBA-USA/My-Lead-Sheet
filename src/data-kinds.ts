@@ -53,6 +53,17 @@ export const DATA_KINDS: readonly DataKind[] = [
     place: "phone",
     what: "While you are signed in: which account this phone backs up to, and what it last sent and received, so it only sends changes. Removed when you sign out.",
   },
+  {
+    key: "leadSheetsLeftBy",
+    place: "phone",
+    what: "Which account left each of your songs, setlists and song settings on this phone when it signed out, so another account signing in here never backs them up as its own.",
+  },
+  {
+    key: "leadSheetsSetAside",
+    place: "phone",
+    what: "For each account on this phone, its songs and song settings moved aside while the backup of another account used the same place, put back when that account signs in here again.",
+  },
+  { key: "leadSheetsLibraryMode", place: "phone", what: "Whether this server keeps My Songs per account, so My Songs shows only the songs of the account signed in." },
   { key: "users", place: "server", what: "Your account: the name bandmates see, your handle (the name others find you by), when you joined, and a number that goes up when you sign out everywhere." },
   {
     key: "passkeys",

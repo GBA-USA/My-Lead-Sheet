@@ -24,6 +24,7 @@ export interface Env {
   PASSWORD_MINUTE_MS?: string;
   CODE_MINUTE_MS?: string;
   PREVIEW_OPEN_ACCESS?: string;
+  MY_SONGS_PER_ACCOUNT?: string;
 }
 
 const ROOM_PATH = /^\/api\/rooms\/([A-Za-z0-9_-]{1,64})$/;

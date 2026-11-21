@@ -182,7 +182,7 @@ export function SongList({ songs, userId }: { songs: Song[]; userId: string | nu
         <ul className="song-list">{songs.map(row)}</ul>
       ) : groups.length === 0 ? (
         <p className="search-empty" role="status">
-          Nothing matches
+          {query.trim() ? `Nothing matches "${query.trim()}"` : "Nothing matches"}
         </p>
       ) : (
         groups.map((group, index) => (

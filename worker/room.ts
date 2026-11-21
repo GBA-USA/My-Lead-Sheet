@@ -2,7 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 import { NOT_A_MEMBER_CLOSE, type ChatMessage } from "../src/chat-model";
 import type { Person } from "./directory-http";
 import type { Env } from "./index";
-import { handleBackup } from "./room-backup";
+import { handleBackup, myLibraryPerAccount } from "./room-backup";
 import { chatRoom, createChatTables, type Card, type Posted } from "./room-chat";
 import { exportBand, importBandFile } from "./room-export";
 import { bandLibrary, createLibraryTables, selfCopies, type SentSetlist, type SetlistFields, type SetlistSend, type SetlistShare, type SongChange, type SongShare } from "./room-library";
@@ -66,7 +66,7 @@ export class Room extends DurableObject<Env> {
     const version = Number(request.headers.get(SESSION_HEADER));
     if (!userId || !(version >= this.floor(userId))) return Response.json({ error: "signed-out" }, { status: 401 });
     if (shutOut(this.ctx.storage.sql, userId)) return Response.json({ error: "not-a-member" }, { status: 403 });
-    if (new URL(request.url).pathname === BACKUP_PATH) return handleBackup(request, this.ctx.storage, this.ctx.id.name, userId);
+    if (new URL(request.url).pathname === BACKUP_PATH) return handleBackup(request, this.ctx.storage, this.ctx.id.name, userId, myLibraryPerAccount(this.env.MY_SONGS_PER_ACCOUNT));
     if (request.method === "POST") return importBandFile(request, this.ctx.storage, this.band, userId, this.env.APP_ORIGIN);
     if (request.headers.get("Upgrade") !== "websocket") {
       return Response.json({ room: this.ctx.id.name, peers: this.ctx.getWebSockets().length });

@@ -1051,6 +1051,10 @@ a:focus-visible {
   text-overflow: ellipsis;
 }
 
+.app:has(> .live-nav) .scroll-speed {
+  bottom: calc(var(--touch-stage) + 42px + env(safe-area-inset-bottom));
+}
+
 .gig-stage .song-chrome {
   --song-chrome-folded: calc(env(safe-area-inset-top) + 58px);
 }

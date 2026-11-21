@@ -75,6 +75,7 @@
     "check:ux-preview-entry": "tsc -p worker && node --experimental-strip-types scripts/check-ux-preview-entry.ts",
     "check:ux-metronome-sheet": "node --experimental-strip-types scripts/check-ux-metronome-sheet.ts",
     "check:join-links": "tsc -p worker && node --experimental-strip-types scripts/check-join-links.ts",
+    "check:ux-theme-sweep": "tsc -p worker && node --experimental-strip-types scripts/check-ux-theme-sweep.ts",
     "check:ci-deep": "node --experimental-strip-types scripts/check-ci-deep.ts"
   },
   "dependencies": {

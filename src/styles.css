@@ -284,7 +284,7 @@ html[data-theme="contrast"] {
   box-sizing: border-box;
 }
 
-html[data-theme="contrast"] :is(button, input, select, textarea):not([hidden]) {
+html[data-theme="contrast"] :is(button, input, select, textarea):not([hidden], .beat-pill) {
   border: var(--control-border);
 }
 
@@ -1691,6 +1691,12 @@ a:focus-visible {
 
 .beat-dot[data-beat="off"] {
   visibility: hidden;
+}
+
+/* The beat pill's box reaches over the chart text, so the high-contrast control border skips the pill and goes on the dot, inside the card's padding. */
+html[data-theme="contrast"] .beat-dot {
+  border: var(--control-border);
+  border-color: currentColor;
 }
 
 .privacy-link {

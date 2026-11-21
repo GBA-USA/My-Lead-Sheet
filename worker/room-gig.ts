@@ -1,17 +1,19 @@
 import type { SongContent } from "../src/band-library-model";
-import type { GigPlan, GigStatus, GigView, PackReceipt } from "../src/gig-plan-model";
+import { DETAIL_LIMITS, gigLine, KIND_WORDS, type GigDetails, type GigKind, type GigList, type GigPlan, type GigStatus, type GigView, type PackReceipt } from "../src/gig-plan-model";
 import { CHOICE_WORDS, type RouteChoice } from "../src/routes";
 import { randomBytes, toBase64Url, utf8 } from "./bytes";
 import { liveCode } from "./codes";
 import { signedIn, who, type Context, type Person, type Route, type User } from "./directory-http";
 import { deliver } from "./directory-inbox";
 import { fromRoom, Refused, roomRefused as refused } from "./refused";
-import { chatRoom, type Posted } from "./room-chat";
+import { addColumns, chatRoom, type Posted } from "./room-chat";
+import { isText } from "./room-library";
 import { bandIdIn, inRoom, roomOf, type RoomStore } from "./room-members";
 import { hmacKey } from "./session";
 
 const GIG_ID = /^gig_[A-Za-z0-9_-]{22}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const TIME = /^\d{2}:\d{2}$/;
 const MAX_LINEUP = 64;
 const GIG_LINK_DAYS = 30;
 
@@ -32,7 +34,16 @@ type GigRow = {
   started_at: number | null;
   ended_at: number | null;
   secret_rev: number;
+  kind: GigKind;
+  start_time: string | null;
+  call_time: string | null;
+  venue: string | null;
+  address: string | null;
+  notes: string | null;
 };
+
+/** The P2 columns. A band room made before them has its `gigs` table as it was, so each is added there once. */
+const GIG_COLUMNS_ADDED: Record<string, string> = { kind: "TEXT NOT NULL DEFAULT 'gig'", start_time: "TEXT", call_time: "TEXT", venue: "TEXT", address: "TEXT", notes: "TEXT" };
 
 /**
  * `GigPack` from `src/gig-pack.ts` as this Room makes it. That file reaches the phone's scroll code, which the Worker
@@ -45,8 +56,10 @@ export function createGigTables(sql: SqlStorage) {
   sql.exec(`CREATE TABLE IF NOT EXISTS gigs (
     gig_id TEXT PRIMARY KEY, setlist_id TEXT NOT NULL, name TEXT NOT NULL, date TEXT NOT NULL, song_order TEXT NOT NULL,
     lineup TEXT NOT NULL, leader TEXT NOT NULL, backup TEXT, route TEXT NOT NULL, epoch INTEGER NOT NULL, rev INTEGER NOT NULL,
-    state TEXT, status TEXT NOT NULL, started_at INTEGER, ended_at INTEGER, secret_rev INTEGER NOT NULL
+    state TEXT, status TEXT NOT NULL, started_at INTEGER, ended_at INTEGER, secret_rev INTEGER NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'gig', start_time TEXT, call_time TEXT, venue TEXT, address TEXT, notes TEXT
   )`);
+  addColumns(sql, "gigs", GIG_COLUMNS_ADDED);
   sql.exec(`CREATE TABLE IF NOT EXISTS pack_receipts (gig_id TEXT NOT NULL, user_id TEXT NOT NULL, pack_rev INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (gig_id, user_id))`);
   sql.exec(`CREATE TABLE IF NOT EXISTS gig_ops (gig_id TEXT NOT NULL, op_id TEXT NOT NULL, rev INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (gig_id, op_id))`);
 }
@@ -76,6 +89,12 @@ const planOf = (row: GigRow, bandId: string): GigPlan => ({
   backup: row.backup,
   route: row.route,
   status: row.status,
+  kind: row.kind ?? "gig",
+  startTime: row.start_time ?? null,
+  callTime: row.call_time ?? null,
+  venue: row.venue ?? null,
+  address: row.address ?? null,
+  notes: row.notes ?? null,
 });
 
 function viewOf({ sql, bandId }: RoomStore, row: GigRow): GigView {
@@ -85,7 +104,7 @@ function viewOf({ sql, bandId }: RoomStore, row: GigRow): GigView {
     .toArray()
     .filter((receipt) => lineup.includes(receipt.user_id))
     .map((receipt): PackReceipt => ({ userId: receipt.user_id, packRev: receipt.pack_rev, at: receipt.at }));
-  return { gig: planOf(row, bandId), packRev: row.rev, receipts };
+  return { gig: planOf(row, bandId), packRev: row.rev, receipts, songCount: (JSON.parse(row.song_order) as string[]).length };
 }
 
 /** A lineup of active members, each once. The leader must be on it. */
@@ -144,20 +163,21 @@ async function gigSecret(sessionSecret: string | undefined, bandId: string, gigI
   return toBase64Url(new Uint8Array(mac));
 }
 
-export type GigFields = { gigId: string; setlistId: string; name: string; date: string; lineup: string[] | null; leader: string | null; backup: string | null; route: RouteChoice };
+export type GigFields = { gigId: string; setlistId: string; name: string; date: string; lineup: string[] | null; leader: string | null; backup: string | null; route: RouteChoice } & GigDetails;
 
 /** Every user id here is trusted: only the Directory calls these, after it has checked the session. */
 export const gigRoom = {
   /**
    * An admin plans a gig from a band setlist. The setlist's order is copied now, so every pack has the same songs in the
-   * same order however the setlist changes later. The card goes into the band chat in the same step. The same `gigId`
-   * again returns the gig already made, so a retry after a lost reply makes no second gig or card.
+   * same order however the setlist changes later. The card goes into the band chat in the same step, its words the gig's
+   * name and `gigLine`. The same `gigId` again returns the gig already made, so a retry after a lost reply makes no
+   * second gig or card.
    */
   plan(band: RoomStore, planner: Person, fields: GigFields, now: number): { view: GigView; posted: Posted } {
     const { me } = inRoom(band.sql, planner.userId);
     if (me.role !== "admin") throw refused("not-allowed");
     const card = { kind: "gig" as const, ref: fields.gigId };
-    const text = `${fields.name} · ${fields.date}`;
+    const text = `${fields.name} · ${gigLine(fields)}`;
     const made = gigRow(band.sql, fields.gigId);
     if (made) return { view: viewOf(band, made), posted: chatRoom.post(band, planner, fields.gigId, text, now, card) };
     const setlist = band.sql.exec<{ song_ids: string }>(`SELECT song_ids FROM band_setlists WHERE setlist_id = ?`, fields.setlistId).toArray()[0];
@@ -166,8 +186,9 @@ export const gigRoom = {
     const lineup = checkedLineup(band.sql, fields.lineup ?? [...activeIds(band.sql)], leader);
     const backup = checkedBackup(fields.backup, lineup, leader);
     band.sql.exec(
-      `INSERT INTO gigs (gig_id, setlist_id, name, date, song_order, lineup, leader, backup, route, epoch, rev, state, status, started_at, ended_at, secret_rev)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, NULL, 'planned', NULL, NULL, 1)`,
+      `INSERT INTO gigs (gig_id, setlist_id, name, date, song_order, lineup, leader, backup, route, epoch, rev, state, status, started_at, ended_at, secret_rev,
+         kind, start_time, call_time, venue, address, notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, NULL, 'planned', NULL, NULL, 1, ?, ?, ?, ?, ?, ?)`,
       fields.gigId,
       fields.setlistId,
       fields.name,
@@ -177,17 +198,24 @@ export const gigRoom = {
       leader,
       backup,
       fields.route,
+      fields.kind,
+      fields.startTime,
+      fields.callTime,
+      fields.venue,
+      fields.address,
+      fields.notes,
     );
     return { view: viewOf(band, gigRow(band.sql, fields.gigId)), posted: chatRoom.post(band, planner, fields.gigId, text, now, card) };
   },
 
-  /** The gigs not yet ended, soonest first. */
-  list(band: RoomStore, userId: string): GigView[] {
+  /** The gigs not yet ended, soonest first, and the ended ones, newest first. An ended gig is kept as the band's record. */
+  list(band: RoomStore, userId: string): GigList {
     inRoom(band.sql, userId);
-    return band.sql
-      .exec<GigRow>(`SELECT * FROM gigs WHERE status != 'ended' ORDER BY date, gig_id`)
-      .toArray()
-      .map((row) => viewOf(band, row));
+    const views = (query: string) => band.sql.exec<GigRow>(query).toArray().map((row) => viewOf(band, row));
+    return {
+      gigs: views(`SELECT * FROM gigs WHERE status != 'ended' ORDER BY date, gig_id`),
+      past: views(`SELECT * FROM gigs WHERE status = 'ended' ORDER BY date DESC, ended_at DESC, gig_id`),
+    };
   },
 
   open(band: RoomStore, userId: string, gigId: string): GigView {
@@ -302,6 +330,27 @@ function dateIn(value: unknown): string {
   return value;
 }
 
+/** A blank optional field is null. */
+const blank = (value: unknown) => value === undefined || value === null || value === "";
+
+function kindIn(value: unknown): GigKind {
+  if (value === undefined) return "gig";
+  if (typeof value !== "string" || !Object.hasOwn(KIND_WORDS, value)) throw new Refused("bad-request");
+  return value as GigKind;
+}
+
+function timeIn(value: unknown): string | null {
+  if (blank(value)) return null;
+  if (typeof value !== "string" || !TIME.test(value) || Number(value.slice(0, 2)) > 23 || Number(value.slice(3)) > 59) throw new Refused("bad-request");
+  return value;
+}
+
+function textIn(value: unknown, max: number): string | null {
+  if (blank(value)) return null;
+  if (!isText(value, max)) throw new Refused("bad-request");
+  return (value as string).trim();
+}
+
 function nameIn(value: unknown): string {
   const name = typeof value === "string" ? value.trim() : "";
   if (name.length < 1 || name.length > 60) throw new Refused("bad-gig-name");
@@ -319,6 +368,12 @@ function fieldsIn(body: Record<string, unknown>): GigFields {
     leader: userIdOrNull(body.leader),
     backup: userIdOrNull(body.backup),
     route: body.route === undefined ? "auto" : routeIn(body.route),
+    kind: kindIn(body.kind),
+    startTime: timeIn(body.startTime),
+    callTime: timeIn(body.callTime),
+    venue: textIn(body.venue, DETAIL_LIMITS.venue),
+    address: textIn(body.address, DETAIL_LIMITS.address),
+    notes: textIn(body.notes, DETAIL_LIMITS.notes),
   };
 }
 
@@ -362,7 +417,7 @@ export const GIG_ROUTES: Record<string, Route> = {
 
   async "POST /api/bands/gig/list"(c) {
     const bandId = bandIdIn(c.body);
-    return { body: { gigs: await fromRoom(roomOf(c, bandId).gigList(signedIn(c).user_id)) } };
+    return { body: await fromRoom(roomOf(c, bandId).gigList(signedIn(c).user_id)) };
   },
 
   async "POST /api/bands/gig/open"(c) {

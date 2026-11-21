@@ -5,7 +5,7 @@ import { BandStatusFaces } from "./band-status";
 import { playersFrom } from "./band-status-model";
 import type { BandView } from "./bands-model";
 import { downloadPack, type GigPack } from "./gig-pack";
-import type { GigView } from "./gig-plan-model";
+import { gigLine, type GigView } from "./gig-plan-model";
 import type { GigPosition } from "./gig-position";
 import { displayKeyLabel } from "./music";
 import { getFromPhone, heldFor, onPhoneChange, phoneGeneration } from "./phone-db";
@@ -192,7 +192,10 @@ export function GigViewScreen({ me, bandId, gigId, pack, position, onSignIn, onS
   return (
     <section className="gig-view" data-gig={gigId} aria-labelledby={titleId}>
       <header className="gig-top">
-        <h2 id={titleId}>{gig?.name ?? "Gig"}</h2>
+        <div className="gig-head">
+          <h2 id={titleId}>{gig?.name ?? "Gig"}</h2>
+          {gig ? <p className="gig-line">{gigLine(gig)}</p> : null}
+        </div>
         {mayEnd && !asking ? (
           <button type="button" className="account-secondary" disabled={busy || !online} onClick={() => setAsking(true)}>
             End

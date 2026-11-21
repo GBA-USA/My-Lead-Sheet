@@ -243,9 +243,9 @@ try {
     }
   });
 
-  await check("no match shows Nothing matches and the chips stay", async () => {
+  await check("no match shows Nothing matches with the query and the chips stay", async () => {
     await typeIn("Search songs", "xyzzy");
-    assert.equal(await app.text(".search-empty"), "Nothing matches", "the empty line");
+    assert.equal(await app.text(".search-empty"), 'Nothing matches "xyzzy"', "the empty line");
     assert.ok((await app.texts(".search-chips button")).includes("Has timing"), "the Has timing chip is still there");
   });
 

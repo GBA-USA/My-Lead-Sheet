@@ -102,6 +102,7 @@ export async function openSite(root: string, name: string, apiBase?: () => strin
     else waiter.resolve(message.result);
   });
   let nextId = 0;
+  // eslint-disable-next-line prefer-const -- send() reads it before Target.attachToTarget below assigns it, so a const breaks every Chrome check
   let sessionId: string | undefined;
   const send = (method: string, params: object = {}): Promise<any> => {
     const id = (nextId += 1);

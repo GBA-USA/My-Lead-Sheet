@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type Dispatch, type SetStateAction } from "react";
 import { parseHash } from "./route";
-import { READING_LINE, SUNG_READING, atSpeed, chordCount, runScroll, type LaidSection, type Motion, type Section, type TimeSource } from "./scroll-timing";
+import { READING_LINE, atSpeed, chordCount, runScroll, type LaidSection, type Motion, type Section, type TimeSource } from "./scroll-timing";
 import { onStorageChange, storageGeneration } from "./storage";
 import type { SongRef } from "./types";
 
@@ -101,8 +101,7 @@ export function useAutoScroll(
  * same progress. When the section has moved since the last frame, the browser shifted or clamped the scroll for
  * the new layout, so that scroll event is not passed on as the player scrolling.
  * Each timed frame tells `onPlayhead` how far down the chart, in pixels, the song is. A timed motion goes down the
- * chart with its progress; a learned one is at the reading line, where each heading arrives as its section starts;
- * the song's own pace is at the sheet's middle, where the line being sung sits.
+ * chart with its progress; a learned one is at the reading line, where each heading arrives as its section starts.
  */
 export function scrollChart(
   el: HTMLElement,
@@ -125,9 +124,10 @@ export function scrollChart(
       const rect = child.getBoundingClientRect();
       return { top: rect.top - origin, height: rect.height };
     };
-    // A stand-in chart with no rows to measure keeps the motion's even pace or page speed.
+    // A stand-in chart with no rows to measure keeps the motion's even pace or page speed. So does Chords only: its
+    // fill (`.chord-fill`, fed by `onPlayhead`) plays the even pace from the top of the chart.
     const laid = (): LaidSection[] =>
-      [...(found.querySelectorAll?.(".chart-section") ?? [])].map((part) => {
+      found.querySelector?.(".chord-fill") ? [] : [...(found.querySelectorAll?.(".chart-section") ?? [])].map((part) => {
         const [heading, ...rows] = [...part.children];
         return {
           heading: box(heading),
@@ -147,9 +147,7 @@ export function scrollChart(
   const playhead = (progress: number) => {
     const found = chart();
     if (!found || !last || !onPlayhead) return;
-    const current = motion.current;
-    const reading = current.kind === "learned" ? READING_LINE : current.sung ? el.clientHeight * SUNG_READING : null;
-    onPlayhead(reading == null ? progress * found.offsetHeight : el.scrollTop + reading - last.start);
+    onPlayhead(motion.current.kind === "learned" ? el.scrollTop + READING_LINE - last.start : progress * found.offsetHeight);
   };
   const stop = runScroll(el, motion, section, clock, onStop, time, playhead);
   return () => {

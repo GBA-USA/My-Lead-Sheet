@@ -99,6 +99,8 @@ export type Motion =
       /** False when the clock itself is meaningful, as with a live take or a tempo map, so `runScroll` never re-times it. */
       holdOpening: boolean;
       sung?: Sung;
+      /** A Learn take: its clock is the player's own playing, so the live speed leaves it alone. */
+      take?: true;
     }
   | {
       /** Each heading reaches the reading line as its section starts, and the chart's end as the song ends. */
@@ -127,15 +129,27 @@ function barCount(text: string): number {
   return text.includes("|") ? text.split("|").filter((cell) => cell.trim()).length : chordCount(text);
 }
 
+/**
+ * The beats in a bar: a leading "N/M" that stands for the whole song, alone or before an aside as "3/4 — waltz".
+ * "7/4 on the verse riff" names one part of the song, so its bars count 4 like a song with no time signature.
+ */
+function beatsPerBar(timeSignature: string): number {
+  const meter = timeSignature.match(/^\s*(\d+)\s*\/\s*\d+\s*(?:$|[—–(,;:-])/);
+  return Number(meter?.[1]) || 4;
+}
+
 /** A sung line lasts the 1, 2 or 4 bars nearest this long: 4 bars of 3/4 at 116, 2 bars of 4/4 at 102. */
 const PHRASE_SECONDS = 6;
 
-/** A bar line is its bars, a sung line its phrase or two chords a bar if longer, a note the bars it writes out. */
-function lineBars(line: ChartLine, phrase: number): number {
-  if (line.bars !== undefined) return barCount(line.bars);
-  if (line.chords !== undefined || line.lyrics !== undefined) return Math.max(phrase, Math.ceil(chordCount(line.chords ?? "") / 2));
+/**
+ * A bar line is its bars and a note the bars it writes out, both counted. A sung line is guessed: its phrase, or two
+ * chords a bar if longer.
+ */
+function lineBars(line: ChartLine, phrase: number): { bars: number; guessed: boolean } {
+  if (line.bars !== undefined) return { bars: barCount(line.bars), guessed: false };
+  if (line.chords !== undefined || line.lyrics !== undefined) return { bars: Math.max(phrase, Math.ceil(chordCount(line.chords ?? "") / 2)), guessed: true };
   const written = line.note?.match(/\|.*\|/)?.[0];
-  return written ? barCount(written) : 0;
+  return { bars: written ? barCount(written) : 0, guessed: false };
 }
 
 const PLAYS: [RegExp, number][] = [
@@ -155,20 +169,34 @@ function plays(heading: string): number {
  * When each chart line plays, from bars × beats per bar × 60 / BPM summed in play order, so a late section does not
  * drift. A section played twice gives each of its lines twice the time. A heading with no lines, as "CHORUS — repeat",
  * lasts as long as the last section under the same first word. Null without a BPM.
+ * When that runs past the song's recording, the sung lines it guessed shrink, all by one share, so the song ends with
+ * its recording; the bars it counted keep their length. A song that ends within its recording keeps its guess.
  */
 export function songPace(song: Song): { bpm: number; sections: SungSection[] } | null {
-  const { tempo } = song;
+  const { tempo, officialRuntimeSec: recorded } = song;
   if (tempo == null || tempo <= 0) return null;
-  const bar = ((Number.parseInt(song.timeSignature, 10) || 4) * 60) / tempo;
+  const bar = (beatsPerBar(song.timeSignature) * 60) / tempo;
   const phrase = [1, 2, 4].reduce((best, n) => (Math.abs(n * bar - PHRASE_SECONDS) < Math.abs(best * bar - PHRASE_SECONDS) ? n : best));
+  const ends = (sections: SungSection[]) => sections.reduce((end, section) => end + section.length, 0);
+  const guessed = placeLines(song, bar, phrase, 1);
+  const total = ends(guessed);
+  if (recorded == null || total <= recorded) return { bpm: tempo, sections: guessed };
+  // Every length is the counted bars plus the guess times its share, so the share that ends on the recording is exact.
+  const counted = ends(placeLines(song, bar, phrase, 0));
+  return { bpm: tempo, sections: counted < recorded ? placeLines(song, bar, phrase, (recorded - counted) / (total - counted)) : guessed };
+}
+
+/** Each chart line's place in play order, with the guessed sung lines at `share` of their guess. */
+function placeLines(song: Song, bar: number, phrase: number, share: number): SungSection[] {
   const once = new Map<string, number>();
   let at = 0;
-  const sections = song.body.map((section) => {
+  return song.body.map((section) => {
     const times = plays(section.heading);
     const word = section.heading.trim().split(/\W/)[0].toUpperCase();
     const start = at;
     const lines = section.lines.map((line) => {
-      const length = lineBars(line, phrase) * bar * times;
+      const { bars, guessed } = lineBars(line, phrase);
+      const length = bars * (guessed ? share : 1) * bar * times;
       const placed = {
         at,
         length,
@@ -184,7 +212,6 @@ export function songPace(song: Song): { bpm: number; sections: SungSection[] } |
     else once.set(word, (at - start) / times);
     return { at: start, length: at - start, lines };
   });
-  return { bpm: tempo, sections };
 }
 
 /** How fast a plan's clock runs: faster with the metronome, slower or faster with the scroll percent. */
@@ -280,7 +307,7 @@ export function clockAt(tempo: Tempo[], planBpm: number, heard: number): number 
 export function scrollMotion(song: Song, version: ScrollVersion | null, take: Take | null, bpm: number | null, percent: number): Motion {
   if (take) {
     const rate = clockRate(take.bpm, bpm ?? take.bpm, percent);
-    return { kind: "timed", rate, progressAt: (at) => takeProgress(take, at), startAt: () => 0, holdOpening: false };
+    return { kind: "timed", rate, progressAt: (at) => takeProgress(take, at), startAt: () => 0, holdOpening: false, take: true };
   }
   const pace = version ? null : songPace(song);
   const sung = pace ? { sung: { sections: pace.sections, rate: clockRate(pace.bpm, bpm ?? pace.bpm, percent) } } : {};
@@ -310,9 +337,12 @@ export function stepSpeed(speed: number, step: 1 | -1): number {
   return Math.min(SPEED_MAX, Math.max(SPEED_MIN, (Math.round(speed * STEPS_PER_UNIT) + step) / STEPS_PER_UNIT));
 }
 
-/** `motion` at `speed` times its pace. The scroll's clock adds up the rate frame by frame, so a change never jumps the sheet. */
+/**
+ * `motion` at `speed` times its pace. The scroll's clock adds up the rate frame by frame, so a change never jumps the
+ * sheet. A take keeps its own clock, so the marks it records are on the song's time.
+ */
 export function atSpeed(motion: Motion, speed: number): Motion {
-  if (speed === 1) return motion;
+  if (speed === 1 || (motion.kind === "timed" && motion.take)) return motion;
   if (motion.kind === "learned") return { ...motion, rate: motion.rate * speed };
   const sung = motion.sung ? { sung: { ...motion.sung, rate: motion.sung.rate * speed } } : {};
   if (motion.kind === "pace") return { ...motion, pxPerSec: motion.pxPerSec * speed, ...sung };

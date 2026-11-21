@@ -419,6 +419,50 @@ test("a learned song (Learn timings) keeps following its learned marks", () => {
   held.cancel();
 });
 
+test("the live speed stays out of a Learn take: at 110%, a take's clock still runs on the song's time", () => {
+  const even = app.evenPlan(fireAway)!;
+  const take = app.startTake(even, 116);
+  const motion = app.atSpeed(app.scrollMotion(fireAway, null, take, 116, 100), app.stepSpeed(app.stepSpeed(1, 1), 1));
+  const run = perform(app, motion, fireAway, 700);
+  run.run(20);
+  run.cancel();
+  assert(Math.abs(run.clock.current - 20) < 0.05, `20 s of a take is 20 s on its clock, so its marks land on the song's time (${run.clock.current.toFixed(3)} s)`);
+  const held = app.toggleHold(take, run.clock.current);
+  const want = app.takeProgress(take, 20);
+  assert(Math.abs(held.marks.at(-1)!.progress - want) < 0.001, `a Hold tapped 20 s in marks where the song is at 20 s (${held.marks.at(-1)!.progress.toFixed(4)}, want ${want.toFixed(4)})`);
+});
+
+/** When the song's own pace ends, in seconds at its BPM. */
+const paceEnd = (song: Song) => app.songPace(song)!.sections.reduce((end, section) => end + section.length, 0);
+
+test("a bar has the beats of a time signature that stands for the whole song", () => {
+  const riff = (timeSignature: string): Song => ({ ...fireAway, tempo: 60, timeSignature, officialRuntimeSec: null, body: [{ heading: "RIFF", lines: [{ bars: "| E | E |" }] }] });
+  const beats = (timeSignature: string) => paceEnd(riff(timeSignature)) / 2;
+  const wrong = [
+    ["4/4", 4],
+    ["7/4", 7],
+    ["3/4 — waltz, count 1-2-3", 3],
+    ["6/8 (felt in two)", 6],
+    ["7/4 on the verse riff — count 7, not 4", 4],
+    ["", 4],
+  ].filter(([signature, want]) => beats(signature as string) !== want).map(([signature, want]) => `"${signature}" gives ${beats(signature as string)} beats, want ${want}`);
+  assert(wrong.length === 0, `a leading N/M alone or before an aside sets the bar; one that names a part of the song does not: ${wrong.join("; ")}`);
+});
+
+test("every built-in song's own pace ends by its recording's end", () => {
+  const timed = seed.songs.filter((song) => (song.tempo ?? 0) > 0 && (song.officialRuntimeSec ?? 0) > 0);
+  assert(timed.length >= 10, `the library has songs with a BPM and a recorded length (${timed.length})`);
+  const over = timed
+    .map((song) => ({ title: song.title, ratio: paceEnd(song) / song.officialRuntimeSec! }))
+    .filter((each) => each.ratio > 1.05)
+    .map((each) => `${each.title} ${each.ratio.toFixed(2)}`);
+  assert(over.length === 0, `no song's pace runs more than 5% past its recording: ${over.join("; ")}`);
+  const brown = seed.songs.find((song) => song.title === "Brown Eyed Girl")!;
+  const intro = app.songPace(brown)!.sections[0];
+  const bar = (4 * 60) / brown.tempo!;
+  assert(Math.abs(intro.length - 8 * bar) < 1e-9, `the bars a chart counts keep their length when its guessed lines shrink (Brown Eyed Girl intro ${intro.length.toFixed(2)} s, want ${(8 * bar).toFixed(2)} s)`);
+});
+
 if (failures) {
   console.error(`${failures} scroll-sync check(s) failed`);
   process.exit(1);

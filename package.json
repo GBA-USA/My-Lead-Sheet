@@ -63,6 +63,7 @@
     "check:ux-settings-only-old-build": "node --experimental-strip-types scripts/check-ux-settings-only-old-build.ts",
     "check:ux-band-page": "tsc -p worker && node --experimental-strip-types scripts/check-ux-band-page.ts",
     "check:ux-plan-gig-route": "tsc -p worker && node --experimental-strip-types scripts/check-ux-plan-gig-route.ts",
+    "check:gig-plan-record": "tsc -p worker && node --experimental-strip-types scripts/check-gig-plan-record.ts",
     "check:ux-chat-rooms": "tsc -p worker && node --experimental-strip-types scripts/check-ux-chat-rooms.ts",
     "check:ux-layout-fix": "tsc -p worker && node --experimental-strip-types scripts/check-ux-layout-fix.ts",
     "check:ux-chords-only": "node --experimental-strip-types scripts/check-ux-chords-only.ts",
@@ -75,9 +76,10 @@
     "check:ux-preview-entry": "tsc -p worker && node --experimental-strip-types scripts/check-ux-preview-entry.ts",
     "check:ux-metronome-sheet": "node --experimental-strip-types scripts/check-ux-metronome-sheet.ts",
     "check:join-links": "tsc -p worker && node --experimental-strip-types scripts/check-join-links.ts",
+    "check:ux-theme-sweep": "tsc -p worker && node --experimental-strip-types scripts/check-ux-theme-sweep.ts",
+    "check:ci-deep": "node --experimental-strip-types scripts/check-ci-deep.ts",
     "check:scroll-sync": "node --experimental-strip-types scripts/check-scroll-sync.ts",
-    "check:ux-scroll-sync": "node --experimental-strip-types scripts/check-ux-scroll-sync.ts",
-    "check:ci-deep": "node --experimental-strip-types scripts/check-ci-deep.ts"
+    "check:ux-scroll-sync": "node --experimental-strip-types scripts/check-ux-scroll-sync.ts"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.5",

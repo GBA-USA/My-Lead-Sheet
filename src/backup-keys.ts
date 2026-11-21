@@ -19,6 +19,9 @@ export const SONG_SETTING_KEYS = BACKUP_KINDS.filter((kind) => "perSong" in kind
 
 export type BackupKind = (typeof BACKUP_KINDS)[number]["name"];
 
+/** The room's `library` word in a backup reply when the server keeps My Songs per account (`MY_SONGS_PER_ACCOUNT`). */
+export const PER_ACCOUNT = "account";
+
 /** The longest single value the room stores. A phone holds a longer one back instead of sending it. */
 export const MAX_VALUE_CHARS = 1_000_000;
 

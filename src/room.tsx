@@ -1,8 +1,11 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent } from "react";
-import { MAX_MESSAGE_CHARS, MUTE_LABELS, isMuted, mutedUntilFor, nameAbove, type ChatEntry, type ChatMessage, type MuteChoice, type Queued } from "./chat-model";
+import type { Member } from "./bands-model";
+import { MAX_MESSAGE_CHARS, MUTE_LABELS, bandSongLine, isMuted, linkify, mutedUntilFor, nameAbove, type BandSongCard, type ChatEntry, type ChatMessage, type MuteChoice, type Queued } from "./chat-model";
 import { useRoomSocket, type ChangeEntry } from "./chat";
 import { DotsIcon, Menu } from "./controls";
-import { bandHref } from "./route";
+import { useEscape } from "./hooks";
+import { bandHref, bandSongHref } from "./route";
+import { fold } from "./search";
 import { SongCard } from "./send-song";
 import { SetlistCard } from "./setlist-code";
 import { api } from "./sign-in-methods";
@@ -55,10 +58,82 @@ function useKeyboardInset() {
 
 const hardwareKeyboard = () => matchMedia("(hover: hover) and (pointer: fine)").matches;
 
-function Composer({ onSend }: { onSend: (text: string) => void }) {
+/** A band song as the band page holds it, from the server's library or this phone's copy of it. */
+type RoomSong = { songId: string; song: { title: string; artist: string } };
+
+/** What a band thread knows of its band: the other members to @mention, and its songs, null until they load. */
+export type RoomBand = { members: Member[]; songs: RoomSong[] | null };
+
+/** A message's words, with each http(s) link tappable. A link to this app opens in place; another site opens in a new tab. */
+function Words({ text }: { text: string }) {
+  return linkify(text, location.origin).map((part, index) =>
+    "href" in part ? (
+      <a key={index} href={part.href} {...(part.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}>
+        {part.text}
+      </a>
+    ) : (
+      part.text
+    ),
+  );
+}
+
+/** A band song someone pointed at. It opens the band's copy, or says the band no longer has it. */
+function BandSongLink({ message, bandId, songs }: { message: ChatMessage; bandId: string; songs: RoomSong[] | null | undefined }) {
+  const songId = message.ref ?? "";
+  if (songs && !songs.some((item) => item.songId === songId)) {
+    return (
+      <span className="chat-bubble chat-band-song">
+        {message.text}
+        <small>No longer in this band</small>
+      </span>
+    );
+  }
+  return (
+    <a className="chat-bubble chat-band-song" href={bandSongHref(bandId, songId)}>
+      {message.text}
+    </a>
+  );
+}
+
+/**
+ * The name being typed after an `@` just before the caret, or null when no @ list should show. One word is a query
+ * even when nobody matches, so the list can say so. Past a space it stays one only while it still starts a member's
+ * name, so the list closes once a name is written out and the message goes on.
+ */
+function mentionQuery(before: string, members: Member[]): string | null {
+  const typed = /(?:^|\s)@([^@\n]*)$/.exec(before)?.[1];
+  if (typed === undefined || /\s$/.test(typed)) return null;
+  if (!/\s/.test(typed)) return typed;
+  return members.some((member) => fold(member.name).startsWith(fold(typed))) ? typed : null;
+}
+
+function SongPicker({ songs, onPick, onClose }: { songs: RoomSong[] | null; onPick: (item: RoomSong) => void; onClose: () => void }) {
+  useEscape(onClose);
+  const sorted = songs && [...songs].sort((a, b) => a.song.title.localeCompare(b.song.title, undefined, { sensitivity: "base" }));
+  return (
+    <ul className="friends-list chat-song-picker" aria-label="Band songs">
+      {sorted === null ? <li className="account-note">Loading band songs…</li> : null}
+      {sorted?.length === 0 ? <li className="account-note">No songs in this band yet.</li> : null}
+      {sorted?.map((item) => (
+        <li key={item.songId}>
+          <button type="button" className="band-library-row" onClick={() => onPick(item)}>
+            <span className="band-library-name">{item.song.title}</span>
+            <small>{item.song.artist}</small>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function Composer({ onSend, band }: { onSend: (text: string, card?: BandSongCard) => void; band?: RoomBand }) {
   const inputId = useId();
   const [text, setText] = useState("");
+  const [caret, setCaret] = useState(0);
+  const [picking, setPicking] = useState(false);
   const boxRef = useRef<HTMLTextAreaElement>(null);
+  const query = band ? mentionQuery(text.slice(0, caret), band.members) : null;
+  const matches = query === null || !band ? [] : band.members.filter((member) => fold(member.name).includes(fold(query)));
 
   useLayoutEffect(() => {
     const box = boxRef.current;
@@ -83,13 +158,60 @@ function Composer({ onSend }: { onSend: (text: string) => void }) {
     event.preventDefault();
     send();
   };
+  const typed = (box: HTMLTextAreaElement) => {
+    setText(box.value);
+    setCaret(box.selectionStart);
+  };
+  const mention = (member: Member) => {
+    const start = caret - (query ?? "").length - 1;
+    const written = `@${member.name} `;
+    setText(text.slice(0, start) + written + text.slice(caret));
+    setCaret(start + written.length);
+    requestAnimationFrame(() => {
+      boxRef.current?.focus();
+      boxRef.current?.setSelectionRange(start + written.length, start + written.length);
+    });
+  };
+  const pickSong = (item: RoomSong) => {
+    setPicking(false);
+    onSend(bandSongLine(item.song), { kind: "band-song", songId: item.songId });
+  };
 
   return (
     <form className="chat-composer" onSubmit={submit}>
+      {picking && band ? <SongPicker songs={band.songs} onPick={pickSong} onClose={() => setPicking(false)} /> : null}
+      {query !== null && !picking ? (
+        <ul className="friends-list chat-mentions" aria-label="Band members">
+          {matches.length === 0 ? <li className="account-note">No band members match</li> : null}
+          {matches.map((member) => (
+            <li key={member.userId}>
+              <button type="button" className="band-library-row" onClick={() => mention(member)}>
+                {member.name}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {band ? (
+        <button type="button" className="account-secondary" aria-expanded={picking} onClick={() => setPicking((open) => !open)}>
+          + Song
+        </button>
+      ) : null}
       <label htmlFor={inputId} hidden>
         Message
       </label>
-      <textarea id={inputId} ref={boxRef} className="account-input" rows={1} maxLength={MAX_MESSAGE_CHARS} placeholder="Message" value={text} onChange={(event) => setText(event.target.value)} onKeyDown={enter} />
+      <textarea
+        id={inputId}
+        ref={boxRef}
+        className="account-input"
+        rows={1}
+        maxLength={MAX_MESSAGE_CHARS}
+        placeholder="Message"
+        value={text}
+        onChange={(event) => typed(event.target)}
+        onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
+        onKeyDown={enter}
+      />
       <button type="submit" className="account-primary" disabled={!text.trim()}>
         Send
       </button>
@@ -102,6 +224,7 @@ export function Room({
   roomId,
   entry,
   inline,
+  band,
   onEntry,
   onGone,
   onSignedOut,
@@ -110,6 +233,8 @@ export function Room({
   roomId: string;
   entry: ChatEntry | undefined;
   inline?: boolean;
+  /** A band thread on its band page. A DM, or a band thread opened from Messages, has no + Song or @ list. */
+  band?: RoomBand;
   onEntry: ChangeEntry;
   onGone: (error: unknown) => void;
   onSignedOut: () => void;
@@ -166,7 +291,7 @@ export function Room({
         {messages === null && !error ? <li className="account-note">Loading…</li> : null}
         {messages?.length === 0 && waiting.length === 0 ? <li className="account-note">No messages yet. Say hello.</li> : null}
         {threadLines(messages ?? [], waiting, me, newLineAt, now).map((line) => (
-          <li key={line.key} className={`chat-line chat-line-${line.mine ? "mine" : "theirs"}`}>
+          <li key={line.key} className={`chat-line chat-line-${line.mine ? "mine" : "theirs"}${"message" in line && !line.mine && line.message.mentions.includes(me) ? " chat-line-mention" : ""}`}>
             {line.day ? <div className="chat-day">{line.day}</div> : null}
             {line.newLine ? <div className="chat-new-line">New messages</div> : null}
             {line.name ? <span className="chat-name">{line.name}</span> : null}
@@ -179,13 +304,17 @@ export function Room({
               <SongCard message={line.message} me={me} />
             ) : line.message.kind === "setlist" ? (
               <SetlistCard message={line.message} me={me} />
+            ) : line.message.kind === "band-song" ? (
+              <BandSongLink message={line.message} bandId={roomId} songs={band?.songs} />
             ) : (
-              <span className="chat-bubble">{line.message.text}</span>
+              <span className="chat-bubble">
+                <Words text={line.message.text} />
+              </span>
             )}
           </li>
         ))}
       </ol>
-      <Composer onSend={send} />
+      <Composer onSend={send} band={band ? { ...band, members: band.members.filter((member) => member.userId !== me) } : undefined} />
     </section>
   );
 }

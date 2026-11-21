@@ -273,6 +273,70 @@
   height: 48px;
 }
 
+.plan-gig textarea.account-input {
+  height: auto;
+  min-height: 96px;
+  padding: 12px;
+  font: inherit;
+  resize: vertical;
+}
+
+.gig-plan-kind {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: var(--control-border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.gig-plan-kind label {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  cursor: pointer;
+}
+
+.gig-plan-kind input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.gig-plan-kind label:has(input:checked) {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+
+.gig-plan-kind label:has(input:focus-visible) {
+  outline: 2px solid var(--accent-text);
+  outline-offset: -4px;
+}
+
+.gig-card-notes {
+  margin: 0;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.gig-past-head {
+  margin: 16px 0 0;
+}
+
+.gig-head {
+  min-width: 0;
+}
+
+.gig-head .gig-line {
+  margin: 2px 0 0;
+  color: var(--text-dim);
+  font-size: 14px;
+}
+
 .gig-plan-lineup label {
   display: flex;
   flex: 1;

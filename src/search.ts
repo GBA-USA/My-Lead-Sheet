@@ -1,7 +1,7 @@
 import type { Setlist, Song, SongRef } from "./types";
 
 /** Spaces go too, so "aint", "ain t" and "Ain't" all fold to the same key. */
-function fold(text: string): string {
+export function fold(text: string): string {
   return text.toLowerCase().normalize("NFD").replace(/[^\p{L}\p{N}]/gu, "");
 }
 

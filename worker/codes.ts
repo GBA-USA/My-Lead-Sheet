@@ -88,7 +88,7 @@ export async function liveCode(sql: SqlStorage, env: Env, payload: unknown, now:
   if (expect && fields.kind !== expect.kind) throw new Refused(expect.refusal);
   if (fields.expiresAt <= now) throw new Refused("code-ended", 410);
   const row = sql.exec<CodeRow>(`SELECT * FROM codes WHERE code_id = ?`, fields.codeId).toArray()[0];
-  if (!row || row.kind !== fields.kind || row.expires_at !== fields.expiresAt) throw new Refused("bad-code", 404);
+  if (!row || row.kind !== fields.kind || row.expires_at !== fields.expiresAt) throw new Refused("code-replaced", 404);
   if (row.stopped_at !== null) throw new Refused("code-stopped", 410);
   return row;
 }
@@ -141,6 +141,27 @@ export const CODE_ROUTES: Record<string, Route> = {
 
 const escapeHtml = (text: string) => text.replace(/[&<>"]/g, (char) => `&#${char.charCodeAt(0)};`);
 
+type CodeRefusal = keyof typeof CODE_REFUSED;
+
+const HEADLINE: Record<CodeRefusal, string> = {
+  "bad-code": "This code doesn't work",
+  "code-replaced": "This code doesn't work",
+  "code-ended": "This code has ended",
+  "code-stopped": "This code was stopped",
+};
+
+/** The server can't know the visitor's time zone, so the day is UTC's. */
+const dayOf = (ms: number) => new Date(ms).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
+
+/** Why the landing page refused a code, with the day it ended or was reset. Both are read only after the signature checked out. */
+function whyLine(sql: SqlStorage, reason: CodeRefusal, payload: string): string {
+  const fields = readPayload(payload);
+  if (fields && reason === "code-ended") return `This link ended on ${dayOf(fields.expiresAt)}. Ask for a fresh one.`;
+  const stoppedAt = fields && reason === "code-stopped" ? sql.exec<{ stopped_at: number }>(`SELECT stopped_at FROM codes WHERE code_id = ?`, fields.codeId).toArray()[0]?.stopped_at : null;
+  if (stoppedAt) return `This link was reset on ${dayOf(stoppedAt)}. Ask for a fresh one.`;
+  return CODE_REFUSED[reason];
+}
+
 /**
  * `GET /c/<payload>`, the link inside every QR code. A live code goes on to the screen for its kind with the payload,
  * so a phone's own camera app and a plain browser land where the in-app scanner does. Anything else gets a short page saying why.
@@ -152,10 +173,8 @@ export async function codeLanding(sql: SqlStorage, env: Env, payload: string): P
     return new Response(null, { status: 302, headers: { Location: `${origin}/?open=${CODE_SCREEN[row.kind]}&code=${payload}`, "Cache-Control": "no-store" } });
   } catch (error) {
     if (!(error instanceof Refused) || !(error.reason in CODE_REFUSED)) throw error;
-    const text = CODE_REFUSED[error.reason as keyof typeof CODE_REFUSED];
-    /** A link typed in by hand or cut short in a message looks the same as a made-up one, so say what to check. */
-    const hint = error.reason === "bad-code" ? "<p>If someone sent you this link, check that you copied the whole link, or ask them for a fresh one.</p>" : "";
-    const page = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${APP_NAME}</title><p>${escapeHtml(text)}</p>${hint}<p><a href="${escapeHtml(origin)}/">Open ${APP_NAME}</a></p></html>`;
+    const reason = error.reason as CodeRefusal;
+    const page = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${APP_NAME}</title><h1>${escapeHtml(HEADLINE[reason])}</h1><p>${escapeHtml(whyLine(sql, reason, payload))}</p><p><a href="${escapeHtml(origin)}/">Open ${APP_NAME}</a></p></html>`;
     return new Response(page, { status: error.status, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
   }
 }

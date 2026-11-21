@@ -1,0 +1,108 @@
+.song-notes {
+  margin: 8px 10px 0;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.song-notes .account-secondary {
+  background: var(--bg);
+}
+
+.song-notes-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap);
+}
+
+.song-notes-title {
+  margin: 0;
+  color: var(--text-kicker);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.song-notes-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.song-note {
+  padding: 8px 0 0;
+}
+
+.song-note + .song-note {
+  margin-top: 4px;
+  border-top: 1px solid var(--row-rule);
+}
+
+.song-note-body {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.song-note-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap);
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.song-note-foot small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.song-note-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap);
+}
+
+.song-notes-more {
+  padding: 0;
+}
+
+.song-notes-form {
+  display: grid;
+  gap: var(--gap);
+  margin-top: var(--gap);
+}
+
+.song-notes-form textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 88px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+  resize: vertical;
+}
+
+.song-notes-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--gap);
+}
+
+.song-notes-actions small {
+  margin-right: auto;
+}

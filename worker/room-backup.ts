@@ -1,8 +1,15 @@
-import { MAX_VALUE_CHARS, backupKindOf, songIdOf, validBackupKey } from "../src/backup-keys";
+import { MAX_VALUE_CHARS, PER_ACCOUNT, backupKindOf, songIdOf, validBackupKey } from "../src/backup-keys";
 import { readJsonObject, Refused } from "./refused";
 
 /** Each account's own backup lives in one Room. The Worker derives this name from the session, never from the request. */
 export const selfRoomId = (userId: string) => `self:${userId}`;
+
+/**
+ * `MY_SONGS_PER_ACCOUNT=1` keeps My Songs per account: each reply says so, and a phone then lists only the signed-in
+ * account's own songs, the rows this room holds. Empty (the default) keeps My Songs per phone. Either way a phone backs
+ * up only what its account made or holds, never what another account left on a shared phone.
+ */
+export const myLibraryPerAccount = (switchVar: string | undefined) => switchVar === "1";
 
 /** The owner's caps on one account's backup. A sync that would pass either gets 413. */
 export const MAX_BACKUP_ROWS = 5_000;
@@ -38,7 +45,7 @@ async function readRequest(request: Request): Promise<{ since: number; changes: 
  * When a song's row is refused, so are that song's settings in the same request: the phone moves its song to a new id,
  * and the settings go with it. The reply holds every row newer than `since` and the current row for every key sent.
  */
-export async function handleBackup(request: Request, storage: DurableObjectStorage, roomName: string | undefined, userId: string): Promise<Response> {
+export async function handleBackup(request: Request, storage: DurableObjectStorage, roomName: string | undefined, userId: string, perAccount: boolean): Promise<Response> {
   try {
     if (roomName !== selfRoomId(userId)) throw new Refused("not-your-backup", 403);
     const { since, changes } = await readRequest(request);
@@ -74,7 +81,7 @@ export async function handleBackup(request: Request, storage: DurableObjectStora
       const counts = Object.fromEntries(
         sql.exec<{ kind: string; n: number }>(`SELECT kind, count(*) AS n FROM backup_items WHERE value IS NOT NULL GROUP BY kind`).toArray().map((row) => [row.kind, row.n]),
       );
-      return { rev, rows: [...rows.values()], counts };
+      return { rev, rows: [...rows.values()], counts, ...(perAccount ? { library: PER_ACCOUNT } : {}) };
     });
     return Response.json(reply, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

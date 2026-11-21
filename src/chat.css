@@ -262,6 +262,47 @@
   min-height: 48px;
 }
 
+.chat-composer {
+  flex-wrap: wrap;
+}
+
+.chat-composer textarea {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.chat-song-picker,
+.chat-mentions {
+  flex: 1 0 100%;
+  max-height: 40vh;
+  margin: 0;
+  overflow-y: auto;
+}
+
+.chat-bubble a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+a.chat-bubble.chat-band-song {
+  color: inherit;
+  text-decoration: none;
+}
+
+.chat-line-mine a.chat-bubble.chat-band-song {
+  color: var(--on-accent);
+}
+
+.chat-band-song small {
+  display: block;
+  font-size: 13px;
+  font-style: italic;
+}
+
+.chat-line-mention .chat-bubble {
+  box-shadow: inset 0 0 0 2px var(--accent-text);
+}
+
 .gear-btn {
   position: relative;
 }

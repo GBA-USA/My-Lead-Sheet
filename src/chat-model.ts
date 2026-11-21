@@ -3,18 +3,30 @@ export type ChatKind = "dm" | "band";
 /** One row of the Messages list, as the Directory's inbox keeps it (PLAN.md 5). Unread is `lastSeq - lastReadSeq`. */
 export type ChatEntry = { roomId: string; kind: ChatKind; title: string; lastSeq: number; lastReadSeq: number; mutedUntil: number | null; preview: string; lastAt: number };
 
-/** What a message is: words, a note from the app, or a card for a song, setlist or gig (PLAN.md 5). */
-export type MessageKind = "text" | "system" | "song" | "setlist" | "gig";
+/**
+ * What a message is: words, a note from the app, or a card for a song, setlist or gig (PLAN.md 5). A `band-song` card
+ * points at a song in the band's library and carries only its one-line `text`, never the chart, so a phone that does not
+ * know the kind shows the line.
+ */
+export type MessageKind = "text" | "system" | "song" | "setlist" | "gig" | "band-song";
 
-/** `ref` is what a card points at (a song share id, a setlist id or a gig id) and null for words. */
-export type ChatMessage = { seq: number; msgId: string; fromId: string; fromName: string; text: string; at: number; kind: MessageKind; ref: string | null };
+/**
+ * `ref` is what a card points at (a song share id, a setlist id, a gig id or a band song id) and null for words.
+ * `mentions` are the ids of the band members the words name with `@`, found by the room when it stored them.
+ */
+export type ChatMessage = { seq: number; msgId: string; fromId: string; fromName: string; text: string; at: number; kind: MessageKind; ref: string | null; mentions: string[] };
+
+/** A card a player posts into a band thread with `POST /api/chat/send`, pointing at one of the band's songs. */
+export type BandSongCard = { kind: "band-song"; songId: string };
+
+export const bandSongLine = (song: { title: string; artist: string }) => `🎵 ${song.title}${song.artist ? ` · ${song.artist}` : ""}`;
 
 /**
  * A message written on this phone that the room has not confirmed yet. `msgId` is made here, so a resend stores nothing
  * twice, and `from` is the account that wrote it, so another account on the same phone never sends it. A song waits
- * with its whole send in `song` and its title in `text`.
+ * with its whole send in `song` and its title in `text`; a band song waits with its `card` and its line in `text`.
  */
-export type Queued = { msgId: string; roomId: string; text: string; at: number; from: string; song?: Record<string, unknown> };
+export type Queued = { msgId: string; roomId: string; text: string; at: number; from: string; song?: Record<string, unknown>; card?: BandSongCard };
 
 /** A message as one line, for the Messages list: a card shows what it holds, never its JSON. */
 export function previewText(m: Pick<ChatMessage, "kind" | "text">): string {
@@ -31,6 +43,52 @@ export function previewText(m: Pick<ChatMessage, "kind" | "text">): string {
   } catch {
     return "🎵 A song";
   }
+}
+
+/** A run of a message's words, or a link in it. Only http and https become links; `external` is another site. */
+export type TextPart = { text: string } | { text: string; href: string; external: boolean };
+
+const URL_IN_TEXT = /https?:\/\/[^\s<>"]+/gi;
+const TRAILING_PUNCTUATION = /[.,;:!?'")\]}]+$/;
+
+/** The message as words and links, in order. Joined, the parts' text is the message unchanged. */
+export function linkify(text: string, origin: string): TextPart[] {
+  const parts: TextPart[] = [];
+  let done = 0;
+  for (const match of text.matchAll(URL_IN_TEXT)) {
+    const start = match.index;
+    const raw = match[0].replace(TRAILING_PUNCTUATION, "");
+    let url: URL;
+    try {
+      url = new URL(raw);
+    } catch {
+      continue;
+    }
+    if (start > done) parts.push({ text: text.slice(done, start) });
+    parts.push({ text: raw, href: url.href, external: url.origin !== origin });
+    done = start + raw.length;
+  }
+  if (done < text.length) parts.push({ text: text.slice(done) });
+  return parts;
+}
+
+const WORD_CHAR = /[\p{L}\p{N}_]/u;
+
+/**
+ * The ids of the members the words name as `@<name>`, once each, in order. At each `@` the longest name that fits wins,
+ * and a name has to end where a word ends. An `@` inside a word, as in an email address, names nobody.
+ */
+export function parseMentions(text: string, members: { userId: string; name: string }[]): string[] {
+  const longestFirst = members.filter((member) => member.name).map((member) => ({ userId: member.userId, name: member.name.toLowerCase() })).sort((a, b) => b.name.length - a.name.length);
+  const lower = text.toLowerCase();
+  const named = new Set<string>();
+  for (let at = lower.indexOf("@"); at !== -1; at = lower.indexOf("@", at + 1)) {
+    if (at > 0 && WORD_CHAR.test(lower[at - 1])) continue;
+    const rest = lower.slice(at + 1);
+    const hit = longestFirst.find((member) => rest.startsWith(member.name) && !WORD_CHAR.test(rest.charAt(member.name.length)));
+    if (hit) named.add(hit.userId);
+  }
+  return [...named];
 }
 
 export const MAX_MESSAGE_CHARS = 2000;

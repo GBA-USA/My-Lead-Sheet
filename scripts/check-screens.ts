@@ -24,6 +24,8 @@ const entry = `
   export const renderApp = () => renderToStaticMarkup(createElement(App));
   export const renderOpenMenu = () =>
     renderToStaticMarkup(createElement(OverflowMenu, { label: "More", open: true, onToggle: noop, onClose: noop, onEdit: noop, onDelete: noop }));
+  export const renderLockedMenu = () =>
+    renderToStaticMarkup(createElement(OverflowMenu, { label: "More", open: true, onToggle: noop, onClose: noop }));
 `;
 const result = await build({
   stdin: { contents: entry, resolveDir: new URL("..", import.meta.url).pathname, loader: "tsx" },
@@ -38,7 +40,7 @@ const result = await build({
 });
 const bundle = join(mkdtempSync(join(tmpdir(), "check-screens-")), "ui.mjs");
 writeFileSync(bundle, result.outputFiles[0].text);
-const ui: { renderApp: () => string; renderOpenMenu: () => string } = await import(pathToFileURL(bundle).href);
+const ui: { renderApp: () => string; renderOpenMenu: () => string; renderLockedMenu: () => string } = await import(pathToFileURL(bundle).href);
 
 const store = new Map<string, string>();
 const page = { hash: "" };
@@ -121,15 +123,18 @@ for (const hash of ["#/messages", "#/messages/dm_x"]) {
 const pastEnd = render(`#/live/${firstSetlist.id}/99`);
 check(pastEnd.includes(`${firstSetlist.songIds.length}/${firstSetlist.songIds.length}`), "a live index past the end counts the last song");
 
-const menu = ui.renderOpenMenu();
-const items = attrs(menu, /<button [^>]*role="menuitem"[^>]*>[^<]*/g);
-check(items.length === 2 && items.every((item) => /\sdisabled=""/.test(item)), "Edit and Delete are disabled");
-check(items.every((item) => !item.includes("danger")), "Delete no longer looks destructive");
-check(menu.includes("Coming in a later version"), "the menu says Edit and Delete are coming later");
+const menuItems = (html: string) => attrs(html, /<button [^>]*role="menuitem"[^>]*>[^<]*/g).filter((item) => /(Edit|Delete)$/.test(item));
+const ownMenu = ui.renderOpenMenu();
+check(menuItems(ownMenu).length === 2 && menuItems(ownMenu).every((item) => !/\sdisabled=""/.test(item)), "on a song the player made, Edit and Delete are enabled");
+check(!ownMenu.includes("Only songs you made can be edited."), "and the menu shows no locked note");
+const lockedMenu = ui.renderLockedMenu();
+check(menuItems(lockedMenu).length === 2 && menuItems(lockedMenu).every((item) => /\sdisabled=""/.test(item)), "on a built-in song, Edit and Delete are disabled");
+check(lockedMenu.includes("Only songs you made can be edited."), "and the menu says only songs you made can be edited");
+check(![ownMenu, lockedMenu].some((menu) => menu.includes("Coming in a later version")), "neither menu says Edit and Delete are coming later");
 check(!/>Add</.test(render("#/songs")), "there is still no Add button");
 
 if (failures) {
   console.error(`${failures} screen check(s) failed`);
   process.exit(1);
 }
-console.log(`screens ok: ${routes.length} routes, one h1 each, tabs point at their panel, empty setlist, disabled Edit/Delete`);
+console.log(`screens ok: ${routes.length} routes, one h1 each, tabs point at their panel, empty setlist, Edit/Delete only on own songs`);

@@ -34,6 +34,11 @@ export const DATA_KINDS: readonly DataKind[] = [
     what: "For each account on this phone, the changes you made to a song and have not saved yet: key, metronome speed, scroll speed, Notes or Nashville, and a timing you taught or learned. Removed when you save or revert. Never backed up.",
   },
   {
+    key: "leadSheetsGigDraft",
+    place: "phone",
+    what: "For each account on this phone, a gig or rehearsal plan you started and have not sent yet, with the band and setlist it is for: everything you typed or picked on the form. Removed when you send it or tap Cancel. Never backed up.",
+  },
+  {
     key: "leadSheetsSignedIn",
     place: "phone",
     what: "Which account this phone signed in to, so the app checks your account when it opens and, with no signal, keeps your settings and unsaved changes with that account. Signing out removes it.",
@@ -48,6 +53,17 @@ export const DATA_KINDS: readonly DataKind[] = [
     place: "phone",
     what: "While you are signed in: which account this phone backs up to, and what it last sent and received, so it only sends changes. Removed when you sign out.",
   },
+  {
+    key: "leadSheetsLeftBy",
+    place: "phone",
+    what: "Which account left each of your songs, setlists and song settings on this phone when it signed out, so another account signing in here never backs them up as its own.",
+  },
+  {
+    key: "leadSheetsSetAside",
+    place: "phone",
+    what: "For each account on this phone, its songs and song settings moved aside while the backup of another account used the same place, put back when that account signs in here again.",
+  },
+  { key: "leadSheetsLibraryMode", place: "phone", what: "Whether this server keeps My Songs per account, so My Songs shows only the songs of the account signed in." },
   { key: "users", place: "server", what: "Your account: the name bandmates see, your handle (the name others find you by), when you joined, and a number that goes up when you sign out everywhere." },
   {
     key: "passkeys",
@@ -101,6 +117,11 @@ export const DATA_KINDS: readonly DataKind[] = [
     place: "server",
     what: "For each band: every song a member shared into it, as a copy of the whole chart, with who shared it, when, who last changed it, and a one-way code of the chart so a Private song is not passed on as if it were new.",
   },
+  {
+    key: "song_notes",
+    place: "server",
+    what: "For each band: every note an admin pinned to a band song, with the words, who wrote it, their name at the time, and when. A deleted note is kept marked as deleted and never shown or exported. Notes stay in the band: they are never part of a chart or a share.",
+  },
   { key: "band_setlists", place: "server", what: "For each band: every setlist a member shared into it, with its name, songs in order, tags, who shared it, and when it last changed." },
   {
     key: "shares",
@@ -130,7 +151,7 @@ export const DATA_KINDS: readonly DataKind[] = [
   {
     key: "messages",
     place: "server",
-    what: "In each band or DM room: every message posted, with who wrote it, their name at the time, the text, when it was sent, the id your phone gave it so a resend is stored once, what kind of message it is (words, a note from the app, or a song, setlist or gig card), and which song share, setlist or gig a card points at. A song card holds the chart and only the timing versions and song data the sender ticked.",
+    what: "In each band or DM room: every message posted, with who wrote it, their name at the time, the text, when it was sent, the id your phone gave it so a resend is stored once, what kind of message it is (words, a note from the app, or a song, setlist, gig or band song card), which song share, setlist, gig or band song a card points at, and in a band the ids of the members its words mention by name. A band song card holds only the title and artist of the song, never its chart. A song card holds the chart and only the timing versions and song data the sender ticked.",
   },
   {
     key: "mls-phone",
@@ -141,7 +162,7 @@ export const DATA_KINDS: readonly DataKind[] = [
   {
     key: "gigs",
     place: "server",
-    what: "For each band: every gig planned, with its name and date, the setlist and its song order at the time, who is playing, the leader and backup leader, the connection the admin picked, whether it is planned, live or over, and a number that changes the gig secret when the lineup changes.",
+    what: "For each band: every gig and rehearsal planned, with its name and date, start and call times, venue, address and notes, the setlist and its song order at the time, who is playing, the leader and backup leader, the connection the admin picked, whether it is planned, live or over, and a number that changes the gig secret when the lineup changes.",
   },
   { key: "pack_receipts", place: "server", what: "For each gig: who on the lineup downloaded the gig to their phone, which version of it, and when, so the gig card can show Downloaded." },
   { key: "gig_ops", place: "server", what: "For each live gig: the id of each change the leader makes and when, so a change sent twice counts once. Nothing is written here until live gigs are built." },

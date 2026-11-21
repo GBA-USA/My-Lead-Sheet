@@ -2,12 +2,13 @@ import { DurableObject } from "cloudflare:workers";
 import { NOT_A_MEMBER_CLOSE, type ChatMessage } from "../src/chat-model";
 import type { Person } from "./directory-http";
 import type { Env } from "./index";
-import { handleBackup } from "./room-backup";
+import { handleBackup, myLibraryPerAccount } from "./room-backup";
 import { chatRoom, createChatTables, type Card, type Posted } from "./room-chat";
 import { exportBand, importBandFile } from "./room-export";
 import { bandLibrary, createLibraryTables, selfCopies, type SentSetlist, type SetlistFields, type SetlistSend, type SetlistShare, type SongChange, type SongShare } from "./room-library";
 import { createGigTables, gigRoom, type GigFields } from "./room-gig";
 import { bandRoom, createMemberTables, shutOut } from "./room-members";
+import { createNoteTables, noteRoom, type NoteFields } from "./room-notes";
 import type { RouteChoice } from "../src/routes";
 import type { StoredShare } from "./share-guard";
 
@@ -55,6 +56,7 @@ export class Room extends DurableObject<Env> {
     createChatTables(ctx.storage.sql);
     createLibraryTables(ctx.storage.sql);
     createGigTables(ctx.storage.sql);
+    createNoteTables(ctx.storage.sql);
   }
 
   private floor(userId: string): number {
@@ -66,7 +68,7 @@ export class Room extends DurableObject<Env> {
     const version = Number(request.headers.get(SESSION_HEADER));
     if (!userId || !(version >= this.floor(userId))) return Response.json({ error: "signed-out" }, { status: 401 });
     if (shutOut(this.ctx.storage.sql, userId)) return Response.json({ error: "not-a-member" }, { status: 403 });
-    if (new URL(request.url).pathname === BACKUP_PATH) return handleBackup(request, this.ctx.storage, this.ctx.id.name, userId);
+    if (new URL(request.url).pathname === BACKUP_PATH) return handleBackup(request, this.ctx.storage, this.ctx.id.name, userId, myLibraryPerAccount(this.env.MY_SONGS_PER_ACCOUNT));
     if (request.method === "POST") return importBandFile(request, this.ctx.storage, this.band, userId, this.env.APP_ORIGIN);
     if (request.headers.get("Upgrade") !== "websocket") {
       return Response.json({ room: this.ctx.id.name, peers: this.ctx.getWebSockets().length });
@@ -193,6 +195,10 @@ export class Room extends DurableObject<Env> {
     return gigRoom.setRoute(this.band, userId, gigId, route);
   }
 
+  gigSongs(userId: string, gigId: string, songIds: string[]) {
+    return gigRoom.setSongs(this.band, userId, gigId, songIds);
+  }
+
   gigEnd(userId: string, gigId: string, now: number) {
     return gigRoom.end(this.band, userId, gigId, now);
   }
@@ -207,6 +213,20 @@ export class Room extends DurableObject<Env> {
 
   requireGigAdmin(userId: string, gigId: string) {
     gigRoom.requireGigAdmin(this.band, userId, gigId);
+  }
+
+  songNotes(userId: string, songId: string) {
+    return noteRoom.list(this.band, userId, songId);
+  }
+
+  addSongNote(author: Person, fields: NoteFields, now: number) {
+    const added = noteRoom.add(this.band, author, fields, now);
+    this.broadcast(added.posted);
+    return added;
+  }
+
+  deleteSongNote(userId: string, noteId: string, now: number) {
+    return noteRoom.remove(this.band, userId, noteId, now);
   }
 
   bandLibrary(userId: string) {

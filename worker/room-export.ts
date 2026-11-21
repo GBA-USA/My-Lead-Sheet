@@ -1,8 +1,10 @@
 import type { SongContent } from "../src/band-library-model";
+import { NOTE_MAX_CHARS } from "../src/song-notes-model";
 import { signedIn, type Route } from "./directory-http";
 import { fromRoom, readJsonObject, Refused, roomRefused as refused } from "./refused";
 import { bandLibrary, isText, printOf, record, setlistIn, songIn, storeOf } from "./room-library";
 import { bandIdIn, bandRoom, roomOf, type RoomStore } from "./room-members";
+import { keepMovedNote, movedNotes, type MovedNote } from "./room-notes";
 import { lineage, type ShareChoice, type StoredShare } from "./share-guard";
 
 /**
@@ -15,12 +17,13 @@ import { lineage, type ShareChoice, type StoredShare } from "./share-guard";
  * source band and one per item carrying its `choice`, so a Private share stays unsendable by everyone here, the
  * importing admin included. Band timing rows do not exist yet (PLAN.md 4 says "Band timing" comes later), so
  * `versions` is always empty, has no type to name until then, and members' private versions, which live only on their
- * phones and backups, never enter the file.
+ * phones and backups, never enter the file. `notes` are the band's live song notes. A band with none leaves the key out,
+ * so its file reads the same as one made before notes, and a file with no `notes` imports with none.
  */
 export type MovedShare = { choice: ShareChoice; parentId: string | null };
 export type MovedSong = { id: string; share: MovedShare; song: SongContent; versions: unknown[] };
 export type MovedSetlist = { id: string; name: string; songIds: string[]; tags: string[]; share: MovedShare };
-export type BandFile = { exportedFrom: string; exportedAt: string; band: { name: string }; songs: MovedSong[]; setlists: MovedSetlist[] };
+export type BandFile = { exportedFrom: string; exportedAt: string; band: { name: string }; songs: MovedSong[]; setlists: MovedSetlist[]; notes?: MovedNote[] };
 
 export type Counted = { added: number; skipped: number };
 export type Imported = { songs: Counted; setlists: Counted };
@@ -41,6 +44,7 @@ function shareOf(sql: SqlStorage, shareId: string): MovedShare {
 export function exportBand(band: RoomStore, adminId: string, origin: string | undefined, now: number): BandFile {
   bandRoom.requireAdmin(band, adminId);
   const { sql } = band;
+  const notes = movedNotes(sql);
   return {
     exportedFrom: sourceOf(origin, band.bandId),
     exportedAt: new Date(now).toISOString(),
@@ -53,6 +57,7 @@ export function exportBand(band: RoomStore, adminId: string, origin: string | un
       .exec<SetlistRow>(`SELECT setlist_id, share_id, name, song_ids, tags FROM band_setlists ORDER BY shared_at, setlist_id`)
       .toArray()
       .map((row) => ({ id: row.setlist_id, name: row.name, songIds: JSON.parse(row.song_ids), tags: JSON.parse(row.tags), share: shareOf(sql, row.share_id) })),
+    ...(notes.length > 0 ? { notes } : {}),
   };
 }
 
@@ -67,6 +72,12 @@ function shareIn(value: unknown): MovedShare {
   const share = record(value);
   if (!share || (share.choice !== "public" && share.choice !== "private") || (share.parentId !== null && typeof share.parentId !== "string")) throw badFile();
   return { choice: share.choice, parentId: share.parentId };
+}
+
+function noteIn(value: unknown, songIds: Set<string>): MovedNote {
+  const note = record(value);
+  if (!note || typeof note.songId !== "string" || !songIds.has(note.songId) || !Number.isSafeInteger(note.createdAt) || (note.createdAt as number) < 0) throw badFile();
+  return { id: textIn(note.id, 64), songId: note.songId, authorName: textIn(note.authorName, 40), body: textIn(note.body, NOTE_MAX_CHARS), createdAt: note.createdAt as number };
 }
 
 function distinct(ids: string[]) {
@@ -91,7 +102,10 @@ function fileIn(body: Record<string, unknown>): BandFile {
     return { id: textIn(item.id, 64), ...fields, share: shareIn(item.share) };
   });
   distinct(setlists.map((setlist) => setlist.id));
-  return { exportedFrom: textIn(body.exportedFrom, 200), exportedAt: textIn(body.exportedAt, 40), band: { name: textIn(band.name, 60) }, songs, setlists };
+  if (body.notes !== undefined && !Array.isArray(body.notes)) throw badFile();
+  const notes = ((body.notes as unknown[] | undefined) ?? []).map((value) => noteIn(value, songIds));
+  distinct(notes.map((note) => note.id));
+  return { exportedFrom: textIn(body.exportedFrom, 200), exportedAt: textIn(body.exportedAt, 40), band: { name: textIn(band.name, 60) }, songs, setlists, notes };
 }
 
 /** The local id of the item already imported under `movedId`, the share row that stands for the item in its source band. */
@@ -128,6 +142,7 @@ function importBand(storage: DurableObjectStorage, band: RoomStore, adminId: str
       bandLibrary.shareSetlist(band, adminId, fields, now, from(item.id, item.share.choice));
       counts.setlists.added += 1;
     }
+    for (const note of file.notes ?? []) keepMovedNote(sql, movedId(note.id), localIds.get(note.songId)!, adminId, note);
     return counts;
   });
 }

@@ -9,8 +9,9 @@ import { EXPORT_ROUTES } from "./room-export";
 import { GIG_ROUTES } from "./room-gig";
 import { LIBRARY_ROUTES } from "./room-library";
 import { BAND_ROUTES, createBandIndex } from "./room-members";
+import { NOTE_ROUTES } from "./room-notes";
 
-const ROUTES = { ...ACCOUNT_ROUTES, ...CODE_ROUTES, ...FRIEND_ROUTES, ...BAND_ROUTES, ...LIBRARY_ROUTES, ...GIG_ROUTES, ...CHAT_ROUTES, ...EXPORT_ROUTES };
+const ROUTES = { ...ACCOUNT_ROUTES, ...CODE_ROUTES, ...FRIEND_ROUTES, ...BAND_ROUTES, ...LIBRARY_ROUTES, ...GIG_ROUTES, ...CHAT_ROUTES, ...EXPORT_ROUTES, ...NOTE_ROUTES };
 
 export class Directory extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {

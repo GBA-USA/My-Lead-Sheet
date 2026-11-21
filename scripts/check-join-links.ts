@@ -408,8 +408,7 @@ try {
 
     const elsewhere = await startApi({ APP_ORIGIN: origin, RP_ID: "localhost", PASSWORD_PEPPER });
     try {
-      const lost = new Phone(elsewhere.base);
-      ok(await lost.createAccount("Gone Row"), "a player whose codes this server never saw");
+      const lost = await passwordPlayer(elsewhere.base, origin, "Gone Row", "gonerow");
       const goneBand = ok(await lost.call("/api/bands/create", { name: "Gone Band" }), "a band there").bandId as string;
       const replaced = await linkOf(lost, { kind: "band", bandId: goneBand });
       await toScan();

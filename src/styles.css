@@ -1,5 +1,4 @@
-:root,
-.gig-stage {
+:root {
   --bg: #13120d;
   --surface: #2a2620;
   --surface-2: #322c24;
@@ -35,7 +34,7 @@
   --ink: #1c140f;
   --ink-soft: #5c584c;
   --on-paper-dim: #8a8172;
-  --heading: #8a6c28;
+  --heading: #876a27;
   --chord-played: #1c140f;
   --lamp-off: #c4b396;
   --chord-sure: #8fd3a0;
@@ -61,7 +60,7 @@ html[data-theme="day"] {
   --surface-2: #fbf9f4;
   --surface-tabs: #ece7dc;
   --accent: #e1a01e;
-  --accent-text: #946a0c;
+  --accent-text: #8b640b;
   --on-accent: #1a140c;
   --accent-wash: rgba(148, 106, 12, 0.1);
   --text: #141414;
@@ -91,7 +90,7 @@ html[data-theme="day"] {
   --ink: #1c140f;
   --ink-soft: #5c584c;
   --on-paper-dim: #8a8172;
-  --heading: #8a6c28;
+  --heading: #876a27;
   --chord-played: #1c140f;
   --lamp-off: #c4b396;
   --chord-sure: #18794e;
@@ -147,7 +146,7 @@ html[data-theme="cb-rg"] {
   --ink: #1c140f;
   --ink-soft: #5c584c;
   --on-paper-dim: #8a8172;
-  --heading: #8a6c28;
+  --heading: #876a27;
   --chord-played: #1c140f;
   --lamp-off: #c4b396;
   --chord-sure: #9ecbff;
@@ -203,7 +202,7 @@ html[data-theme="cb-by"] {
   --ink: #1c140f;
   --ink-soft: #5c584c;
   --on-paper-dim: #8a8172;
-  --heading: #8a6c28;
+  --heading: #876a27;
   --chord-played: #1c140f;
   --lamp-off: #c4b396;
   --chord-sure: #5fd3c7;
@@ -285,6 +284,29 @@ html[data-theme="contrast"] {
   box-sizing: border-box;
 }
 
+html[data-theme="contrast"] :is(button, input, select, textarea):not([hidden], .beat-pill) {
+  border: var(--control-border);
+}
+
+html[data-theme="contrast"] input:is([type="checkbox"], [type="radio"]):not([hidden]) {
+  appearance: none;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  border-radius: 4px;
+  background: var(--bg);
+}
+
+html[data-theme="contrast"] input[type="radio"]:not([hidden]) {
+  border-radius: 50%;
+}
+
+html[data-theme="contrast"] input:is([type="checkbox"], [type="radio"]):checked:not([hidden]) {
+  background: var(--accent);
+  box-shadow: inset 0 0 0 4px var(--bg);
+}
+
 html,
 body,
 #root {
@@ -338,6 +360,7 @@ a:focus-visible {
   flex-direction: column;
   overflow: hidden;
   background: var(--bg);
+  color: var(--text);
 }
 
 .shell-header {
@@ -768,6 +791,39 @@ a:focus-visible {
   opacity: 0.35;
 }
 
+.scroll-speed {
+  position: fixed;
+  right: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: 0 2px 12px var(--shadow);
+}
+
+.scroll-speed .step {
+  width: 56px;
+  height: 56px;
+  min-width: 56px;
+  min-height: 56px;
+}
+
+.speed-readout {
+  min-width: 56px;
+  height: 56px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-weight: 700;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
 .percent {
   min-width: 40px;
   text-align: center;
@@ -1016,6 +1072,10 @@ a:focus-visible {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.app:has(> .live-nav) .scroll-speed {
+  bottom: calc(var(--touch-stage) + 42px + env(safe-area-inset-bottom));
 }
 
 .gig-stage .song-chrome {
@@ -1452,6 +1512,25 @@ a:focus-visible {
     margin-left: 16px;
     margin-right: 16px;
   }
+
+  .gig-view:has(> .band-status-slot:not(:empty)) {
+    grid-template-columns: minmax(0, 1fr) minmax(200px, 280px);
+    column-gap: 24px;
+    align-items: start;
+  }
+
+  .gig-view > * {
+    grid-column: 1;
+  }
+
+  .gig-view > .gig-top {
+    grid-column: 1 / -1;
+  }
+
+  .gig-view > .band-status-slot {
+    grid-column: 2;
+    grid-row: 2 / span 3;
+  }
 }
 
 .metro-pad {
@@ -1488,7 +1567,7 @@ a:focus-visible {
   gap: 8px;
   font-size: 14px;
   font-weight: 800;
-  color: var(--ink);
+  color: inherit;
 }
 
 .metro-lamp {
@@ -1643,8 +1722,18 @@ a:focus-visible {
   background: var(--danger-solid);
 }
 
+.beat-dot[data-battery="low"] {
+  border-radius: 2px;
+}
+
 .beat-dot[data-beat="off"] {
   visibility: hidden;
+}
+
+/* The beat pill's box reaches over the chart text, so the high-contrast control border skips the pill and goes on the dot, inside the card's padding. */
+html[data-theme="contrast"] .beat-dot {
+  border: var(--control-border);
+  border-color: currentColor;
 }
 
 .privacy-link {

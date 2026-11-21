@@ -355,6 +355,12 @@ a:focus-visible {
   justify-self: end;
 }
 
+.shell-header .icon-btn {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+}
+
 .song-header {
   grid-template-columns: 48px minmax(0, 1fr) auto 48px;
   column-gap: 8px;
@@ -495,7 +501,7 @@ a:focus-visible {
 }
 
 .tab {
-  height: 36px;
+  height: 44px;
   border-radius: 999px;
   display: grid;
   place-items: center;
@@ -1230,6 +1236,10 @@ a:focus-visible {
   padding: 20px 16px calc(36px + env(safe-area-inset-bottom));
   border-radius: 20px 20px 0 0;
   min-height: 100%;
+}
+
+.app:has(> .live-nav) .sheet {
+  padding-bottom: calc(var(--touch-stage) + 37px + 2 * env(safe-area-inset-bottom));
 }
 
 .sheet-title {

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import { BandLibraryTab, LIBRARY_MESSAGES, plural } from "./band-library";
 import type { BandLibrary, BandSetlist } from "./band-library-model";
 import { BandSetlistView, dropSetlists, holdSetlists } from "./band-setlist-view";
@@ -11,7 +11,7 @@ import { ScanCode, ShowCode, shareLink, useCode } from "./codes";
 import { downloadPack, packsOnPhone, type GigPack } from "./gig-pack";
 import { DraftOffer, draftsIn, dropDraft, GigCard, GigPlanForm, keepDraft, newGigId, PastGigCard, planAgainHref, readDraft, type SendFailure } from "./gig-plan";
 import { fitDraft, newDraft, planBody, type GigDraft, type GigList, type GigView, type KeptDraft } from "./gig-plan-model";
-import { useCloseOnSong, useEscape } from "./hooks";
+import { useCloseOnSong, useEscape, useKeyboardInset } from "./hooks";
 import { NextGigCard, nextGig } from "./next-gig-card";
 import { allOnPhone, clearBand, heldFor, holdBandSongs, keepBandsOnPhone, type CachedBandSong } from "./phone-db";
 import { Room } from "./room";
@@ -173,6 +173,7 @@ export function BandsSheet({
 
   useEscape(onClose);
   useCloseOnSong(onClose);
+  const keyboard = useKeyboardInset();
 
   const join = (code: string, found: BandPreview) =>
     run(async () => {
@@ -281,7 +282,7 @@ export function BandsSheet({
 
   const screen = screens[view.name]();
   return (
-    <div className="account-backdrop" onClick={onClose}>
+    <div className="account-backdrop" style={{ "--keyboard": `${keyboard}px` } as CSSProperties} onClick={onClose}>
       <section className="account-sheet bands-sheet" role="dialog" aria-modal="true" aria-labelledby={titleId} data-view={view.name} onClick={(event) => event.stopPropagation()}>
         <header className="account-top">
           <h2 id={titleId}>{screen.title}</h2>

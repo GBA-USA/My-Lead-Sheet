@@ -68,6 +68,11 @@
   cursor: pointer;
 }
 
+.band-library-setlists .band-library-row {
+  flex: 1 1 180px;
+  min-width: 180px;
+}
+
 .band-library-row small {
   color: var(--text-dim);
   font-size: 13px;
@@ -243,6 +248,7 @@
 
 .bands-tab-button {
   align-self: flex-start;
+  min-height: 44px;
   margin: 0 16px calc(16px + env(safe-area-inset-bottom));
   border: var(--control-border);
   cursor: pointer;

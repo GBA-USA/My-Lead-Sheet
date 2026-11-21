@@ -3,7 +3,7 @@ import type { Member } from "./bands-model";
 import { MAX_MESSAGE_CHARS, MUTE_LABELS, bandSongLine, isMuted, linkify, mutedUntilFor, nameAbove, type BandSongCard, type ChatEntry, type ChatMessage, type MuteChoice, type Queued } from "./chat-model";
 import { useRoomSocket, type ChangeEntry } from "./chat";
 import { DotsIcon, Menu } from "./controls";
-import { useEscape } from "./hooks";
+import { useEscape, useKeyboardInset } from "./hooks";
 import { bandHref, bandSongHref } from "./route";
 import { fold } from "./search";
 import { SongCard } from "./send-song";
@@ -36,24 +36,6 @@ function threadLines(messages: ChatMessage[], waiting: Queued[], me: string, new
     const newRun = newDay || item.newLine || before.from !== from;
     return { ...item, day: newDay ? dayLabel(at, now) : null, name: newRun ? name : null, mine: from === me };
   });
-}
-
-/** How far the on-screen keyboard reaches up over the page. iOS Safari keeps the layout viewport and shrinks only the visual one. */
-function useKeyboardInset() {
-  const [inset, setInset] = useState(0);
-  useEffect(() => {
-    const viewport = window.visualViewport;
-    if (!viewport) return;
-    const measure = () => setInset(Math.max(0, Math.round(window.innerHeight - viewport.height - viewport.offsetTop)));
-    measure();
-    viewport.addEventListener("resize", measure);
-    viewport.addEventListener("scroll", measure);
-    return () => {
-      viewport.removeEventListener("resize", measure);
-      viewport.removeEventListener("scroll", measure);
-    };
-  }, []);
-  return inset;
 }
 
 const hardwareKeyboard = () => matchMedia("(hover: hover) and (pointer: fine)").matches;

@@ -615,7 +615,7 @@ function BandScreen({ me, bandId, section: asked, landing, inbox, onMessage, onS
       ) : (
         <>
           {!band && cached ? cannotReach : null}
-          <Room me={me} roomId={bandId} entry={chatEntry} inline onEntry={inbox.change} onGone={failed} onSignedOut={onSignedOut} />
+          <Room me={me} roomId={bandId} entry={chatEntry} inline band={{ members: band?.members ?? [], songs: library?.songs ?? cached }} onEntry={inbox.change} onGone={failed} onSignedOut={onSignedOut} />
         </>
       ),
     gigs: () =>

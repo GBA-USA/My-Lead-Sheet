@@ -49,7 +49,7 @@ function set(next: Queued[]) {
 const unanswered = (error: unknown) => !(error instanceof ApiError) || error.status === 0 || error.status >= 500;
 
 const post = (item: Queued) => {
-  const [path, body] = item.song ? ["/api/chat/send-song", { ...item.song, msgId: item.msgId }] : ["/api/chat/send", { roomId: item.roomId, msgId: item.msgId, text: item.text }];
+  const [path, body] = item.song ? ["/api/chat/send-song", { ...item.song, msgId: item.msgId }] : ["/api/chat/send", { roomId: item.roomId, msgId: item.msgId, text: item.text, card: item.card }];
   return api<{ message: ChatMessage }>(path, body).then((reply) => reply.message);
 };
 

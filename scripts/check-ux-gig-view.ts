@@ -26,8 +26,8 @@ import { openSite } from "./chrome.ts";
  * header and a bottom bar `.live-nav` with Prev, "Scroll: On|Off" and Next at 64 px, with no `.controls`, Key, Notes,
  * Metronome pill or Send. Back from the sheet is the gig view at the same index. The setlist's `#/live/<id>/<index>`
  * gets the same bottom bar under its own song chrome, with the setlist count in `.live-count`, no `.band-status-slot`
- * and no End. Band Live keeps an enabled Prev and Next on a song that is not on this phone. The gig routes keep the
- * stage palette under day mode (`.app` is `.gig-stage`); leaving restores it.
+ * and no End. Band Live keeps an enabled Prev and Next on a song that is not on this phone. The gig routes take this
+ * phone's theme, so with day mode on they are in day mode too.
  *
  * `POST /api/bands/gig/end { bandId, gigId }`: the leader, backup or an admin ends the gig; `gig/open` then returns
  * `status: "ended"`. Anyone else is `403 not-allowed`; a stranger `403 not-a-member`.
@@ -377,7 +377,7 @@ try {
     assert.equal(viewOf(await open(mike, sunday), "Mike reads Sunday").gig.status, "planned", "Sunday is still on");
   });
 
-  await check("the gig screens stay in stage mode with day mode on, and leaving restores day mode", async () => {
+  await check("the gig screens follow day mode when this phone picked it", async () => {
     const appBg = () => site.evaluate<string>(`getComputedStyle(document.querySelector(".app")).backgroundColor`);
     const theme = () => site.evaluate<string>(`document.documentElement.dataset.theme`);
     await site.evaluate(`localStorage.setItem("leadSheetsTheme", "day")`);
@@ -389,13 +389,13 @@ try {
       assert.notEqual(day, STAGE_BG, `the band page is in day mode (${day})`);
       await go(`#/gig/${bandId}/${sunday}`, `!!${gigViewOf(sunday)}`, "Sunday's gig view");
       await onGigView(sunday);
-      assert.equal(await appBg(), STAGE_BG, "the gig view keeps the stage palette");
+      assert.equal(await appBg(), day, "the gig view is in day mode");
       assert.equal(await theme(), "day", "without touching the saved theme");
       await go(`#/gig/${bandId}/${sunday}/0`, `document.querySelector(".sheet .sheet-name")?.textContent === ${js(TITLES[0])}`, "the stage sheet");
-      assert.equal(await appBg(), STAGE_BG, "the gig-mode sheet keeps the stage palette");
+      assert.equal(await appBg(), day, "the gig-mode sheet is in day mode");
       await app.shot(shots && `${shots}/gig-sheet-day.png`);
       await openBand(bandId);
-      assert.equal(await appBg(), day, "leaving restores day mode");
+      assert.equal(await appBg(), day, "the band page is still in day mode");
     } finally {
       await site.evaluate(`localStorage.removeItem("leadSheetsTheme")`);
       await reload();

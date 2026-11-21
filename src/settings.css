@@ -80,8 +80,10 @@
 }
 
 .settings-sample-chords > span {
-  padding: 0 6px;
+  padding: 1px 6px 5px;
   border-radius: 6px;
+  text-underline-offset: 5px;
+  text-decoration-thickness: 2px;
 }
 
 .settings-sample .is-sure {
@@ -103,7 +105,8 @@
 
 .settings-sample .is-unsure::after {
   content: var(--chord-unsure-mark);
-  margin-left: 3px;
+  display: inline-block;
+  margin-left: 4px;
   font-size: 0.7em;
 }
 

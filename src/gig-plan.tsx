@@ -4,6 +4,7 @@ import type { BandLibrary } from "./band-library-model";
 import { bandSong } from "./band-setlist-view";
 import type { BandView } from "./bands-model";
 import type { GigPack, GigPackSong } from "./gig-pack";
+import { GigSongs, SET_LOCKED } from "./gig-songs";
 import {
   againDraft,
   DETAIL_LIMITS,
@@ -270,7 +271,8 @@ export function DraftOffer({ kept, setlistName, onKeep, onStartOver }: { kept: K
 /**
  * The gig card on the band screen: who's playing with Downloaded ✓ or Not yet, and Get ready, which downloads the whole
  * pack. Tonight's songs open on the gig-mode sheet once the pack is on this phone; before that each song offers
- * Download, the same one pack call, for whoever may fetch it.
+ * Download, the same one pack call, for whoever may fetch it. An admin edits the gig's own songs here until it starts,
+ * and `onChanged` reloads the band's gigs after a save. A pack on this phone older than the plan says Set changed.
  */
 export function GigCard({
   view,
@@ -281,6 +283,7 @@ export function GigCard({
   busy,
   onGetReady,
   onSong,
+  onChanged,
 }: {
   view: GigView;
   band: BandView;
@@ -290,20 +293,23 @@ export function GigCard({
   busy: boolean;
   onGetReady: () => void;
   onSong: (index: number) => void;
+  onChanged: () => Promise<void>;
 }) {
   const { gig } = view;
+  const [editing, setEditing] = useState(false);
   const playing = gig.lineup.includes(me);
   const days = daysUntil(gig.date);
   const nameOf = (userId: string) => band.members.find((member) => member.userId === userId)?.name ?? "Not in the band now";
   const role = (userId: string) => (userId === gig.leader ? " · Leading" : userId === gig.backup ? " · Backup" : "");
   const mayFetch = playing || band.role === "admin";
-  const planned = library?.setlists.find((setlist) => setlist.setlistId === gig.setlistId)?.songIds ?? [];
+  const locked = gig.status === "live";
 
   return (
     <section className="gig-card" data-gig={gig.gigId} aria-label={gig.name}>
       <h3>
         {gig.name} <small>{gigLine(gig)}</small>
       </h3>
+      {pack && pack.packRev < view.packRev ? <p className="account-note">Set changed · {plural(view.songCount, "song")}</p> : null}
       {gig.address ? <p className="account-note">{gig.address}</p> : null}
       {gig.notes ? <p className="gig-card-notes">{gig.notes}</p> : null}
       {playing && days >= 0 && days <= 1 ? <p className="account-note">Open the app once on Wi-Fi before you leave.</p> : null}
@@ -325,7 +331,17 @@ export function GigCard({
       ) : (
         <p className="account-note">You're not playing this one.</p>
       )}
-      {pack ? (
+      {editing && library ? (
+        <GigSongs
+          view={view}
+          songs={library.songs}
+          onSaved={() => {
+            setEditing(false);
+            onChanged().catch(() => {});
+          }}
+          onCancel={() => setEditing(false)}
+        />
+      ) : pack ? (
         <ol className="gig-card-songs">
           {pack.songs.map((item, index) => (
             <li key={item.songId}>
@@ -335,9 +351,9 @@ export function GigCard({
             </li>
           ))}
         </ol>
-      ) : mayFetch && planned.length > 0 ? (
+      ) : mayFetch && view.songIds.length > 0 ? (
         <ol className="gig-card-songs">
-          {planned.map((songId) => (
+          {view.songIds.map((songId) => (
             <li key={songId}>
               <span>{titleOf(library?.songs.find((song) => song.songId === songId))}</span>
               <button type="button" className="account-secondary" disabled={busy} onClick={onGetReady}>
@@ -346,6 +362,14 @@ export function GigCard({
             </li>
           ))}
         </ol>
+      ) : null}
+      {band.role === "admin" && !editing ? (
+        <>
+          <button type="button" className="account-secondary" disabled={locked || !library} onClick={() => setEditing(true)}>
+            Edit songs
+          </button>
+          {locked ? <p className="account-note">{SET_LOCKED}</p> : null}
+        </>
       ) : null}
     </section>
   );

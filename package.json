@@ -80,7 +80,8 @@
     "check:ci-deep": "node --experimental-strip-types scripts/check-ci-deep.ts",
     "check:scroll-sync": "node --experimental-strip-types scripts/check-scroll-sync.ts",
     "check:ux-scroll-sync": "node --experimental-strip-types scripts/check-ux-scroll-sync.ts",
-    "check:library-consistency": "tsc -p worker && node --experimental-strip-types scripts/check-library-consistency.ts"
+    "check:library-consistency": "tsc -p worker && node --experimental-strip-types scripts/check-library-consistency.ts",
+    "check:gig-songs": "tsc -p worker && node --experimental-strip-types scripts/check-gig-songs.ts"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.5",

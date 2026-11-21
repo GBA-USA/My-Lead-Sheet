@@ -501,6 +501,7 @@ function BandScreen({ me, bandId, section: asked, landing, inbox, onMessage, onS
         library={library}
         onGetReady={() => getReady(item)}
         onSong={(index) => (window.location.hash = gigHref(bandId, item.gig.gigId, index))}
+        onChanged={loadGigs}
       />
     ));
 

@@ -154,7 +154,9 @@ try {
       "the note names its song and author, and keeps the words trimmed",
     );
     assert.ok(typeof notes.first.noteId === "string" && notes.first.noteId !== notes.second.noteId, "each note has its own id");
-    assert.ok(notes.first.createdAt >= before && notes.second.createdAt <= after && notes.first.createdAt <= notes.second.createdAt, "with the time it was added");
+    const skew = 1000;
+    assert.ok(notes.first.createdAt >= before - skew && notes.second.createdAt <= after + skew, `with the time it was added, within ${skew} ms since the Worker keeps its own clock`);
+    assert.ok(notes.first.createdAt <= notes.second.createdAt, "the first before the second");
     const seen = await listed(mike, bandId, fireAway);
     assert.deepEqual(seen.notes, [notes.second, notes.first], "Mike, a member, sees both, newest first, as they were added");
     assert.equal(seen.canWrite, false, "and may not write");
@@ -250,6 +252,26 @@ try {
     const again = await importBandFile(admin(ann2, fresh.base, "https://new.test"), newBand, js(file));
     assert.equal(again.status, 200, "importing the same file again");
     assert.equal((await listed(dana, newBand, idOf("Fire Away"))).notes.length, 2, "adds no note twice");
+
+    const onward = await downloadBandFile(admin(ann2, fresh.base, "https://new.test"), newBand);
+    assert.equal(onward.status, 200, `Ann downloads the band that came by import (${js(onward.body).slice(0, 200)})`);
+    const onwardFile = onward.body as BandFile & { notes: { id: string }[] };
+    assert.equal(onwardFile.notes.length, 3, "its file carries the imported notes");
+    const arrivedIds = new Set(arrived.songs.map((item) => item.songId));
+    assert.ok(onwardFile.songs.every((song) => arrivedIds.has(song.id)), "naming songs by this band's own ids");
+    assert.ok(onwardFile.notes.every((note) => !file.notes.some((source) => note.id.includes(source.id))), `and notes by this band's own ids (${js(onwardFile.notes.map((note) => note.id))})`);
+    const twiceMoved = (await terry.call("/api/bands/create", { name: "Moved Twice" })).body.bandId as string;
+    const secondHop = await importBandFile(admin(terry, main.base, origin), twiceMoved, js(onwardFile));
+    assert.equal(secondHop.status, 200, `the file of a band that came by import imports again on another deployment (${js(secondHop.body)})`);
+    const hopped = await library(terry, twiceMoved);
+    const hopFire = hopped.songs.find((item) => item.song.title === "Fire Away")!.songId;
+    assert.deepEqual(
+      (await listed(terry, twiceMoved, hopFire)).notes.map((note) => [note.authorName, note.body, note.createdAt]),
+      [notes.mike, notes.second].map((note) => [note.authorName, note.body, note.createdAt]),
+      "with Fire Away's notes, author names and dates kept across both moves",
+    );
+    assert.equal((await importBandFile(admin(terry, main.base, origin), twiceMoved, js(onwardFile))).status, 200, "importing the second file again");
+    assert.equal((await listed(terry, twiceMoved, hopFire)).notes.length, 2, "adds no note twice after two moves");
 
     const { notes: _notes, ...older } = file;
     const oldBand = (await ann2.call("/api/bands/create", { name: "Old File Band" })).body.bandId as string;

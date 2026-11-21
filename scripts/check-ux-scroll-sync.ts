@@ -14,8 +14,7 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const shots = process.env.SHOTS;
 const MIN_TAP = 44;
 const LIVE = "#/live/1/0";
-/** The bar's Prev and Next. The Scroll pill between them narrows by itself when "Off" turns to "On". */
-const STEPS = ["Prev", "Next"];
+const MUST_NOT_SHRINK = ["Prev", "Next"];
 const SIZES = [
   { width: 360, height: 800, bottom: 0, mobile: true },
   { width: 360, height: 800, bottom: 34, mobile: true },
@@ -27,14 +26,13 @@ const SIZES = [
 ];
 type Size = (typeof SIZES)[number];
 type Box = { left: number; top: number; right: number; bottom: number; width: number; height: number };
-type Part = Box & { name: string; button: boolean; onTop: string | null };
+type Part = Box & { name: string; button: boolean; blockedBy: string | null };
 type Seen = { view: { width: number; height: number }; hash: string; bar: (Part | { name: string; missing: true })[]; group: (Box & { buttons: Part[] }) | null };
 
-/** The stage bar's parts and the − / + group as drawn, and for each, what a tap at its centre would land on (null when it is that part). */
 const SEEN = `(() => {
   const box = (el) => { const r = el.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height }; };
   const name = (el) => el.getAttribute("aria-label") || el.textContent.trim() || el.className;
-  const onTop = (el) => {
+  const blocker = (el) => {
     const r = el.getBoundingClientRect();
     const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
     return hit && (hit === el || el.contains(hit)) ? null : hit ? name(hit.closest("button, [role=group], nav") || hit) : "nothing";
@@ -47,9 +45,9 @@ const SEEN = `(() => {
     hash: location.hash,
     bar: parts.map(([label, selector]) => {
       const el = bar && bar.querySelector(selector);
-      return el ? { name: label, button: el.tagName === "BUTTON", onTop: onTop(el), ...box(el) } : { name: label, missing: true };
+      return el ? { name: label, button: el.tagName === "BUTTON", blockedBy: blocker(el), ...box(el) } : { name: label, missing: true };
     }),
-    group: group ? { ...box(group), buttons: [...group.querySelectorAll("button")].map((b) => ({ name: name(b), button: true, onTop: onTop(b), ...box(b) })) } : null,
+    group: group ? { ...box(group), buttons: [...group.querySelectorAll("button")].map((b) => ({ name: name(b), button: true, blockedBy: blocker(b), ...box(b) })) } : null,
   };
 })()`;
 
@@ -125,14 +123,14 @@ try {
           continue;
         }
         if (overlap(group, part)) wrong.push(`the group (${spot(group)}) covers ${part.name} (${spot(part)})`);
-        if (part.button && part.onTop) wrong.push(`a tap at the centre of ${part.name} lands on ${part.onTop}`);
+        if (part.button && part.blockedBy) wrong.push(`a tap at the centre of ${part.name} lands on ${part.blockedBy}`);
         const before = rest.bar.find((old) => old.name === part.name);
-        if (STEPS.includes(part.name) && before && found(before) && (part.width < before.width - 0.5 || part.height < before.height - 0.5)) {
+        if (MUST_NOT_SHRINK.includes(part.name) && before && found(before) && (part.width < before.width - 0.5 || part.height < before.height - 0.5)) {
           wrong.push(`${part.name} shrank from ${Math.round(before.width)}×${Math.round(before.height)} at rest to ${Math.round(part.width)}×${Math.round(part.height)}`);
         }
       }
       if (group.buttons.length < 3) wrong.push(`the group has ${group.buttons.length} buttons, not − , the speed and +`);
-      for (const button of group.buttons) if (button.onTop) wrong.push(`a tap at the centre of ${button.name} lands on ${button.onTop}`);
+      for (const button of group.buttons) if (button.blockedBy) wrong.push(`a tap at the centre of ${button.name} lands on ${button.blockedBy}`);
       for (const part of [...on.bar.filter(found).filter((part) => part.button), ...group.buttons]) {
         if (part.width < MIN_TAP || part.height < MIN_TAP) wrong.push(`${part.name} is ${Math.round(part.width)}×${Math.round(part.height)} px, under ${MIN_TAP} px`);
       }
@@ -142,7 +140,7 @@ try {
         const moved = await until(`location.hash === "#/live/1/1"`, "song 2", 3000).catch(() => false);
         if (!moved) {
           const after = await seen();
-          wrong.push(`a tap at the centre of Next stayed on ${after.hash} (it landed on ${next.onTop ?? "Next"}; the speed reads ${after.group?.buttons.find((b) => /^Speed/.test(b.name))?.name ?? "nothing"})`);
+          wrong.push(`a tap at the centre of Next stayed on ${after.hash} (it landed on ${next.blockedBy ?? "Next"}; the speed reads ${after.group?.buttons.find((b) => /^Speed/.test(b.name))?.name ?? "nothing"})`);
         }
       }
       return wrong;
@@ -162,7 +160,7 @@ try {
     if (!group) return ["no − / + group while scrolling"];
     const [right, bottom] = [view.width - group.right, view.height - group.bottom];
     if (Math.abs(right - 12) > 0.5 || Math.abs(bottom - 12 - phone.bottom) > 0.5) wrong.push(`the group sits ${Math.round(right)} px from the right and ${Math.round(bottom)} px from the bottom, not 12 and ${12 + phone.bottom}`);
-    for (const button of group.buttons) if (button.onTop) wrong.push(`a tap at the centre of ${button.name} lands on ${button.onTop}`);
+    for (const button of group.buttons) if (button.blockedBy) wrong.push(`a tap at the centre of ${button.name} lands on ${button.blockedBy}`);
     return wrong;
   });
 } finally {

@@ -167,23 +167,28 @@ try {
     `each of the four themes changes the shell background and leaves the chart paper (stage app=${stage.app} sheet=${stage.sheet}; ${THEMES.slice(1).map((theme) => `${theme} app=${others[theme].app} sheet=${others[theme].sheet}`).join("; ")})`,
   );
 
-  await site.evaluate(`(() => { const probe = document.createElement("div"); probe.id = "gig-probe"; probe.className = "gig-stage"; document.body.append(probe); })()`);
-  const tokenValues = (selector: string) =>
-    site.evaluate<Record<string, string>>(`(() => { const style = getComputedStyle(document.querySelector(${JSON.stringify(selector)})); return Object.fromEntries(${JSON.stringify(stageKeys)}.map((key) => [key, style.getPropertyValue(key).trim()])); })()`);
-  await setTheme("stage");
-  const stageTokens = await tokenValues("html");
-  const gigReport: string[] = [];
-  let gigHolds = stageKeys.length > 0;
-  for (const theme of THEMES.slice(1)) {
+  const appTokens = () =>
+    site.evaluate<Record<string, string>>(`(() => { const style = getComputedStyle(document.querySelector(".app")); return Object.fromEntries(${JSON.stringify(stageKeys)}.map((key) => [key, style.getPropertyValue(key).trim()])); })()`);
+  const shellTokens = new Map<Theme, Record<string, string>>();
+  for (const theme of THEMES) {
     await setTheme(theme);
-    const shell = await tokenValues("html");
-    const gig = await tokenValues("#gig-probe");
-    const shellChanged = shell["--bg"] !== stageTokens["--bg"];
-    const differing = stageKeys.filter((key) => gig[key] !== stageTokens[key]);
-    gigHolds &&= shellChanged && differing.length === 0;
-    gigReport.push(`${theme}: shell --bg ${shell["--bg"] || "unset"}${differing.length ? `, .gig-stage differs on ${differing.join(" ")}` : ""}`);
+    shellTokens.set(theme, await appTokens());
   }
-  check(gigHolds, `\`.gig-stage\` forces the stage palette under every other theme (${stageKeys.length} tokens compared; ${gigReport.join("; ")})`);
+  await open(`${site.origin}/#/gig/band_x/gig_x`);
+  await until(`!!document.querySelector(".app.gig-stage")`, "the gig shell to render");
+  const gigReport: string[] = [];
+  let gigFollows = stageKeys.length > 0 && new Set(THEMES.map((theme) => shellTokens.get(theme)?.["--bg"])).size === THEMES.length;
+  for (const theme of THEMES) {
+    await setTheme(theme);
+    const gig = await appTokens();
+    const shell = shellTokens.get(theme) ?? {};
+    const differing = stageKeys.filter((key) => gig[key] !== shell[key]);
+    gigFollows &&= differing.length === 0;
+    gigReport.push(`${theme}: --bg ${gig["--bg"] || "unset"}${differing.length ? `, differs from the app shell on ${differing.join(" ")}` : ""}`);
+  }
+  await open(`${site.origin}/#/song/${songId}`);
+  await until(`!!document.querySelector(".sheet")`, "the sheet to render again");
+  check(gigFollows, `gig screens follow the device theme under every theme (${stageKeys.length} tokens compared with the app shell; ${gigReport.join("; ")})`);
 
   await site.evaluate(`(() => {
     const style = document.createElement("style");
@@ -243,4 +248,4 @@ if (failures) {
   console.error(`${failures} theme token check(s) failed`);
   process.exit(1);
 }
-console.log(`check:ux-theme-tokens passed: ${stageKeys.length} tokens in five themes, no literals outside the token blocks, theme applied before the bundle, shell changes while paper stays, gig view stays stage, chord bands differ in grayscale`);
+console.log(`check:ux-theme-tokens passed: ${stageKeys.length} tokens in five themes, no literals outside the token blocks, theme applied before the bundle, shell changes while paper stays, gig screens follow the device theme, chord bands differ in grayscale`);

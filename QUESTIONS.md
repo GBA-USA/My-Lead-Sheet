@@ -13,3 +13,123 @@ edited, so I left it. Proposed fix for whoever owns the tests: allow a tolerance
 `createdAt >= before - 1000 && createdAt <= after + 1000`. Keep the ordering check (`first.createdAt <=
 second.createdAt`), which uses one clock. The box (Linux) has not shown it yet. Its fresh-tree verify decides whether
 this is a laptop-only flake.
+
+---
+
+# QUESTIONS: P2 gig plan
+
+## Two setup bugs in commit 1 (e1997b9). May CoS apply this setup-only patch to `scripts/check-gig-plan-record.ts`?
+
+Resolved Nov 21, 2026: applied as written in the corrective for ux-p2-gig-plan-verify (pre-approved, runbook step 9). The full box run is 15 of 15 ok. The `chrome.ts` bug below was already fixed on the base.
+
+The build (1096d39) is committed and complete. Per the queue rules I did not edit the commit-1 test after the build.
+No assertion changes. Both fixes are setup.
+
+### 1. The box cases never start
+
+The file calls `await boxCases()` near line 112, before `const boxTools`, `const SONGS` and the other top-level
+constants below it are initialized. The full run stops at once:
+
+```
+ReferenceError: Cannot access 'boxTools' before initialization
+    at boxCases (scripts/check-gig-plan-record.ts:151:84)
+```
+
+`--pure` is unaffected and passes (3 of 3). Fix: move the run block and the summary to the end of the file.
+
+### 2. Sam's typed sign-up makes a later reload open a real "Leave site?" dialog
+
+`app.signUp` types the name with `Input.insertText`, which gives the page user activation. The check reloads once
+afterwards (line 268) to drop it. In Edge the activation survived that reload (inferred from the run below). The draft
+case then reloads with a changed form (line 423). The app asks the browser to warn, as pass condition 8 requires, so a
+real dialog opens. Every later `Runtime.evaluate` waits on it, and the check hangs until the runner's timeout.
+
+Measured: a copy with only fix 1 printed 7 ok up to "Plan again pre-fills everything but the date". It then sat at the
+draft case for over 10 minutes with no output, and I stopped it. Fix: sign Sam up the way `app.signUp` does, but set the
+name through the value setter (as the check's own `setField` does) so the page never gets a real keystroke.
+
+### Patch
+
+```diff
+@@ -110,12 +110,2 @@ await check("Plan again pre-fills everything but the date (pure)", () => {
+ 
+-if (!PURE_ONLY) {
+-  await boxCases();
+-  await beforeColumns();
+-}
+-
+-if (failed > 0) {
+-  console.log(`${failed} failed`);
+-  process.exit(1);
+-}
+-console.log(PURE_ONLY ? "check:gig-plan-record pure cases passed" : "check:gig-plan-record passed");
+ 
+@@ -260,3 +250,15 @@ async function boxCases() {
+     await app.library();
+-    await app.signUp("Sam Rivera");
++    /** app.signUp, with the name set like setField instead of typed, so the page never gets a real keystroke. */
++    await app.openMenu();
++    await app.pick("Sign in");
++    await app.until(`document.querySelector(".account-sheet")?.dataset.step === "start"`, "the start screen");
++    await app.click("New here? Create an account");
++    await site.evaluate(`(() => { const field = [...document.querySelectorAll("[role=dialog] label")].find((l) => l.textContent.trim() === "Your name (what bandmates see)").control; Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field), "value").set.call(field, "Sam Rivera"); field.dispatchEvent(new Event("input", { bubbles: true })); })()`);
++    await settle();
++    await app.click("Sign in with Face ID or fingerprint");
++    await app.until(`["nudge", "account"].includes(document.querySelector(".account-sheet")?.dataset.step)`, "the end of Create account");
++    if ((await site.evaluate<string>(`document.querySelector(".account-sheet").dataset.step`)) === "nudge") await app.click("Not now");
++    await app.until(`document.querySelector(".account-sheet")?.dataset.step === "account"`, "the account screen");
++    await app.click("✕");
++    await app.closeMenu();
+     const sam = await me();
+@@ -672 +674,12 @@ async function beforeColumns() {
+ }
++
++if (!PURE_ONLY) {
++  await boxCases();
++  await beforeColumns();
++}
++
++if (failed > 0) {
++  console.log(`${failed} failed`);
++  process.exit(1);
++}
++console.log(PURE_ONLY ? "check:gig-plan-record pure cases passed" : "check:gig-plan-record passed");
+```
+
+**Proof:** a throwaway copy with exactly this patch, run on this laptop against the build with Edge as `CHROME`:
+15 of 15 ok, `check:gig-plan-record passed`. That covers pass conditions 1 to 8, the five widths, no page errors, and
+the old-row fixture. Deleted afterwards, never committed.
+
+## Base-tree bug outside this cook: every `scripts/chrome.ts` browser check throws on start
+
+Lint commit 5501704 changed `let sessionId` to `const sessionId: string | undefined = undefined` in
+`scripts/chrome.ts` line 105. Line 120 still assigns it, so `openSite` throws
+`TypeError: Assignment to constant variable.` before any page opens. That breaks every Chrome check on
+`mls-int-20261113` on the box too, not only mine. The fix is the old `let sessionId: string | undefined;`. That file is not
+mine, so I left it. My proof run above used a throwaway copy of `chrome.ts` with that one word changed.
+
+---
+
+# QUESTIONS: P1b join-links follow-up
+
+## One test in commit 1 (75a65bd) has a setup bug. May CoS apply this one-line fix?
+
+**Case:** `check:join-links` › "a refused or offline paste says why in the app and joins nobody".
+
+**What goes wrong:** the case starts a second Worker with the browser's `APP_ORIGIN` (`http://localhost:<port>`), then signs a player up there with `new Phone(base).createAccount(...)`. `Phone` always sends `Origin: https://app.test`, so that Worker refuses the sign-up, and the case throws `Cannot read properties of undefined (reading 'user')` before its first assertion about the app.
+
+This is a test-setup mistake, not a behavior gap. The landing-page case uses the same pattern and passes, because its Worker keeps the default `https://app.test` origin.
+
+**Fix (setup only, no assertion changes)** in `scripts/check-join-links.ts`:
+
+```diff
+-      const lost = new Phone(elsewhere.base);
+-      ok(await lost.createAccount("Gone Row"), "a player whose codes this server never saw");
++      const lost = await passwordPlayer(elsewhere.base, origin, "Gone Row", "gonerow");
+```
+
+`passwordPlayer` is the helper the same file already uses for Terry and Mike. It sends the browser's origin.
+
+**Proof:** I ran a throwaway copy with only that change (deleted afterwards, never committed). Result on this laptop, Edge as `CHROME`: 14 of 14 ok, `check:join-links passed`. On the committed file, the result is 13 ok and 1 FAIL (this case).
+
+Per the queue rules I did not edit the commit-1 test after the build started. The build is committed and complete.

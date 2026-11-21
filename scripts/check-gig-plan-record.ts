@@ -108,17 +108,6 @@ await check("Plan again pre-fills everything but the date (pure)", () => {
   assert.deepEqual([fitted.lineup, fitted.leader, fitted.backup], [["terry", "dana"], null, "dana"], "someone no longer in the band comes off the lineup, and a leader who left must be picked again");
 });
 
-if (!PURE_ONLY) {
-  await boxCases();
-  await beforeColumns();
-}
-
-if (failed > 0) {
-  console.log(`${failed} failed`);
-  process.exit(1);
-}
-console.log(PURE_ONLY ? "check:gig-plan-record pure cases passed" : "check:gig-plan-record passed");
-
 // ---- box cases: the Worker and the phone in Chrome ---------------------------------------------------------------
 
 async function shareSet(who: { call: Player["call"] }, bandId: string, songs: SongContent[], name: string) {
@@ -258,7 +247,19 @@ async function boxCases() {
     if (!(await site.evaluate<boolean>("!!navigator.serviceWorker.controller"))) await site.send("Page.reload");
     await app.until("!!navigator.serviceWorker?.controller", "the service worker to take control of the page", 60000);
     await app.library();
-    await app.signUp("Sam Rivera");
+    /** app.signUp, with the name set like setField instead of typed, so the page never gets a real keystroke. */
+    await app.openMenu();
+    await app.pick("Sign in");
+    await app.until(`document.querySelector(".account-sheet")?.dataset.step === "start"`, "the start screen");
+    await app.click("New here? Create an account");
+    await site.evaluate(`(() => { const field = [...document.querySelectorAll("[role=dialog] label")].find((l) => l.textContent.trim() === "Your name (what bandmates see)").control; Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field), "value").set.call(field, "Sam Rivera"); field.dispatchEvent(new Event("input", { bubbles: true })); })()`);
+    await settle();
+    await app.click("Sign in with Face ID or fingerprint");
+    await app.until(`["nudge", "account"].includes(document.querySelector(".account-sheet")?.dataset.step)`, "the end of Create account");
+    if ((await site.evaluate<string>(`document.querySelector(".account-sheet").dataset.step`)) === "nudge") await app.click("Not now");
+    await app.until(`document.querySelector(".account-sheet")?.dataset.step === "account"`, "the account screen");
+    await app.click("✕");
+    await app.closeMenu();
     const sam = await me();
     assert.ok(sam, "Sam is signed in on the phone");
     assert.equal((await appCalls("/api/bands/join", { code: blue.code })).status, 200, "Sam joins the band");
@@ -670,3 +671,14 @@ async function beforeColumns() {
     rmSync(state, { recursive: true, force: true });
   }
 }
+
+if (!PURE_ONLY) {
+  await boxCases();
+  await beforeColumns();
+}
+
+if (failed > 0) {
+  console.log(`${failed} failed`);
+  process.exit(1);
+}
+console.log(PURE_ONLY ? "check:gig-plan-record pure cases passed" : "check:gig-plan-record passed");

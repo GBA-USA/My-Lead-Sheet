@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type Dispatch, type SetStateAction } from "react";
 import { parseHash } from "./route";
-import { READING_LINE, runScroll, type Motion, type Section, type TimeSource } from "./scroll-timing";
+import { READING_LINE, atSpeed, chordCount, runScroll, type LaidSection, type Motion, type Section, type TimeSource } from "./scroll-timing";
 import { onStorageChange, storageGeneration } from "./storage";
 import type { SongRef } from "./types";
 
@@ -30,11 +30,30 @@ export function useScrolling(songRef: SongRef | null) {
   }
 
   useEffect(() => {
+    setSpeed(1);
     if (songRef == null) return;
     document.getElementById("sheet-scroll")?.scrollTo(0, 0);
   }, [songRef]);
 
   return { scrolling, setScrolling, stopScroll: () => setScrolling(false) };
+}
+
+let speed = 1;
+const speedListeners = new Set<() => void>();
+const onSpeed = (listener: () => void) => {
+  speedListeners.add(listener);
+  return () => void speedListeners.delete(listener);
+};
+const speedNow = () => speed;
+function setSpeed(next: number) {
+  if (next === speed) return;
+  speed = next;
+  speedListeners.forEach((listener) => listener());
+}
+
+/** The live − / + speed: 1 is the song's own pace. It lasts this session only, and a new song starts back at 1. */
+export function useScrollSpeed(): [number, (next: number) => void] {
+  return [useSyncExternalStore(onSpeed, speedNow, speedNow), setSpeed];
 }
 
 const playheads = new Set<(at: number) => void>();
@@ -48,8 +67,9 @@ export function onPlayhead(listener: (at: number) => void): () => void {
 /**
  * Scrolls #sheet-scroll by `motion`. A timed motion moves #chord-section only: from its top at the top of the
  * view to its bottom at the bottom. A learned one brings each heading, then the chart's end, to the reading line.
- * Grabbing or a manual scroll pauses. A new `plan` re-syncs from where the sheet is. Returns the timed clock, in
- * seconds at the plan's BPM. `time` is band time in a gig; solo leaves it out.
+ * Grabbing or a manual scroll pauses. A new `plan` re-syncs from where the sheet is. The live speed scales the motion
+ * from the next frame on. Returns the timed clock, in seconds at the plan's BPM. `time` is band time in a gig; solo
+ * leaves it out.
  */
 export function useAutoScroll(
   active: boolean,
@@ -58,8 +78,9 @@ export function useAutoScroll(
   onStop: (reason: "user" | "end") => void,
   time?: TimeSource,
 ) {
+  const [speed] = useScrollSpeed();
   const motionRef = useRef(motion);
-  motionRef.current = motion;
+  motionRef.current = atSpeed(motion, speed);
   const onStopRef = useRef(onStop);
   onStopRef.current = onStop;
   const clock = useRef(0);
@@ -99,7 +120,21 @@ export function scrollChart(
     const start = found.getBoundingClientRect().top - origin;
     last = { start, end: start + found.offsetHeight - el.clientHeight };
     const tops = () => [...found.querySelectorAll(".chart-heading")].map((heading) => heading.getBoundingClientRect().top - origin);
-    return { ...last, lines: () => [...tops(), start + found.offsetHeight].map((top) => top - READING_LINE) };
+    const box = (child: Element) => {
+      const rect = child.getBoundingClientRect();
+      return { top: rect.top - origin, height: rect.height };
+    };
+    // A stand-in chart with no rows to measure keeps the motion's even pace or page speed. So does Chords only: its
+    // fill (`.chord-fill`, fed by `onPlayhead`) plays the even pace from the top of the chart.
+    const laid = (): LaidSection[] =>
+      found.querySelector?.(".chord-fill") ? [] : [...(found.querySelectorAll?.(".chart-section") ?? [])].map((part) => {
+        const [heading, ...rows] = [...part.children];
+        return {
+          heading: box(heading),
+          rows: rows.map((row) => ({ kind: row.className, chords: chordCount((row.querySelector(".chords") ?? row).textContent ?? ""), ...box(row) })),
+        };
+      });
+    return { ...last, lines: () => [...tops(), start + found.offsetHeight].map((top) => top - READING_LINE), laid };
   };
   const relaid = (event: Event) => {
     const before = last;

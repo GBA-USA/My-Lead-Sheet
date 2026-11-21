@@ -511,8 +511,8 @@ async function phoneChecks(site: Site, base: string, origin: string) {
     const items = await openMore();
     assert.ok(items.some((item) => item.text === "Send to a friend…" && !item.disabled), "and Send to a friend… in More");
     await tapIn(`document.querySelector("[role=menu]")`, "Send to a friend…");
-    await page.until(`[...document.querySelectorAll("[role=dialog] button")].some((b) => b.textContent.trim() === "Mike Keys")`, "Mike in the friend list");
-    await tapIn(`document.querySelector("[role=dialog]")`, "Mike Keys");
+    await page.until(`[...document.querySelectorAll("[role=dialog] button")].some((b) => b.textContent.trim().startsWith("Mike Keys"))`, "Mike in the friend list");
+    await site.evaluate(`document.querySelector("[role=dialog] [aria-label='Mike Keys']").click()`); await settle();
     await tapIn(`document.querySelector("[role=dialog]")`, "Public");
     const send = await site.evaluate<boolean>(`(() => { const b = [...document.querySelector("[role=dialog]").querySelectorAll("button")].find((b) => b.textContent.trim().startsWith("Send to ") && !b.disabled); b?.click(); return !!b; })()`);
     assert.ok(send, "a Send button once Public is picked");

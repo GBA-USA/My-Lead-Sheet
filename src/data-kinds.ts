@@ -117,6 +117,11 @@ export const DATA_KINDS: readonly DataKind[] = [
     place: "server",
     what: "For each band: every song a member shared into it, as a copy of the whole chart, with who shared it, when, who last changed it, and a one-way code of the chart so a Private song is not passed on as if it were new.",
   },
+  {
+    key: "song_notes",
+    place: "server",
+    what: "For each band: every note an admin pinned to a band song, with the words, who wrote it, their name at the time, and when. A deleted note is kept marked as deleted and never shown or exported. Notes stay in the band: they are never part of a chart or a share.",
+  },
   { key: "band_setlists", place: "server", what: "For each band: every setlist a member shared into it, with its name, songs in order, tags, who shared it, and when it last changed." },
   {
     key: "shares",

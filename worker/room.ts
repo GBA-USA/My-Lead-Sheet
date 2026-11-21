@@ -8,6 +8,7 @@ import { exportBand, importBandFile } from "./room-export";
 import { bandLibrary, createLibraryTables, selfCopies, type SentSetlist, type SetlistFields, type SetlistSend, type SetlistShare, type SongChange, type SongShare } from "./room-library";
 import { createGigTables, gigRoom, type GigFields } from "./room-gig";
 import { bandRoom, createMemberTables, shutOut } from "./room-members";
+import { createNoteTables, noteRoom, type NoteFields } from "./room-notes";
 import type { RouteChoice } from "../src/routes";
 import type { StoredShare } from "./share-guard";
 
@@ -55,6 +56,7 @@ export class Room extends DurableObject<Env> {
     createChatTables(ctx.storage.sql);
     createLibraryTables(ctx.storage.sql);
     createGigTables(ctx.storage.sql);
+    createNoteTables(ctx.storage.sql);
   }
 
   private floor(userId: string): number {
@@ -211,6 +213,20 @@ export class Room extends DurableObject<Env> {
 
   requireGigAdmin(userId: string, gigId: string) {
     gigRoom.requireGigAdmin(this.band, userId, gigId);
+  }
+
+  songNotes(userId: string, songId: string) {
+    return noteRoom.list(this.band, userId, songId);
+  }
+
+  addSongNote(author: Person, fields: NoteFields, now: number) {
+    const added = noteRoom.add(this.band, author, fields, now);
+    this.broadcast(added.posted);
+    return added;
+  }
+
+  deleteSongNote(userId: string, noteId: string, now: number) {
+    return noteRoom.remove(this.band, userId, noteId, now);
   }
 
   bandLibrary(userId: string) {

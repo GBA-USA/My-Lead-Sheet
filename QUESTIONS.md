@@ -40,6 +40,8 @@ Nothing else changes. The case's assertions stay as they are: the DM card holds 
 - `check:new-song` as committed, on this laptop with headless Edge: 16 ok and 1 FAIL. The FAIL is case 5: "timed out waiting for Mike in the friend list".
 - A throwaway copy with only lines 514 and 515 changed as above prints `ok   5. an own song can be shared to a band and sent to a friend with the existing flows` and `check:new-song passed` (all 17 cases). The copy was deleted after the run. Nothing else in the tree changed.
 
+**Answer:** approved. The PR #87 fix round applied the two lines in commit 0c48d57.
+
 ---
 
 # QUESTIONS: P2 gig plan

@@ -272,11 +272,15 @@ export function App() {
   /** A stop mid-take keeps it in the draft, unless nothing was taught yet. */
   const stopTake = (current: Take) => (current.marks.length > 1 ? finishTake(current) : discardTake());
 
+  /** A held draft keeps its metronome bpm, so a sheet that changes the song's tempo starts the metronome at the new one. */
+  const retempo = (song: Song, tempo: number | null) => {
+    if (tempo !== song.tempo) metronome.setBpm(initialMetronomeBpm(tempo));
+  };
+
   const saveData = (song: Song, data: SongData) => {
     saveSongData(song.ref, data);
     setSongData((current) => ({ ...current, [song.ref]: data }));
-    const tempo = data.tempo ?? songByRef(stored.songs, song.ref)?.tempo ?? null;
-    if (tempo !== song.tempo) metronome.setBpm(initialMetronomeBpm(tempo));
+    retempo(song, data.tempo ?? songByRef(stored.songs, song.ref)?.tempo ?? null);
     setEditing(null);
   };
 
@@ -368,7 +372,7 @@ export function App() {
         />
       ) : null}
 
-      <SongEditors editing={editing} song={activeSong} songs={stored.songs} onSongData={saveData} onClose={() => setEditing(null)} />
+      <SongEditors editing={editing} song={activeSong} songs={stored.songs} onSongData={saveData} onTempo={retempo} onClose={() => setEditing(null)} />
 
       {accountOpen ? (
         <AccountSheet

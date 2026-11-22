@@ -131,6 +131,8 @@ type SeedPrints = Record<string, string>;
 
 interface StoredLibrary extends LibraryFile {
   seedPrints: { songs: SeedPrints; setlists: SeedPrints };
+  /** The highest song id this library has ever held. A deleted song's id stays taken, so nothing keyed by it (a send, a band copy) passes to a new song. */
+  lastSongId: number;
 }
 
 function fingerprint(item: unknown): string {
@@ -165,7 +167,7 @@ function parseStored(raw: string | null): Partial<StoredLibrary> | null {
     if (!parsed || typeof parsed !== "object") return null;
     const record = parsed as Partial<StoredLibrary>;
     if (!Array.isArray(record.songs) || !Array.isArray(record.setlists)) return null;
-    return { songs: record.songs.filter(isSong), setlists: record.setlists.filter(isSetlist), seedPrints: record.seedPrints };
+    return { songs: record.songs.filter(isSong), setlists: record.setlists.filter(isSetlist), seedPrints: record.seedPrints, lastSongId: Number.isSafeInteger(record.lastSongId) ? record.lastSongId : undefined };
   } catch {
     return null;
   }
@@ -188,7 +190,8 @@ function storedLibrary(stored: Partial<StoredLibrary> | null): StoredLibrary {
   const seed = seedCopy();
   const songs = mergeSeed(seed.songs, stored?.songs ?? [], stored?.seedPrints?.songs);
   const setlists = mergeSeed(seed.setlists, stored?.setlists ?? [], stored?.seedPrints?.setlists);
-  return { ...seed, songs: songs.items, setlists: setlists.items, seedPrints: { songs: songs.prints, setlists: setlists.prints } };
+  const lastSongId = Math.max(stored?.lastSongId ?? 0, ...songs.items.map((song) => song.id));
+  return { ...seed, songs: songs.items, setlists: setlists.items, seedPrints: { songs: songs.prints, setlists: setlists.prints }, lastSongId };
 }
 
 /** The library as stored, and per account without what other accounts left here. Only the stored copy is written back. */
@@ -304,11 +307,18 @@ export function withOwnLibraryItems(raw: string | null, changes: Map<string, str
   return JSON.stringify(storedLibrary(library));
 }
 
-/** The first song or setlist id that neither the stored library nor `taken` uses. */
+/** A song or setlist id past every one the stored library uses or `taken` holds, and past every song id it ever held. */
 export function freeOwnId(raw: string | null, key: typeof SONG_ROW | typeof SETLIST_ROW, taken: number[]): number {
   const library = storedLibrary(parseStored(raw));
-  const items: { id: number }[] = key === SONG_ROW ? library.songs : library.setlists;
-  return Math.max(0, ...items.map((item) => item.id), ...taken) + 1;
+  const used = key === SONG_ROW ? [library.lastSongId] : library.setlists.map((setlist) => setlist.id);
+  return Math.max(0, ...used, ...taken) + 1;
+}
+
+/** Keeps every song id a backup reply names taken, a deleted song's too, though this phone never held it. Throws when the browser refuses the write, like the rest of a sync's writes. */
+export function takeSongIds(ids: number[]) {
+  const library = storedLibrary(parseStored(localStorage.getItem(LIBRARY_KEY)));
+  const lastSongId = Math.max(library.lastSongId, ...ids);
+  if (lastSongId > library.lastSongId) localStorage.setItem(LIBRARY_KEY, JSON.stringify({ ...library, lastSongId }));
 }
 
 /** False when the browser refused the write or the song isn't one this phone can show. */
@@ -343,9 +353,9 @@ const SEED_SONG_IDS = new Set(seedLibrary.songs.map((song) => song.id));
 export const madeHere = (song: Pick<Song, "id" | "copy">) => !SEED_SONG_IDS.has(song.id) && song.copy === undefined;
 
 /**
- * Removes a song the player made from the library, from every own setlist, and its per-song settings and drafts, so
- * a song added later under the same id starts clean. Backup sends each removed key as gone. False for any other song,
- * or when the browser refused the write.
+ * Removes a song the player made from the library, from every own setlist, and its per-song settings and drafts. Its
+ * id is never handed out again. Backup sends each removed key as gone. False for any other song, or when the browser
+ * refused the write.
  */
 export function removeOwnSong(id: number): boolean {
   const raw = readRaw(LIBRARY_KEY);

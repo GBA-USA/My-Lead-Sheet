@@ -269,6 +269,17 @@ await check("6. removeOwnSong removes the song from My Songs, from the player's 
   assert.equal(app.removeOwnSong(copyId), false, "a friend's copy can't be removed this way");
 });
 
+await check("6. a song written after the newest own song is deleted gets a new id, so nothing kept under the old id passes to it", () => {
+  const app = need();
+  useStorage(new FakeStorage());
+  const song = app.ownSong(META, app.parseSheet(TWO_SECTIONS).sections);
+  const gone = app.addOwnSong(song)!;
+  assert.equal(app.removeOwnSong(gone), true, "the newest own song is deleted");
+  app.loadLibrary();
+  const next = app.addOwnSong({ ...song, title: "A Different Song" })!;
+  assert.notEqual(next, gone, `the new song gets its own id (deleted ${gone}, new ${next})`);
+});
+
 // The Worker: backup and restore, one phone.
 const realFetch = globalThis.fetch;
 const iphone = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)";
@@ -434,6 +445,7 @@ async function phoneChecks(site: Site, base: string, origin: string) {
   const pat = (await site.evaluate<{ account?: { userId: string } }>(`fetch("/api/me").then((r) => r.json())`)).account;
   assert.ok(pat, "Pat is signed in on the phone");
   let id = 0;
+  let mike: Awaited<ReturnType<typeof passwordPlayer>> | null = null;
 
   await check("1b. a song written in + Add a song opens at #/song/<id> as a chart, each chord on its syllable, no row past the chart", async () => {
     await site.evaluate(`location.hash = "#/songs"`);
@@ -502,7 +514,7 @@ async function phoneChecks(site: Site, base: string, origin: string) {
   });
 
   await check("5. an own song can be shared to a band and sent to a friend with the existing flows", async () => {
-    const mike = await passwordPlayer(base, origin, "Mike Keys", "mikekeys");
+    mike = await passwordPlayer(base, origin, "Mike Keys", "mikekeys");
     assert.equal((await appCalls("/api/friends/request", { handle: mike.handle })).status, 200, "Pat asks Mike");
     assert.equal((await mike.call("/api/friends/accept", { userId: pat.userId })).status, 200, "Mike accepts");
     await reload("#/songs");
@@ -519,7 +531,7 @@ async function phoneChecks(site: Site, base: string, origin: string) {
     const roomId = (await mike.call("/api/chat/dm", { userId: pat.userId })).body.roomId as string;
     let message: { kind: string; text: string } | undefined;
     for (const end = Date.now() + 15000; !message && Date.now() < end; await sleep(200)) {
-      message = ((await mike.call("/api/chat/open", { roomId })).body.messages ?? []).find((m: { kind: string }) => m.kind === "song");
+      message = ((await mike!.call("/api/chat/open", { roomId })).body.messages ?? []).find((m: { kind: string }) => m.kind === "song");
     }
     assert.ok(message, "Mike's DM gets the song card");
     const card = JSON.parse(message.text) as { song: Song; sharedAs: string };
@@ -606,6 +618,59 @@ async function phoneChecks(site: Site, base: string, origin: string) {
     await page.until(`[...document.querySelectorAll(".setlist")].some((el) => el.getAttribute("aria-label") === "Friday")`, "the Friday setlist");
     const friday = await site.evaluate<string>(`[...document.querySelectorAll(".setlist")].find((el) => el.getAttribute("aria-label") === "Friday").textContent`);
     assert.ok(!friday.includes("Kitchen Floor") && friday.includes(builtIn.title) && !friday.includes("Missing from this library"), "the setlist drops it and keeps its other song");
+  });
+
+  await check("6. a song written after the newest own song is deleted gets a new id, and its first send to a friend is not an update", async () => {
+    assert.ok(mike, "Mike is Pat's friend from case 5");
+    const friend = mike;
+    const write = async (title: string) => {
+      await site.evaluate(`location.hash = "#/songs"`);
+      await page.until(`[...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "+ Add a song")`, "+ Add a song");
+      await page.click("+ Add a song");
+      await page.until(`!!${editor}`, "the song editor");
+      await fill("Title", title);
+      await fill("Chart", TWO_SECTIONS);
+      await tapIn(editor, "Save");
+      await page.until(`/^#\\/song\\/\\d+/.test(location.hash) && !document.querySelector(".song-editor")`, `${title}'s page`);
+      const written = (await hashId())!;
+      await openSong(written);
+      return written;
+    };
+    const roomId = (await friend.call("/api/chat/dm", { userId: pat.userId })).body.roomId as string;
+    const sendToMike = async (title: string, songId: number) => {
+      await reload("#/songs");
+      await openSong(songId);
+      await openMore();
+      await tapIn(`document.querySelector("[role=menu]")`, "Send to a friend…");
+      await page.until(`!!document.querySelector("[role=dialog] [aria-label='Mike Keys']")`, "Mike in the friend list");
+      await site.evaluate(`document.querySelector("[role=dialog] [aria-label='Mike Keys']").click()`);
+      await settle();
+      await tapIn(`document.querySelector("[role=dialog]")`, "Public");
+      const sent = await site.evaluate<boolean>(`(() => { const b = [...document.querySelector("[role=dialog]").querySelectorAll("button")].find((b) => b.textContent.trim().startsWith("Send to ") && !b.disabled); b?.click(); return !!b; })()`);
+      assert.ok(sent, `a Send button for ${title}`);
+      let card: { song: Song; updateOf: string | null } | undefined;
+      for (const end = Date.now() + 15000; !card && Date.now() < end; await sleep(200)) {
+        const messages: { kind: string; text: string }[] = (await friend.call("/api/chat/open", { roomId })).body.messages ?? [];
+        card = messages.filter((m) => m.kind === "song").map((m) => JSON.parse(m.text)).find((each) => each.song?.title === title);
+      }
+      assert.ok(card, `Mike's DM gets ${title}`);
+      await reload("#/songs");
+      await openSong(songId);
+      return card;
+    };
+
+    const gone = await write("Short Lived");
+    assert.equal((await sendToMike("Short Lived", gone)).updateOf, null, "the first song's first send is not an update");
+    await openMore();
+    await tapIn(`document.querySelector("[role=menu]")`, "Delete");
+    await page.until(`!!document.querySelector("[role=alertdialog]")`, "the Delete question");
+    await tapIn(`document.querySelector("[role=alertdialog]")`, "Delete");
+    await page.until(`location.hash === "#/songs" && !document.querySelector("[role=alertdialog]")`, "My Songs after the delete");
+    assert.ok(!(await stored()).some((song) => song.id === gone), "Short Lived is deleted");
+
+    const next = await write("A Different Song");
+    assert.equal((await sendToMike("A Different Song", next)).updateOf, null, "its first send to Mike is a new song, not an update of the deleted one");
+    assert.notEqual(next, gone, `the new song gets its own id (deleted ${gone}, new ${next})`);
   });
 
   assert.deepEqual(await page.errors(), [], "no page errors");

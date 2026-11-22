@@ -7,6 +7,7 @@
  * - Messages are delivered in order, each in its own task. A throw in `handle` reaches the phone as an "error" event.
  * The phone makes its worker with `new Worker(new URL("./learn-worker.ts", import.meta.url), { type: "module" })`, the
  * form Vite builds and esbuild leaves alone. `workerLog` keeps every message both ways and how long `handle` ran.
+ * `workerIdle` waits for the worker to catch up, and `workerReplies.rewrite` changes what the phone is told.
  */
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -38,6 +39,9 @@ function workerModule(): Promise<string> {
 /** Since the last clear: workers started, every message each way, errors, and real milliseconds spent inside `handle`. */
 export const workerLog = { started: 0, toWorker: [] as ToWorker[], fromWorker: [] as FromWorker[], errors: [] as unknown[], busyMs: 0 };
 
+/** Set `rewrite` to change each reply on its way to the phone, so a check can show the phone a result it chose. */
+export const workerReplies: { rewrite: ((reply: FromWorker) => FromWorker) | null } = { rewrite: null };
+
 export function clearWorkerLog() {
   Object.assign(workerLog, { started: 0, toWorker: [], fromWorker: [], errors: [], busyMs: 0 });
 }
@@ -45,6 +49,15 @@ export function clearWorkerLog() {
 type Listener = (event: { type: string; data?: unknown; message?: string; error?: unknown }) => void;
 const nextTask = () => new Promise<void>((done) => setImmediate(done));
 let instances = 0;
+const inFlight = new Set<Promise<void>>();
+
+/**
+ * Resolves once every message posted so far has been handled and its replies delivered. A check that awaits it after
+ * each mic callback paces the worker the way real time does, where it finishes a chunk long before the next arrives.
+ */
+export async function workerIdle() {
+  while (inFlight.size) await Promise.all([...inFlight]);
+}
 
 export class FakeWorker {
   onmessage: Listener | null = null;
@@ -87,6 +100,9 @@ export class FakeWorker {
       }
       return handle;
     });
+    const delivered = this.queue.then(nextTask, nextTask);
+    inFlight.add(delivered);
+    void delivered.then(() => inFlight.delete(delivered));
   }
 
   addEventListener(type: string, run: Listener) {
@@ -104,7 +120,7 @@ export class FakeWorker {
 
   private reply(reply: FromWorker, transfer: Transferable[]) {
     if (this.terminated) return;
-    const copy = structuredClone(reply, { transfer });
+    const copy = structuredClone(workerReplies.rewrite?.(reply) ?? reply, { transfer });
     workerLog.fromWorker.push(copy);
     setImmediate(() => this.dispatch({ type: "message", data: copy }));
   }

@@ -56,12 +56,13 @@ export const syncLogRoom = {
     const run = sql.exec<RunRow>(`SELECT * FROM sync_runs WHERE run_id = ?`, runId).toArray()[0];
     if (!run || now > run.ends_at + SYNC_LOG_GRACE_MS) throw new Refused("no-sync-run", 409);
     if (beats.some((beat) => beat.beat >= SYNC_RUN_BEATS)) throw new Refused("bad-request");
+    // Counted by RETURNING, not rowsWritten: Durable Object SQLite counts the key's index write in rowsWritten too.
     let stored = 0;
     for (const b of beats) {
       stored += sql.exec(
-        `INSERT OR IGNORE INTO sync_log (${COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT OR IGNORE INTO sync_log (${COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING beat`,
         runId, userId, b.beat, b.route, b.carrier, b.at, b.shown_at, b.clicked_at, b.offset_ms, b.spread_ms, b.rtt_ms, b.frame_ms,
-      ).rowsWritten;
+      ).toArray().length;
     }
     return { stored };
   },

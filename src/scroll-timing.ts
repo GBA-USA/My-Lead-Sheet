@@ -236,13 +236,12 @@ function placeLines(song: Song, bar: number, phrase: number, share: number): Sun
     const counted = own.reduce((sum, each) => sum + each, 0);
     const sung = section.lines.some((line) => line.chords !== undefined || line.lyrics !== undefined);
     const again = !sung && (counted === 0 || REPEAT.test(section.heading)) ? repeated(section, name, heard) : undefined;
-    const length = again ? again.once * times : counted;
-    if (again || sung || counted > 0) heard.push({ name, once: length / times });
+    const stretch = again && counted > 0 ? (again.once * times) / counted : 1;
     const start = at;
     const lines = section.lines.map((line, i) => {
       const placed = {
         at,
-        length: counted > 0 ? (own[i] * length) / counted : 0,
+        length: own[i] * stretch,
         ...(line.chords !== undefined ? { pairChords: chordCount(line.chords) } : {}),
         lyricOnly: line.chords === undefined && line.lyrics !== undefined,
         ...(line.bars !== undefined ? { barChords: chordCount(line.bars) } : {}),
@@ -251,8 +250,9 @@ function placeLines(song: Song, bar: number, phrase: number, share: number): Sun
       at += placed.length;
       return placed;
     });
-    at = start + length;
-    return { at: start, length, lines };
+    if (again) at = start + again.once * times;
+    if (again || sung || counted > 0) heard.push({ name, once: (at - start) / times });
+    return { at: start, length: at - start, lines };
   });
 }
 

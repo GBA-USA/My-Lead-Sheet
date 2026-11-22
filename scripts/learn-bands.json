@@ -1,0 +1,11 @@
+{
+  "note": "Floors the app reads through src/learn-result.ts. sure and likely: the lowest confidence (0 to 100) drawn green and yellow; below likely is red. quality: a listen is clear when the song stands at least clearDb over the room's floor and at most clippedShare of its samples clipped, some noise down to someNoiseDb or when it clipped, noisy below someNoiseDb. These are starting guesses while fitted is false. The scorecard's --fit rewrites the numbers, sets fitted, and keeps every key.",
+  "fitted": false,
+  "sure": 85,
+  "likely": 65,
+  "quality": {
+    "clearDb": 30,
+    "someNoiseDb": 15,
+    "clippedShare": 0.001
+  }
+}

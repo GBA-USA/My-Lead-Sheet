@@ -170,6 +170,7 @@ export function Menu({
   );
 }
 
+/** `onEdit` and `onDelete` are there only for a song the player made; without them both items are off, with the reason. */
 export function OverflowMenu({
   label,
   size = "compact",
@@ -177,6 +178,8 @@ export function OverflowMenu({
   onToggle,
   onClose,
   onSongData,
+  onEdit,
+  onDelete,
   children,
 }: {
   label: string;
@@ -185,9 +188,25 @@ export function OverflowMenu({
   onToggle: () => void;
   onClose: () => void;
   onSongData?: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
   children?: ReactNode;
 }) {
   const noteId = useId();
+  const item = (name: string, run: (() => void) | undefined) => (
+    <button
+      type="button"
+      role="menuitem"
+      disabled={!run}
+      aria-describedby={run ? undefined : noteId}
+      onClick={() => {
+        onClose();
+        run?.();
+      }}
+    >
+      {name}
+    </button>
+  );
 
   return (
     <Menu
@@ -211,15 +230,13 @@ export function OverflowMenu({
           Song timing
         </button>
       ) : null}
-      <button type="button" role="menuitem" disabled aria-describedby={noteId}>
-        Edit
-      </button>
-      <button type="button" role="menuitem" disabled aria-describedby={noteId}>
-        Delete
-      </button>
-      <p className="menu-note" id={noteId}>
-        Coming in a later version
-      </p>
+      {item("Edit", onEdit)}
+      {item("Delete", onDelete)}
+      {onEdit && onDelete ? null : (
+        <p className="menu-note" id={noteId}>
+          Only songs you made can be edited.
+        </p>
+      )}
     </Menu>
   );
 }
@@ -246,7 +263,7 @@ function ScrollSpeed() {
  * The song's two control rows. Row 1: the key and Notes | Nashville | Chords only. Row 2: the Scroll pill with its caret to the
  * Scroll sheet, the Metronome pill and its sheet, and Send when `onSend` is given. A take puts `take` in row 2's place.
  * While the scroll runs, outside a take, the live speed group shows too.
- * `onMetronome` is unused since the pill opens its own sheet; App still passes it.
+ * `onMetronome` is unused since the pill opens its own sheet.
  */
 export function SongControls({
   keyLabel,
@@ -270,7 +287,7 @@ export function SongControls({
   scrolling: boolean;
   onToggleScroll: () => void;
   onScrollSheet: () => void;
-  onMetronome: () => void;
+  onMetronome?: () => void;
   onSend?: () => void;
   take?: ReactNode;
 }) {

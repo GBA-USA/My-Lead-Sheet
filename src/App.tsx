@@ -30,7 +30,7 @@ import { GearIcon, SettingsScreen } from "./settings";
 import { LeadSheet } from "./sheet";
 import type { Account } from "./sign-in-methods";
 import { FOLDS, SongChromeRoom, SongChromeSlot, useSongChrome } from "./song-chrome";
-import { SongDataEditor } from "./song-data-editor";
+import { SongEditors, type SongEdit } from "./song-editor";
 import { BandSongNotes } from "./song-notes";
 import { useSongVersion } from "./song-version";
 import { StageBar, stageSetOf } from "./stage-bar";
@@ -41,6 +41,7 @@ import {
   loadSongData,
   loadTextScaleIndex,
   localRef,
+  madeHere,
   savePersonal,
   saveSongData,
   saveTextScaleIndex,
@@ -71,7 +72,7 @@ export function App() {
     () => ({ ...stored, songs: stored.songs.map((song) => withSongData(song, songData[song.ref] ?? {})) }),
     [stored, songData],
   );
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState<SongEdit | null>(null);
   const [teaching, setTeaching] = useState<Teaching | null>(null);
   const [hash, setHash] = useState(() => window.location.hash);
   const [textIndex, setTextIndex] = useStored(loadTextScaleIndex);
@@ -208,7 +209,7 @@ export function App() {
     document.getElementById("sheet-scroll")?.scrollTo(0, 0);
     setMenu(null);
     setScrollSheet(false);
-    setEditing(false);
+    setEditing(null);
     setTeaching(null);
     const now = parseHash(window.location.hash).name;
     if (now !== "bands" && now !== "messages") setNotice("");
@@ -271,12 +272,16 @@ export function App() {
   /** A stop mid-take keeps it in the draft, unless nothing was taught yet. */
   const stopTake = (current: Take) => (current.marks.length > 1 ? finishTake(current) : discardTake());
 
+  /** A held draft keeps its metronome bpm, so a sheet that changes the song's tempo starts the metronome at the new one. */
+  const retempo = (song: Song, tempo: number | null) => {
+    if (tempo !== song.tempo) metronome.setBpm(initialMetronomeBpm(tempo));
+  };
+
   const saveData = (song: Song, data: SongData) => {
     saveSongData(song.ref, data);
     setSongData((current) => ({ ...current, [song.ref]: data }));
-    const tempo = data.tempo ?? songByRef(stored.songs, song.ref)?.tempo ?? null;
-    if (tempo !== song.tempo) metronome.setBpm(initialMetronomeBpm(tempo));
-    setEditing(false);
+    retempo(song, data.tempo ?? songByRef(stored.songs, song.ref)?.tempo ?? null);
+    setEditing(null);
   };
 
   return (
@@ -299,7 +304,7 @@ export function App() {
           )}
           {activeSong ? <TextSizeButtons index={textIndex} count={TEXT_SCALES.length} onChange={changeText} /> : null}
           {activeSong ? (
-            <OverflowMenu label="More" size="shell" open={menu === "shell"} onToggle={() => toggleMenu("shell")} onClose={closeMenu} onSongData={bandRoute || gigRoute ? undefined : () => setEditing(true)}>
+            <OverflowMenu label="More" size="shell" open={menu === "shell"} onToggle={() => toggleMenu("shell")} onClose={closeMenu} onSongData={bandRoute || gigRoute ? undefined : () => setEditing("timing")} {...(route.name === "song" && madeHere(activeSong) ? { onEdit: () => setEditing("chart"), onDelete: () => setEditing("delete") } : {})}>
               {bandRoute || gigRoute ? null : sendSong.item(activeSong, closeMenu)}
             </OverflowMenu>
           ) : route.name === "settings" ? null : (
@@ -323,11 +328,7 @@ export function App() {
             onNotation={(notation) => songVersion.set({ notation })}
             scrolling={performance.scrolling}
             onToggleScroll={() => (take ? stopTake(take) : performance.setScrolling((on) => !on))}
-            onScrollSheet={() => {
-              closeMenu();
-              setScrollSheet(true);
-            }}
-            onMetronome={() => document.querySelector(".sheet .metronome")?.scrollIntoView({ block: "nearest" })}
+            onScrollSheet={() => { closeMenu(); setScrollSheet(true); }}
             onSend={route.name === "song" ? sendSong.onSend(activeSong) : undefined}
             take={
               take ? (
@@ -371,14 +372,7 @@ export function App() {
         />
       ) : null}
 
-      {activeSong && editing ? (
-        <SongDataEditor
-          song={activeSong}
-          original={withSongData(songByRef(stored.songs, activeSong.ref)!, {})}
-          onSave={(data) => saveData(activeSong, data)}
-          onClose={() => setEditing(false)}
-        />
-      ) : null}
+      <SongEditors editing={editing} song={activeSong} songs={stored.songs} onSongData={saveData} onTempo={retempo} onClose={() => setEditing(null)} />
 
       {accountOpen ? (
         <AccountSheet
@@ -426,7 +420,7 @@ export function App() {
         {performance.scrolling && learned && motion.kind === "learned" ? (
           <LearnedCues learned={learned} clock={clock} rate={motion.rate} metronomeOn={metronome.playing} />
         ) : null}
-        {route.name === "songs" ? <SongList songs={library.songs} userId={account?.userId ?? null} /> : null}
+        {route.name === "songs" ? <SongList songs={library.songs} userId={account?.userId ?? null} onAdd={account ? () => setEditing("new") : undefined} /> : null}
         {route.name === "setlists" ? <SetlistList setlists={library.setlists} songs={library.songs} onShowCode={account ? setSetlistCode : undefined} /> : null}
         {route.name === "settings" ? (
           <SettingsScreen

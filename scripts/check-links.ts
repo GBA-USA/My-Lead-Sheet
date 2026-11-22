@@ -28,6 +28,7 @@ const WAITING_WORDS = "Waiting for the leader";
 const NO_SIGNAL_WORDS = "No signal";
 const NOT_IN_BAND_WORDS = "You're not in this band";
 const SIGN_IN_TO_JOIN_WORDS = "Sign in to join the gig";
+const NOT_ON_LINEUP_WORDS = "You're not on tonight's lineup";
 const LOST_FOR_MS = 30_000;
 
 let failures = 0;
@@ -144,7 +145,8 @@ async function startPortal() {
 
 /**
  * Runs before any app code: counts live timers, keeps every RTCPeerConnection and its ICE config, drops host candidates
- * while `__blockLocal` is on (a Wi-Fi that keeps phones apart), and counts pings sent on any carrier.
+ * while `__blockLocal` is on (a Wi-Fi that keeps phones apart), counts pings sent on any carrier, and holds back each
+ * `join-gig` for `__delayJoin` ms (a slower phone, a backgrounded tab, a room socket still reconnecting).
  */
 const PAGE_HOOKS = `
 window.__timers = new Set();
@@ -169,6 +171,12 @@ window.__sockets = [];
 const Socket = window.WebSocket;
 window.WebSocket = class extends Socket { constructor(...args) { super(...args); window.__sockets.push(this); } };
 window.__dropRoom = () => window.__sockets.filter((ws) => ws.readyState === Socket.OPEN).forEach((ws) => ws.close());
+window.__delayJoin = 0;
+const sendNow = Socket.prototype.send;
+Socket.prototype.send = function (data) {
+  if (!window.__delayJoin || typeof data !== "string" || !data.includes('"join-gig"')) return sendNow.call(this, data);
+  setT(() => { try { sendNow.call(this, data); } catch {} }, window.__delayJoin);
+};
 `;
 
 function harnessEntry(dir: string) {
@@ -590,6 +598,61 @@ try {
     await followerSite.evaluate("window.harness.close()");
     await thirdSite.evaluate("window.harness.close()");
     await sleep(500);
+  });
+
+  /**
+   * Phone A leads, phone B and Fran follow. Phone B's `join-gig` is held back, so Fran asks the room first and dials
+   * phone B before it knows it leads, and phone B drops that offer. Fran must still end on a direct link to phone B.
+   */
+  const asksFirst = async (holdMs: number, onTheWay: (fran: View) => boolean) => {
+    await signIn(thirdSite, lee);
+    await start(leaderSite);
+    await until("phone A leading", leaderSite, (v) => v.leading);
+    await start(followerSite);
+    await until("Fran's Wi-Fi link to phone A", followerSite, (v) => v.chosen?.route === "wifi" && v.chosen.state === "open", 15_000);
+    await start(thirdSite);
+    await until("phone B following phone A", thirdSite, (v) => !v.leading && v.chosen?.state === "open", 15_000);
+    await thirdSite.evaluate(`window.__delayJoin = ${holdMs}`);
+    await leaderSite.evaluate("window.harness.close()");
+    try {
+      await until("Fran on the way to phone B", followerSite, onTheWay, holdMs + 15_000);
+      await until("phone B leading", thirdSite, (v) => v.leading, holdMs + 10_000);
+      const direct = await until("Fran's Wi-Fi link to phone B", followerSite, (v) => v.chosen?.route === "wifi" && v.chosen.state === "open", 20_000);
+      assert.equal(direct.reasons.wifi, undefined, `no Wi-Fi reason once linked (${js(direct.reasons)})`);
+      await sleep(3000);
+      assert.equal((await view(followerSite)).chosen?.route, "wifi", "Fran stays on the Wi-Fi link");
+    } finally {
+      await thirdSite.evaluate("window.__delayJoin = 0");
+      await followerSite.evaluate("window.harness.close()");
+      await thirdSite.evaluate("window.harness.close()");
+      await sleep(500);
+    }
+  };
+
+  await check("11a. a follower that asks before the leader's next phone leads still ends on a direct link to it", async () => {
+    await asksFirst(1500, (v) => v.chosen === null);
+  });
+
+  await check("11b. a follower that fell to the server while the leader's next phone was slow moves to a direct link once it leads", async () => {
+    await asksFirst(12_000, (v) => v.chosen?.route === "server" && v.chosen.state === "open");
+  });
+
+  await check("12. a player taken off the lineup and put back links again with no reload", async () => {
+    await start(leaderSite);
+    await until("phone A leading", leaderSite, (v) => v.leading);
+    await start(followerSite);
+    await until("Fran linked", followerSite, (v) => v.chosen?.state === "open", 15_000);
+    assert.equal((await lineup([lee])).status, 200, "Lee takes Fran off the lineup");
+    const off = await until("Fran told she is off the lineup", followerSite, (v) => v.reasons.server === NOT_ON_LINEUP_WORDS && v.chosen === null, 10_000);
+    await sleep(4000);
+    const waiting = await view(followerSite);
+    assert.equal(waiting.reasons.server, NOT_ON_LINEUP_WORDS, `Fran still reads '${NOT_ON_LINEUP_WORDS}' (${js(waiting.reasons)})`);
+    assert.equal(waiting.roomSockets, 2, "the room line came back once to hear the lineup, and did not ask in a loop");
+    assert.equal((await lineup([lee, fran])).status, 200, "Lee puts Fran back");
+    const back = await until("Fran linked again", followerSite, (v) => v.chosen?.state === "open", 15_000);
+    assert.equal(back.reasons.server, undefined, `the lineup words are gone (${js(back.reasons)})`);
+    assert.ok(back.generation > off.generation, "a new link, made with no reload");
+    await stopBoth();
   });
 } catch (error) {
   failures += 1;

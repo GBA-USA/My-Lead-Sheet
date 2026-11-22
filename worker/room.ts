@@ -1,6 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { NOT_A_MEMBER_CLOSE, type ChatMessage } from "../src/chat-model";
-import { NOT_ON_LINEUP_CLOSE, type GigPeers, type JoinGig } from "../src/links/link";
+import { NOT_ON_LINEUP_CLOSE, type GigPeers, type JoinGig, type OnLineup } from "../src/links/link";
 import type { Person } from "./directory-http";
 import type { Env } from "./index";
 import { handleBackup, myLibraryPerAccount } from "./room-backup";
@@ -25,6 +25,7 @@ type Outbound =
   | { kind: RelayKind; from: string; body: unknown; rx: number; tx: number }
   | { kind: "message"; message: ChatMessage }
   | GigPeers
+  | OnLineup
   | { kind: "error"; error: "bad-message" | "no-peer" | "not-on-lineup"; to?: string };
 
 /** What a socket carries across hibernation: its session version, and the gig it joined (and when its phone opened it) once the lineup check passed. */
@@ -194,7 +195,12 @@ export class Room extends DurableObject<Env> {
 
   gigLineup(userId: string, gigId: string, lineup: string[]) {
     const view = gigRoom.setLineup(this.band, userId, gigId, lineup);
-    for (const ws of this.gigSockets(gigId)) if (!view.gig.lineup.includes(this.userOf(ws))) ws.close(NOT_ON_LINEUP_CLOSE, "not-on-lineup");
+    for (const ws of this.ctx.getWebSockets()) {
+      const joined = attachment(ws).gigId === gigId;
+      const onLineup = view.gig.lineup.includes(this.userOf(ws));
+      if (joined && !onLineup) ws.close(NOT_ON_LINEUP_CLOSE, "not-on-lineup");
+      if (!joined && onLineup) send(ws, { kind: "on-lineup", gigId });
+    }
     return view;
   }
 

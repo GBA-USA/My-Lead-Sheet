@@ -37,3 +37,6 @@ export type GigPeers = { kind: "gig"; gigId: string; you: string; leader: string
 
 /** The room closes a socket whose player is not on the gig's lineup with this code. */
 export const NOT_ON_LINEUP_CLOSE = 4404;
+
+/** Room to phone, when an admin saves a lineup this player is on and this socket has not joined the gig: join it now. */
+export type OnLineup = { kind: "on-lineup"; gigId: string };

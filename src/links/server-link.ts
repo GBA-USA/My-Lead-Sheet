@@ -8,7 +8,10 @@ export const NO_SIGNAL = "No signal";
 
 const SIGNED_OUT_CLOSE = 4401;
 
-/** The room's own close codes (4000 and up) mean it refused this phone, so the line stops trying. */
+/**
+ * The room's own close codes (4000 and up) mean it refused this phone, so the line stops trying. Off the lineup is the
+ * exception: it ends the phone's place in the gig, not in the band room, so the line comes straight back to hear `on-lineup`.
+ */
 const REFUSED_WORDS: Record<number, string> = {
   [SIGNED_OUT_CLOSE]: "Sign in to join the gig",
   [NOT_A_MEMBER_CLOSE]: "You're not in this band",
@@ -59,6 +62,11 @@ export function roomLine(url: string): RoomLine {
   const lost = (socket: WebSocket | null, code: number) => {
     if (stopped || ws !== socket) return;
     ws = null;
+    if (code === NOT_ON_LINEUP_CLOSE) {
+      tell({ kind: "room-refused", code });
+      connect();
+      return;
+    }
     if (code >= 4000) {
       state = "refused";
       return tell({ kind: "room-refused", code });

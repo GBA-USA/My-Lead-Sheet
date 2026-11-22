@@ -1,6 +1,6 @@
 import { BURST, PING_EVERY_MS, addPing, newClock, rebase, type BandMs, type Clock, type LinkRoute } from "../band-time";
 import { internetRow } from "./internet-link";
-import type { Attempt, GigPeers, JoinGig, Link } from "./link";
+import { NOT_ON_LINEUP_CLOSE, type Attempt, type GigPeers, type JoinGig, type Link } from "./link";
 import { answerPeer, dialPeer, type Intro, type Peer, type PeerRow } from "./peer-link";
 import { NO_SIGNAL, WAITING_FOR_LEADER, refusedWords, serverLink, type RoomIn, type RoomLine } from "./server-link";
 import { SIGN_IN_FIRST, WIFI_ROW, signInPage } from "./wifi-link";
@@ -45,6 +45,12 @@ export interface GigLinks {
 const rank = (route: LinkRoute) => ROUTES.indexOf(route);
 
 /**
+ * One direct try at the leader's socket. `heard` turns true at the leader's first reply, so the leader holds this offer.
+ * Until then the try may be lost: a phone the room names before it knows it leads drops the offer.
+ */
+type Try = { to: string; peer: Peer | null; heard: boolean };
+
+/**
  * Join gig: ask the room for tonight's leader, then make one attempt with every address type at once and fall to the
  * server if no direct link opens in time. A lost link is introduced again through the room with no tap from the person.
  * If the room says this phone leads, it answers instead.
@@ -64,7 +70,9 @@ export function linkToLeader(options: LinkOptions): GigLinks {
   let tried: LinkRoute[] = [];
   let reasons: Attempt["reasons"] = {};
   let chosen: WiredLink | null = null;
-  let trying: { to: string; peer: Peer | null } | null = null;
+  let trying: Try | null = null;
+  /** The room took this phone off the lineup. It joins again on `on-lineup`, or once after a drop that may have hidden one. */
+  let offLineup = false;
   let clock = newClock();
   let hadLink = false;
   let pingTimer: ReturnType<typeof setTimeout> | null = null;
@@ -150,7 +158,7 @@ export function linkToLeader(options: LinkOptions): GigLinks {
   }
 
   /** At each row's deadline: say why the row is not in use, and after the last one fall to the server. The direct try keeps going. */
-  function judge(steps: PeerRow[], at: number, now: { to: string; peer: Peer | null }) {
+  function judge(steps: PeerRow[], at: number, now: Try) {
     deadlineTimer = null;
     const row = steps[at];
     const last = at === steps.length - 1;
@@ -167,9 +175,9 @@ export function linkToLeader(options: LinkOptions): GigLinks {
 
   function attempt(to: string) {
     stopTrying();
-    tried = rows.map((row) => row.route);
+    tried = [...rows.map((row) => row.route), ...(chosen?.route === "server" ? (["server"] as const) : [])];
     reasons = {};
-    const now: { to: string; peer: Peer | null } = { to, peer: null };
+    const now: Try = { to, peer: null, heard: false };
     trying = now;
     if (rows.length === 0) {
       fallToServer(to);
@@ -210,8 +218,8 @@ export function linkToLeader(options: LinkOptions): GigLinks {
       }
       return changed();
     }
-    if (chosen?.state === "open" && (chosen.route !== "server" || trying?.to === leader)) return;
-    if (trying?.to === leader && deadlineTimer && trying.peer?.link.state !== "closed") return;
+    if (chosen?.state === "open" && chosen.route !== "server") return;
+    if (trying?.to === leader && trying.heard && trying.peer?.link.state !== "closed") return;
     attempt(leader);
   }
 
@@ -272,11 +280,22 @@ export function linkToLeader(options: LinkOptions): GigLinks {
 
   const unlisten = room.listen((message) => {
     if (closed) return;
-    if (message.kind === "hello") return ask();
+    if (message.kind === "hello") {
+      if (!offLineup) ask();
+      return;
+    }
+    if (message.kind === "on-lineup") {
+      if (message.gigId !== gigId) return;
+      offLineup = false;
+      return ask();
+    }
     if (message.kind === "gig") return onGig(message as unknown as GigPeers);
     if (message.kind === "intro" && typeof message.from === "string" && isIntro(message.body)) {
       if (leading) return answer(message.from, message.body);
-      if (trying?.to === message.from && trying.peer?.a === message.body.a) trying.peer.hear(message.body);
+      if (trying?.to === message.from && trying.peer?.a === message.body.a) {
+        trying.heard = true;
+        trying.peer.hear(message.body);
+      }
       return;
     }
     if (message.kind === "link" && leading && typeof message.from === "string") return carry(message.from, message);
@@ -284,24 +303,28 @@ export function linkToLeader(options: LinkOptions): GigLinks {
       stopTrying();
       return askSoon();
     }
-    if (message.kind === "room-down" && (!chosen || chosen.state !== "open")) {
+    if (message.kind === "room-down") {
+      offLineup = false;
+      if (chosen?.state === "open") return;
       reasons = { ...reasons, server: NO_SIGNAL };
       return changed();
     }
     if (message.kind === "room-refused") {
       stop();
+      offLineup = Number(message.code) === NOT_ON_LINEUP_CLOSE;
       reasons = { server: refusedWords(Number(message.code)) };
       changed();
     }
   });
   if (room.state === "open") ask();
 
+  /** `chosen` clears first, so the links closing here are not taken for a lost link that asks the room again. */
   function stop() {
+    const was = chosen;
+    chosen = null;
     askTimer = stopTimer(askTimer);
     pingTimer = stopTimer(pingTimer);
     stopTrying();
-    const was = chosen;
-    chosen = null;
     was?.close();
     dropFollowers();
     tried = [];

@@ -132,9 +132,6 @@ try {
     assert.equal(await site.evaluate<boolean>(`!!document.querySelector(".bands-sheet")`), false, "no band sheet opens on its own");
   });
 
-  await app.signUp("Sam Rivera");
-  const sam = await site.evaluate<{ userId: string }>(`fetch("/api/me").then((r) => r.json()).then((reply) => reply.account)`);
-
   const newBandSheet = async () => {
     await go("#/bands", `!!${button("+ New band")}`, "+ New band");
     await site.evaluate(`${button("+ New band")}.click()`);
@@ -159,6 +156,38 @@ try {
       assert.ok(b.t >= seen.view.top - 0.5 && b.b <= seen.view.bottom + 0.5, `${where}: ${name} at y=${Math.round(b.t)}-${Math.round(b.b)} is outside the visual viewport ${Math.round(seen.view.top)}-${Math.round(seen.view.bottom)}`);
     }
   };
+  const makeBands = async (names: string[]) => {
+    for (const name of names) {
+      const made = await appCalls("/api/bands/create", { name });
+      assert.equal(made.status, 200, `the band ${name} is made (${js(made.body)})`);
+    }
+  };
+  const listedSheet = async (count: number, where: string) => {
+    await newBandSheet();
+    try {
+      await app.until(`document.querySelectorAll(".bands-sheet .bands-list li").length === ${count}`, `${count} bands in the sheet's list`);
+      await painted();
+      await aboveKeyboard(where);
+    } finally {
+      await closeSheet();
+    }
+  };
+
+  await app.signUp("Lee Long");
+  await check("2d. with three bands named like \"The Saturday Night Wedding Band 12345\" at 360x800 and visualViewport.height shrunk by 336px, Band name and Create band on the New band sheet are fully inside the visual viewport", async () => {
+    await makeBands(["The Saturday Night Wedding Band 12345", "The Saturday Night Wedding Band 23456", "The Saturday Night Wedding Band 34567"]);
+    await phone(360, 800);
+    await listedSheet(3, "three-long-360");
+  });
+
+  await phone();
+  await site.send("Page.navigate", { url: "about:blank" });
+  await site.send("Storage.clearDataForOrigin", { origin, storageTypes: "all" });
+  await site.send("Network.clearBrowserCookies");
+  await site.send("Page.navigate", { url: `${origin}/#/bands` });
+  await app.library();
+  await app.signUp("Sam Rivera");
+  const sam = await site.evaluate<{ userId: string }>(`fetch("/api/me").then((r) => r.json()).then((reply) => reply.account)`);
 
   await check("2a. with no bands yet and visualViewport.height shrunk by 336px, Band name and Create band on the New band sheet are fully inside the visual viewport", async () => {
     await phone();
@@ -196,6 +225,12 @@ try {
     } finally {
       await closeSheet();
     }
+  });
+
+  await check("2c. with six short-named bands at 360x800 and visualViewport.height shrunk by 336px, Band name and Create band on the New band sheet are fully inside the visual viewport", async () => {
+    await makeBands(["The Harbor Lights", "Northside Brass 1", "Northside Brass 2", "Northside Brass 3", "Northside Brass 4"]);
+    await phone(360, 800);
+    await listedSheet(6, "six-short-360");
   });
 
   const page = `document.querySelector(${js(`.band-page[data-band="${bandId}"]`)})`;

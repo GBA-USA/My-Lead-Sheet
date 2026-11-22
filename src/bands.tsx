@@ -174,6 +174,12 @@ export function BandsSheet({
   useEscape(onClose);
   useCloseOnSong(onClose);
   const keyboard = useKeyboardInset();
+  const sheet = useRef<HTMLElement>(null);
+  /** The keyboard opens after the field takes focus and the backdrop then ends at its top, so bring the focused field's form back into view. */
+  useEffect(() => {
+    const focused = document.activeElement;
+    if (keyboard && focused instanceof HTMLElement && sheet.current?.contains(focused)) (focused.closest("form") ?? focused).scrollIntoView({ block: "nearest" });
+  }, [keyboard]);
 
   const join = (code: string, found: BandPreview) =>
     run(async () => {
@@ -283,7 +289,7 @@ export function BandsSheet({
   const screen = screens[view.name]();
   return (
     <div className="account-backdrop" style={{ "--keyboard": `${keyboard}px` } as CSSProperties} onClick={onClose}>
-      <section className="account-sheet bands-sheet" role="dialog" aria-modal="true" aria-labelledby={titleId} data-view={view.name} onClick={(event) => event.stopPropagation()}>
+      <section ref={sheet} className="account-sheet bands-sheet" role="dialog" aria-modal="true" aria-labelledby={titleId} data-view={view.name} onClick={(event) => event.stopPropagation()}>
         <header className="account-top">
           <h2 id={titleId}>{screen.title}</h2>
           <button type="button" className="account-close" aria-label="Close" onClick={onClose}>

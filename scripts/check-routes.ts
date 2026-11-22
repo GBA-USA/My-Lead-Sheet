@@ -313,7 +313,8 @@ function pageTools(site: Site) {
     await until(`!${DIALOG}`, "the Connection screen to close");
   };
   const words = () => evaluate<string>(`document.body.innerText`);
-  return { evaluate, until, openConnection, rows, choose, close, words };
+  const rowText = () => evaluate<string>(`${connectionRow}.textContent.trim()`);
+  return { evaluate, until, openConnection, rows, choose, close, words, rowText };
 }
 
 async function appCase(openSite: typeof import("./chrome.ts").openSite, startApi: typeof import("./api-session.ts").startApi, pepper: string) {
@@ -372,8 +373,32 @@ async function appCase(openSite: typeof import("./chrome.ts").openSite, startApi
       truly(!FORBIDDEN.test(text), `forbidden words on the Connection screen: ${js(text.match(FORBIDDEN)?.[0])}`);
       truly(!/Tonight the admin chose/.test(text), "no gig line outside a gig");
       await page.close();
-      const row = await page.evaluate<string>(`[...document.querySelectorAll(".settings button")].find((b) => b.textContent.trim().startsWith("Connection")).innerText`);
+      const row = await page.rowText();
       truly(!FORBIDDEN.test(row) && /Server|Auto|Wi-Fi link|Over the internet/.test(row), `the Settings row names the choice in plain words: ${js(row)}`);
+    });
+
+    await check("5d. a choice this phone refuses to store says so, and holds until the app closes", async () => {
+      const before = await page.evaluate<string | null>("localStorage.getItem('leadSheetsConnection')");
+      await page.evaluate(`(() => {
+        const setItem = Storage.prototype.setItem;
+        window.__restoreSetItem = () => { Storage.prototype.setItem = setItem; };
+        Storage.prototype.setItem = function (key, value) {
+          if (key === "leadSheetsConnection") throw new DOMException("full", "QuotaExceededError");
+          return setItem.call(this, key, value);
+        };
+      })()`);
+      try {
+        await page.openConnection();
+        await page.choose("Wi-Fi link");
+        const alert = await page.evaluate<string>(`${DIALOG}.querySelector("[role=alert]")?.textContent.trim() ?? ""`);
+        same(alert, "This phone did not keep that change. It lasts until you close the app.", "the refusal on screen");
+        same((await page.rows()).find((row) => row.checked)?.name, "Wi-Fi link", "the choice shown after the refused save");
+        same(await page.evaluate("localStorage.getItem('leadSheetsConnection')"), before, "the stored choice");
+        await page.close();
+        same(await page.rowText(), "Connection · Wi-Fi link", "the Settings row");
+      } finally {
+        await page.evaluate("window.__restoreSetItem()");
+      }
     });
   } finally {
     await site.close();
@@ -449,6 +474,10 @@ async function gigCase(openSite: typeof import("./chrome.ts").openSite) {
       await page.close();
     });
 
+    await check("7b. during a gig the Settings row names the admin's choice, not the phone's own", async () => {
+      same(await page.rowText(), "Connection · Wi-Fi link", "the Settings row");
+    });
+
     await check("4d. after the gig the phone's own setting returns, and leadSheetsConnection never changed", async () => {
       await page.evaluate("window.gig.end()");
       await page.openConnection();
@@ -458,6 +487,10 @@ async function gigCase(openSite: typeof import("./chrome.ts").openSite) {
       truly(!(await page.words()).includes("Tonight the admin chose"), "no gig line after the gig");
       same(await page.evaluate("localStorage.getItem('leadSheetsConnection')"), "server", "the stored choice");
       await page.close();
+    });
+
+    await check("4e. after the gig the Settings row names the phone's own choice again", async () => {
+      same(await page.rowText(), "Connection · Server", "the Settings row");
     });
   } finally {
     await site.close();

@@ -26,6 +26,8 @@ const SIGN_IN_WORDS = "This Wi-Fi wants you to sign in first";
 const NO_DIRECT_WORDS = "No direct path over the internet";
 const WAITING_WORDS = "Waiting for the leader";
 const NO_SIGNAL_WORDS = "No signal";
+const NOT_IN_BAND_WORDS = "You're not in this band";
+const SIGN_IN_TO_JOIN_WORDS = "Sign in to join the gig";
 const LOST_FOR_MS = 30_000;
 
 let failures = 0;
@@ -163,6 +165,10 @@ window.RTCPeerConnection = class extends Peer {
 };
 const counted = (proto) => { const send = proto.send; proto.send = function (data) { if (typeof data === "string" && data.includes('"k":"ping"')) window.__pingsSent++; return send.call(this, data); }; };
 counted(RTCDataChannel.prototype); counted(WebSocket.prototype);
+window.__sockets = [];
+const Socket = window.WebSocket;
+window.WebSocket = class extends Socket { constructor(...args) { super(...args); window.__sockets.push(this); } };
+window.__dropRoom = () => window.__sockets.filter((ws) => ws.readyState === Socket.OPEN).forEach((ws) => ws.close());
 `;
 
 function harnessEntry(dir: string) {
@@ -183,6 +189,7 @@ const pairOf = async (pc) => {
 window.harness = {
   start({ bandId, gigId, stun, rows, healthUrl, roomUrl, blockLocal }) {
     window.__blockLocal = !!blockLocal;
+    window.__sockets = [];
     you = null; intros = 0; errors = []; chosen = null; generation = 0;
     room = roomLine(roomUrl ?? location.origin.replace(/^http/, "ws") + "/api/rooms/" + bandId);
     room.listen((message) => {
@@ -215,6 +222,7 @@ window.harness = {
       resources: performance.getEntriesByType("resource").map((entry) => entry.name),
       pingsSent: window.__pingsSent,
       timers: window.__timers.size,
+      roomSockets: window.__sockets.length,
     };
   },
   send(message) { room.send(message); },
@@ -249,6 +257,7 @@ type View = {
   resources: string[];
   pingsSent: number;
   timers: number;
+  roomSockets: number;
 };
 
 const view = (site: Site) => site.evaluate<View>("window.harness.view()");
@@ -303,10 +312,13 @@ async function serverClose(opened: Opened, label: string): Promise<number> {
   return opened.closed;
 }
 
-async function signIn(site: Site, player: Player) {
-  const cut = player.cookie.indexOf("=");
-  const [name, value] = [player.cookie.slice(0, cut), player.cookie.slice(cut + 1)];
-  await site.send("Network.setCookie", { name, value, url: origin, httpOnly: true, secure: true, sameSite: "Lax" });
+async function signIn(site: Site, player: Player | null) {
+  await site.send("Network.clearBrowserCookies");
+  if (player) {
+    const cut = player.cookie.indexOf("=");
+    const [name, value] = [player.cookie.slice(0, cut), player.cookie.slice(cut + 1)];
+    await site.send("Network.setCookie", { name, value, url: origin, httpOnly: true, secure: true, sameSite: "Lax" });
+  }
   await site.send("Page.navigate", { url: `${origin}/` });
   for (const end = Date.now() + 15_000; !(await site.evaluate<boolean>("!!window.harness").catch(() => false)); await sleep(100)) {
     if (Date.now() > end) throw new Error("the harness page never loaded");
@@ -319,6 +331,8 @@ try {
   sites.push(leaderSite);
   const followerSite = await openSite(pageDir, "check-links-follower", () => apiBase);
   sites.push(followerSite);
+  const thirdSite = await openSite(pageDir, "check-links-third", () => apiBase);
+  sites.push(thirdSite);
   origin = leaderSite.origin;
   const { worker, base } = await startApi({ APP_ORIGIN: origin, RP_ID: "localhost", PASSWORD_PEPPER });
   apiBase = base;
@@ -503,6 +517,20 @@ try {
     await stopBoth();
   });
 
+  await check("8b. a phone the room refuses before its socket opens says why and stops asking (a stranger, then signed out)", async () => {
+    for (const [who, player, words] of [["the stranger", stan, NOT_IN_BAND_WORDS], ["a signed-out phone", null, SIGN_IN_TO_JOIN_WORDS]] as const) {
+      await signIn(thirdSite, player);
+      await start(thirdSite);
+      const refused = await until(`${who}'s words`, thirdSite, (v) => v.reasons.server === words, 10_000);
+      assert.equal(refused.chosen, null, `${who} has no link`);
+      await sleep(4000);
+      const later = await view(thirdSite);
+      assert.equal(later.reasons.server, words, `${who} still reads '${words}'`);
+      assert.equal(later.roomSockets, 1, `${who}'s phone asked the room once and stopped (${later.roomSockets} sockets)`);
+      await thirdSite.evaluate("window.harness.close()");
+    }
+  });
+
   await check("empty state: with no room reachable and no link the strip word is 'No signal'", async () => {
     await start(followerSite, { roomUrl: "ws://127.0.0.1:9/api/rooms/nowhere" });
     const seen = await until("the no-signal words", followerSite, (v) => v.reasons.server === NO_SIGNAL_WORDS);
@@ -531,6 +559,37 @@ try {
     await leaderSite.evaluate("window.harness.close()");
     await sleep(500);
     assert.equal((await view(leaderSite)).timers, 0, "no leader timer left");
+  });
+
+  await check("10. the leader's second phone follows the first, a room blip on either leaves the band's links alone, and the second leads once the first leaves", async () => {
+    await signIn(thirdSite, lee);
+    await start(leaderSite);
+    await until("phone A leading", leaderSite, (v) => v.leading);
+    await start(followerSite);
+    const linked = await until("Fran's Wi-Fi link to phone A", followerSite, (v) => v.chosen?.route === "wifi" && v.chosen.state === "open", 15_000);
+    await start(thirdSite);
+    await until("phone B following phone A", thirdSite, (v) => !v.leading && v.chosen?.state === "open", 15_000);
+    const steady = async (after: string) => {
+      await sleep(3000);
+      const [a, b, fran] = await Promise.all([view(leaderSite), view(thirdSite), view(followerSite)]);
+      assert.ok(a.leading && !b.leading, `after ${after}, phone A still leads and phone B follows (A ${a.leading}, B ${b.leading})`);
+      assert.equal(fran.generation, linked.generation, `after ${after}, Fran keeps the same link (generation ${linked.generation} then ${fran.generation})`);
+      assert.equal(fran.chosen?.state, "open", `after ${after}, Fran's link is open`);
+      assert.deepEqual(a.reasons, {}, `after ${after}, phone A shows no reason (${js(a.reasons)})`);
+    };
+    await steady("phone B opens the gig");
+    for (const [name, site] of [["phone A", leaderSite], ["phone B", thirdSite]] as const) {
+      const before = (await view(site)).you;
+      await site.evaluate("window.__dropRoom()");
+      await until(`${name} back in the room`, site, (v) => !!v.you && v.you !== before, 15_000);
+      await steady(`${name}'s room socket drops and comes back`);
+    }
+    await leaderSite.evaluate("window.harness.close()");
+    await until("phone B leading once phone A leaves", thirdSite, (v) => v.leading, 20_000);
+    await until("Fran's Wi-Fi link to phone B", followerSite, (v) => v.chosen?.route === "wifi" && v.chosen.state === "open" && v.generation > linked.generation, 20_000);
+    await followerSite.evaluate("window.harness.close()");
+    await thirdSite.evaluate("window.harness.close()");
+    await sleep(500);
   });
 } catch (error) {
   failures += 1;

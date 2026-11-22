@@ -832,6 +832,15 @@ async function phoneChecks(site: Site, base: string, origin: string) {
     await page.until(`!!${editor}`, "the editor on the song");
   };
   let songId = 0;
+  /** This phone's storage is full: every write of the library throws until `window.__restoreSetItem()`. */
+  const phoneFull = `(() => {
+    const setItem = Storage.prototype.setItem;
+    window.__restoreSetItem = () => { Storage.prototype.setItem = setItem; };
+    Storage.prototype.setItem = function (key, value) {
+      if (key === "leadSheetsLibrary") throw new DOMException("Full", "QuotaExceededError");
+      return setItem.call(this, key, value);
+    };
+  })()`;
 
   await check("3. Edit folds what Song timing held into the song, so a later Edit's BPM and time signature show through", async () => {
     const edit = async (changes: Record<string, string>) => {
@@ -867,14 +876,7 @@ async function phoneChecks(site: Site, base: string, origin: string) {
     await setTiming("3:30", "120", "4/4");
     await openEdit();
     await fill("BPM", "90");
-    await site.evaluate(`(() => {
-      const setItem = Storage.prototype.setItem;
-      window.__restoreSetItem = () => { Storage.prototype.setItem = setItem; };
-      Storage.prototype.setItem = function (key, value) {
-        if (key === "leadSheetsLibrary") throw new DOMException("Full", "QuotaExceededError");
-        return setItem.call(this, key, value);
-      };
-    })()`);
+    await site.evaluate(phoneFull);
     try {
       await tapIn(editor, "Save");
       assert.equal(await page.text(".song-editor [role=alert]"), "This phone couldn't save the song. Free some space and try again.", "Save says the phone couldn't save");
@@ -885,6 +887,57 @@ async function phoneChecks(site: Site, base: string, origin: string) {
     await reload("#/songs");
     await openSong(songId);
     assert.deepEqual(await timingShown(), ["3:30", "120", "4/4"], "Song timing still holds what the player set");
+  });
+
+  await check("1b. a new song this phone can't save says so, keeps the New song form open with what was typed, stores nothing, and saves on the next try", async () => {
+    const chart = "VERSE 1\nA       E\nHoney, load up\n\nCHORUS\nD       A\nKitchen floor";
+    await openNewSong();
+    await fill("Title", "Full Phone Song");
+    await fill("Artist", "Pat Bass");
+    await fill("Chart", chart);
+    const before = (await stored()).map((song) => song.id);
+    await site.evaluate(phoneFull);
+    try {
+      await tapIn(editor, "Save");
+      assert.equal(await page.text(".song-editor [role=alert]"), "This phone couldn't save the song. Free some space and try again.", "Save says the phone couldn't save");
+      assert.equal(await site.evaluate<string>(`${editor}?.querySelector("h2")?.textContent ?? ""`), "New song", "the New song form stays open");
+      assert.equal(await site.evaluate<string>("location.hash"), "#/songs", "on My Songs");
+      assert.deepEqual([await value("Title"), await value("Artist"), await value("Chart")], ["Full Phone Song", "Pat Bass", chart], "with the title, artist and chart as typed");
+      assert.deepEqual((await stored()).map((song) => song.id), before, "nothing is stored");
+    } finally {
+      await site.evaluate("window.__restoreSetItem()");
+    }
+    await tapIn(editor, "Save");
+    await page.until(onSongPage, "the new song's page on the next try");
+    const saved = (await hashId())!;
+    assert.ok(!before.includes(saved), `the next Save opens a new song (${saved})`);
+    assert.equal((await stored()).find((song) => song.id === saved)?.title, "Full Phone Song", "and stores it");
+  });
+
+  await check("6. a Delete this phone can't write says so, keeps the question open and the song stored, and deletes on the next try", async () => {
+    await openNewSong();
+    await fill("Title", "Undeletable For Now");
+    await fill("Chart", TWO_SECTIONS);
+    await tapIn(editor, "Save");
+    await page.until(onSongPage, "the song's page");
+    const doomed = (await hashId())!;
+    await openSong(doomed);
+    await openMore();
+    await tapIn(`document.querySelector("[role=menu]")`, "Delete");
+    await page.until(`!!document.querySelector("[role=alertdialog]")`, "the Delete question");
+    await site.evaluate(phoneFull);
+    try {
+      await tapIn(`document.querySelector("[role=alertdialog]")`, "Delete");
+      assert.equal(await page.text("[role=alertdialog] [role=alert]"), "This phone couldn't delete the song. Try again.", "Delete says the phone couldn't delete");
+      assert.ok((await page.text("[role=alertdialog]")).includes("Delete Undeletable For Now?"), "the question stays open");
+      assert.equal(await site.evaluate<string>("location.hash"), `#/song/${doomed}`, "on the song's page");
+      assert.ok((await stored()).some((song) => song.id === doomed), "the song stays stored");
+    } finally {
+      await site.evaluate("window.__restoreSetItem()");
+    }
+    await tapIn(`document.querySelector("[role=alertdialog]")`, "Delete");
+    await page.until(`location.hash === "#/songs" && !document.querySelector("[role=alertdialog]")`, "My Songs after the next Delete");
+    assert.ok(!(await stored()).some((song) => song.id === doomed), "the next Delete removes it");
   });
 
   assert.deepEqual(await page.errors(), [], "no page errors");

@@ -10,7 +10,6 @@ export type { LinkRoute } from "./band-time";
 export const ROUTE_WORDS: Record<LinkRoute, string> = {
   wifi: "Wi-Fi link",
   internet: "Over the internet",
-  relay: "Through the relay",
   server: "Through the server",
 };
 
@@ -18,6 +17,6 @@ export const ROUTE_WORDS: Record<LinkRoute, string> = {
 export const CHOICE_WORDS: Record<RouteChoice, { name: string; line: string }> = {
   auto: { name: "Auto", line: "Works with any Wi-Fi, or none. The app figures it out." },
   band_wifi: { name: ROUTE_WORDS.wifi, line: "Phones on the same Wi-Fi talk directly, whether it's the venue's, a router, or the leader's hotspot. Works with no internet." },
-  direct_cell: { name: ROUTE_WORDS.internet, line: "Phones talk over cell data or the venue's internet, through a relay if needed." },
+  direct_cell: { name: ROUTE_WORDS.internet, line: "Phones talk over cell data or the venue's internet." },
   server: { name: "Server", line: "Everything goes through the internet. Use if the others fail." },
 };

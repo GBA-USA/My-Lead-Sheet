@@ -1,9 +1,11 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { fakeDom, type FakeElement } from "./fake-dom.ts";
+import { FakeWorker, clearWorkerLog, listenThrough } from "./fake-worker.ts";
+import type { FromWorker } from "../src/learn-result.ts";
 import type { Song, SongData } from "../src/types.ts";
 
 let failures = 0;
@@ -14,6 +16,7 @@ function check(ok: boolean, message: string) {
 
 const entry = `
   export * from "./src/learn-analyze.ts";
+  export * from "./src/learn-result.ts";
   export * from "./src/scroll-timing.ts";
   export { loadScrollVersions, saveScrollVersions } from "./src/storage.ts";
   export { LearnSong } from "./src/learn-song.tsx";
@@ -36,6 +39,7 @@ const bundled = await build({
 const bundle = join(mkdtempSync(join(tmpdir(), "check-learn-")), "learn.mjs");
 writeFileSync(bundle, bundled.outputFiles[0].text);
 type Learn = typeof import("../src/learn-analyze.ts") &
+  typeof import("../src/learn-result.ts") &
   typeof import("../src/scroll-timing.ts") &
   typeof import("../src/cues.tsx") &
   Pick<typeof import("../src/storage.ts"), "loadScrollVersions" | "saveScrollVersions"> & {
@@ -144,12 +148,14 @@ const listener = new learn.SongListener(SAMPLE_RATE);
 const began = Date.now();
 for (let at = 0; at < truth.samples.length; at += 4096) listener.push(truth.samples.subarray(at, at + 4096));
 const headings = PARTS.map((part) => part.heading);
-const analysis = listener.analyze(headings.length, 4);
-console.log(`analyzed ${(truth.samples.length / SAMPLE_RATE).toFixed(1)} s of audio in ${Date.now() - began} ms`);
-if (!analysis) {
+const heardSong = listener.analyze(4);
+const baselineMs = Date.now() - began;
+console.log(`analyzed ${(truth.samples.length / SAMPLE_RATE).toFixed(1)} s of audio in ${baselineMs} ms`);
+if (!heardSong) {
   check(false, "the synthesized song is heard");
   process.exit(1);
 }
+const { analysis } = heardSong;
 
 const heard = analysis.sound.end - analysis.sound.start;
 check(Math.abs(analysis.sound.start - HEAD) <= 0.5, `the song starts at the first note after ${HEAD} s of room noise (${analysis.sound.start.toFixed(2)} s)`);
@@ -179,8 +185,10 @@ function temposHeard(bars: number, bpmAt: (beat: number) => number, jitter = 0.0
   }
   const ear = new learn.SongListener(SAMPLE_RATE);
   for (let at = 0; at < samples.length; at += 4096) ear.push(samples.subarray(at, at + 4096));
-  const tempos = ear.analyze(1, 4)?.tempos ?? [];
+  const heard = ear.analyze(4);
+  const tempos = heard?.analysis.tempos ?? [];
   return {
+    heard,
     tempos,
     average: (60 * (beats.length - 1)) / (beats[beats.length - 1] - beats[0]),
     text: tempos.map((tempo) => `${tempo.bpm.toFixed(2)} BPM at ${tempo.at.toFixed(2)} s`).join(", ") || "nothing heard",
@@ -201,8 +209,9 @@ for (const { bars, by } of [{ bars: 2, by: 1.08 }, { bars: 2, by: 0.92 }, { bars
   check(pushed.tempos.length === 1 && Math.abs(pushed.tempos[0].bpm - 112) <= 1, `a ${bars}-bar ${push} at bar 33 of a 112 BPM take is not a tempo change (${pushed.text})`);
 }
 
-const boundaryTimes = analysis.boundaries.map((beat) => analysis.beats[beat]);
-check(analysis.boundaries.length === 2, `two boundaries for three headings (${analysis.boundaries.length})`);
+const boundaries = learn.placeHeadings(analysis, headings.length, 4) ?? [];
+const boundaryTimes = boundaries.map((beat) => analysis.beats[beat]);
+check(boundaries.length === 2, `two boundaries for three headings (${boundaries.length})`);
 boundaryTimes.forEach((time, i) => {
   const want = truth.starts[i + 1];
   check(Math.abs(time - want) <= 60 / PARTS[i + 1].bpm + 0.01, `${learn.shortHeading(headings[i + 1])} starts within a beat of ${want.toFixed(2)} s (${time.toFixed(2)} s)`);
@@ -515,6 +524,65 @@ const fastChange = fast.seen.find((each) => each.clock >= learned.sections[2].at
 const realChange = real.seen.find((each) => each.clock >= learned.sections[2].at)!.wall;
 check(fast.rate === 2 && Math.abs(fastChange - realChange / 2) <= 2 / 60, `at double the BPM the learned version stretches like any version (chorus at ${fastChange.toFixed(2)} s, ${realChange.toFixed(2)} s at ${bpm})`);
 check(fast.clicks.length === 4 && Math.abs(fast.clicks[1] - fast.clicks[0] - 60 / 244) < 0.002, `and the count-in speeds up with it (${(fast.clicks[1] - fast.clicks[0]).toFixed(3)} s a beat)`);
+
+/** A fixed piece of arithmetic that never changes, so a speed budget can scale with the machine it runs on. Best of five, in ms. */
+function speedProbe(): number {
+  const input = new Float32Array(96_000);
+  let state = 1;
+  for (let i = 0; i < input.length; i++) input[i] = (state = (state * 1664525 + 1013904223) >>> 0) / 2 ** 32 - 0.5;
+  let best = Infinity;
+  for (let round = 0; round < 5; round++) {
+    const started = process.hrtime.bigint();
+    let [s1, s2, energy] = [0, 0, 0];
+    for (let pass = 0; pass < 100; pass++) {
+      for (let i = 0; i < input.length; i++) {
+        const s = 0.5 * input[i] + 1.9 * s1 - s2;
+        [s2, s1] = [s1, s];
+        if ((i & 1023) === 1023) [energy, s1, s2] = [energy + s1 * s1 + s2 * s2 - 1.9 * s1 * s2, 0, 0];
+      }
+    }
+    best = Math.min(best, Number(process.hrtime.bigint() - started) / 1e6);
+    if (!Number.isFinite(energy)) throw new Error("the speed probe overflowed");
+  }
+  return best;
+}
+console.log(`speed probe ${speedProbe().toFixed(1)} ms`);
+
+for (const { bars, heard } of [{ bars: 6, heard: false }, { bars: 10, heard: true }]) {
+  const take = temposHeard(bars, () => 112);
+  check(!!take.heard === heard, `${bars} bars of a steady beat ${heard ? "are" : "are not"} heard as a song, which needs 8 bars (${take.text})`);
+}
+
+const floors = JSON.parse(readFileSync(new URL("./learn-bands.json", import.meta.url), "utf8")) as { sure: number; likely: number };
+const drawn = [100, floors.sure, floors.sure - 0.01, floors.likely, floors.likely - 0.01, 0].map((confidence) => learn.bandOf(confidence));
+check(JSON.stringify(drawn) === '["sure","sure","likely","likely","check","check"]', `a confidence is drawn by the floors in scripts/learn-bands.json, green from ${floors.sure} and yellow from ${floors.likely} (${drawn.join(", ")})`);
+
+const source = { kind: "file" as const, name: "take-me-out.wav", stereo: false, sampleRate: SAMPLE_RATE };
+const expectedSeconds = truth.samples.length / SAMPLE_RATE;
+const through = await listenThrough(truth.samples, SAMPLE_RATE, { beatsPerBar: 4, lyrics: null, source, expectedSeconds, stopped: "finished" });
+const chunks = Math.ceil(truth.samples.length / SAMPLE_RATE);
+check(
+  through.heard.length === chunks && through.heard.every((seconds, i) => seconds > (through.heard[i - 1] ?? 0)) && Math.abs(through.heard[chunks - 1] - expectedSeconds) < 1e-9,
+  `the worker says how much it has heard after each of the ${chunks} one-second chunks (${through.heard.length} heard messages, last ${through.heard[through.heard.length - 1]?.toFixed(2)} s)`,
+);
+const { source: gotSource, coverage, ...workerHeard } = through.listen ?? { source: null, coverage: null };
+check(JSON.stringify(workerHeard) === JSON.stringify(heardSong), "the worker's listen holds what the engine heard from the same samples, unchanged by the trip");
+check(
+  JSON.stringify(gotSource) === JSON.stringify(source) && JSON.stringify(coverage) === JSON.stringify({ heardSeconds: expectedSeconds, expectedSeconds, stopped: "finished", quality: "clear" }),
+  `the listen names the phone's source and how much of it was heard (${JSON.stringify(coverage)})`,
+);
+const nothing = await new Promise<FromWorker>((resolve) => {
+  const worker = new FakeWorker("learn-worker.ts");
+  worker.onmessage = ({ data }) => (worker.terminate(), resolve(data as FromWorker));
+  worker.postMessage({ kind: "finish", beatsPerBar: 4, lyrics: null, source, expectedSeconds: null, stopped: "player" });
+});
+check(nothing.kind === "done" && nothing.listen === null, `a listen that heard nothing ends with no result (${JSON.stringify(nothing)})`);
+const handedOver = new Float32Array(SAMPLE_RATE);
+const handedTo = new FakeWorker("learn-worker.ts");
+handedTo.postMessage({ kind: "samples", chunk: handedOver, sampleRate: SAMPLE_RATE }, [handedOver.buffer]);
+handedTo.terminate();
+check(handedOver.length === 0, "a chunk posted with its buffer in the transfer list is handed to the worker, not copied");
+clearWorkerLog();
 
 if (failures) {
   console.error(`${failures} learn check(s) failed`);

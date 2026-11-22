@@ -1,7 +1,10 @@
 import { TempoDetector, smoothed, tempoOf } from "./bpm-detect";
 import { Chroma } from "./learn-chords";
+import type { Analysis, Heard } from "./learn-result";
 import type { Learned, ScrollVersion, Span } from "./scroll-timing";
 
+/** A song is heard only when a steady beat holds for this many bars. */
+const MIN_BARS = 8;
 const FRAMES_PER_SECOND = 20;
 /** Sound starts and ends where a frame is 12 dB over the room's quietest second. */
 const ABOVE_FLOOR = 16;
@@ -56,21 +59,6 @@ interface Tempo {
   bpm: number;
 }
 
-/** What one listen found, in seconds from when listening began. */
-export interface Analysis {
-  /** First note to last note. */
-  sound: Span;
-  beats: number[];
-  /** The opening tempo, then each change. */
-  tempos: Tempo[];
-  /** The beat each heading after the first starts on. */
-  boundaries: number[];
-  /** Where the voice band stands out. Only suggestions. */
-  vocals: Span[];
-  /** Per beat, the strength of each pitch class from C to B. */
-  chroma: number[][];
-}
-
 /**
  * Hears a whole song a chunk at a time. Keeps D's onset envelope, and the energy of a few bands and the
  * chroma every 50 ms. Raw samples are not stored: the chroma overwrites its last fraction of a second.
@@ -123,24 +111,38 @@ export class SongListener {
     }
   }
 
-  /** Null when no song with a steady beat was heard. */
-  analyze(headingCount: number, beatsPerBar: number): Analysis | null {
+  /** Everything the samples alone give; null when no song with a steady beat was heard. */
+  analyze(beatsPerBar: number): Heard | null {
     const sound = soundSpan(this.frames.map((frame) => frame.total), this.frameRate);
     if (!sound) return null;
     const envelope = this.detector.envelope;
     const rate = this.detector.hopsPerSecond;
     const beats = trackBeats(envelope, rate, sound);
-    if (beats.length < headingCount * 2 * beatsPerBar) return null;
+    if (beats.length < MIN_BARS * beatsPerBar) return null;
     const features = beatFeatures(beats, sound.end, this.frames, this.chromaFrames, this.frameRate, envelope, rate);
-    return {
+    const analysis: Analysis = {
       sound,
       beats,
       tempos: tempoChanges(beats, beatsPerBar),
-      boundaries: sectionBoundaries(novelty(features.map((beat) => beat.texture), 2 * beatsPerBar), headingCount, 2 * beatsPerBar),
+      downbeatPhase: 0,
       vocals: vocalSpans(features.map((beat) => beat.voiceShare), beats, sound.end, beatsPerBar),
       chroma: features.map((beat) => beat.chroma),
+      voiceOnsets: new Float32Array(0),
+      novelty: novelty(features.map((beat) => beat.texture), 2 * beatsPerBar),
     };
+    const bpm = analysis.tempos[0].bpm;
+    // One reading and no score for it yet, so it is drawn to be checked.
+    return { analysis, tempo: { bpm, choices: [{ bpm, feel: "as heard", score: 1 }], band: "check" }, changes: [], sections: [], lines: [] };
   }
+}
+
+/**
+ * Where a chart's headings after the first fall on the heard song: the novelty picks for that many headings. Null when
+ * the song is too short to hold them two bars apart. The chart is placed on what was heard, never the other way.
+ */
+export function placeHeadings(analysis: Analysis, headingCount: number, beatsPerBar: number): number[] | null {
+  const gap = 2 * beatsPerBar;
+  return analysis.beats.length < headingCount * gap ? null : sectionBoundaries(analysis.novelty, headingCount, gap);
 }
 
 function percentile(values: number[], fraction: number): number {

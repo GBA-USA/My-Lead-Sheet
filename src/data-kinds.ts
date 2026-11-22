@@ -159,6 +159,11 @@ export const DATA_KINDS: readonly DataKind[] = [
     place: "phone",
     what: "Copies of the songs in your bands, and the gig packs you downloaded: the setlist for the night with its charts, the band timing for those songs, and the gig secret that proves your phone is on the lineup. Kept so they open with no signal. Removed when you sign out, or when another account signs in on this phone.",
   },
+  {
+    key: "syncHistory",
+    place: "phone",
+    what: "For each route (Wi-Fi link, Over the internet, Server) and each of the last 30 days: how steady the clock was, how long the slowest message took, how many timing changes came late, whether the tries to connect worked, and whether a gig, Test now or a test with a bandmate measured it. Kept for the sync rating under Settings, then Connection. It is about this phone and the route, never a Wi-Fi network name or a venue, and it stays when another account signs in.",
+  },
   { key: "leadSheetsPhoneOwner", place: "phone", what: "Which account the band data on this phone belongs to, so another account signing in here never sees it." },
   {
     key: "gigs",

@@ -1,3 +1,13 @@
+# C18b question: check:routes case 8b still expects an empty rating slot
+
+`scripts/check-routes.ts` (C18, not mine to edit) case "8b. Settings and the Connection screen outside a gig show no id, offset, epoch, follower or relay, and leave the rating slot empty" asserts `[data-slot=rating]` is "" on every row, with the message "the rating slot is empty until C18b". C18b is this cook. Its pass condition 2 is that all four rows now show a rating, so 8b fails by design on this branch:
+
+    the rating slot is empty until C18b: got ["Not tried yet","Not tried yettest with a bandmate","Not tried yet","Not tried yet"], want ["","","",""]
+
+Everything else in 8b (no id, offset, epoch, follower or relay words; the slots are still name, line, rating) passes. I did not edit the check. Proposed one-line change for whoever owns it: expect the four rows to read `Not tried yet` (the Wi-Fi link row also reads `test with a bandmate`), or drop the last assertion. The rating cell is `<span data-slot="rating"><span data-word>…</span><small data-age>…</small></span>`.
+
+---
+
 # P5 song notes: one question on a test
 
 `check:song-notes`, case "a note added by an admin is listed for a member on the same band song, newest first, with

@@ -1,13 +1,10 @@
-export type Route = "wifi" | "internet" | "server";
+import { ROUTE_WORDS, type LinkRoute } from "./routes";
+
+/** The three routes a rating covers (no relay). The words for each come from the shared table in `routes.ts`. */
+export type Route = LinkRoute;
 export type SettingChoice = "auto" | Route;
 export type Rating = "Best" | "Better" | "Good" | "Not steady" | "Not tried yet" | "Can't connect here";
 export type RouteSummary = { spreadMs?: number; p99Ms?: number; lateRate?: number; ageDays?: number; source?: string; tries: boolean[] };
-
-export const ROUTE_WORDS: Record<Route, string> = {
-  wifi: "Wi-Fi link",
-  internet: "Over the internet",
-  server: "Server",
-};
 
 export function rateRoute(s: RouteSummary | undefined): Rating {
   if (s === undefined) return "Not tried yet";
@@ -83,4 +80,17 @@ export function applyTestNow(
     server: { ...server, source: "Test now" },
     internet: { ...internet, source: "Test now" },
   };
+}
+
+/** The two parts of a row's rating as Settings > Connection shows them: the word, and its age and source in small type. */
+export function ratingParts(choice: SettingChoice, m: Partial<Record<Route, RouteSummary>>): { word: Rating; age: string } {
+  if (choice === "auto") {
+    const route = autoRoute(m);
+    if (route === null) return { word: "Not tried yet", age: "" };
+    const source = m[route]?.source;
+    return { word: rateRoute(m[route]), age: source ? `${ROUTE_WORDS[route]} · ${source}` : ROUTE_WORDS[route] };
+  }
+  const word = rateRoute(m[choice]);
+  if (choice === "wifi" && word === "Not tried yet") return { word, age: "test with a bandmate" };
+  return { word, age: m[choice]?.source ?? "" };
 }

@@ -64,6 +64,7 @@ export const DATA_KINDS: readonly DataKind[] = [
     what: "For each account on this phone, its songs and song settings moved aside while the backup of another account used the same place, put back when that account signs in here again.",
   },
   { key: "leadSheetsLibraryMode", place: "phone", what: "Whether this server keeps My Songs per account, so My Songs shows only the songs of the account signed in." },
+  { key: "leadSheetsConnection", place: "phone", what: "How this phone connects to the band outside a gig: Auto, Wi-Fi link, Over the internet or Server. In a gig the admin picks the route for everyone, and this stays as you set it." },
   { key: "users", place: "server", what: "Your account: the name bandmates see, your handle (the name others find you by), when you joined, and a number that goes up when you sign out everywhere." },
   {
     key: "passkeys",

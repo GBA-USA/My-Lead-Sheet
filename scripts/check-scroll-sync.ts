@@ -463,6 +463,71 @@ test("every built-in song's own pace ends by its recording's end", () => {
   assert(Math.abs(intro.length - 8 * bar) < 1e-9, `the bars a chart counts keep their length when its guessed lines shrink (Brown Eyed Girl intro ${intro.length.toFixed(2)} s, want ${(8 * bar).toFixed(2)} s)`);
 });
 
+const builtIn = (title: string) => seed.songs.find((song) => song.title === title)! as Song;
+
+test("Jumper's CHORUS — repeat holds its one bar line for a full chorus, not three bars", () => {
+  const jumper = builtIn("Jumper");
+  const repeat = jumper.body[2];
+  assert(/^CHORUS — repeat$/.test(repeat.heading) && repeat.lines.length === 1 && /full chorus/.test(repeat.lines[0].bars ?? ""), `Jumper's third section is the one-line repeat (${repeat.heading})`);
+  const pace = app.songPace(jumper)!;
+  const chorus = pace.sections[0].length;
+  const { at, length } = pace.sections[2];
+  assert(Math.abs(length - chorus) < 1e-9, `the repeat lasts as long as the opening chorus (${length.toFixed(2)} s, want ${chorus.toFixed(2)} s)`);
+  const clientHeight = 700;
+  const jumperBeat = 60 / jumper.tempo!;
+  const run = perform(app, app.scrollMotion(jumper, null, null, jumper.tempo, 100), jumper, clientHeight);
+  run.run(at + chorus + 10);
+  run.cancel();
+  const box = (section: number) => run.chart.boxes.find((each) => each.section === section && each.line === 0)!;
+  const held = crossing(run.seen, clientHeight, (box(2).top + box(2).bottom) / 2);
+  assert(Math.abs(held - (at + chorus / 2)) < jumperBeat, `the repeat's bar line is on the middle halfway through the chorus (${held.toFixed(2)} s, want ${(at + chorus / 2).toFixed(2)} s)`);
+  const verse = crossing(run.seen, clientHeight, (box(3).top + box(3).bottom) / 2);
+  const want = at + chorus + pace.sections[3].lines[0].length / 2;
+  assert(Math.abs(verse - want) < jumperBeat, `VERSE 2's first line is on the middle only after the chorus (${verse.toFixed(2)} s, want ${want.toFixed(2)} s)`);
+});
+
+/**
+ * Every built-in section that writes a repeat or a direction in place of its music. A stand-in lasts as long as the
+ * section it names times its plays; a bar line's "(x4)" plays the bars before it four times. A section that writes
+ * its own bars, as "same chords as the chorus" or "Repeat the chorus chords | F#m | E | A | D E |", keeps them.
+ */
+const STANDS_IN: { title: string; section: number; plays: number; times: number }[] = [
+  { title: "Jumper", section: 2, plays: 0, times: 1 },
+  { title: "Jumper", section: 6, plays: 0, times: 3 },
+  { title: "The Middle", section: 4, plays: 2, times: 2 },
+  { title: "The Middle", section: 7, plays: 2, times: 2 },
+  { title: "Say It Ain't So", section: 5, plays: 2, times: 1 },
+  { title: "Neon Moon", section: 4, plays: 2, times: 1 },
+  { title: "To The Table", section: 8, plays: 3, times: 1 },
+];
+const WRITTEN_BARS: { title: string; section: number; line: number; bars: number }[] = [
+  { title: "Jumper", section: 4, line: 0, bars: 12 },
+  { title: "Possum Kingdom", section: 0, line: 0, bars: 8 },
+  { title: "Possum Kingdom", section: 3, line: 2, bars: 8 },
+  { title: "East to West", section: 0, line: 0, bars: 6 },
+  { title: "To The Table", section: 6, line: 2, bars: 13 },
+  { title: "Fire Away", section: 7, line: 0, bars: 4 },
+  { title: "Neon Moon", section: 5, line: 0, bars: 4 },
+  { title: "Born on the Bayou", section: 5, line: 1, bars: 4 },
+];
+
+test("every built-in repeat or direction lasts as long as the music it stands for", () => {
+  const wrong: string[] = [];
+  for (const { title, section, plays, times } of STANDS_IN) {
+    const pace = app.songPace(builtIn(title))!;
+    const got = pace.sections[section].length;
+    const want = pace.sections[plays].length * times;
+    if (Math.abs(got - want) > 1e-9) wrong.push(`${title} "${builtIn(title).body[section].heading}" ${got.toFixed(2)} s, want ${times} × "${builtIn(title).body[plays].heading}" = ${want.toFixed(2)} s`);
+  }
+  for (const { title, section, line, bars } of WRITTEN_BARS) {
+    const song = builtIn(title);
+    const bar = paceEnd({ ...song, officialRuntimeSec: null, body: [{ heading: "ONE BAR", lines: [{ bars: "| C |" }] }] });
+    const got = app.songPace(song)!.sections[section].lines[line].length / bar;
+    if (Math.abs(got - bars) > 1e-9) wrong.push(`${title} "${song.body[section].heading}" line ${line + 1} is ${got.toFixed(2)} bars, want ${bars}`);
+  }
+  assert(wrong.length === 0, wrong.join("; "));
+});
+
 if (failures) {
   console.error(`${failures} scroll-sync check(s) failed`);
   process.exit(1);

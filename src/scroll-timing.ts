@@ -1,5 +1,5 @@
 import { scrollPixelsPerSecond } from "./music";
-import type { ChartLine, Song } from "./types";
+import type { ChartLine, ChartSection, Song } from "./types";
 
 /** `at` seconds into the song (at the plan's BPM), the chord section is `progress` (0 to 1) of the way through. */
 export interface Mark {
@@ -124,9 +124,21 @@ export function chordCount(text: string): number {
   return text.match(CHORD)?.length ?? 0;
 }
 
-/** "| A | E | F#m  D | A |" is 4 bars; a bar line with no bar marks is a bar per chord. */
+/**
+ * "| A | E | F#m  D | A |" is 4 bars; a bar line with no bar marks is a bar per chord. A cell that opens with "(" is a
+ * direction, not a bar: "| F#m | D2 | A5 | (x3) then | Esus |" plays the three bars before its "(x3)" three times.
+ */
 function barCount(text: string): number {
-  return text.includes("|") ? text.split("|").filter((cell) => cell.trim()).length : chordCount(text);
+  if (!text.includes("|")) return chordCount(text);
+  let counted = 0;
+  let run = 0;
+  for (const cell of text.split("|").map((each) => each.trim()).filter(Boolean)) {
+    if (cell.startsWith("(")) {
+      counted += run * plays(cell);
+      run = 0;
+    } else run += 1;
+  }
+  return counted + run;
 }
 
 /**
@@ -167,8 +179,9 @@ function plays(heading: string): number {
 
 /**
  * When each chart line plays, from bars × beats per bar × 60 / BPM summed in play order, so a late section does not
- * drift. A section played twice gives each of its lines twice the time. A heading with no lines, as "CHORUS — repeat",
- * lasts as long as the last section under the same first word. Null without a BPM.
+ * drift. A section played twice gives each of its lines twice the time. A section that writes no sung line and says
+ * it repeats, as "CHORUS — repeat" over "| Fmaj7 | C | G | (chorus chords, full chorus)", or counts no bars at all,
+ * lasts as long as the section it plays again times its plays. Null without a BPM.
  * When that runs past the song's recording, the sung lines it guessed shrink, all by one share, so the song ends with
  * its recording; the bars it counted keep their length. A song that ends within its recording keeps its guess.
  */
@@ -186,30 +199,59 @@ export function songPace(song: Song): { bpm: number; sections: SungSection[] } |
   return { bpm: tempo, sections: counted < recorded ? placeLines(song, bar, phrase, (recorded - counted) / (total - counted)) : guessed };
 }
 
-/** Each chart line's place in play order, with the guessed sung lines at `share` of their guess. */
+/** A section already placed: what later headings and notes call it, and how long it plays once. */
+interface Heard {
+  name: string[];
+  once: number;
+}
+
+const words = (text: string) => text.toUpperCase().match(/[\w-]+/g) ?? [];
+
+const REPEAT = /\b(?:repeat|again)\b/i;
+
+/**
+ * The section a stand-in plays again: the last under its heading's first word, else the last its words name, as
+ * "FINAL CHORUS" with the note "Chorus 1 again".
+ */
+function repeated(section: ChartSection, name: string[], heard: Heard[]): Heard | undefined {
+  const said = words([section.heading, ...section.lines.flatMap((line) => [line.bars ?? "", line.note ?? ""])].join(" "));
+  const names = (each: Heard) => each.name.length > 0 && said.some((_, i) => each.name.every((word, j) => said[i + j] === word));
+  return heard.filter((each) => each.name[0] === name[0]).at(-1) ?? heard.filter(names).at(-1);
+}
+
+/**
+ * Each chart line's place in play order, with the guessed sung lines at `share` of their guess. A stand-in's own
+ * lines share its time by their bars, so its bar line holds on the sheet while the band plays the repeat.
+ */
 function placeLines(song: Song, bar: number, phrase: number, share: number): SungSection[] {
-  const once = new Map<string, number>();
+  const heard: Heard[] = [];
   let at = 0;
   return song.body.map((section) => {
     const times = plays(section.heading);
-    const word = section.heading.trim().split(/\W/)[0].toUpperCase();
-    const start = at;
-    const lines = section.lines.map((line) => {
+    const name = words(section.heading.split(/\s[(—–]/)[0]);
+    const own = section.lines.map((line) => {
       const { bars, guessed } = lineBars(line, phrase);
-      const length = bars * (guessed ? share : 1) * bar * times;
+      return bars * (guessed ? share : 1) * bar * times;
+    });
+    const counted = own.reduce((sum, each) => sum + each, 0);
+    const sung = section.lines.some((line) => line.chords !== undefined || line.lyrics !== undefined);
+    const again = !sung && (counted === 0 || REPEAT.test(section.heading)) ? repeated(section, name, heard) : undefined;
+    const stretch = again && counted > 0 ? (again.once * times) / counted : 1;
+    const start = at;
+    const lines = section.lines.map((line, i) => {
       const placed = {
         at,
-        length,
+        length: own[i] * stretch,
         ...(line.chords !== undefined ? { pairChords: chordCount(line.chords) } : {}),
         lyricOnly: line.chords === undefined && line.lyrics !== undefined,
         ...(line.bars !== undefined ? { barChords: chordCount(line.bars) } : {}),
         note: line.note !== undefined,
       };
-      at += length;
+      at += placed.length;
       return placed;
     });
-    if (lines.length === 0) at += (once.get(word) ?? 0) * times;
-    else once.set(word, (at - start) / times);
+    if (again) at = start + again.once * times;
+    if (again || sung || counted > 0) heard.push({ name, once: (at - start) / times });
     return { at: start, length: at - start, lines };
   });
 }

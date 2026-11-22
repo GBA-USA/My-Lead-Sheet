@@ -552,6 +552,38 @@ async function phoneChecks(site: Site, base: string, origin: string) {
     assert.equal(await page.text(".sheet .sheet-name"), "Kitchen Floor (live)", "and its page opens");
   });
 
+  await check("3. a BPM saved in Edit moves the metronome, also after the player transposed the song", async () => {
+    const speed = `document.querySelector('input[aria-label="Metronome speed in bpm"]')`;
+    /** The BPM the metronome sheet opens at. */
+    const metronomeBpm = async () => {
+      await site.evaluate(`document.querySelector(".controls .metronome-pill").click()`);
+      await page.until(`!!${speed}`, "the metronome sheet");
+      const bpm = await site.evaluate<string>(`${speed}.value`);
+      await site.evaluate(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+      await page.until(`!${speed}`, "the metronome sheet to close");
+      return bpm;
+    };
+    const editBpm = async (bpm: string) => {
+      await openMore();
+      await tapIn(`document.querySelector("[role=menu]")`, "Edit");
+      await page.until(`!!${editor}`, "the editor");
+      await fill("BPM", bpm);
+      await tapIn(editor, "Save");
+      await page.until(`!document.querySelector(".song-editor")`, "the editor to close");
+    };
+    await openSong(id);
+    await editBpm("140");
+    assert.equal(await metronomeBpm(), "140", "the metronome opens at the BPM saved in Edit");
+    await site.evaluate(`document.querySelector('[aria-label="Transpose up"]').click()`);
+    await settle();
+    await editBpm("160");
+    assert.equal((await stored()).find((song) => song.id === id)?.tempo, 160, "the song is stored at 160");
+    assert.equal(await metronomeBpm(), "160", "the metronome follows the new BPM over the transposed draft");
+    await reload("#/songs");
+    await openSong(id);
+    assert.equal(await metronomeBpm(), "160", "and keeps it after a reload");
+  });
+
   await check("5. an own song can be shared to a band and sent to a friend with the existing flows", async () => {
     mike = await passwordPlayer(base, origin, "Mike Keys", "mikekeys");
     assert.equal((await appCalls("/api/friends/request", { handle: mike.handle })).status, 200, "Pat asks Mike");

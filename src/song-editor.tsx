@@ -36,17 +36,20 @@ export function SongEditors({
   song,
   songs,
   onSongData,
+  onTempo,
   onClose,
 }: {
   editing: SongEdit | null;
   song: Song | undefined;
   songs: Song[];
   onSongData: (song: Song, data: SongData) => void;
+  /** The open song's tempo was saved; `song` is the song as it was. */
+  onTempo: (song: Song, tempo: number | null) => void;
   onClose: () => void;
 }) {
   if (editing === "new") return <SongEditor songs={songs} onClose={onClose} />;
   if (!song) return null;
-  if (editing === "chart") return <SongEditor song={song} songs={songs} onClose={onClose} />;
+  if (editing === "chart") return <SongEditor song={song} songs={songs} onTempo={(tempo) => onTempo(song, tempo)} onClose={onClose} />;
   if (editing === "delete") return <DeleteSong song={song} onClose={onClose} />;
   if (editing === "timing") return <SongDataEditor song={song} original={withSongData(songByRef(songs, song.ref)!, {})} onSave={(data) => onSongData(song, data)} onClose={onClose} />;
   return null;
@@ -56,7 +59,7 @@ export function SongEditors({
  * One screen to write a song or change one the player made: the details, then the chart as text, typed or pasted,
  * drawn below by the normal chart as it is typed. Nothing here talks to the server.
  */
-function SongEditor({ song, songs, onClose }: { song?: Song; songs: Song[]; onClose: () => void }) {
+function SongEditor({ song, songs, onTempo, onClose }: { song?: Song; songs: Song[]; onTempo?: (tempo: number | null) => void; onClose: () => void }) {
   const titleId = useId();
   const ids = { title: useId(), artist: useId(), key: useId(), mode: useId(), time: useId(), chart: useId(), hint: useId() };
   const [form, setForm] = useState(() => formOf(song));
@@ -117,6 +120,7 @@ function SongEditor({ song, songs, onClose }: { song?: Song; songs: Song[]; onCl
     // What Song timing held is now part of the song itself, so it no longer sits over the edit.
     saveSongData(song.ref, {});
     if (!replaceOwnSong(song.id, ownSong(meta, parsed.sections, content(song)))) return setProblem(NOT_SAVED);
+    onTempo?.(tempo);
     onClose();
   };
 

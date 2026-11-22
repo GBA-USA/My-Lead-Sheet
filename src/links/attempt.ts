@@ -71,8 +71,6 @@ export function linkToLeader(options: LinkOptions): GigLinks {
   let reasons: Attempt["reasons"] = {};
   let chosen: WiredLink | null = null;
   let trying: Try | null = null;
-  /** The room took this phone off the lineup. It joins again on `on-lineup`, or once after a drop that may have hidden one. */
-  let offLineup = false;
   let clock = newClock();
   let hadLink = false;
   let pingTimer: ReturnType<typeof setTimeout> | null = null;
@@ -280,15 +278,8 @@ export function linkToLeader(options: LinkOptions): GigLinks {
 
   const unlisten = room.listen((message) => {
     if (closed) return;
-    if (message.kind === "hello") {
-      if (!offLineup) ask();
-      return;
-    }
-    if (message.kind === "on-lineup") {
-      if (message.gigId !== gigId) return;
-      offLineup = false;
-      return ask();
-    }
+    if (message.kind === "hello") return Array.isArray(message.lineups) && message.lineups.includes(gigId) ? ask() : refused(NOT_ON_LINEUP_CLOSE);
+    if (message.kind === "on-lineup") return message.gigId === gigId ? ask() : undefined;
     if (message.kind === "gig") return onGig(message as unknown as GigPeers);
     if (message.kind === "intro" && typeof message.from === "string" && isIntro(message.body)) {
       if (leading) return answer(message.from, message.body);
@@ -304,19 +295,20 @@ export function linkToLeader(options: LinkOptions): GigLinks {
       return askSoon();
     }
     if (message.kind === "room-down") {
-      offLineup = false;
       if (chosen?.state === "open") return;
       reasons = { ...reasons, server: NO_SIGNAL };
       return changed();
     }
-    if (message.kind === "room-refused") {
-      stop();
-      offLineup = Number(message.code) === NOT_ON_LINEUP_CLOSE;
-      reasons = { server: refusedWords(Number(message.code)) };
-      changed();
-    }
+    if (message.kind === "room-refused") refused(Number(message.code));
   });
   if (room.state === "open") ask();
+
+  /** The room refused this phone, or greeted it without tonight's gig: no link, and the reason why. */
+  function refused(code: number) {
+    stop();
+    reasons = { server: refusedWords(code) };
+    changed();
+  }
 
   /** `chosen` clears first, so the links closing here are not taken for a lost link that asks the room again. */
   function stop() {

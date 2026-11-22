@@ -1,6 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { NOT_A_MEMBER_CLOSE, type ChatMessage } from "../src/chat-model";
-import { NOT_ON_LINEUP_CLOSE, type GigPeers, type JoinGig, type OnLineup } from "../src/links/link";
+import { NOT_ON_LINEUP_CLOSE, type GigPeers, type Hello, type JoinGig, type OnLineup } from "../src/links/link";
 import type { Person } from "./directory-http";
 import type { Env } from "./index";
 import { handleBackup, myLibraryPerAccount } from "./room-backup";
@@ -21,7 +21,7 @@ type RelayKind = (typeof RELAYED)[number];
 type Inbound = { kind: RelayKind; to: string; body: unknown } | JoinGig;
 
 type Outbound =
-  | { kind: "hello"; you: string; peers: string[] }
+  | Hello
   | { kind: RelayKind; from: string; body: unknown; rx: number; tx: number }
   | { kind: "message"; message: ChatMessage }
   | GigPeers
@@ -88,7 +88,7 @@ export class Room extends DurableObject<Env> {
     const [client, server] = Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(server, [you, userTag(userId)]);
     server.serializeAttachment({ version });
-    send(server, { kind: "hello", you, peers });
+    send(server, { kind: "hello", you, peers, lineups: [...this.lineups(userId).keys()] });
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -319,13 +319,16 @@ export class Room extends DurableObject<Env> {
     return this.ctx.storage.sql.exec(`SELECT 1 FROM meta`).toArray().length > 0;
   }
 
-  /** The gig's leader, if `userId` is on its lineup. Membership alone is not enough (PLAN.md 7.14), and an admin who isn't playing is not let in. */
-  private lineupLeader(userId: string, gigId: string): string | null {
+  /**
+   * The gigs `userId` is on the lineup of, each with its leader. Membership alone is not enough (PLAN.md 7.14), and an
+   * admin who isn't playing is not let in. `hello` and `join-gig` both read this, so the greeting never disagrees with the join.
+   */
+  private lineups(userId: string): Map<string, string> {
     try {
-      const { gig } = gigRoom.open(this.band, userId, gigId);
-      return gig.lineup.includes(userId) ? gig.leader : null;
+      const { gigs, past } = gigRoom.list(this.band, userId);
+      return new Map([...gigs, ...past].filter(({ gig }) => gig.lineup.includes(userId)).map(({ gig }) => [gig.gigId, gig.leader]));
     } catch (error) {
-      if (error instanceof Refused) return null;
+      if (error instanceof Refused) return new Map();
       throw error;
     }
   }
@@ -337,7 +340,7 @@ export class Room extends DurableObject<Env> {
    * blip keeps its place.
    */
   private joinGig(ws: WebSocket, { gigId, openedAt }: JoinGig) {
-    const leader = this.lineupLeader(this.userOf(ws), gigId);
+    const leader = this.lineups(this.userOf(ws)).get(gigId);
     if (!leader) return ws.close(NOT_ON_LINEUP_CLOSE, "not-on-lineup");
     const now = Date.now();
     ws.serializeAttachment({ ...attachment(ws), gigId, openedAt: Math.min(openedAt ?? now, now) });

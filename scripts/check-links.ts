@@ -146,7 +146,8 @@ async function startPortal() {
 /**
  * Runs before any app code: counts live timers, keeps every RTCPeerConnection and its ICE config, drops host candidates
  * while `__blockLocal` is on (a Wi-Fi that keeps phones apart), counts pings sent on any carrier, and holds back each
- * `join-gig` for `__delayJoin` ms (a slower phone, a backgrounded tab, a room socket still reconnecting).
+ * `join-gig` for `__delayJoin` ms (a slower phone, a backgrounded tab, a room socket still reconnecting), and holds back
+ * each room socket's `close` for `__delayClose` ms (a slow network still carrying the room's close to the phone).
  */
 const PAGE_HOOKS = `
 window.__timers = new Set();
@@ -169,7 +170,14 @@ const counted = (proto) => { const send = proto.send; proto.send = function (dat
 counted(RTCDataChannel.prototype); counted(WebSocket.prototype);
 window.__sockets = [];
 const Socket = window.WebSocket;
-window.WebSocket = class extends Socket { constructor(...args) { super(...args); window.__sockets.push(this); } };
+window.__delayClose = 0;
+window.WebSocket = class extends Socket {
+  constructor(...args) { super(...args); window.__sockets.push(this); }
+  addEventListener(type, listener, options) {
+    if (type !== "close") return super.addEventListener(type, listener, options);
+    return super.addEventListener(type, (event) => { const ms = window.__delayClose; ms ? setT(() => listener(event), ms) : listener(event); }, options);
+  }
+};
 window.__dropRoom = () => window.__sockets.filter((ws) => ws.readyState === Socket.OPEN).forEach((ws) => ws.close());
 window.__delayJoin = 0;
 const sendNow = Socket.prototype.send;
@@ -653,6 +661,51 @@ try {
     assert.equal(back.reasons.server, undefined, `the lineup words are gone (${js(back.reasons)})`);
     assert.ok(back.generation > off.generation, "a new link, made with no reload");
     await stopBoth();
+  });
+
+  await check("12a. a player put back on the lineup while their phone is still hearing it was taken off links again with no reload", async () => {
+    await start(leaderSite);
+    await until("phone A leading", leaderSite, (v) => v.leading);
+    await start(followerSite);
+    const linked = await until("Fran linked", followerSite, (v) => v.chosen?.state === "open", 15_000);
+    await followerSite.evaluate("window.__delayClose = 2000");
+    try {
+      assert.equal((await lineup([lee])).status, 200, "Lee takes Fran off the lineup");
+      await sleep(700);
+      assert.equal((await lineup([lee, fran])).status, 200, "Lee puts Fran back before her phone has heard the room close");
+      const back = await until("Fran linked again", followerSite, (v) => v.chosen?.state === "open" && v.generation > linked.generation, 30_000);
+      assert.equal(back.reasons.server, undefined, `no lineup words once linked (${js(back.reasons)})`);
+      await sleep(3000);
+      assert.equal((await view(followerSite)).chosen?.state, "open", "Fran stays linked");
+    } finally {
+      await followerSite.evaluate("window.__delayClose = 0");
+      await stopBoth();
+    }
+  });
+
+  await check("12b. a phone off the lineup whose room drops asks nothing, and a put-back the drop hid still links it", async () => {
+    await start(leaderSite);
+    await until("phone A leading", leaderSite, (v) => v.leading);
+    assert.equal((await lineup([lee])).status, 200, "Lee takes Fran off the lineup before she opens the gig");
+    try {
+      await start(followerSite);
+      await until("Fran told she is off the lineup", followerSite, (v) => v.reasons.server === NOT_ON_LINEUP_WORDS && v.chosen === null, 10_000);
+      await sleep(4000);
+      const before = await view(followerSite);
+      await followerSite.evaluate("window.__dropRoom()");
+      await until("Fran's room back", followerSite, (v) => !!v.you && v.you !== before.you, 40_000);
+      await sleep(4000);
+      const after = await view(followerSite);
+      assert.equal(after.reasons.server, NOT_ON_LINEUP_WORDS, `Fran still reads '${NOT_ON_LINEUP_WORDS}' (${js(after.reasons)})`);
+      assert.equal(after.roomSockets, before.roomSockets + 1, `the room's greeting said she is off, so she asked nothing (${before.roomSockets} then ${after.roomSockets} sockets)`);
+      await followerSite.evaluate("window.__dropRoom()");
+      assert.equal((await lineup([lee, fran])).status, 200, "Lee puts Fran back while her room is down");
+      const back = await until("Fran linked once her room is back", followerSite, (v) => v.chosen?.state === "open", 40_000);
+      assert.equal(back.reasons.server, undefined, `the lineup words are gone (${js(back.reasons)})`);
+    } finally {
+      await lineup([lee, fran]);
+      await stopBoth();
+    }
   });
 } catch (error) {
   failures += 1;

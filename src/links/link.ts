@@ -35,6 +35,12 @@ export type JoinGig = { kind: "join-gig"; gigId: string; openedAt?: number };
  */
 export type GigPeers = { kind: "gig"; gigId: string; you: string; leader: string | null; openedAt: number };
 
+/**
+ * Room to phone, first on every socket and so on every reconnect. `lineups` lists the gigs this player is on the lineup
+ * of right now, so a phone joins only a gig that names it and never misses a lineup change made while it was away.
+ */
+export type Hello = { kind: "hello"; you: string; peers: string[]; lineups: string[] };
+
 /** The room closes a socket whose player is not on the gig's lineup with this code. */
 export const NOT_ON_LINEUP_CLOSE = 4404;
 

@@ -10,7 +10,8 @@ const SIGNED_OUT_CLOSE = 4401;
 
 /**
  * The room's own close codes (4000 and up) mean it refused this phone, so the line stops trying. Off the lineup is the
- * exception: it ends the phone's place in the gig, not in the band room, so the line comes straight back to hear `on-lineup`.
+ * exception: it ends the phone's place in the gig, not in the band room, so the line comes straight back, and the room's
+ * `hello` says whether the player is on the lineup by then.
  */
 const REFUSED_WORDS: Record<number, string> = {
   [SIGNED_OUT_CLOSE]: "Sign in to join the gig",

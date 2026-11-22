@@ -117,9 +117,9 @@ function SongEditor({ song, songs, onTempo, onClose }: { song?: Song; songs: Son
       window.location.hash = songHref(id, "songs");
       return;
     }
+    if (!replaceOwnSong(song.id, ownSong(meta, parsed.sections, content(song)))) return setProblem(NOT_SAVED);
     // What Song timing held is now part of the song itself, so it no longer sits over the edit.
     saveSongData(song.ref, {});
-    if (!replaceOwnSong(song.id, ownSong(meta, parsed.sections, content(song)))) return setProblem(NOT_SAVED);
     onTempo?.(tempo);
     onClose();
   };

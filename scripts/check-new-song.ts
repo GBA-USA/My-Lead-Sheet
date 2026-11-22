@@ -807,16 +807,35 @@ async function phoneChecks(site: Site, base: string, origin: string) {
     assert.deepEqual(await named(), [...before, added].sort(), "and saves nothing");
   });
 
+  const showTiming = async () => {
+    await openMore();
+    await tapIn(`document.querySelector("[role=menu]")`, "Song timing");
+    await page.until(`!!${timingSheet}`, "Song timing");
+  };
+  const setTiming = async (length: string, bpm: string, time: string) => {
+    await showTiming();
+    await fill("Length (m:ss)", length, timingSheet);
+    await fill("BPM", bpm, timingSheet);
+    await fill("Time signature", time, timingSheet);
+    await tapIn(timingSheet, "Save");
+    await page.until(`!${timingSheet}`, "Song timing to close");
+  };
+  const timingShown = async () => {
+    await showTiming();
+    const shown = [await value("Length (m:ss)", timingSheet), await value("BPM", timingSheet), await value("Time signature", timingSheet)];
+    await tapIn(timingSheet, "Cancel");
+    return shown;
+  };
+  const openEdit = async () => {
+    await openMore();
+    await tapIn(`document.querySelector("[role=menu]")`, "Edit");
+    await page.until(`!!${editor}`, "the editor on the song");
+  };
+  let songId = 0;
+
   await check("3. Edit folds what Song timing held into the song, so a later Edit's BPM and time signature show through", async () => {
-    const showTiming = async () => {
-      await openMore();
-      await tapIn(`document.querySelector("[role=menu]")`, "Song timing");
-      await page.until(`!!${timingSheet}`, "Song timing");
-    };
     const edit = async (changes: Record<string, string>) => {
-      await openMore();
-      await tapIn(`document.querySelector("[role=menu]")`, "Edit");
-      await page.until(`!!${editor}`, "the editor on the song");
+      await openEdit();
       const opened = [await value("BPM"), await value("Time signature")];
       for (const [label, next] of Object.entries(changes)) await fill(label, next);
       await tapIn(editor, "Save");
@@ -829,13 +848,8 @@ async function phoneChecks(site: Site, base: string, origin: string) {
     await fill("Chart", TWO_SECTIONS);
     await tapIn(editor, "Save");
     await page.until(onSongPage, "the new song's page");
-    const songId = (await hashId())!;
-    await showTiming();
-    await fill("Length (m:ss)", "4:05", timingSheet);
-    await fill("BPM", "132", timingSheet);
-    await fill("Time signature", "6/8", timingSheet);
-    await tapIn(timingSheet, "Save");
-    await page.until(`!${timingSheet}`, "Song timing to close");
+    songId = (await hashId())!;
+    await setTiming("4:05", "132", "6/8");
 
     assert.deepEqual(await edit({ Title: "Timing Song (renamed)" }), ["132", "6/8"], "Edit opens with the BPM and time signature Song timing set");
     const folded = (await stored()).find((song) => song.id === songId)!;
@@ -844,10 +858,33 @@ async function phoneChecks(site: Site, base: string, origin: string) {
     await edit({ BPM: "150", "Time signature": "3/4" });
     await reload("#/songs");
     await openSong(songId);
-    await showTiming();
-    const shown = [await value("Length (m:ss)", timingSheet), await value("BPM", timingSheet), await value("Time signature", timingSheet)];
-    await tapIn(timingSheet, "Cancel");
-    assert.deepEqual(shown, ["4:05", "150", "3/4"], "after a reload Song timing shows the length it folded in and the later Edit's BPM and time signature");
+    assert.deepEqual(await timingShown(), ["4:05", "150", "3/4"], "after a reload Song timing shows the length it folded in and the later Edit's BPM and time signature");
+  });
+
+  await check("3. an Edit this phone can't save says so and keeps what Song timing held", async () => {
+    assert.ok(songId, "the Timing Song from the case before");
+    await openSong(songId);
+    await setTiming("3:30", "120", "4/4");
+    await openEdit();
+    await fill("BPM", "90");
+    await site.evaluate(`(() => {
+      const setItem = Storage.prototype.setItem;
+      window.__restoreSetItem = () => { Storage.prototype.setItem = setItem; };
+      Storage.prototype.setItem = function (key, value) {
+        if (key === "leadSheetsLibrary") throw new DOMException("Full", "QuotaExceededError");
+        return setItem.call(this, key, value);
+      };
+    })()`);
+    try {
+      await tapIn(editor, "Save");
+      assert.equal(await page.text(".song-editor [role=alert]"), "This phone couldn't save the song. Free some space and try again.", "Save says the phone couldn't save");
+    } finally {
+      await site.evaluate("window.__restoreSetItem()");
+    }
+    await tapIn(editor, "Cancel");
+    await reload("#/songs");
+    await openSong(songId);
+    assert.deepEqual(await timingShown(), ["3:30", "120", "4/4"], "Song timing still holds what the player set");
   });
 
   assert.deepEqual(await page.errors(), [], "no page errors");

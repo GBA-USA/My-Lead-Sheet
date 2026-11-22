@@ -1,3 +1,63 @@
+# C19 question: two setup faults in commit 1's `check:fanout` (209ab90). May CoS apply this test-only patch?
+
+The build (860e7c0) is committed and complete. Per the queue rules I did not edit the commit-1 test after the build.
+No assertion about the fan-out changes. Both fixes concern how the test makes or names a route.
+
+## 1. Case 4 never switches Fran to the internet (fails every run)
+
+**Case:** "4. a route switch mid-click leaves the logged click times unchanged".
+
+**What goes wrong:** `switchToInternet()` turns on `__blockLocal` on Fran's tab only, then closes her data channel.
+C17 re-introduces the link, but the leader's tab still sends its host candidates. Fran's ICE agent pairs its own host
+address with the leader's host address, and the link comes back labeled Wi-Fi. The case waits 20 s for `internet` and
+times out. `check:links` case 2 blocks host candidates on both tabs for this reason.
+
+Measured: failed in 4 of 4 runs of the committed file, each time with `"chosen":{"route":"wifi","state":"open"}`.
+
+**Fix (setup only)** in `scripts/check-fanout.ts`, around lines 752-753:
+
+```diff
++    await leaderSite.evaluate("window.__blockLocal = true");
+     await call(franSite, "switchToInternet()");
+     await until("Fran's link over the internet", () => view(franSite), (v) => v.chosen?.route === "internet" && v.chosen.state === "open", 20_000);
++    await leaderSite.evaluate("window.__blockLocal = false");
+```
+
+Blocking only affects connections made after it, so Gus's open Wi-Fi link is untouched.
+
+**Proof:** a throwaway copy with only those two lines added, run on this laptop against the build with Edge as `CHROME`
+and the Windows path shim, printed 24 of 24 ok, `check:fanout ok`. Case 4 passed with the switch from Wi-Fi to the
+internet mid-click: every click consecutive, each at the leader's grid time, and shown within 60 ms of it. The copy was
+deleted afterwards and never committed.
+
+## 2. Case 2 (and the setup wait before case 5) names the direct route `wifi` exactly (failed 1 run in 5)
+
+**Case:** "2. the same rev on two links applies once", line 669, and the setup wait at line 622.
+
+**What goes wrong:** on one machine, C17's combined attempt sometimes settles on the STUN pair, so a direct link is
+labeled "Over the internet" rather than "Wi-Fi link". In one run of five, Fran heard rev 4 as
+`[{"result":"applied","via":"internet"},{"result":"duplicate","via":"room"}]`. That is the behavior the case is
+about (one apply, a direct copy plus the room's copy), but the assertion wants `via === "wifi"`. The same race could
+time out the setup wait, which counts `route === "wifi"` links at the leader. That is my inference. It has not
+happened yet.
+
+**Fix (setup only, the claim is unchanged: a direct link plus the room):**
+
+```diff
+@@ line 622
+-  await until("two Wi-Fi links at the leader", () => view(leaderSite), (v) => v.followers.filter((f) => f.route === "wifi" && f.state === "open").length === 2, 15_000);
++  await until("two direct links at the leader", () => view(leaderSite), (v) => v.followers.filter((f) => f.route !== "server" && f.state === "open").length === 2, 15_000);
+@@ line 669
+-          assert.ok(copies.some((h) => h.via === "wifi") && copies.some((h) => h.via === "room"), `${names[i + 1]} rev ${done.rev}: both carriers (${js(copies)})`);
++          assert.ok(copies.some((h) => h.via === "wifi" || h.via === "internet") && copies.some((h) => h.via === "room"), `${names[i + 1]} rev ${done.rev}: both carriers (${js(copies)})`);
+```
+
+**Proof:** the failing run's log is quoted above. Four other runs passed case 2 with `via: "wifi"`. Not run with the
+change. Reading the assertion, the failing run's entries satisfy it, and a follower heard only through the room still
+fails it.
+
+---
+
 # P5 song notes: one question on a test
 
 `check:song-notes`, case "a note added by an admin is listed for a member on the same band song, newest first, with

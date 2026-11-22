@@ -15,6 +15,7 @@ import {
   readLeftBy,
   setlistWithSongMoved,
   storageChanged,
+  takeSongIds,
   valuePrint,
   withOwnLibraryItems,
   type LeftBy,
@@ -388,7 +389,10 @@ function apply(state: State, sent: Map<string, Value>, reply: Reply, changed: Se
     state.synced[row.key] = [row.rev, print(row.value)];
   }
   state.pulled = Math.max(state.pulled, reply.rev);
-  if (stillOn(state)) writeLocal(writes, state.account);
+  if (stillOn(state)) {
+    writeLocal(writes, state.account);
+    takeSongIds(taken[SONG_ROW]);
+  }
   return conflicts;
 }
 

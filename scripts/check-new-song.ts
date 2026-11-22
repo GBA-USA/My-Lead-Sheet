@@ -350,6 +350,45 @@ await check("4. an own song survives reload and backs up and restores with the a
   }
 });
 
+await check("PROBE second phone: a deleted own song's id is not handed out again on a phone that restores the backup", async () => {
+  const app = need();
+  const { worker, base } = await startApi();
+  try {
+    const a = new Device(new Phone(base));
+    a.boot();
+    const sections = app.parseSheet(TWO_SECTIONS).sections;
+    const made = await a.phone.createAccount("Pat Bass");
+    const userId = made.body.account.userId as string;
+    a.use();
+    app.backupOn(userId);
+    app.addOwnSong(app.ownSong({ ...META, title: "Keeper" }, sections));
+    const gone = app.addOwnSong(app.ownSong({ ...META, title: "Short Lived" }, sections))!;
+    a.store.setItem("leadSheetsSentSongs", js({ [userId]: { [app.localRef(gone)]: { user_mike: "share_old" } } }));
+    await a.sync();
+    a.use();
+    assert.equal(app.removeOwnSong(gone), true, "phone A deletes Short Lived");
+    await a.sync();
+
+    const b = new Device(new Phone(base, a.phone.authenticator));
+    b.boot();
+    assert.equal((await b.phone.signIn()).status, 200, "phone B signs in to Pat");
+    b.use();
+    app.backupOn(userId);
+    assert.ok((await b.sync()).ok, "phone B restores");
+    assert.ok(!b.boot().songs.some((song) => song.id === gone), "phone B does not bring Short Lived back");
+    b.use();
+    const next = app.addOwnSong(app.ownSong({ ...META, title: "A Different Song" }, sections))!;
+    assert.notEqual(next, gone, `phone B's new song gets its own id (deleted ${gone}, new ${next})`);
+    await b.sync();
+    await a.sync();
+    assert.equal(a.boot().songs.find((song) => song.id === next)?.title, "A Different Song", "phone A gets the new song under its new id");
+    assert.ok(!a.boot().songs.some((song) => song.id === gone), "and nothing under the deleted id, which phone A's sent map still points at an old send");
+  } finally {
+    globalThis.fetch = realFetch;
+    await worker.dispose();
+  }
+});
+
 // The phone, in headless Chrome against the Worker.
 const WIDTHS = [344, 390, 820, 884, 1280];
 const measure = `(() => {

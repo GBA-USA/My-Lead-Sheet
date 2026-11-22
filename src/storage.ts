@@ -314,6 +314,13 @@ export function freeOwnId(raw: string | null, key: typeof SONG_ROW | typeof SETL
   return Math.max(0, ...used, ...taken) + 1;
 }
 
+/** Keeps every song id a backup reply names taken, a deleted song's too, though this phone never held it. Throws when the browser refuses the write, like the rest of a sync's writes. */
+export function takeSongIds(ids: number[]) {
+  const library = storedLibrary(parseStored(localStorage.getItem(LIBRARY_KEY)));
+  const lastSongId = Math.max(library.lastSongId, ...ids);
+  if (lastSongId > library.lastSongId) localStorage.setItem(LIBRARY_KEY, JSON.stringify({ ...library, lastSongId }));
+}
+
 /** False when the browser refused the write or the song isn't one this phone can show. */
 function writeOwnSong(raw: string | null, id: number, song: Omit<Song, "ref" | "id">): boolean {
   if (!writeRaw(LIBRARY_KEY, withOwnLibraryItems(raw, new Map([[`${SONG_ROW}.${id}`, JSON.stringify({ item: { ...song, id } })]])))) return false;

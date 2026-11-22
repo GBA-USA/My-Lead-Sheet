@@ -1,8 +1,7 @@
 import { appendFileSync, existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { checkNames as registered } from "./checks.mjs";
 
-const root = fileURLToPath(new URL("..", import.meta.url));
 const SHARDS = 4;
 const DEFAULT_SECONDS = 20;
 
@@ -25,8 +24,7 @@ const SECONDS = {
 
 const BOX_ONLY = {};
 
-const checkNames = () =>
-  Object.keys(JSON.parse(readFileSync(join(root, "package.json"), "utf8")).scripts).filter((k) => k.startsWith("check:") && !(k in BOX_ONLY));
+const checkNames = () => registered().filter((k) => !(k in BOX_ONLY));
 
 const seconds = (name) => SECONDS[name] ?? DEFAULT_SECONDS;
 

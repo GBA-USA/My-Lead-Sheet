@@ -4,11 +4,12 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { checkNames } from "./checks.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const WORKFLOW = ".github/workflows/deep-verify.yml";
 const SPLITTER = "scripts/ci-shard.mjs";
-const PAGES_SHA256 = "96f37f60ba6105fddd3513bc0443e296fb00db8dcd5022810e1fc8c9b2f8be99";
+const PAGES_SHA256 = "9a256860f6291d5f6ce5708f3dfb8306fb6c40517b237212642f48306774b5a1";
 const SHARDS = 4;
 
 type Yaml = string | number | boolean | null | Yaml[] | { [key: string]: Yaml };
@@ -141,8 +142,6 @@ const steps = (j: Map) => asList(j.steps).map(asMap);
 const needs = (j: Map) => asList(j.needs).map(text);
 const uploads = (j: Map) => steps(j).filter((s) => text(s.uses).startsWith("actions/upload-artifact@"));
 
-const checkNames = () => Object.keys(JSON.parse(read("package.json")).scripts).filter((k) => k.startsWith("check:"));
-
 type Plan = { shards: { shard: number; names: string }[]; boxOnly: Map };
 function plan(): Plan {
   const r = spawnSync("node", [join(root, SPLITTER), "plan", String(SHARDS)], { cwd: root, encoding: "utf8" });
@@ -218,9 +217,9 @@ check("1 deep workflow shards the check suite 4 ways", () => {
     if (!box && count !== 1) p.push(`${n} is in ${count} shards, want exactly 1`);
     if (box && !text(a.boxOnly[n]).trim()) p.push(`${n} is box-only with no reason`);
   }
-  for (const n of seen.keys()) if (!names.includes(n)) p.push(`the plan runs ${n}, which is not in package.json`);
+  for (const n of seen.keys()) if (!names.includes(n)) p.push(`the plan runs ${n}, which has no scripts/checks file`);
   if (Object.keys(a.boxOnly).length > names.length / 10) p.push(`${Object.keys(a.boxOnly).length} checks are box-only, more than a tenth of the suite`);
-  if (!names.includes("check:ci-deep")) p.push("check:ci-deep is not registered in package.json");
+  if (!names.includes("check:ci-deep")) p.push("check:ci-deep has no scripts/checks/ci-deep.check.ts");
 
   const rowsFor = (s: { names: string }, code = "0") => [["build", "0", "5s", "1"], ...s.names.split(/\s+/).filter(Boolean).map((n) => [n, code, "1s", "1"])];
   const green = merge(Object.fromEntries(a.shards.map((s) => [s.shard, rowsFor(s)])));

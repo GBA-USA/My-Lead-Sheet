@@ -8,7 +8,7 @@ AUTH_LOCK=/tmp/mls-auth-checks.lock
 CHECK_TIMEOUT=${VERIFY_CHECK_TIMEOUT:-1200}
 
 if [ $# -gt 0 ]; then names=("$@"); else
-  mapfile -t names < <(node -e 'for (const k of Object.keys(require("./package.json").scripts)) if (k.startsWith("check:")) console.log(k)')
+  mapfile -t names < <(node scripts/run-check.mjs --list)
 fi
 
 : > "$OUT/summary.tsv"
@@ -27,7 +27,7 @@ fi
 run_check() {
   local name=$1 log=$2 lock=()
   [[ "$AUTH_FAMILY" == *" $name "* ]] && lock=(flock "$AUTH_LOCK")
-  "${lock[@]}" timeout -k 10 "$CHECK_TIMEOUT" npm run --silent "$name" > "$log" 2>&1 < /dev/null
+  "${lock[@]}" timeout -k 10 "$CHECK_TIMEOUT" npm run --silent check -- "$name" > "$log" 2>&1 < /dev/null
 }
 
 failed=()

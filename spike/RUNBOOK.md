@@ -174,7 +174,7 @@ Fact 3 picks the spend-guard mode (PLAN.md section 11, Gates). If the usage numb
 
 ## 8. What the local check covers, and what it doesn't
 
-`npm run check:spike-links` runs on one machine with no phones.
+`npm run check -- spike-links` runs on one machine with no phones.
 
 - It covers the clock filter math, the `/turn` stub, the route filters, the page's room and QR introductions, the lock record, the fallback timing and a well-formed results file. The TURN credential never appears in the file.
 - On the build machine, Chrome policy blocks every direct WebRTC path (`WebRtcIPHandling` is `disable_non_proxied_udp`). So the check links its two tabs through a small TURN relay over TCP on the laptop (`spike/cell/local-turn.mjs`). That relay checks permissions the way a real one does. The one-scan QR doesn't link through it. The most likely reason is that the leader's relay never learns the follower's address, so it has no permission for it and drops the follower's checks. The check prints how many packets the relay dropped that way.

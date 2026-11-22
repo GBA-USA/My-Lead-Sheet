@@ -58,7 +58,7 @@ A removed member's open socket closes with code 4403 and their chat calls answer
 
 Secrets go in with `wrangler secret put NAME --env production`, never in a file: `SESSION_SECRET`, `PASSWORD_PEPPER`, `CODE_SIGNING_KEY`, `GOOGLE_CLIENT_SECRET`, `TURN_API_TOKEN`, `CF_ANALYTICS_TOKEN`.
 
-`npm run check:portable` fails on a hard-coded account id, `workers.dev` or `pages.dev` host, email, literal origin, relying-party id, `/My-Lead-Sheet/` path, or Terry or GBA string in `src`, `worker`, `functions`, `public`, the workflows or the root config files. Markdown files are skipped. Real values are allowed only in the `env.*.vars` slots of `wrangler.jsonc`, and a Terry or GBA string is refused even there.
+`npm run check -- portable` fails on a hard-coded account id, `workers.dev` or `pages.dev` host, email, literal origin, relying-party id, `/My-Lead-Sheet/` path, or Terry or GBA string in `src`, `worker`, `functions`, `public`, the workflows or the root config files. Markdown files are skipped. Real values are allowed only in the `env.*.vars` slots of `wrangler.jsonc`, and a Terry or GBA string is refused even there.
 
 ## Sign-in routes
 
@@ -79,11 +79,11 @@ The Directory answers every `/api/auth/*` and `/api/me*` route. Besides the pass
 
 ### Google without Brian's client
 
-`scripts/mock-google.ts` is a local stand-in for Google with its own signing key. It never talks to Google. `npm run check:google` starts it for each run. For local dev, run `node --experimental-strip-types scripts/mock-google.ts`, then start the Worker with the `--var` flags it prints.
+`scripts/mock-google.ts` is a local stand-in for Google with its own signing key. It never talks to Google. `npm run check -- google` starts it for each run. For local dev, run `node --experimental-strip-types scripts/mock-google.ts`, then start the Worker with the `--var` flags it prints.
 
 ## Run it locally
 
-`npm run check:api` type-checks the Worker and the Pages Function, starts the Worker under Miniflare with no saved state, and checks health, the Pages forwarding, a Room's answer, an introduction and a clock ping relayed between two sockets, room isolation, bad messages, and a socket leaving.
+`npm run check -- api` type-checks the Worker and the Pages Function, starts the Worker under Miniflare with no saved state, and checks health, the Pages forwarding, a Room's answer, an introduction and a clock ping relayed between two sockets, room isolation, bad messages, and a socket leaving.
 
 `npx wrangler dev --local -c worker/wrangler.jsonc` runs it by hand.
 

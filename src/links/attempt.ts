@@ -1,6 +1,6 @@
 import { BURST, PING_EVERY_MS, addPing, newClock, rebase, type BandMs, type Clock, type LinkRoute } from "../band-time";
 import { internetRow } from "./internet-link";
-import type { Attempt, GigPeers, Link } from "./link";
+import type { Attempt, GigPeers, JoinGig, Link } from "./link";
 import { answerPeer, dialPeer, type Intro, type Peer, type PeerRow } from "./peer-link";
 import { NO_SIGNAL, WAITING_FOR_LEADER, refusedWords, serverLink, type RoomIn, type RoomLine } from "./server-link";
 import { SIGN_IN_FIRST, WIFI_ROW, signInPage } from "./wifi-link";
@@ -59,6 +59,8 @@ export function linkToLeader(options: LinkOptions): GigLinks {
   let closed = false;
   let leading = false;
   let leader: string | null = null;
+  /** When the room says this phone opened the gig, sent back on each reconnect so a leader's phone keeps its place. */
+  let openedAt: number | null = null;
   let tried: LinkRoute[] = [];
   let reasons: Attempt["reasons"] = {};
   let chosen: WiredLink | null = null;
@@ -80,7 +82,7 @@ export function linkToLeader(options: LinkOptions): GigLinks {
 
   const ask = () => {
     askTimer = stopTimer(askTimer);
-    if (!closed) room.send({ kind: "join-gig", gigId });
+    if (!closed) room.send({ kind: "join-gig", gigId, ...(openedAt === null ? {} : { openedAt }) } satisfies JoinGig);
   };
   const askSoon = () => {
     askTimer = stopTimer(askTimer);
@@ -194,6 +196,7 @@ export function linkToLeader(options: LinkOptions): GigLinks {
 
   function onGig(message: GigPeers) {
     if (message.gigId !== gigId) return;
+    openedAt = message.openedAt;
     if (message.leader === message.you) return lead();
     if (leading) dropFollowers();
     leading = false;
@@ -212,14 +215,16 @@ export function linkToLeader(options: LinkOptions): GigLinks {
     attempt(leader);
   }
 
+  /** Also on a room that came back: the leader's "No signal" from the drop clears. */
   function lead() {
-    if (leading) return;
-    leading = true;
-    leader = null;
-    stopTrying();
-    choose(null);
-    tried = [];
     reasons = {};
+    if (!leading) {
+      leading = true;
+      leader = null;
+      stopTrying();
+      choose(null);
+      tried = [];
+    }
     changed();
   }
 

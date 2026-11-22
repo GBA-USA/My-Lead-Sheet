@@ -23,11 +23,17 @@ export interface Link {
 /** One combined attempt: the routes tried, the link in use, and why each route is not in use (C18's policy reads this). */
 export type Attempt = { tried: LinkRoute[]; chosen: Link | null; reasons: Partial<Record<LinkRoute, string>> };
 
-/** Phone to room: introduce this phone for tonight's gig. The room checks the lineup first (PLAN.md 7.14). */
-export type JoinGig = { kind: "join-gig"; gigId: string };
+/**
+ * Phone to room: introduce this phone for tonight's gig. The room checks the lineup first (PLAN.md 7.14). After its
+ * first `gig` reply the phone sends back that reply's `openedAt`, so a reconnect keeps its place among the leader's phones.
+ */
+export type JoinGig = { kind: "join-gig"; gigId: string; openedAt?: number };
 
-/** Room to phone, after `join-gig` and whenever the leader joins: the leader's socket, or null while the leader is not in the room. */
-export type GigPeers = { kind: "gig"; gigId: string; you: string; leader: string | null };
+/**
+ * Room to phone, after `join-gig` and whenever the leader joins: the leader's socket, or null while the leader is not in
+ * the room. Of the leader's phones, the one that opened the gig first leads until it leaves. `openedAt` is this phone's.
+ */
+export type GigPeers = { kind: "gig"; gigId: string; you: string; leader: string | null; openedAt: number };
 
 /** The room closes a socket whose player is not on the gig's lineup with this code. */
 export const NOT_ON_LINEUP_CLOSE = 4404;

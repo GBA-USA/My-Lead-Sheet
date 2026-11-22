@@ -481,8 +481,9 @@ test("Jumper's CHORUS — repeat holds its one bar line for a full chorus, not t
   const box = (section: number) => run.chart.boxes.find((each) => each.section === section && each.line === 0)!;
   const held = crossing(run.seen, clientHeight, (box(2).top + box(2).bottom) / 2);
   assert(Math.abs(held - (at + chorus / 2)) < jumperBeat, `the repeat's bar line is on the middle halfway through the chorus (${held.toFixed(2)} s, want ${(at + chorus / 2).toFixed(2)} s)`);
-  const verse = crossing(run.seen, clientHeight, box(3).top);
-  assert(verse >= at + chorus - jumperBeat, `VERSE 2 waits for the band to finish the chorus (reached at ${verse.toFixed(2)} s, chorus ends ${(at + chorus).toFixed(2)} s)`);
+  const verse = crossing(run.seen, clientHeight, (box(3).top + box(3).bottom) / 2);
+  const want = at + chorus + pace.sections[3].lines[0].length / 2;
+  assert(Math.abs(verse - want) < jumperBeat, `VERSE 2's first line is on the middle only after the chorus (${verse.toFixed(2)} s, want ${want.toFixed(2)} s)`);
 });
 
 /**

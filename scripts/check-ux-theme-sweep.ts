@@ -271,7 +271,7 @@ const newGigId = () => `gig_${Buffer.from(crypto.getRandomValues(new Uint8Array(
 
 /** A place the walk stops: a hash, what shows when it is ready, and an optional tap that opens a sheet over it. */
 type Stop = { name: string; hash: string; ready: string; tap?: string; opened?: string; kind?: "band" | "gig" | "stage" | "song" | "settings" };
-const button = (text: string, scope = "document") => `[...${scope}.querySelectorAll("button")].find((b) => b.textContent.trim() === ${js(text)} && !b.disabled)`;
+const button = (text: string, scope = "document") => `[...(${scope}?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim() === ${js(text)} && !b.disabled)`;
 const tapButton = (text: string, scope = "document") => `${button(text, scope)}.click()`;
 
 /** The `check:screens` route list as that check writes it. */
@@ -526,7 +526,7 @@ try {
       ready: hash.startsWith("#/song/") && hash !== "#/song/999" ? `!!document.querySelector(".sheet")` : `!!document.querySelector(".scroll, .app h1")`,
       kind: hash === SONG ? "song" : hash === "#/settings" ? "settings" : hash.startsWith("#/gig/") ? "stage" : undefined,
     })),
-    { name: "signed out Settings, Sign in sheet", hash: "#/settings", ready: `!!document.querySelector(".settings")`, tap: tapButton("Sign in", `document.querySelector(".settings [role=group][aria-label=Account]")`), opened: `!!document.querySelector(".account-sheet[data-step]")` },
+    { name: "signed out Settings, Sign in sheet", hash: "#/settings", ready: `!!${button("Sign in", `document.querySelector(".settings [role=group][aria-label=Account]")`)}`, tap: tapButton("Sign in", `document.querySelector(".settings [role=group][aria-label=Account]")`), opened: `!!document.querySelector(".account-sheet[data-step]")` },
     { name: "Metronome sheet", hash: SONG, ready: `!!document.querySelector(".metronome-pill")`, tap: `document.querySelector(".metronome-pill").click()`, opened: `!!document.querySelector(".metronome-sheet")` },
     { name: "Scroll sheet", hash: SONG, ready: `!!document.querySelector(".scroll-caret")`, tap: `document.querySelector(".scroll-caret").click()`, opened: `!!document.querySelector(".bottom-sheet")` },
     { name: "song More menu", hash: SONG, ready: `!!document.querySelector(".shell-header [aria-label=More]")`, tap: `document.querySelector(".shell-header [aria-label=More]").click()`, opened: `!!document.querySelector("[role=menu]")` },
@@ -563,7 +563,7 @@ try {
   const sectionStop = (label: string): Stop => ({
     name: `band page ${label}`,
     hash: `#/band/${bandId}`,
-    ready: bandReady,
+    ready: `${bandReady} && !!${button(label, `${bandPage}.querySelector(".band-tabs")`)}`,
     tap: tapButton(label, `${bandPage}.querySelector(".band-tabs")`),
     opened: `[...${bandPage}.querySelectorAll(".band-tabs [role=tab]")].some((tab) => tab.getAttribute("aria-selected") === "true" && tab.textContent.includes(${js(label)}))`,
     kind: "band",
@@ -573,14 +573,14 @@ try {
     { name: "signed in #/setlists", hash: "#/setlists", ready: `!!document.querySelector(".scroll")` },
     { name: "signed in #/bands", hash: "#/bands", ready: `!!document.querySelector(".scroll")` },
     { name: "signed in #/settings", hash: "#/settings", ready: `!!document.querySelector(".settings")`, kind: "settings" },
-    { name: "Friends sheet", hash: "#/settings", ready: `!!document.querySelector(".settings")`, tap: tapButton("Friends"), opened: `!!document.querySelector(".friends-sheet")` },
+    { name: "Friends sheet", hash: "#/settings", ready: `!!${button("Friends")}`, tap: tapButton("Friends"), opened: `!!document.querySelector(".friends-sheet")` },
     { name: "New band sheet", hash: "#/bands", ready: `!!${button("+ New band")}`, tap: tapButton("+ New band"), opened: `!!document.querySelector(".bands-sheet")` },
     { name: "signed in song", hash: SONG, ready: `!!document.querySelector(".sheet")`, kind: "song" },
     { name: "Send sheet", hash: SONG, ready: `!!document.querySelector(".send-btn")`, tap: `document.querySelector(".send-btn").click()`, opened: `!!document.querySelector(".send-song-sheet")` },
     { name: "song with a change", hash: SONG, ready: `!!document.querySelector("[aria-label='Transpose up']")`, tap: `document.querySelector("[aria-label='Transpose up']").click()`, opened: `!!document.querySelector(".save-btn")` },
     ...["Songs", "Setlists", "Chat", "Gigs", "Members"].map(sectionStop),
     { name: "band status panel", hash: `#/band/${bandId}`, ready: `${bandReady} && !!document.querySelector(".band-status-face")`, tap: `document.querySelector(".band-status-face").click()`, opened: `!!document.querySelector(".band-status-sheet")` },
-    { name: "band invite QR", hash: `#/band/${bandId}`, ready: bandReady, tap: tapButton("Show as QR", bandPage), opened: `${bandPage}?.dataset.view === "invite"` },
+    { name: "band invite QR", hash: `#/band/${bandId}`, ready: `${bandReady} && !!${button("Show as QR", bandPage)}`, tap: tapButton("Show as QR", bandPage), opened: `${bandPage}?.dataset.view === "invite"` },
     { name: "plan gig", hash: `#/band/${bandId}/plan/${gigId}?setlist=${setlistId}`, ready: `!!document.querySelector(".plan-gig")` },
     { name: "gig view", hash: `#/gig/${bandId}/${gigId}`, ready: `!!document.querySelector(${js(`.gig-view[data-gig="${gigId}"] .gig-now`)}) && !!document.querySelector(".gig-view .band-status-face")`, kind: "gig" },
     { name: "gig sheet", hash: `#/gig/${bandId}/${gigId}/0`, ready: `!!document.querySelector(".sheet .sheet-name")`, kind: "stage" },

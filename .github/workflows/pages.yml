@@ -32,17 +32,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Check the seed library
-        run: npm run check:data
+        run: npm run check -- data
       - name: Check the music rules
-        run: npm run check:music
+        run: npm run check -- music
       - name: Check stored-library repair
-        run: npm run check:storage
+        run: npm run check -- storage
       - name: Check screens
-        run: npm run check:screens
+        run: npm run check -- screens
       - name: Check the metronome
-        run: npm run check:metronome
+        run: npm run check -- metronome
       - name: Check for hard-coded accounts and hosts
-        run: npm run check:portable
+        run: npm run check -- portable
       - name: Build
         run: npm run build
       - name: Setup Pages

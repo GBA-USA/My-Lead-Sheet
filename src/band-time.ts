@@ -1,9 +1,9 @@
 export type BandMs = number & { readonly __clock: "band" };
 export type LocalMs = number & { readonly __clock: "local" };
 
-export type LinkRoute = "wifi" | "internet" | "relay" | "server";
+export type LinkRoute = "wifi" | "internet" | "server";
 
-export const PING_EVERY_MS: Record<LinkRoute, number> = { wifi: 2000, internet: 3000, relay: 3000, server: 5000 };
+export const PING_EVERY_MS: Record<LinkRoute, number> = { wifi: 2000, internet: 3000, server: 5000 };
 export const BURST = { pings: 16, everyMs: 100 };
 
 const KEEP_SAMPLES = 32;

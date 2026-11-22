@@ -420,21 +420,22 @@ async function phoneChecks(site: Site, base: string, origin: string) {
   const buttons = (scope: string) => site.evaluate<{ text: string; disabled: boolean }[]>(`[...(${scope}?.querySelectorAll("button") ?? [])].map((b) => ({ text: b.textContent.trim(), disabled: b.disabled }))`);
   const hasButton = (text: string) => site.evaluate<boolean>(`[...document.querySelectorAll("button")].some((b) => b.textContent.trim() === ${js(text)})`);
   const editor = `document.querySelector(".song-editor[role=dialog]")`;
-  const field = (label: string) => `[...${editor}.querySelectorAll("label")].find((l) => l.textContent.trim() === ${js(label)})?.control`;
+  const timingSheet = `document.querySelector(".song-data[role=dialog]")`;
+  const field = (label: string, scope = editor) => `[...${scope}.querySelectorAll("label")].find((l) => l.textContent.trim() === ${js(label)})?.control`;
   /** Sets a field the way typing or picking does, so React sees the change. */
-  const fill = async (label: string, value: string) => {
+  const fill = async (label: string, value: string, scope = editor) => {
     const set = await site.evaluate<boolean>(`(() => {
-      const el = ${field(label)};
+      const el = ${field(label, scope)};
       if (!el) return false;
       const proto = el instanceof HTMLSelectElement ? HTMLSelectElement.prototype : el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
       Object.getOwnPropertyDescriptor(proto, "value").set.call(el, ${js(value)});
       el.dispatchEvent(new Event(el instanceof HTMLSelectElement ? "change" : "input", { bubbles: true }));
       return true;
     })()`);
-    assert.ok(set, `a ${label} field in the editor`);
+    assert.ok(set, `a ${label} field in the sheet`);
     await settle(150);
   };
-  const value = (label: string) => site.evaluate<string>(`${field(label)}?.value ?? ""`);
+  const value = (label: string, scope = editor) => site.evaluate<string>(`${field(label, scope)}?.value ?? ""`);
   const openSong = async (id: number) => {
     await site.evaluate(`location.hash = ${js(`#/song/${id}`)}`);
     await page.until(`!!document.querySelector(".sheet .sheet-name") && location.hash === ${js(`#/song/${id}`)}`, `song ${id} on screen`);
@@ -742,6 +743,111 @@ async function phoneChecks(site: Site, base: string, origin: string) {
     const next = await write("A Different Song");
     assert.equal((await sendToMike("A Different Song", next)).updateOf, null, "its first send to Mike is a new song, not an update of the deleted one");
     assert.notEqual(next, gone, `the new song gets its own id (deleted ${gone}, new ${next})`);
+  });
+
+  const openNewSong = async () => {
+    await site.evaluate(`location.hash = "#/songs"`);
+    await page.until(`[...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "+ Add a song")`, "+ Add a song");
+    await page.click("+ Add a song");
+    await page.until(`!!${editor}`, "the song editor");
+  };
+  const onSongPage = `/^#\\/song\\/\\d+/.test(location.hash) && !document.querySelector(".song-editor")`;
+
+  await check("1b. + Verse, + Chorus and + Bridge each add their heading to the chart, and a second + Verse counts on", async () => {
+    await openNewSong();
+    for (const name of ["Verse", "Chorus", "Bridge", "Verse"]) await tapIn(editor, `+ ${name}`);
+    assert.equal(await value("Chart"), "VERSE 1\n\nCHORUS\n\nBRIDGE\n\nVERSE 2\n", "the chart box holds each heading, a blank line apart");
+    await page.until(`document.querySelectorAll(".song-editor-preview .chart-heading").length === 4`, "the preview's four sections");
+    assert.deepEqual(await page.texts(".song-editor-preview .chart-heading"), ["VERSE 1", "CHORUS", "BRIDGE", "VERSE 2"], "the preview names each section the buttons added");
+    await tapIn(editor, "Cancel");
+  });
+
+  await check("1b. a BPM the metronome can't play is refused with 'BPM must be a whole number the metronome can play', and nothing is saved", async () => {
+    await openNewSong();
+    await fill("Title", "Odd Tempo");
+    await fill("Chart", TWO_SECTIONS);
+    // The field keeps digits only, so a BPM outside what the metronome plays is the one a player can type.
+    for (const bpm of ["0", "29", "301"]) {
+      await fill("BPM", bpm);
+      await tapIn(editor, "Save");
+      assert.equal(await page.text(".song-editor [role=alert]"), "BPM must be a whole number the metronome can play", `BPM ${bpm} is refused`);
+    }
+    assert.ok(!(await stored()).some((song) => song.title === "Odd Tempo"), "nothing was saved");
+    await fill("BPM", "96");
+    await tapIn(editor, "Save");
+    await page.until(onSongPage, "the song's page once the BPM is one the metronome plays");
+    const saved = await hashId();
+    assert.equal((await stored()).find((song) => song.id === saved)?.tempo, 96, "saved at 96");
+  });
+
+  await check("1b. a title and artist you already have shows 'You already have': nothing is saved until Add anyway saves a second copy, and Open saves nothing", async () => {
+    const held = seed.songs[0];
+    const named = async () => (await stored()).filter((song) => song.title === held.title && song.artist === held.artist).map((song) => song.id).sort();
+    const before = await named();
+    const writeAgain = async () => {
+      await openNewSong();
+      await fill("Title", held.title);
+      await fill("Artist", held.artist);
+      await fill("Chart", TWO_SECTIONS);
+      await tapIn(editor, "Save");
+      await page.until(`!!${editor}.querySelector(".you-have-it")`, "the You already have strip");
+    };
+    await writeAgain();
+    assert.ok((await page.text(".song-editor .you-have-it")).includes(`You already have ${held.title}`), "the strip names the song you have");
+    assert.deepEqual(await named(), before, "nothing is saved yet");
+    await tapIn(`${editor}.querySelector(".you-have-it")`, "Add anyway");
+    await page.until(onSongPage, "the added song's page");
+    const added = (await hashId())!;
+    assert.ok(!before.includes(added), `Add anyway opens a new song (${added})`);
+    assert.deepEqual(await named(), [...before, added].sort(), "Add anyway saves a second copy");
+    await writeAgain();
+    await site.evaluate(`${editor}.querySelector(".you-have-it a").click()`);
+    await page.until(onSongPage, "the song you have");
+    assert.ok([...before, added].includes((await hashId())!), `Open goes to a song you already had (${await hashId()})`);
+    assert.deepEqual(await named(), [...before, added].sort(), "and saves nothing");
+  });
+
+  await check("3. Edit folds what Song timing held into the song, so a later Edit's BPM and time signature show through", async () => {
+    const showTiming = async () => {
+      await openMore();
+      await tapIn(`document.querySelector("[role=menu]")`, "Song timing");
+      await page.until(`!!${timingSheet}`, "Song timing");
+    };
+    const edit = async (changes: Record<string, string>) => {
+      await openMore();
+      await tapIn(`document.querySelector("[role=menu]")`, "Edit");
+      await page.until(`!!${editor}`, "the editor on the song");
+      const opened = [await value("BPM"), await value("Time signature")];
+      for (const [label, next] of Object.entries(changes)) await fill(label, next);
+      await tapIn(editor, "Save");
+      await page.until(`!document.querySelector(".song-editor")`, "the editor to close");
+      return opened;
+    };
+    await openNewSong();
+    await fill("Title", "Timing Song");
+    await fill("BPM", "100");
+    await fill("Chart", TWO_SECTIONS);
+    await tapIn(editor, "Save");
+    await page.until(onSongPage, "the new song's page");
+    const songId = (await hashId())!;
+    await showTiming();
+    await fill("Length (m:ss)", "4:05", timingSheet);
+    await fill("BPM", "132", timingSheet);
+    await fill("Time signature", "6/8", timingSheet);
+    await tapIn(timingSheet, "Save");
+    await page.until(`!${timingSheet}`, "Song timing to close");
+
+    assert.deepEqual(await edit({ Title: "Timing Song (renamed)" }), ["132", "6/8"], "Edit opens with the BPM and time signature Song timing set");
+    const folded = (await stored()).find((song) => song.id === songId)!;
+    assert.deepEqual([folded.title, folded.officialRuntimeSec, folded.tempo, folded.timeSignature], ["Timing Song (renamed)", 245, 132, "6/8"], "the saved song holds the Song timing values");
+
+    await edit({ BPM: "150", "Time signature": "3/4" });
+    await reload("#/songs");
+    await openSong(songId);
+    await showTiming();
+    const shown = [await value("Length (m:ss)", timingSheet), await value("BPM", timingSheet), await value("Time signature", timingSheet)];
+    await tapIn(timingSheet, "Cancel");
+    assert.deepEqual(shown, ["4:05", "150", "3/4"], "after a reload Song timing shows the length it folded in and the later Edit's BPM and time signature");
   });
 
   assert.deepEqual(await page.errors(), [], "no page errors");

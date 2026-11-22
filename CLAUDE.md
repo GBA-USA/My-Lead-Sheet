@@ -6,15 +6,15 @@ The plan is `/workspace/mls-social-plan-2026-11-13/PLAN.md`. Where this file and
 
 ## Verify
 
-- `npm run verify` builds, then runs every `check:*` script in package.json. Logs land in `.verify-logs/`
+- `npm run verify` builds, then runs every check in `scripts/checks/`. Logs land in `.verify-logs/`
   (gitignored; `VERIFY_LOG_DIR` moves them). A failed check is retried once. Exit code is non-zero if any still fails.
-- One check: `npm run check:<name>`, for example `npm run check:one-copy`. A subset through the same
+- One check: `npm run check -- <name>`, for example `npm run check -- one-copy`. A subset through the same
   runner: `npm run verify -- check:codes check:bands`.
 - Headless Chrome checks use `scripts/chrome.ts`, which reads `CHROME` (default `/usr/bin/google-chrome`).
 - Auth-family checks (`check:auth`, `check:account`, `check:google`, `check:password`, `check:backup`) are the
   slow, timing-sensitive ones (600,000-round PBKDF2 sign-ins, password wait rules, a mock Google) and fail under
   load, so on a shared box they run one at a time under `flock /tmp/mls-auth-checks.lock`. `scripts/verify.sh`
-  does this for you. Running one by hand on a shared box: `flock /tmp/mls-auth-checks.lock npm run check:password`.
+  does this for you. Running one by hand on a shared box: `flock /tmp/mls-auth-checks.lock npm run check -- password`.
 - Known flaky under load: `check:spike-links` (WebRTC "no path" timeout), `check:password`, `check:band-settings`.
   `check:google` hung once with an empty log while headless Chrome spawned gpu processes in a loop (repo-setup,
   Nov 15 2026). Rerun once before calling a failure real. A second failure is yours to explain.
@@ -57,8 +57,8 @@ The plan is `/workspace/mls-social-plan-2026-11-13/PLAN.md`. Where this file and
   - hash routes `parseHash` and `songHref` in `src/route.ts`
 - Codes and links: kinds in `src/code-link.ts` `CODE_KINDS`; the Worker mints only kinds with an entry in
   `worker/codes.ts` `MINTERS`, every other kind is `400 bad-kind`. `liveCode` checks the signature before the table.
-- Checks: `scripts/check-<name>.ts`, run with `node --experimental-strip-types`, registered as `check:<name>`
-  in package.json. A check that starts the Worker begins with `tsc -p worker` so the Worker type-checks first.
+- Checks: a new check is a new file `scripts/checks/<name>.check.ts` (run as `check:<name>`), never a package.json line.
+  A check that starts the Worker begins with `import "../tsc-worker.ts";` so the Worker type-checks first.
 
 ## Obsolete patterns, do not reintroduce
 
@@ -87,7 +87,7 @@ the checks that cover both sides, not only your own.
 
 ## Working rules for cooks
 
-- Stay inside the files your brief owns. Add your `check:*` line to package.json and nothing else there.
+- Stay inside the files your brief owns. Add your check as a `scripts/checks/` file and leave package.json alone.
 - No new libraries. Copy the pattern of the file your brief names.
 - Never deploy, never `wrangler deploy` or `--remote`. `wrangler dev --local` is fine.
 - Never kill a process you did not start. Stop only PIDs you started.

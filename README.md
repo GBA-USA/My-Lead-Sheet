@@ -6,7 +6,7 @@ A personal bass-player lead-sheet library for Brian Prewitt. Phase 1 is a static
 
 ```bash
 npm install
-npm run check:data
+npm run check -- data
 npm run dev
 ```
 

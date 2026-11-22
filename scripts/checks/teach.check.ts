@@ -1,0 +1,1 @@
+import "../check-teach.ts";

@@ -587,6 +587,26 @@ async function browserCases(): Promise<number> {
         wheelTag === "Looking ahead" && wheeled > 150 && near(s.top, bandPlace(s, 30), 2) && s.tag === null && s.stops.length === 0,
         `a wheel in a gig looks ahead, then glides back to the band once the sheet is still (ahead ${wheeled.toFixed(1)} px, tag ${JSON.stringify(wheelTag)}, then top ${s.top.toFixed(1)}, band ${bandPlace(s, 30).toFixed(1)}, tag ${JSON.stringify(s.tag)})`,
       );
+
+      // A finger on the pill reaches the sheet only as touchstart, so it alone must keep the quiet timer from letting go.
+      await setBand(30);
+      await wheel();
+      await pause(50);
+      await send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [pill] });
+      await frames(2);
+      s = await seen();
+      const pillStopped = s.top;
+      const pillAway = pillStopped - bandPlace(s, 30);
+      await pause(500);
+      s = await seen();
+      const pillHeld = s.top - pillStopped;
+      const pillHeldTag = s.tag;
+      landed = await letGo(30);
+      s = await seen();
+      check(
+        pillAway > 150 && Math.abs(pillHeld) <= 2 && pillHeldTag === "Looking ahead" && landed !== null && landed <= 450 && near(s.top, bandPlace(s, 30), 2) && s.tag === null,
+        `a finger on the beat pill just after a wheel holds the chart still, looking ahead, until it lifts (ahead ${pillAway.toFixed(1)} px, moved ${pillHeld.toFixed(1)} px in 500 ms, tag ${JSON.stringify(pillHeldTag)}, took ${landed?.toFixed(0)} ms)`,
+      );
     } else check(false, "the beat pill shows while the metronome plays");
 
     await evaluate(`window.__mount(${JSON.stringify(song)}, false)`);

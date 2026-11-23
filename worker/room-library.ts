@@ -6,7 +6,7 @@ import { liveCode } from "./codes";
 import { signedIn, type Context, type Route, type User } from "./directory-http";
 import { fromRoom, Refused, roomRefused as refused } from "./refused";
 import { selfRoomId } from "./room-backup";
-import { everAGuest, guestBandIdsOf } from "./room-guest";
+import { everAGuest, firstName, guestBandIdsOf } from "./room-guest";
 import { bandIdIn, bandIdsOf, inRoom, roomOf, shutOut, type RoomStore } from "./room-members";
 import { checkSend, lineage, type ShareChoice, type StoredShare } from "./share-guard";
 
@@ -94,12 +94,13 @@ function sharedFields(sql: SqlStorage, row: Shared, userId: string, names: Map<s
   };
 }
 
-const memberNames = (sql: SqlStorage) =>
+/** Who shared each item, by the name bandmates see, or by first name only for a guest (PLAN.md 7.14). */
+const memberNames = (sql: SqlStorage, guest = false) =>
   new Map(
     sql
       .exec<{ user_id: string; display_name: string }>(`SELECT user_id, display_name FROM members`)
       .toArray()
-      .map((row) => [row.user_id, row.display_name]),
+      .map((row) => [row.user_id, guest ? firstName(row.display_name) : row.display_name]),
   );
 
 const songOf = (sql: SqlStorage, row: SongRow, userId: string, names = memberNames(sql)): BandSong => ({ songId: row.song_id, song: JSON.parse(row.song), ...sharedFields(sql, row, userId, names) });
@@ -135,8 +136,8 @@ export type SetlistShare = SetlistFields & { localId: number | null; choice: Sha
 /** Every user id here is trusted: only the Directory calls these, after it has checked the session and the share rule. */
 export const bandLibrary = {
   view(band: RoomStore, userId: string): BandLibrary {
-    inRoom(band.sql, userId, "setlists");
-    const names = memberNames(band.sql);
+    const { me } = inRoom(band.sql, userId, "setlists");
+    const names = memberNames(band.sql, me.role === "guest");
     return {
       songs: band.sql
         .exec<SongRow>(`SELECT * FROM band_songs ORDER BY shared_at, song_id`)

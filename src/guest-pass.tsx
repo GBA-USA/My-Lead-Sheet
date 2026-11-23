@@ -32,6 +32,8 @@ type GuestPass = {
 };
 type MadePass = { pass: GuestPass; code: string; link: string; expiresAt: number };
 type PassOpening = { bandId: string; gigId: string; gigName: string; bandName: string; expiresAt: number };
+/** What a guest's passes open beyond their gig, the shape `GuestOpens` in worker/room-guest.ts. `gig/open` sends it to a guest only. */
+export type GuestOpens = { canSeeChat: boolean; canSeeSetlists: boolean };
 
 export type PassLength = { length: "tonight" } | { length: "week" } | { length: "date"; date: string };
 
@@ -66,9 +68,11 @@ const MESSAGES: Record<string, string> = {
   "not-found": "This pass isn't there any more. Ask the band for a new one.",
   "not-admin": "Only the band's admin makes guest passes.",
   "gig-ended": "That gig is over.",
+  guest: "Your guest pass doesn't open that any more.",
 };
-const unreachable = (error: unknown) => error instanceof ApiError && (error.reason === "offline" || error.status === 0 || error.status >= 500);
-const words = (error: unknown) => (unreachable(error) ? OFFLINE : (error instanceof ApiError && MESSAGES[error.reason]) || "Something went wrong. Try again.");
+export const unreachable = (error: unknown) => error instanceof ApiError && (error.reason === "offline" || error.status === 0 || error.status >= 500);
+/** The words a guest or the admin sees for what the server answered about a pass. */
+export const words = (error: unknown) => (unreachable(error) ? OFFLINE : (error instanceof ApiError && MESSAGES[error.reason]) || "Something went wrong. Try again.");
 
 /**
  * The sheet a pass link opens on, once signed in: "Join Friday at the Elks as a guest", then the gig card. Joining binds

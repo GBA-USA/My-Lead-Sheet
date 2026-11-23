@@ -7,7 +7,7 @@ import { signedIn, who, type Context, type Person, type Route, type User } from 
 import { deliver } from "./directory-inbox";
 import { fromRoom, Refused, roomRefused as refused } from "./refused";
 import { addColumns, chatRoom, type Posted } from "./room-chat";
-import { guestGigsOf, liveGuestGigs } from "./room-guest";
+import { firstName, guestGigsOf, guestOpens, liveGuestGigs, type GuestOpens } from "./room-guest";
 import { bandSongsOnly, isText, MAX_SETLIST_SONGS } from "./room-library";
 import { bandIdIn, bandIdsOf, inRoom, roomOf, type RoomStore } from "./room-members";
 import { hmacKey } from "./session";
@@ -106,7 +106,7 @@ const isAdmin = (sql: SqlStorage, userId: string) => sql.exec(`SELECT 1 FROM mem
 function firstNames(sql: SqlStorage, row: GigRow): Record<string, string> {
   const lineup = lineupOf(row);
   const rows = sql.exec<{ user_id: string; display_name: string }>(`SELECT user_id, display_name FROM members WHERE state = 'active'`).toArray();
-  return Object.fromEntries(rows.filter((member) => lineup.includes(member.user_id)).map((member) => [member.user_id, member.display_name.trim().split(/\s+/)[0]]));
+  return Object.fromEntries(rows.filter((member) => lineup.includes(member.user_id)).map((member) => [member.user_id, firstName(member.display_name)]));
 }
 
 /** Who leads the gig now: the live state's leader once it is live, the planned leader before. Only the room's introductions read it; every plan keeps the planned pair. */
@@ -263,12 +263,12 @@ export const gigRoom = {
     };
   },
 
-  /** A guest opens only their pass's gig, and sees its lineup by first name. */
-  open(band: RoomStore, userId: string, gigId: string): GigView & { names?: Record<string, string> } {
+  /** A guest opens only their pass's gig, sees its lineup by first name, and is told what else their pass opens. */
+  open(band: RoomStore, userId: string, gigId: string): GigView & { names?: Record<string, string>; guest?: GuestOpens } {
     const { me } = inRoom(band.sql, userId, { gigId });
     const row = gigRow(band.sql, gigId);
     if (!row) throw refused("not-found");
-    return me.role === "guest" ? { ...viewOf(band, row), names: firstNames(band.sql, row) } : viewOf(band, row);
+    return me.role === "guest" ? { ...viewOf(band, row), names: firstNames(band.sql, row), guest: guestOpens(band.sql, userId, Date.now()) } : viewOf(band, row);
   },
 
   setLineup(band: RoomStore, userId: string, gigId: string, lineup: string[]): GigView {

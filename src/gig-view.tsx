@@ -6,6 +6,8 @@ import { playersFrom } from "./band-status-model";
 import type { BandView } from "./bands-model";
 import { atPassEnd, downloadPack, packToShow, type GigPack } from "./gig-pack";
 import { gigLine, type GigView } from "./gig-plan-model";
+import type { GuestOpens } from "./guest-pass";
+import { GuestRooms } from "./guest-rooms";
 import type { GigPosition } from "./gig-position";
 import { displayKeyLabel } from "./music";
 import { heldFor, onPhoneChange, phoneGeneration } from "./phone-db";
@@ -118,7 +120,7 @@ export function GigSongMissing({ bandId, gigId, pack }: { bandId: string; gigId:
 export function GigViewScreen({ me, bandId, gigId, pack, position, onSignIn, onSignedOut }: Props) {
   const titleId = useId();
   const online = useOnline();
-  const [opened, setOpened] = useState<GigView | null>(null);
+  const [opened, setOpened] = useState<(GigView & { guest?: GuestOpens }) | null>(null);
   const [band, setBand] = useState<BandView | null>(null);
   const [problem, setProblem] = useState("");
   const [asking, setAsking] = useState(false);
@@ -134,7 +136,7 @@ export function GigViewScreen({ me, bandId, gigId, pack, position, onSignIn, onS
   const noPack = pack === null;
   useEffect(() => {
     if (!me) return;
-    api<GigView>("/api/bands/gig/open", { bandId, gigId }).then((view) => {
+    api<GigView & { guest?: GuestOpens }>("/api/bands/gig/open", { bandId, gigId }).then((view) => {
       setOpened(view);
       if (view.gig.status === "ended") setProblem(MESSAGES["gig-ended"]);
     }, refused);
@@ -291,6 +293,7 @@ export function GigViewScreen({ me, bandId, gigId, pack, position, onSignIn, onS
           </ol>
         </section>
       ) : null}
+      {opened?.guest ? <GuestRooms me={me} bandId={bandId} opens={opened.guest} onSignedOut={onSignedOut} /> : null}
     </section>
   );
 }

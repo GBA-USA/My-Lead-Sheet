@@ -1,3 +1,20 @@
+# C21c deep fix: the guest switches now open a screen. I took option b of the 3c4fcdf verify. Owner, please confirm.
+
+The verify left this to the owner: (a) drop "Can see band chat" and "Can see other setlists" from the pass form, or
+(b) give a switched-on guest a way in. The brief's own flow names "the two switches", so dropping them would cut a
+promised feature. I built (b) without waiting, and the change is easy to undo.
+
+- `gig/open` tells a guest what their live passes open (`guest: { canSeeChat, canSeeSetlists }`, from
+  `guestOpens` in `worker/room-guest.ts`, the same rule `inRoom` applies).
+- A guest's gig view gets Band chat (the band thread, inline, through the existing `Room`) and Band setlists (each
+  setlist by name with its songs, read-only), each only when its switch is on. Both live in the new
+  `src/guest-rooms.tsx`. That file is outside the brief's owned list, and so is the one-line mount in `src/gig-view.tsx`.
+- `/api/bands/library` names sharers by first name only for a guest.
+
+One thing for the owner: with setlists on, `/api/bands/library` still sends a guest every band chart's full body,
+not only setlist names and titles. The guest's screen shows titles only, and the share guard still stops a guest
+sending a chart on. Should a setlists-only guest get titles alone from the server?
+
 # C21c fix pass 2: a slow signal no longer hides a guest's pack, and the "no signal" cases now run offline.
 
 `packToShow` waits at most 4 s for `gig/open`, then shows a live guest's pack as it does with no signal. A

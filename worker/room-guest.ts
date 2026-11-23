@@ -54,6 +54,9 @@ export type PassState = "live" | "revoked" | "ended";
 /** Where the caller asks `inRoom` to let a guest in: one gig, any of their gigs, the band chat, or the band's setlists. */
 export type GuestAccess = { gigId: string } | "gigs" | "chat" | "setlists";
 
+/** The two switches as they stand for a guest: whether any live pass they hold here opens the band chat or the band's setlists. */
+export type GuestOpens = { canSeeChat: boolean; canSeeSetlists: boolean };
+
 export type GuestMe = { role: "guest"; user_id: string; pass: PassRow };
 
 export function createGuestTables(sql: SqlStorage) {
@@ -100,6 +103,15 @@ export function guestIn(sql: SqlStorage, userId: string, access: GuestAccess | u
   if (forGig) throw refused(forGig.state === "revoked" ? "pass-revoked" : "pass-ended");
   throw refused("guest");
 }
+
+/** What `userId`'s live passes here open beyond their gig, the same answer `inRoom` gives, so the gig view offers only what the room lets them read. */
+export function guestOpens(sql: SqlStorage, userId: string, now: number): GuestOpens {
+  const live = passesHeld(sql, userId, now).filter((pass) => pass.state === "live");
+  return { canSeeChat: live.some((pass) => grants(pass.row, "chat")), canSeeSetlists: live.some((pass) => grants(pass.row, "setlists")) };
+}
+
+/** A member as a guest sees them: first name only (PLAN.md 7.14). */
+export const firstName = (displayName: string) => displayName.trim().split(/\s+/)[0];
 
 /** Whether `userId` holds a live pass here, so the room's socket lets them in. */
 export const holdsLivePass = (sql: SqlStorage, userId: string) => passesHeld(sql, userId, Date.now()).some((pass) => pass.state === "live");

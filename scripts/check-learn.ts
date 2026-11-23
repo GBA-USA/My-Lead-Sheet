@@ -1314,6 +1314,51 @@ for (const [word, song, what] of [
 
 check(!fourNineteen.error && !!fourNineteen.listen && fourNineteen.busyMs <= budgetMs(259), `L1.14 a 4:19 file is analyzed no slower than the recorded baseline times 1.2 (${fourNineteen.busyMs.toFixed(0)} ms in the worker, budget ${budgetMs(259).toFixed(0)} ms on this machine)`, "pending until l1");
 
+// L1's empty and error states and the stopped mic's evidence, beyond the frozen cases above.
+const filePicker = () => elements().some((el) => el.nodeName === "INPUT" && (el as unknown as { type?: string }).type === "file") && elements().some((el) => (el.nodeName === "BUTTON" || el.nodeName === "LABEL") && FILE_WORD.test(nameOf(el)));
+await frozen("L1 empty: no file picked shows the two ways in", "pending until l1", async () => {
+  const asked = micAsks;
+  await openSheet(twoHeadings(259));
+  check(
+    text().includes("Pick the song's file for the best result, or play it from a speaker near the phone.") && filePicker() && !!buttonNamed(MIC_WORD) && !button("Stop") && micAsks === asked,
+    `L1 empty: the sheet opens on a file picker and a mic button with the speaker line, and asks for nothing yet (${micAsks - asked} mic asks; ${text().slice(0, 240)})`,
+    "pending until l1",
+  );
+});
+await frozen("L1 empty: a denied mic says so and the file picker stays", "pending until l1", async () => {
+  micAllowed = false;
+  const sheet = await openSheet(twoHeadings(259));
+  await press(buttonNamed(MIC_WORD), "a button for the mic");
+  await until(() => text().includes("The mic isn't available."), "the denied mic's note");
+  check(filePicker() && FakeAudioContext.made > sheet.contexts && FakeAudioContext.last.state === "closed", `L1 empty: after "The mic isn't available." the file picker stays and the audio is closed (${FakeAudioContext.last.state}; ${text().slice(0, 240)})`, "pending until l1");
+});
+{
+  const bought = await listenToFile(audioFile("Bought Song.m4p", { seconds: 215, channels: 2 }), () => text().includes("Can't read this file"));
+  check(bought.text.includes("Protected music can't be read.") && !bought.listen, `L1.11 a file that cannot be decoded adds "Protected music can't be read." (${bought.error || bought.text.slice(0, 240)})`, "pending until l1");
+  const roomTone = (rate: number) => groove({ bpm: 120, seconds: 30, clicks: true, tail: 30 }, rate);
+  const silent = await listenToFile(audioFile("Room Tone.wav", { seconds: 30, channels: 1, song: roomTone }), () => text().includes("No song with a steady beat heard"));
+  check(silent.text.includes("No song with a steady beat heard.") && silent.canPick && !silent.error, `L1 empty: a silent file says "No song with a steady beat heard." and the file picker stays (${silent.error || silent.text.slice(0, 240)})`, "pending until l1");
+}
+await frozen("L1.6 the Review names why the mic stopped", "pending until l1", async () => {
+  const sheet = await openSheet(twoHeadings(259));
+  await startMic(sheet);
+  await micPlay(truth.samples.subarray(0, 30 * SAMPLE_RATE));
+  dom.document.visibilityState = "hidden";
+  fire(dom.document as unknown as FakeElement, "visibilitychange");
+  await settle();
+  dom.document.visibilityState = "visible";
+  await press(button("Use what was heard"), "Use what was heard");
+  await until(reviewing, "Review");
+  check(text().includes("From the mic · heard 0:30 of 4:19 · the app was left"), `L1.6 the Review's coverage line carries the reason, "the app was left" (${text().slice(0, 200)})`, "pending until l1");
+});
+{
+  const take = render(SONGS[0]);
+  for (const [kind, samples, word] of [["file", take.samples, "clear"], ["mic loud", micColor(take.samples, "loud"), "noisy"]] as const) {
+    const heard = await listenThrough(samples, L0_RATE, { beatsPerBar: SONGS[0].beatsPerBar, lyrics: null, source: { kind: kind === "file" ? "file" : "mic", name: null, stereo: false, sampleRate: L0_RATE }, expectedSeconds: null, stopped: "finished" });
+    check(heard.listen?.coverage.quality === word, `L1.13 ${SONGS[0].title} ${kind === "file" ? "as a file" : "through the mic at the loud noise level"} reads "${word}" (${heard.listen?.coverage.quality ?? "nothing heard"})`, "pending until l1");
+  }
+}
+
 /** The engine on its own, fed a second at a time. */
 function hearAt(samples: Float32Array, rate: number) {
   const ear = new learn.SongListener(rate);

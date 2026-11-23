@@ -106,6 +106,9 @@ const lanAddress = Object.values(networkInterfaces())
   .flat()
   .find((net) => net?.family === "IPv4" && !net.internal)?.address;
 
+/** The follower's side of a link between two tabs on this machine starts at this machine's own host candidate. */
+const oneMachinePair = (pair: View["pairs"][number] | undefined) => pair?.local === "host";
+
 /** A STUN binding responder (RFC 5389): answers each request with the sender's address, the way a free public STUN server does. */
 async function startStun() {
   const socket = createSocket("udp4");
@@ -199,8 +202,11 @@ let session = null, room = null, you = null, intros = 0, errors = [], chosen = n
 const localNow = () => performance.timeOrigin + performance.now();
 const pairOf = async (pc) => {
   if (pc.connectionState !== "connected") return null;
-  const pair = selectedPair(await pc.getStats());
-  return pair && { local: pair.local.type, remote: pair.remote.type };
+  const stats = await pc.getStats();
+  const pair = selectedPair(stats);
+  const picked = [...stats.values()].find((entry) => entry.type === "transport")?.selectedCandidatePairId;
+  const local = picked && stats.get(stats.get(picked)?.localCandidateId);
+  return pair && { local: pair.local.type, remote: pair.remote.type, localAddress: local?.address ?? null };
 };
 window.harness = {
   start({ bandId, gigId, stun, rows, healthUrl, roomUrl, blockLocal }) {
@@ -267,7 +273,7 @@ type View = {
   chosen: { route: string; state: string; reason: string | null } | null;
   followers: { route: string; state: string }[];
   clock: { points: number; served: boolean; offset: number | null; confidence: string } | null;
-  pairs: { local: string; remote: string }[];
+  pairs: { local: string; remote: string; localAddress: string | null }[];
   pcs: string[];
   iceConfigs: string[];
   resources: string[];
@@ -292,6 +298,15 @@ const seed = JSON.parse(readFileSync(join(root, "data", "library.json"), "utf8")
 const song = (({ id: _id, ...content }) => content)(seed.songs[0]);
 
 await pureChecks();
+
+await check("1b. a one-machine pair whose local side Chrome names srflx, at this machine's own address, still starts at this machine (CI run 45281740592)", async () => {
+  assert.ok(lanAddress, "this machine has a network address");
+  assert.ok(oneMachinePair({ local: "host", remote: "host", localAddress: "6f1c2a.local" }), "a host candidate");
+  assert.ok(oneMachinePair({ local: "srflx", remote: "host", localAddress: lanAddress }), "the STUN reply came before the .local name, so Chrome named the shared socket's srflx candidate");
+  assert.ok(!oneMachinePair({ local: "srflx", remote: "host", localAddress: "203.0.113.4" }), "a public address a NAT gave is not this machine");
+  assert.ok(!oneMachinePair({ local: "relay", remote: "host", localAddress: lanAddress }), "a relay is never this machine's own path");
+  assert.ok(!oneMachinePair(undefined), "no pair");
+});
 
 const pageDir = writeHarness();
 const sockets: WebSocket[] = [];
@@ -396,7 +411,7 @@ try {
     assert.ok(wifiAt < 5000, `linked ${wifiAt} ms after the leader arrived`);
     assert.ok(await leaderBand(), "the room told the leader's phone that it leads");
     const pair = linked.pairs[0];
-    assert.equal(pair?.local, "host", `the follower's pair is local host (${js(linked.pairs)})`);
+    assert.ok(oneMachinePair(pair), `the follower's pair starts at this machine's own address (${js(linked.pairs)})`);
     assert.ok(["host", "prflx"].includes(pair?.remote), `and remote host (prflx when its checks beat its candidate): ${js(linked.pairs)}`);
     assert.ok(linked.tried.includes("wifi") && linked.tried.includes("internet"), `one attempt tries every address type at once (${js(linked.tried)})`);
     const leader = await until("the leader's side of the link", leaderSite, (v) => v.followers.some((f) => f.route === "wifi" && f.state === "open"));

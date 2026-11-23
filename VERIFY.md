@@ -1,3 +1,99 @@
+# song-search fix pass 3 (on top of self-check 3 below)
+
+This pass changes only the check. The code was already right at ab03d9a, and the gap was a missing test. Logs are in
+`.verify-logs/fix3/` (gitignored). Run on the Windows laptop with Edge as `CHROME`.
+
+| Finding | Case | At ab03d9a with the case | Under the mutation | After |
+|---|---|---|---|---|
+| P2-6, New song's held-song guard untested | 8f, a pick of the built-in Fire Away / Chris Stapleton through `DIALOG_BOX` | ok (the code holds) | E1, `<SongSearch songs={[]} />` in `song-editor.tsx`: `FAIL 8f ... the tap stays in Add a song` | ok |
+
+- 8f opens + Add a song and searches in the dialog's own box. It taps the held row and checks four things. The hash
+  stays `#/songs`. Nothing is added. The dialog says "You already have Fire Away". Open goes to the held song's href,
+  the dialog closes, and still nothing is added. Add anyway in the dialog was probed by hand in self-check 3 (step E).
+  Its code path is the same `pick(song, true)` that 8d covers.
+- `check:song-search` at head with 8f: 37 ok, 1 FAIL (`head.log`). Under E1: 8a and 8f FAIL (`mutate.log`). The tree
+  was clean after. The 8a line is P2-1's test line and has not changed.
+- P3-7 (offer inset and label alignment inside the result box) is cosmetic and not fixed here.
+- Still open for the owner: P1-1, P2-1, and the keep-or-revert on the Worker edit (QUESTIONS.md).
+
+VERDICT: FAIL, on owner seams only. No P0-P2 is open inside this cook's files.
+
+---
+
+VERDICT: FAIL
+
+# song-search in-cook self-check 3, tier deep, at ab03d9a
+
+Goal: from My Songs or Add a song, a player searches the public song catalog and starts a new sheet with title, artist
+and length filled in, and can tap Find lyrics on the web to paste the words in. This pass verifies the diff
+da2ce97..ab03d9a, mostly fix pass 2 (9c77321..ab03d9a: `song-search.tsx`, one line each in `library-lists.tsx` and
+`song-editor.tsx`, cases 8c to 8e). The build and named checks were not rerun, because fix pass 2 already ran them at
+this code (ab03d9a changes only VERIFY.md). `check:song-search` ran once more, under one mutation. Run on the Windows
+laptop with Edge as `CHROME`. The probe, mutation and logs are in `.verify-logs/self-check3/` (gitignored).
+
+Verdict: FAIL. One new P2 in this cook's files: New song's catalog box now asks "You already have" before a pick, but no
+case tests that box (P2-6, measured by mutation). The code itself is right there (probe below). The owner seams are
+still open: P1-1, P2-1, and keep-or-revert on the Worker edit. No owner decision was found in QUESTIONS.md or the briefs.
+
+## P2
+
+**P2-6. The held-song guard in New song's catalog box is untested.** CLASS=state-machine. Fix pass 2 passes `songs` into
+both mounts. Case 8d drives only the My Songs box (`BOX`). No case picks a held song through `DIALOG_BOX`, so the
+`song-editor.tsx:142` wiring can break without any check noticing. This is a different gap from P2-4, which 8d now covers
+for My Songs.
+Smallest repro (`.verify-logs/self-check3/mutate.mjs`, `mutate.log`): in `src/song-editor.tsx` change
+`<SongSearch songs={songs} />` to `<SongSearch songs={[]} />`, then run `check:song-search`. It prints only
+`FAIL 8a ... timed out waiting for the title on the page`, the same known line as at head. The tree was clean after.
+With that mutation, a New song pick of Fire Away / Chris Stapleton adds an empty duplicate with no warning, which is
+P2-4 again in the other flow.
+Fix: one screen case like 8d through `DIALOG_BOX`. It should fail under this mutation.
+
+## Pass conditions at ab03d9a
+
+Conditions 1 to 7 and 9 were walked in self-check 2 at the same code for those paths. Fix pass 2 touched only the pick.
+
+| # | Condition | Result |
+|---|---|---|
+| 8 | A pick goes through the existing add-own-song path and opens the sheet prefilled | Holds in both flows. A pick now asks `songYouHave` first, the same as Save. My Songs: 8d and 8e. New song: probe below, untested (P2-6). 8a is still red on its test line (P2-1). |
+| 9 | 360 and 390 px, 44 px targets | The new offer holds. Open is 71x44 and Add anyway 123x44 at both widths, inside the dialog and the result box, on top at their centers, with no sideways scroll (probe B). |
+
+## Hands-on run: a held-song pick inside New song
+
+`.verify-logs/self-check3/probe.ts` ran the real built App in Edge, with a stub `/api/me` and a stub catalog reply with
+two recordings: Fire Away / Chris Stapleton (held, built-in) and a long live title (not held). Results are in `probe.log`.
+
+| Step | Result |
+|---|---|
+| A. Before | Fire Away held at `#/song/1`, 15 songs stored |
+| B. New song, search, tap the held row, at 360 and 390 | "You already have Fire Away · Open it?" under the row, hash stays `#/songs`, still 15 |
+| C. Open | `#/song/1`, the dialog closes, still 15 |
+| D. Type again | the offer clears |
+| E. Tap, then Add anyway twice | `#/song/17`, the dialog closes, 16 (one copy), No words yet shown |
+| F. Tap the row nobody holds | opens at once, `#/song/18`, 17 |
+| G. Page errors | none |
+
+Screenshots: `dialog-offer-360.png`, `dialog-offer-390.png`.
+
+## Wrong-but-passing read
+
+- Stale state: `asking` clears on any typing and on unmount. The dialog closes on Open and on a pick, through the hash
+  effect (probe C and E). Both mounts get `library.songs` (`App.tsx:413`, `song-editor.tsx:52`), the list Save checks, so
+  a song added a moment ago counts on the next pick with no reload.
+- Account switch: `songs` is the current account's library, so the offer can only name a song this account holds.
+- Offline: the guard reads local songs only. A held pick asks the same way offline.
+- Data loss: none found. Open writes nothing, and the add-failed path is covered by 8e.
+
+## P3, new this pass
+
+- P3-7. Inside the result box, the offer line has no inset, so "You already have" touches the box's left border. Open's
+  label also sits at the top of its 44 px box while Add anyway's is centered, so the two labels do not line up. At 390 px,
+  Open wraps up beside the line and Add anyway drops below it (`dialog-offer-*.png`). The cause is that `.you-have-it`
+  and `.account-secondary` come from `search.css` and `account.css`, and `song-search.css` adds no rule for them inside
+  `.song-search-results`. Usable and legible, so this is cosmetic. Whether Save's own offer has the same label offset is
+  inferred, not measured.
+
+---
+
 # song-search fix pass 2 (on top of self-check 2 below)
 
 The cases landed first, in their own commit, then the fix. Logs are in `.verify-logs/fix2/` (gitignored). Run on the

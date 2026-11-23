@@ -194,6 +194,7 @@ try {
   check(JSON.stringify(ways) === `["Pick the song's file","Listen with the mic","Cancel"]`, `Learn by listen opens the Learn sheet on its two ways in, the file first, with Cancel (${ways.join(", ")})`);
   await pause(250);
   check(await evaluate<boolean>(`!window.__mic`), "the mic is not asked for until the player picks it");
+  await click('.learn[role=dialog] button[aria-label="Listen with the mic"]');
   await until(`!!window.__mic`, "the mic");
   await evaluate(`window.__play(${JSON.stringify({ ...quiet, swaps: { [OUTSIDE]: "G7" } })})`);
   await click(".learn-actions button", "Stop");

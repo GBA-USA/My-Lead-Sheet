@@ -380,6 +380,7 @@ try {
     expect(js(ways) === js(["Pick the song's file", "Listen with the mic", "Cancel"]), `Learn by listen opened on ${js(ways)}, not its two ways in with the file first and Cancel`);
     await settle(250);
     expect(await evaluate<boolean>(`!window.__mic`), "the mic was asked for before the player picked it");
+    await tap("Listen with the mic", `document.querySelector(".learn")`);
     await until(`!!window.__mic`, "the mic");
     await evaluate(`window.__playSong(document.querySelectorAll(".chart-heading").length)`);
     await tap("Stop", `document.querySelector(".learn")`);

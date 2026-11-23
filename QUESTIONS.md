@@ -1,8 +1,8 @@
-# L1 questions: frozen L1.2 and four Chrome checks meet code L1 does not own
+# L1 questions: frozen L1.2 is open, and the four Chrome checks are answered
 
-L1 is built and its cases pass, except for two seams with code this cook does not own. Each one needs a decision from its owner. Neither one needs Terry.
+L1 is built and its cases pass, except for one seam with code this cook does not own. Frozen L1.2 (item 1) needs a decision from its owner, not from Terry. Item 2 is answered on this branch.
 
-Both seams are still open at `017c881`, measured Nov 23, 2026 with Edge on Windows. `check:learn` prints 162 ok and only the pending L1.2 FAIL, and it exits 0. The four Chrome checks in item 2 time out "waiting for the mic". With item 2's four lines added, they read 41, 28, 52 and 47 ok. `origin/mls-int-20261113` (`1fdc30d`) has not changed any of these files since `1eeb615`.
+Item 1 was measured at `017c881` on Nov 23, 2026 with Edge on Windows. `check:learn` prints 162 ok and only the pending L1.2 FAIL, and it exits 0.
 
 ## 1. Frozen L1.2 fails because of the L2 tempo tracker, not the listen
 
@@ -27,26 +27,15 @@ One of these settles it:
 - The L2 owner lets the tracker follow a lasting change past 20%, and keeps L2's push and drift cases green. Then remove the mark from L1.2.
 - The LT-A owner re-freezes L1.2 with a change the tracker follows, such as 138 BPM. That is the case this cook added.
 
-## 2. Four Chrome checks expect Learn by listen to open the mic at once
+## 2. Answered: the four Chrome checks now pick the mic
 
-The plan's flow opens the Learn sheet on two ways in: "Pick the song's file" and "Listen with the mic". Frozen L1.8 needs the wake lock asked for inside a tap on a mic button in the sheet. Before L1, **Learn by listen** started the mic as the sheet opened.
+Answered by the l1-fable-fix cook on Nov 23, 2026, after `origin/mls-int-20261113` (`156b186`) was merged in.
 
-These checks still tap **Learn by listen** and then wait for the mic. They pass on the base `1eeb615` and time out "waiting for the mic" on this branch:
+`check:bar`, `check:heard`, `check:learned` and `check:ux-sheet-controls-save` tapped **Learn by listen** and then waited for the mic. Since L1 the Learn sheet opens on two ways in, as the plan's flow and frozen L1.8 require. The mic opens only on a tap on **Listen with the mic**. Before L1, **Learn by listen** started the mic as the sheet opened.
 
-- `check:bar` ("Learn by listen" scenario)
-- `check:heard`
-- `check:learned`
-- `check:ux-sheet-controls-save` ("a take's Done and a learn review's Save land in the draft")
+Each check now covers that step. It requires the sheet to list "Pick the song's file", "Listen with the mic" and "Cancel" in that order. It requires that the mic is not asked for before the pick. Then it taps **Listen with the mic**. `check:heard` and `check:learned` also require the Review's first line to start with "From the mic". Every earlier case is kept.
 
-Each one needs one more line right after its **Learn by listen** tap:
-
-```ts
-await click('[role=dialog] button[aria-label="Listen with the mic"]');
-```
-
-In `check:bar` and `check:ux-sheet-controls-save`, write it as `` await evaluate(`document.querySelector('[role=dialog] button[aria-label="Listen with the mic"]').click()`) ``, because their tap helpers match text, not a selector.
-
-On a scratch copy of this branch with only those four lines added, the four checks match the base line for line: `check:bar` 41 ok, `check:heard` 28 ok, `check:learned` 52 ok, and `check:ux-sheet-controls-save` 47 ok. `check:ux-sheet-controls-save` also prints the same two "first chord" FAIL lines as the base, which are the known Windows font gap. This cook does not own these checks, so the four lines are not on this branch.
+Measured with Edge on Windows: `check:bar` 43 ok, `check:heard` 31 ok, `check:learned` 58 ok, and `check:ux-sheet-controls-save` 47 ok. The untouched base reads 41, 28, 52 and 47 ok. `check:ux-sheet-controls-save` also prints two "first chord" FAIL lines that are byte-identical to the untouched base's. They are the known Windows font gap.
 
 ---
 

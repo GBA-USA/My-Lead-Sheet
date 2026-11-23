@@ -289,7 +289,13 @@ try {
   await scenario("Learn by listen", async () => {
     check(await evaluate<boolean>(`!window.__mic`), "the mic is not asked for before Learn by listen");
     await openChooser();
+    await evaluate(`delete window.__audioInTap`);
     await tapRow("Learn by listen");
+    await until(`!!document.querySelector(".learn[role=dialog]")`, "the Learn sheet");
+    const ways = await evaluate<string[]>(`[...document.querySelectorAll(".learn[role=dialog] :is(input, button)")].map((el) => el.getAttribute("aria-label") ?? el.innerText.trim())`);
+    check(JSON.stringify(ways) === `["Pick the song's file","Listen with the mic","Cancel"]`, `Learn by listen opens the Learn sheet on its two ways in, the file first, with Cancel (${ways.join(", ")})`);
+    await pause(250);
+    check(await evaluate<boolean>(`!window.__mic && window.__audioInTap === undefined`), "neither the mic nor its audio starts until the player picks the mic");
     await until(`!!window.__mic`, "the mic");
     check(await evaluate<boolean>(`document.querySelector(".learn[role=dialog]")?.innerText.includes("Play the whole song near the phone")`), "Learn by listen opens the Learn sheet and starts listening");
     check(await evaluate<boolean>(`window.__audioInTap === true`), "its audio starts inside the tap itself, where browsers allow it");

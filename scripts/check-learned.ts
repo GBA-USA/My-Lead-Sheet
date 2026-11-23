@@ -131,11 +131,18 @@ async function learnOnce() {
   await click('[aria-label="Scroll settings"]');
   await click("[role=dialog] button", "Learn this song");
   await click('[role=dialog] button[aria-label="Learn by listen"]');
+  await until(`!!document.querySelector(".learn[role=dialog]")`, "the Learn sheet");
+  const ways = await evaluate<string[]>(`[...document.querySelectorAll(".learn[role=dialog] :is(input, button)")].map((el) => el.getAttribute("aria-label") ?? el.textContent.trim())`);
+  check(JSON.stringify(ways) === `["Pick the song's file","Listen with the mic","Cancel"]`, `Learn by listen opens the Learn sheet on its two ways in, the file first, with Cancel (${ways.join(", ")})`);
+  await pause(250);
+  check(await evaluate<boolean>(`!window.__mic`), "the mic is not asked for until the player picks it");
   await until(`!!window.__mic`, "the mic");
   await evaluate(`window.__playSong(document.querySelectorAll(".chart-heading").length)`);
   await pause(50);
   await click(".learn-actions button", "Stop");
   await until(`!!document.querySelector(".learn-sections")`, "the Review panel");
+  const from = await evaluate<string>(`document.querySelector(".learn-coverage")?.textContent ?? ""`);
+  check(from.startsWith("From the mic · "), `the Review's first line says the song came from the mic (${from})`);
 }
 
 try {

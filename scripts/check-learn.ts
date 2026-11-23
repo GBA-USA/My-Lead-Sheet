@@ -1386,7 +1386,24 @@ await frozen("L2.4 a close call is yellow and both tempos are offered", null, as
     await until(reviewing, "Review");
   });
   check(text().includes("76 BPM · or 152") && bandAround("76 BPM") === "likely", `L2.4 the Review shows a close call as "76 BPM · or 152" in yellow (76 BPM has data-band ${bandAround("76 BPM")}; ${text().slice(0, 200)})`);
+  const or = button("Use 152 BPM");
+  check(!!or && (or.getAttribute("class") ?? "").split(" ").includes("learn-or"), `L2.4 the "or 152" button wears the Review pill class learn-or (class ${or?.getAttribute("class") ?? "none"})`);
 });
+
+/** The declarations of every rule in src/learn.css whose selector list names `selector`, joined. */
+const learnCss = readFileSync(new URL("../src/learn.css", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+const declarations = (selector: string) =>
+  [...learnCss.matchAll(/([^{}]+)\{([^}]*)\}/g)]
+    .filter(([, selectors]) => selectors.split(",").some((each) => each.trim() === selector))
+    .map(([, , body]) => body.replace(/\s+/g, " "))
+    .join(" ");
+const pill = declarations(".learn-or");
+check(/height: 40px/.test(pill) && /border-radius: 999px/.test(pill) && /background: var\(--surface\)/.test(pill) && /color: var\(--text\)/.test(pill) && /display: inline-flex/.test(pill) && !/outline/.test(pill), `L2.4 learn.css draws .learn-or as a 40px Review pill on the surface colour, inline, focus ring kept (${pill.trim() || "no rule"})`);
+const bandColours = { sure: "--chord-sure", likely: "--chord-check", check: "--chord-unsure", set: "--text" };
+for (const [band, colour] of Object.entries(bandColours)) {
+  const rule = declarations(`.learn [data-band="${band}"]`);
+  check(rule.includes(`color: var(${colour})`), `L2.4 learn.css colours a ${band} tempo with ${colour} (${rule.trim() || "no rule"})`);
+}
 
 await frozen("L2.4 a tap on the other tempo of a close call switches to it", null, async () => {
   let sheet!: Awaited<ReturnType<typeof openSheet>>;

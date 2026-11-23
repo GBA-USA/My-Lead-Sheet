@@ -288,7 +288,7 @@ function Review({
         {other ? (
           <>
             {" "}· or{" "}
-            <button type="button" aria-label={`Use ${other} BPM`} onClick={() => setTempo(other)}>
+            <button type="button" className="learn-or" aria-label={`Use ${other} BPM`} onClick={() => setTempo(other)}>
               {other}
             </button>
           </>

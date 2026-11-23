@@ -21,7 +21,11 @@ export const DATA_KINDS: readonly DataKind[] = [
   },
   { key: "leadSheetsScrollPercent", place: "phone", what: "The scroll speed you set for each song." },
   { key: "leadSheetsNotation", place: "phone", what: "Whether each song shows note names or Nashville numbers." },
-  { key: "leadSheetsMetronome", place: "phone", what: "Your metronome settings: sound, the beat dot, and the delay nudge for Bluetooth speakers." },
+  {
+    key: "leadSheetsMetronome",
+    place: "phone",
+    what: "Your metronome settings: sound, the beat dot, the delay nudge for Bluetooth speakers, and the speaker delay set for this phone in Line up with the band. They belong to this phone, not to an account.",
+  },
   { key: "leadSheetsSongData", place: "phone", what: "The runtime, tempo and time signature you entered for each song." },
   {
     key: "leadSheetsScrollVersions",
@@ -178,4 +182,14 @@ export const DATA_KINDS: readonly DataKind[] = [
     what: "Your Messages list: for each band thread and DM, its name, the number and a one-line preview of the newest message, the last message you read, and until when you muted it.",
   },
   { key: "dm_index", place: "server", what: "For each pair of people who message each other, which room holds their one DM thread." },
+  {
+    key: "sync_runs",
+    place: "server",
+    what: "For each band: each Sync check run an admin started, with who started it and when it starts and ends. Kept so the report for the run can be read later.",
+  },
+  {
+    key: "sync_log",
+    place: "server",
+    what: "For each band: during a Sync check run only, one row per beat per phone, with who it was, the route (Wi-Fi link, Over the internet or the server), the carrier you picked, when the beat was due, flashed and was heard, and how steady the clock was. Feeds the sync report. Nothing is written outside a run.",
+  },
 ];

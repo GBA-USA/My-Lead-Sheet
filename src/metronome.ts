@@ -49,15 +49,20 @@ export function beatDotState(secondsSinceHeardClick: number | null): "on" | "off
 /** When the dot-sync +/- shows: Auto only on a detected high-latency output. */
 export type SyncMode = "auto" | "on" | "off";
 
-/** Device-wide metronome settings. The offset moves the dot later (+) or earlier (−) than the heard click. */
+/**
+ * Device-wide metronome settings. The offset moves the dot later (+) or earlier (−) than the heard click.
+ * The speaker delay is this phone's own, from Line up with the band: a band click goes out that much early so it is
+ * heard on the beat. It is apart from the dot nudge, which is for Bluetooth (PLAN.md 5, 7.8).
+ */
 export interface MetronomePrefs {
   indicator: boolean;
   sound: boolean;
   syncMode: SyncMode;
   syncOffsetMs: number;
+  speakerDelayMs: number;
 }
 
-export const DEFAULT_METRONOME_PREFS: MetronomePrefs = { indicator: true, sound: true, syncMode: "auto", syncOffsetMs: 0 };
+export const DEFAULT_METRONOME_PREFS: MetronomePrefs = { indicator: true, sound: true, syncMode: "auto", syncOffsetMs: 0, speakerDelayMs: 0 };
 
 /** Sound and Dot, the two switches Settings, the Metronome sheet and the beat pill share. Both may be off. */
 export type ClickPrefs = Pick<MetronomePrefs, "sound" | "indicator">;
@@ -88,15 +93,26 @@ export function clampSyncOffsetMs(ms: number): number {
   return Math.min(SYNC_OFFSET_MAX_MS, Math.max(SYNC_OFFSET_MIN_MS, stepped));
 }
 
+/** Line up with the band moves the speaker delay 5 ms a tap. A phone speaker is tens of ms, Bluetooth is the dot nudge's. */
+export const SPEAKER_DELAY_STEP_MS = 5;
+export const SPEAKER_DELAY_MIN_MS = 0;
+export const SPEAKER_DELAY_MAX_MS = 300;
+
+export function clampSpeakerDelayMs(ms: number): number {
+  const stepped = Math.round(ms / SPEAKER_DELAY_STEP_MS) * SPEAKER_DELAY_STEP_MS;
+  return Math.min(SPEAKER_DELAY_MAX_MS, Math.max(SPEAKER_DELAY_MIN_MS, stepped));
+}
+
 /** Saved prefs come back field by field, so one bad value never resets the others. */
 export function parseMetronomePrefs(stored: unknown): MetronomePrefs {
-  const { indicator, sound, syncMode, syncOffsetMs } = (stored && typeof stored === "object" ? stored : {}) as Record<string, unknown>;
+  const { indicator, sound, syncMode, syncOffsetMs, speakerDelayMs } = (stored && typeof stored === "object" ? stored : {}) as Record<string, unknown>;
   const fallback = DEFAULT_METRONOME_PREFS;
   return {
     indicator: typeof indicator === "boolean" ? indicator : fallback.indicator,
     sound: typeof sound === "boolean" ? sound : fallback.sound,
     syncMode: syncMode === "auto" || syncMode === "on" || syncMode === "off" ? syncMode : fallback.syncMode,
     syncOffsetMs: typeof syncOffsetMs === "number" && Number.isFinite(syncOffsetMs) ? clampSyncOffsetMs(syncOffsetMs) : fallback.syncOffsetMs,
+    speakerDelayMs: typeof speakerDelayMs === "number" && Number.isFinite(speakerDelayMs) ? clampSpeakerDelayMs(speakerDelayMs) : fallback.speakerDelayMs,
   };
 }
 

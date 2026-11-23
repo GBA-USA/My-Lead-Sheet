@@ -65,7 +65,7 @@ const clockText = (seconds: number) => formatRuntime(Math.max(0, Math.floor(seco
 /** The Review's first line: where the sound came from, how much of it was heard and why it ended, and how clean it was. */
 function coverageLine({ source, coverage }: Listen): string {
   const { heardSeconds, expectedSeconds, stopped, quality } = coverage;
-  const whole = source.kind === "file" && (expectedSeconds === null || heardSeconds >= expectedSeconds - 0.5);
+  const whole = expectedSeconds === null ? source.kind === "file" : heardSeconds >= expectedSeconds - 0.5;
   const heard = whole ? clockText(heardSeconds) : `heard ${clockText(heardSeconds)}${expectedSeconds ? ` of ${clockText(expectedSeconds)}` : ""}`;
   const why = stopped === "finished" || stopped === "player" ? [] : [STOPPED[stopped].line];
   return [FROM[source.kind], heard, ...why, quality].join(" · ");

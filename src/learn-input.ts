@@ -170,17 +170,31 @@ export function fromMic(on: { chunk: (samples: Float32Array) => void; stopped: (
   return { source: { kind: "mic", name: null, stereo: false, sampleRate: rate }, stop: () => void close() };
 }
 
-/** Asks to keep the screen on, inside a tap where every phone allows it, and gives back the release. Nothing where there is no wake lock. */
+/**
+ * Asks to keep the screen on, inside a tap where every phone allows it, and gives back the release. The browser drops
+ * the lock when the page hides, as a phone's file picker does, so it is asked again on return. Nothing where there is
+ * no wake lock.
+ */
 export function holdScreen(): () => void {
   if (!("wakeLock" in navigator)) return () => {};
   let held: WakeLockSentinel | null = null;
+  let asking = false;
   let released = false;
-  navigator.wakeLock.request("screen").then(
-    (lock) => (released ? void lock.release().catch(() => {}) : (held = lock)),
-    () => {},
-  );
+  const ask = () => {
+    asking = true;
+    navigator.wakeLock.request("screen").then(
+      (lock) => (released ? void lock.release().catch(() => {}) : (held = lock)),
+      () => {},
+    ).finally(() => (asking = false));
+  };
+  const onVisibility = () => {
+    if (document.visibilityState === "visible" && !asking && (!held || held.released)) ask();
+  };
+  ask();
+  document.addEventListener("visibilitychange", onVisibility);
   return () => {
     released = true;
+    document.removeEventListener("visibilitychange", onVisibility);
     void held?.release().catch(() => {});
     held = null;
   };

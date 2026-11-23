@@ -1423,6 +1423,15 @@ for (const pickup of [0, 2]) {
   const beats = heard?.analysis.beats ?? [];
   const bar1 = beats.reduce((best, beat, i) => (Math.abs(beat - BLUES_HEAD) < Math.abs(beats[best] - BLUES_HEAD) ? i : best), 0);
   check(!!heard && heard.analysis.downbeatPhase === bar1 % 4, `L2.5 the downbeat phase lands on bar 1 ${pickup ? `after a ${pickup}-beat drum pickup` : "when the song starts on it"} (phase ${heard?.analysis.downbeatPhase}, bar 1 is beat ${bar1})`);
+  if (!heard) continue;
+  const saved = learn.learnedVersion(heard.analysis, { boundaries: [], vocals: [], heard: [] }, ["VERSE 1"], 4, Math.round(heard.tempo.bpm)).learned!;
+  const shift = saved.beats[bar1] - beats[bar1];
+  const bar1Clock = BLUES_HEAD + shift;
+  const beat = 60 / heard.analysis.tempos[0].bpm;
+  check(
+    Math.abs(saved.downbeat - bar1Clock) <= beat / 8 && Math.abs(saved.downbeat - 4 * beat) <= 0.001,
+    `L2.5 the saved version ${pickup ? `of the ${pickup}-beat pickup song` : "of the song"} puts bar 1 at the end of its one-bar count-in (downbeat at ${saved.downbeat.toFixed(3)} s, bar 1 plays at ${bar1Clock.toFixed(3)} s, count-in ${(4 * beat).toFixed(3)} s)`,
+  );
 }
 
 check(!!swung && near(swung.tempo.bpm, 120, 2) && near(swung.analysis.tempos[0].bpm, 120, 2), `L2.6 a swung feel reads its 120 BPM, not as triple time (${tempoText(swung)})`);
@@ -1496,12 +1505,12 @@ function bandAround(words: string) {
 }
 const rockAtMic = groove({ bpm: 100, seconds: 50, hats: 0.1, tail: 2 }, SAMPLE_RATE);
 const rockHeard = hearAt(rockAtMic, SAMPLE_RATE);
-/** Four taps half a second apart on the Review's Tap button. */
-async function tapFour() {
+/** Four taps `apart` seconds apart (half a second unless given) on the Review's Tap button. */
+async function tapFour(apart = 0.5) {
   const tapControl = buttonNamed(/^tap/i);
   if (!tapControl) throw new Error(`no Tap button in the Review (${text().slice(0, 200)})`);
   for (let i = 0; i < 4; i++) {
-    if (i) now += 0.5;
+    if (i) now += apart;
     await press(buttonNamed(/^tap/i), "the Tap button");
   }
 }
@@ -1541,6 +1550,28 @@ await frozen("L2.7 a double tap past the BPM field's 300 leaves the heard tempo"
   await press(button("Save"), "Save");
   const [save] = sheet.saved;
   check(sheet.saved.length === 1 && save.version.bpm === heardBpm && (!forSong || save.data?.tempo === heardBpm), `L2.7 Save after the double tap stores the heard ${heardWords} (${JSON.stringify(sheet.saved.map((each) => ({ bpm: each.version.bpm, data: each.data })))})`);
+});
+
+await frozen("L2.4 half or double time holds for the later tempos too, and only an octave does", null, async () => {
+  const opening = { bpm: 122, choices: [{ bpm: 122, feel: "as heard" as const, score: 1 }, { bpm: 244, feel: "double" as const, score: 0.95 }, { bpm: 61, feel: "half" as const, score: 0.2 }], band: "likely" as const };
+  await withHeardTempo(opening, async () => {
+    const sheet = await openSheet(twoHeadings(null));
+    await startMic(sheet);
+    await micPlay(truth.samples);
+    await press(button("Stop"), "Stop");
+    await until(reviewing, "Review");
+  });
+  const later = () => Number(text().match(new RegExp(`, (\\d+) BPM at ${chorus}`))?.[1]);
+  const heardLater = later();
+  check(near(heardLater, 104, 1), `L2.4 the Review shows the riff's tempo change as heard, ${heardLater} BPM at ${chorus} (${text().slice(0, 200)})`);
+  await press(button("Use 244 BPM"), "the Use 244 BPM button");
+  check(text().includes("244 BPM") && near(later(), 2 * heardLater, 1), `L2.4 taking double time, 244 BPM, doubles the later tempo too: ${2 * heardLater} BPM at ${chorus} (shows ${later()}; ${text().slice(0, 200)})`);
+  now += 5;
+  await tapFour(1 / 3);
+  check(text().includes("180 BPM") && later() === heardLater, `L2.7 a tap at 180 BPM, no octave of 122, leaves the later tempo as heard, ${heardLater} BPM at ${chorus} (shows ${later()}; ${text().slice(0, 200)})`);
+  now += 5;
+  await tapFour(0.25);
+  check(text().includes("240 BPM") && near(later(), 2 * heardLater, 1), `L2.7 a tap at 240 BPM, near double 122, doubles the later tempo: ${2 * heardLater} BPM at ${chorus} (shows ${later()}; ${text().slice(0, 200)})`);
 });
 
 await frozen("L2.8 the Review's tempo control changes nothing until Save", null, async () => {

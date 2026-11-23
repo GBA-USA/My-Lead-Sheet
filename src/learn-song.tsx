@@ -1,11 +1,10 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { addTap, tapBpm } from "./bpm-detect";
+import { type FieldBpm, addTap, fieldBpm, tapBpm } from "./bpm-detect";
 import { RAW_MIC } from "./bpm-finder";
 import { SongListener, beatsPerBar, learnedVersion, placeHeadings, shortHeading } from "./learn-analyze";
 import { chartChords, chartForm, heardBars, type HeardBar } from "./learn-chords";
 import type { Analysis, Band, Heard } from "./learn-result";
-import { METRONOME_MAX, METRONOME_MIN } from "./metronome";
 import type { ScrollVersion, Span } from "./scroll-timing";
 import { formatRuntime, songDataFromForm } from "./song-data-editor";
 import type { Song, SongData } from "./types";
@@ -57,10 +56,7 @@ export function listenToSong(on: { heard: (seconds: number) => void; noMic: () =
 }
 
 /** The opening tempo the Review would save: as the listen heard it, in its band, or as the player set it, drawn black. */
-interface TempoPick {
-  bpm: number;
-  band: Band | "set";
-}
+type TempoPick = { bpm: number; band: Band } | { bpm: FieldBpm; band: "set" };
 
 type Step =
   | { kind: "listening"; heard: number }
@@ -262,11 +258,11 @@ function Review({
   const octave = 2 ** Math.round(Math.log2(step.tempo.bpm / tempos[0].bpm));
   const [best, next] = step.heard.tempo.choices;
   const closeCall = step.heard.tempo.band === "likely" && next ? [Math.round(best.bpm), Math.round(next.bpm)] : [];
-  const other = closeCall.includes(tempo) ? closeCall.find((bpm) => bpm !== tempo && bpm >= METRONOME_MIN && bpm <= METRONOME_MAX) : undefined;
-  const setTempo = (bpm: number, taps: number[] = []) => onChange({ ...step, tempo: { bpm, band: "set" }, taps });
+  const other = closeCall.includes(tempo) ? closeCall.map(fieldBpm).find((bpm) => bpm != null && bpm !== tempo) : undefined;
+  const setTempo = (bpm: FieldBpm, taps: number[] = []) => onChange({ ...step, tempo: { bpm, band: "set" }, taps });
   const tap = () => {
     const taps = addTap(step.taps, performance.now());
-    const tapped = tapBpm(taps);
+    const tapped = fieldBpm(tapBpm(taps));
     if (tapped == null) onChange({ ...step, taps });
     else setTempo(tapped, taps);
   };

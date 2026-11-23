@@ -152,6 +152,15 @@ export function tapBpm(taps: readonly number[]): number | null {
   return (60_000 * (taps.length - 1)) / (taps[taps.length - 1] - taps[0]);
 }
 
+/** A whole BPM the song's BPM field accepts. Only `fieldBpm` makes one. */
+export type FieldBpm = number & { readonly fieldBpm: unique symbol };
+
+export function fieldBpm(bpm: number | null): FieldBpm | null {
+  if (bpm == null) return null;
+  const rounded = Math.round(bpm);
+  return rounded >= METRONOME_MIN && rounded <= METRONOME_MAX ? (rounded as FieldBpm) : null;
+}
+
 export interface TempoChoice {
   bpm: number;
   feel: "Half time" | "Suggested" | "Double time";
@@ -164,5 +173,5 @@ export function tempoChoices(bpm: number): TempoChoice[] {
     { bpm: Math.round(bpm), feel: "Suggested" },
     { bpm: Math.round(bpm * 2), feel: "Double time" },
   ];
-  return choices.filter((choice) => choice.bpm >= METRONOME_MIN && choice.bpm <= METRONOME_MAX);
+  return choices.filter((choice) => fieldBpm(choice.bpm) != null);
 }

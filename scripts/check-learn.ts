@@ -1375,9 +1375,10 @@ async function withHeardTempo(tempo: HeardSong["tempo"], run: () => Promise<void
   }
 }
 
+const closeCall = { bpm: 76, choices: [{ bpm: 76, feel: "as heard" as const, score: 1 }, { bpm: 152, feel: "double" as const, score: 0.95 }, { bpm: 38, feel: "half" as const, score: 0.2 }], band: "likely" as const };
+
 await frozen("L2.4 a close call is yellow and both tempos are offered", null, async () => {
-  const close = { bpm: 76, choices: [{ bpm: 76, feel: "as heard" as const, score: 1 }, { bpm: 152, feel: "double" as const, score: 0.95 }, { bpm: 38, feel: "half" as const, score: 0.2 }], band: "likely" as const };
-  await withHeardTempo(close, async () => {
+  await withHeardTempo(closeCall, async () => {
     const sheet = await openSheet(twoHeadings(null));
     await startMic(sheet);
     await micPlay(clickTrack);
@@ -1385,6 +1386,24 @@ await frozen("L2.4 a close call is yellow and both tempos are offered", null, as
     await until(reviewing, "Review");
   });
   check(text().includes("76 BPM · or 152") && bandAround("76 BPM") === "likely", `L2.4 the Review shows a close call as "76 BPM · or 152" in yellow (76 BPM has data-band ${bandAround("76 BPM")}; ${text().slice(0, 200)})`);
+});
+
+await frozen("L2.4 a tap on the other tempo of a close call switches to it", null, async () => {
+  let sheet!: Awaited<ReturnType<typeof openSheet>>;
+  await withHeardTempo(closeCall, async () => {
+    sheet = await openSheet(twoHeadings(null));
+    await startMic(sheet);
+    await micPlay(clickTrack);
+    await press(button("Stop"), "Stop");
+    await until(reviewing, "Review");
+  });
+  await press(button("Use 152 BPM"), "the Use 152 BPM button");
+  check(text().includes("152 BPM · or 76") && bandAround("152 BPM") === "set", `L2.4 a tap on 152 sets 152 BPM, drawn black, and offers 76 back (152 BPM has data-band ${bandAround("152 BPM")}; ${text().slice(0, 200)})`);
+  const forSong = checkbox("for this song");
+  if (forSong) await press(forSong, "the box to use it for the song");
+  await press(button("Save"), "Save");
+  const [save] = sheet.saved;
+  check(sheet.saved.length === 1 && save.version.bpm === 152 && (!forSong || save.data?.tempo === 152), `L2.4 Save stores the chosen 152 BPM (${JSON.stringify(sheet.saved.map((each) => ({ bpm: each.version.bpm, data: each.data })))})`);
 });
 
 await frozen("L2.4 a close call offers only a tempo the BPM field takes", null, async () => {
@@ -1503,6 +1522,25 @@ await frozen("L2.7 tap to confirm sets the tempo and is black", null, async () =
   await press(button("Save"), "Save");
   const [save] = sheet.saved;
   check(sheet.saved.length === 1 && save.version.bpm === 120 && (!forSong || save.data?.tempo === 120), `L2.7 Save stores the tapped 120 BPM (${JSON.stringify(sheet.saved.map((each) => ({ bpm: each.version.bpm, data: each.data })))})`);
+});
+
+await frozen("L2.7 a double tap past the BPM field's 300 leaves the heard tempo", null, async () => {
+  const sheet = await openSheet(twoHeadings(null));
+  await startMic(sheet);
+  await micPlay(rockAtMic);
+  await press(button("Stop"), "Stop");
+  await until(reviewing, "Review");
+  const heardBpm = Math.round(rockHeard!.tempo.bpm);
+  const heardWords = `${heardBpm} BPM`;
+  await press(buttonNamed(/^tap/i), "the Tap button");
+  now += 0.1;
+  await press(buttonNamed(/^tap/i), "the Tap button");
+  check(!text().includes("600 BPM") && bandAround(heardWords) === rockHeard!.tempo.band, `L2.7 two taps 100 ms apart, 600 BPM, leave ${heardWords} in its band (data-band ${bandAround(heardWords)}; ${text().slice(0, 200)})`);
+  const forSong = checkbox("for this song");
+  if (forSong) await press(forSong, "the box to use it for the song");
+  await press(button("Save"), "Save");
+  const [save] = sheet.saved;
+  check(sheet.saved.length === 1 && save.version.bpm === heardBpm && (!forSong || save.data?.tempo === heardBpm), `L2.7 Save after the double tap stores the heard ${heardWords} (${JSON.stringify(sheet.saved.map((each) => ({ bpm: each.version.bpm, data: each.data })))})`);
 });
 
 await frozen("L2.8 the Review's tempo control changes nothing until Save", null, async () => {

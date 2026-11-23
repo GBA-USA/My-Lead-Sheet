@@ -106,8 +106,15 @@ const lanAddress = Object.values(networkInterfaces())
   .flat()
   .find((net) => net?.family === "IPv4" && !net.internal)?.address;
 
-/** The follower's side of a link between two tabs on this machine starts at this machine's own host candidate. */
-const oneMachinePair = (pair: View["pairs"][number] | undefined) => pair?.local === "host";
+const ownAddresses = new Set(Object.values(networkInterfaces()).flat().map((net) => net?.address));
+
+/**
+ * The follower's side of a link between two tabs on this machine starts at this machine's own address. That is the host
+ * candidate, or the srflx one when the STUN reply beat the `.local` name: host and srflx share one socket, Chrome names
+ * the pair after whichever it listed first (see `routeOfPair`), and with no NAT the srflx address is this machine's own.
+ */
+const oneMachinePair = (pair: View["pairs"][number] | undefined) =>
+  pair?.local === "host" || (pair?.local === "srflx" && ownAddresses.has(pair.localAddress ?? ""));
 
 /** A STUN binding responder (RFC 5389): answers each request with the sender's address, the way a free public STUN server does. */
 async function startStun() {

@@ -1,16 +1,19 @@
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { fakeDom, type FakeElement } from "./fake-dom.ts";
 import { FakeWorker, clearWorkerLog, listenThrough, workerIdle, workerLog, workerReplies } from "./fake-worker.ts";
 import { FORM, HEAD as BLUES_HEAD, blues } from "./blues.ts";
+import { MIC_LEVELS, SAMPLE_RATE as L0_RATE, micColor, render } from "./learn-render.ts";
+import { TOLERANCE, scoreListen } from "./learn-score.ts";
+import { SONGS } from "./learn-songs.ts";
 import type { FromWorker, Listen, ToWorker } from "../src/learn-result.ts";
 import type { Song, SongData } from "../src/types.ts";
 
 /** A TESTS-FIRST case its cook has not landed yet: it runs and prints, but its FAIL does not fail check:learn. */
-type Pending = "pending until l1" | "pending until l2";
+type Pending = "pending until l1";
 let failures = 0;
 let pendingFailures = 0;
 function check(ok: boolean, message: string, pending?: Pending) {
@@ -31,7 +34,7 @@ const entry = `
   export { createRoot } from "react-dom/client";
 `;
 const bundled = await build({
-  stdin: { contents: entry, resolveDir: new URL("..", import.meta.url).pathname, loader: "tsx" },
+  stdin: { contents: entry, resolveDir: fileURLToPath(new URL("..", import.meta.url)), loader: "tsx" },
   bundle: true,
   write: false,
   format: "esm",
@@ -1072,12 +1075,12 @@ async function micPlay(samples: Float32Array) {
   await settle();
 }
 /** Runs one case. A throw is a FAIL line, so a piece not built yet never hides the cases after it. */
-async function frozen(name: string, pending: Pending, run: () => Promise<void>) {
+async function frozen(name: string, pending: Pending | null, run: () => Promise<void>) {
   clearWorkerLog();
   try {
     await run();
   } catch (error) {
-    check(false, `${name}: ${error instanceof Error ? error.message : String(error)}`, pending);
+    check(false, `${name}: ${error instanceof Error ? error.message : String(error)}`, pending ?? undefined);
   }
   await closeSheets();
   clearWorkerLog();
@@ -1325,7 +1328,7 @@ const tempoText = (heard: HeardSong | null) =>
 const near = (value: number | undefined, want: number, within: number) => value !== undefined && Math.abs(value - want) <= within;
 
 const strummed = hearAt(groove({ bpm: 76, seconds: 60, strum: 2, drums: 0.6, bassPerBar: true, tail: 2 }, FILE_RATE), FILE_RATE);
-check(!!strummed && near(strummed.tempo.bpm, 76, 2) && near(strummed.analysis.tempos[0].bpm, 76, 2), `L2.1 strong eighth-note strums at 76 BPM read 76, not 152 (${tempoText(strummed)})`, "pending until l2");
+check(!!strummed && near(strummed.tempo.bpm, 76, 2) && near(strummed.analysis.tempos[0].bpm, 76, 2), `L2.1 strong eighth-note strums at 76 BPM read 76, not 152 (${tempoText(strummed)})`);
 
 const rock = hearAt(groove({ bpm: 100, seconds: 50, hats: 0.1, tail: 2 }, FILE_RATE), FILE_RATE);
 {
@@ -1335,12 +1338,12 @@ const rock = hearAt(groove({ bpm: 100, seconds: 50, hats: 0.1, tail: 2 }, FILE_R
   const inOrder = rows.every((row, i) => i === 0 || row.score <= rows[i - 1].score);
   const [low, mid, high] = rows.map((row) => row.bpm).sort((a, b) => a - b);
   const offered = rows.length === 3 && partners && inOrder && near(low, 50, 1.5) && near(mid, 100, 1.5) && near(high, 200, 3);
-  check(offered && near(rock?.tempo.bpm, 100, 1.5) && near(rock?.tempo.bpm, rows[0]?.bpm, 0.5), `L2.3 a 100 BPM song offers 50, 100 and 200, half and double of the tempo as heard, scored and best first (${tempoText(rock)})`, "pending until l2");
+  check(offered && near(rock?.tempo.bpm, 100, 1.5) && near(rock?.tempo.bpm, rows[0]?.bpm, 0.5), `L2.3 a 100 BPM song offers 50, 100 and 200, half and double of the tempo as heard, scored and best first (${tempoText(rock)})`);
 }
 const ballad = hearAt(groove({ bpm: 50, seconds: 70, hats: 0.1, tail: 2 }, FILE_RATE), FILE_RATE);
 const punk = hearAt(groove({ bpm: 200, seconds: 45, tail: 2 }, FILE_RATE), FILE_RATE);
 for (const [bpm, heard] of [[50, ballad], [200, punk]] as const) {
-  check(!!heard?.tempo.choices.some((choice) => near(choice.bpm, bpm, 2)), `L2.3 tempos from 40 to 220 are candidates: a ${bpm} BPM song has ${bpm} among its choices (${tempoText(heard)})`, "pending until l2");
+  check(!!heard?.tempo.choices.some((choice) => near(choice.bpm, bpm, 2)), `L2.3 tempos from 40 to 220 are candidates: a ${bpm} BPM song has ${bpm} among its choices (${tempoText(heard)})`);
 }
 
 const swung = hearAt(groove({ bpm: 120, seconds: 60, swing: true, strum: 0.6, tail: 2 }, FILE_RATE), FILE_RATE);
@@ -1350,7 +1353,7 @@ const tied = hearAt(clickTrack, SAMPLE_RATE);
 {
   const songs = [rock, strummed, ballad, punk, swung, tied].filter((heard): heard is HeardSong => !!heard);
   const close = songs.filter((heard) => heard.tempo.choices.length > 1 && heard.tempo.choices[1].score >= 0.9 * heard.tempo.choices[0].score);
-  check(close.every((heard) => heard.tempo.band !== "sure"), `L2.4 a close call is never green: of this check's ${songs.length} songs, ${close.length} have their top two tempos within 10%, and none of those is sure (${close.map(tempoText).join(" | ") || "none close"})`, "pending until l2");
+  check(close.every((heard) => heard.tempo.band !== "sure"), `L2.4 a close call is never green: of this check's ${songs.length} songs, ${close.length} have their top two tempos within 10%, and none of those is sure (${close.map(tempoText).join(" | ") || "none close"})`);
 }
 
 /**
@@ -1372,26 +1375,138 @@ async function withHeardTempo(tempo: HeardSong["tempo"], run: () => Promise<void
   }
 }
 
-await frozen("L2.4 a close call is yellow and both tempos are offered", "pending until l2", async () => {
-  const close = { bpm: 76, choices: [{ bpm: 76, feel: "as heard" as const, score: 1 }, { bpm: 152, feel: "double" as const, score: 0.95 }, { bpm: 38, feel: "half" as const, score: 0.2 }], band: "likely" as const };
-  await withHeardTempo(close, async () => {
+const closeCall = { bpm: 76, choices: [{ bpm: 76, feel: "as heard" as const, score: 1 }, { bpm: 152, feel: "double" as const, score: 0.95 }, { bpm: 38, feel: "half" as const, score: 0.2 }], band: "likely" as const };
+
+await frozen("L2.4 a close call is yellow and both tempos are offered", null, async () => {
+  await withHeardTempo(closeCall, async () => {
     const sheet = await openSheet(twoHeadings(null));
     await startMic(sheet);
     await micPlay(clickTrack);
     await press(button("Stop"), "Stop");
     await until(reviewing, "Review");
   });
-  check(text().includes("76 BPM · or 152") && bandAround("76 BPM") === "likely", `L2.4 the Review shows a close call as "76 BPM · or 152" in yellow (76 BPM has data-band ${bandAround("76 BPM")}; ${text().slice(0, 200)})`, "pending until l2");
+  check(text().includes("76 BPM · or 152") && bandAround("76 BPM") === "likely", `L2.4 the Review shows a close call as "76 BPM · or 152" in yellow (76 BPM has data-band ${bandAround("76 BPM")}; ${text().slice(0, 200)})`);
+  const or = button("Use 152 BPM");
+  check(!!or && (or.getAttribute("class") ?? "").split(" ").includes("learn-or"), `L2.4 the "or 152" button wears the Review pill class learn-or (class ${or?.getAttribute("class") ?? "none"})`);
+});
+
+/** The declarations of every rule in src/learn.css whose selector list names `selector`, joined. */
+const learnCss = readFileSync(new URL("../src/learn.css", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+const declarations = (selector: string) =>
+  [...learnCss.matchAll(/([^{}]+)\{([^}]*)\}/g)]
+    .filter(([, selectors]) => selectors.split(",").some((each) => each.trim() === selector))
+    .map(([, , body]) => body.replace(/\s+/g, " "))
+    .join(" ");
+const pill = declarations(".learn-or");
+check(/height: 40px/.test(pill) && /border-radius: 999px/.test(pill) && /background: var\(--surface\)/.test(pill) && /color: var\(--text\)/.test(pill) && /display: inline-flex/.test(pill) && !/outline/.test(pill), `L2.4 learn.css draws .learn-or as a 40px Review pill on the surface colour, inline, focus ring kept (${pill.trim() || "no rule"})`);
+const bandColours = { sure: "--chord-sure", likely: "--chord-check", check: "--chord-unsure", set: "--text" };
+for (const [band, colour] of Object.entries(bandColours)) {
+  const rule = declarations(`.learn [data-band="${band}"]`);
+  check(rule.includes(`color: var(${colour})`), `L2.4 learn.css colours a ${band} tempo with ${colour} (${rule.trim() || "no rule"})`);
+}
+
+await frozen("L2.4 a tap on the other tempo of a close call switches to it", null, async () => {
+  let sheet!: Awaited<ReturnType<typeof openSheet>>;
+  await withHeardTempo(closeCall, async () => {
+    sheet = await openSheet(twoHeadings(null));
+    await startMic(sheet);
+    await micPlay(clickTrack);
+    await press(button("Stop"), "Stop");
+    await until(reviewing, "Review");
+  });
+  await press(button("Use 152 BPM"), "the Use 152 BPM button");
+  check(text().includes("152 BPM · or 76") && bandAround("152 BPM") === "set", `L2.4 a tap on 152 sets 152 BPM, drawn black, and offers 76 back (152 BPM has data-band ${bandAround("152 BPM")}; ${text().slice(0, 200)})`);
+  const forSong = checkbox("for this song");
+  if (forSong) await press(forSong, "the box to use it for the song");
+  await press(button("Save"), "Save");
+  const [save] = sheet.saved;
+  check(sheet.saved.length === 1 && save.version.bpm === 152 && (!forSong || save.data?.tempo === 152), `L2.4 Save stores the chosen 152 BPM (${JSON.stringify(sheet.saved.map((each) => ({ bpm: each.version.bpm, data: each.data })))})`);
+});
+
+await frozen("L2.4 a close call offers only a tempo the BPM field takes", null, async () => {
+  const fast = { bpm: 200, choices: [{ bpm: 200, feel: "as heard" as const, score: 1 }, { bpm: 400, feel: "double" as const, score: 0.95 }, { bpm: 100, feel: "half" as const, score: 0.2 }], band: "likely" as const };
+  await withHeardTempo(fast, async () => {
+    const sheet = await openSheet(twoHeadings(null));
+    await startMic(sheet);
+    await micPlay(clickTrack);
+    await press(button("Stop"), "Stop");
+    await until(reviewing, "Review");
+  });
+  check(bandAround("200 BPM") === "likely" && !text().includes("or 400") && !buttonNamed(/400/), `L2.4 a 200 BPM close call with 400 does not offer 400, past the BPM field's 300 (${text().slice(0, 200)})`);
 });
 
 for (const pickup of [0, 2]) {
   const heard = hearAt(blues(FILE_RATE, { choruses: 2, noise: 0, reverb: false, pickup, swaps: {} }), FILE_RATE);
   const beats = heard?.analysis.beats ?? [];
   const bar1 = beats.reduce((best, beat, i) => (Math.abs(beat - BLUES_HEAD) < Math.abs(beats[best] - BLUES_HEAD) ? i : best), 0);
-  check(!!heard && heard.analysis.downbeatPhase === bar1 % 4, `L2.5 the downbeat phase lands on bar 1 ${pickup ? `after a ${pickup}-beat drum pickup` : "when the song starts on it"} (phase ${heard?.analysis.downbeatPhase}, bar 1 is beat ${bar1})`, "pending until l2");
+  check(!!heard && heard.analysis.downbeatPhase === bar1 % 4, `L2.5 the downbeat phase lands on bar 1 ${pickup ? `after a ${pickup}-beat drum pickup` : "when the song starts on it"} (phase ${heard?.analysis.downbeatPhase}, bar 1 is beat ${bar1})`);
+  if (!heard) continue;
+  const saved = learn.learnedVersion(heard.analysis, { boundaries: [], vocals: [], heard: [] }, ["VERSE 1"], 4, Math.round(heard.tempo.bpm)).learned!;
+  const shift = saved.beats[bar1] - beats[bar1];
+  const bar1Clock = BLUES_HEAD + shift;
+  const beat = 60 / heard.analysis.tempos[0].bpm;
+  check(
+    Math.abs(saved.downbeat - bar1Clock) <= beat / 8 && Math.abs(saved.downbeat - 4 * beat) <= 0.001,
+    `L2.5 the saved version ${pickup ? `of the ${pickup}-beat pickup song` : "of the song"} puts bar 1 at the end of its one-bar count-in (downbeat at ${saved.downbeat.toFixed(3)} s, bar 1 plays at ${bar1Clock.toFixed(3)} s, count-in ${(4 * beat).toFixed(3)} s)`,
+  );
 }
 
-check(!!swung && near(swung.tempo.bpm, 120, 2) && near(swung.analysis.tempos[0].bpm, 120, 2), `L2.6 a swung feel reads its 120 BPM, not as triple time (${tempoText(swung)})`, "pending until l2");
+check(!!swung && near(swung.tempo.bpm, 120, 2) && near(swung.analysis.tempos[0].bpm, 120, 2), `L2.6 a swung feel reads its 120 BPM, not as triple time (${tempoText(swung)})`);
+
+/**
+ * The L0 set (scripts/learn-songs.ts), each song as a file and through the phone mic at its three noise levels, heard
+ * a second at a time and scored by scripts/learn-score.ts. Per take: the BPM row, whether the heard beat at bar 1 is a
+ * downbeat by the phase, and whether the phase picks the beats that land on the most true downbeats (bar 1 itself can
+ * sit under a loud room's noise, where the mic hears the band only from a later bar).
+ */
+const l0 = { file: [] as L0Take[], mic: [] as L0Take[] };
+interface L0Take {
+  name: string;
+  bpmRight: boolean;
+  bpmText: string;
+  onBar1: boolean;
+  readsPhase: boolean;
+}
+for (const score of SONGS) {
+  const take = render(score);
+  for (const [kind, samples] of [["file", take.samples], ...MIC_LEVELS.map((level) => [`mic ${level}`, micColor(take.samples, level)] as const)] as const) {
+    const ear = new learn.SongListener(L0_RATE);
+    for (let at = 0; at < samples.length; at += L0_RATE) ear.push(samples.subarray(at, at + L0_RATE));
+    const heard = ear.analyze(score.beatsPerBar);
+    const listen: Listen | null = heard && {
+      source: { kind: kind === "file" ? "file" : "mic", name: kind === "file" ? `${score.title}.wav` : null, stereo: false, sampleRate: L0_RATE },
+      coverage: { heardSeconds: samples.length / L0_RATE, expectedSeconds: take.truth.durationSec, stopped: "finished", quality: "clear" },
+      ...heard,
+    };
+    const card = scoreListen(listen, take.truth);
+    const beats = heard?.analysis.beats ?? [];
+    const phase = heard?.analysis.downbeatPhase ?? 0;
+    const bar = score.beatsPerBar;
+    const downsAt = (p: number) => take.truth.downbeats.filter((down) => beats.some((beat, k) => k >= p && (k - p) % bar === 0 && Math.abs(beat - down) <= TOLERANCE)).length;
+    const byPhase = Array.from({ length: bar }, (_, p) => downsAt(p));
+    const first = beats.findIndex((beat) => Math.abs(beat - take.truth.downbeats[0]) <= TOLERANCE);
+    (kind === "file" ? l0.file : l0.mic).push({
+      name: `${score.title} (${kind})`,
+      bpmRight: card.values["BPM at the right octave"] === 1,
+      bpmText: card.text.find((line) => line.includes("BPM at the right octave"))?.trim() ?? "",
+      onBar1: !!heard && first >= 0 && first % bar === phase,
+      readsPhase: !!heard && byPhase[phase] > 0 && byPhase[phase] === Math.max(...byPhase),
+    });
+  }
+}
+const share = (takes: L0Take[], ok: (take: L0Take) => boolean) => takes.filter(ok).length / takes.length;
+const misses = (takes: L0Take[], ok: (take: L0Take) => boolean, why = (take: L0Take) => take.name) => takes.filter((take) => !ok(take)).map(why).join("; ") || "none";
+const percent = (value: number) => `${Math.round(value * 100)}%`;
+for (const kind of ["file", "mic"] as const) {
+  const right = share(l0[kind], (take) => take.bpmRight);
+  check(right >= 0.9, `L2.2 at least 90% of the L0 set ${kind === "file" ? "as files" : "through the phone mic"} reads the right BPM at the right octave within 2 BPM (${percent(right)} of ${l0[kind].length}; misses: ${misses(l0[kind], (take) => take.bpmRight, (take) => `${take.name} ${take.bpmText}`)})`);
+}
+{
+  const onBar1 = share(l0.file, (take) => take.onBar1);
+  check(onBar1 >= 0.85, `L2.5 the downbeat phase lands on bar 1 in at least 85% of the L0 set (${percent(onBar1)} of ${l0.file.length}; misses: ${misses(l0.file, (take) => take.onBar1)})`);
+  const reads = share(l0.mic, (take) => take.readsPhase);
+  check(reads >= 0.75, `L2.10 the downbeat phase is applied to the mic case too: the mic-colored set reads the phase in at least 75% (${percent(reads)} of ${l0.mic.length}; bar 1 itself heard and on the phase in ${percent(share(l0.mic, (take) => take.onBar1))}; misses: ${misses(l0.mic, (take) => take.readsPhase)})`);
+}
 
 /** The band on screen of the tempo text `words`: data-band on it or around it, null when none, "missing" when not shown. */
 function bandAround(words: string) {
@@ -1407,35 +1522,76 @@ function bandAround(words: string) {
 }
 const rockAtMic = groove({ bpm: 100, seconds: 50, hats: 0.1, tail: 2 }, SAMPLE_RATE);
 const rockHeard = hearAt(rockAtMic, SAMPLE_RATE);
-/** Four taps half a second apart on the Review's Tap button. */
-async function tapFour() {
+/** Four taps `apart` seconds apart (half a second unless given) on the Review's Tap button. */
+async function tapFour(apart = 0.5) {
   const tapControl = buttonNamed(/^tap/i);
   if (!tapControl) throw new Error(`no Tap button in the Review (${text().slice(0, 200)})`);
   for (let i = 0; i < 4; i++) {
-    if (i) now += 0.5;
+    if (i) now += apart;
     await press(buttonNamed(/^tap/i), "the Tap button");
   }
 }
 
-await frozen("L2.7 tap to confirm sets the tempo and is black", "pending until l2", async () => {
+await frozen("L2.7 tap to confirm sets the tempo and is black", null, async () => {
   const sheet = await openSheet(twoHeadings(null));
   await startMic(sheet);
   await micPlay(rockAtMic);
   await press(button("Stop"), "Stop");
   await until(reviewing, "Review");
   const heardWords = `${Math.round(rockHeard!.tempo.bpm)} BPM`;
-  check(bandAround(heardWords) === rockHeard!.tempo.band, `L2.7 the heard tempo is drawn in its band (${heardWords} has data-band ${bandAround(heardWords)}, heard ${rockHeard!.tempo.band})`, "pending until l2");
+  check(bandAround(heardWords) === rockHeard!.tempo.band, `L2.7 the heard tempo is drawn in its band (${heardWords} has data-band ${bandAround(heardWords)}, heard ${rockHeard!.tempo.band})`);
   await tapFour();
   const tapped = bandAround("120 BPM");
-  check(tapped === null || tapped === "set", `L2.7 four taps 500 ms apart set 120 BPM, drawn black (data-band ${tapped}; ${text().slice(0, 200)})`, "pending until l2");
+  check(tapped === null || tapped === "set", `L2.7 four taps 500 ms apart set 120 BPM, drawn black (data-band ${tapped}; ${text().slice(0, 200)})`);
   const forSong = checkbox("for this song");
   if (forSong) await press(forSong, "the box to use it for the song");
   await press(button("Save"), "Save");
   const [save] = sheet.saved;
-  check(sheet.saved.length === 1 && save.version.bpm === 120 && (!forSong || save.data?.tempo === 120), `L2.7 Save stores the tapped 120 BPM (${JSON.stringify(sheet.saved.map((each) => ({ bpm: each.version.bpm, data: each.data })))})`, "pending until l2");
+  check(sheet.saved.length === 1 && save.version.bpm === 120 && (!forSong || save.data?.tempo === 120), `L2.7 Save stores the tapped 120 BPM (${JSON.stringify(sheet.saved.map((each) => ({ bpm: each.version.bpm, data: each.data })))})`);
 });
 
-await frozen("L2.8 the Review's tempo control changes nothing until Save", "pending until l2", async () => {
+await frozen("L2.7 a double tap past the BPM field's 300 leaves the heard tempo", null, async () => {
+  const sheet = await openSheet(twoHeadings(null));
+  await startMic(sheet);
+  await micPlay(rockAtMic);
+  await press(button("Stop"), "Stop");
+  await until(reviewing, "Review");
+  const heardBpm = Math.round(rockHeard!.tempo.bpm);
+  const heardWords = `${heardBpm} BPM`;
+  await press(buttonNamed(/^tap/i), "the Tap button");
+  now += 0.1;
+  await press(buttonNamed(/^tap/i), "the Tap button");
+  check(!text().includes("600 BPM") && bandAround(heardWords) === rockHeard!.tempo.band, `L2.7 two taps 100 ms apart, 600 BPM, leave ${heardWords} in its band (data-band ${bandAround(heardWords)}; ${text().slice(0, 200)})`);
+  const forSong = checkbox("for this song");
+  if (forSong) await press(forSong, "the box to use it for the song");
+  await press(button("Save"), "Save");
+  const [save] = sheet.saved;
+  check(sheet.saved.length === 1 && save.version.bpm === heardBpm && (!forSong || save.data?.tempo === heardBpm), `L2.7 Save after the double tap stores the heard ${heardWords} (${JSON.stringify(sheet.saved.map((each) => ({ bpm: each.version.bpm, data: each.data })))})`);
+});
+
+await frozen("L2.4 half or double time holds for the later tempos too, and only an octave does", null, async () => {
+  const opening = { bpm: 122, choices: [{ bpm: 122, feel: "as heard" as const, score: 1 }, { bpm: 244, feel: "double" as const, score: 0.95 }, { bpm: 61, feel: "half" as const, score: 0.2 }], band: "likely" as const };
+  await withHeardTempo(opening, async () => {
+    const sheet = await openSheet(twoHeadings(null));
+    await startMic(sheet);
+    await micPlay(truth.samples);
+    await press(button("Stop"), "Stop");
+    await until(reviewing, "Review");
+  });
+  const later = () => Number(text().match(new RegExp(`, (\\d+) BPM at ${chorus}`))?.[1]);
+  const heardLater = later();
+  check(near(heardLater, 104, 1), `L2.4 the Review shows the riff's tempo change as heard, ${heardLater} BPM at ${chorus} (${text().slice(0, 200)})`);
+  await press(button("Use 244 BPM"), "the Use 244 BPM button");
+  check(text().includes("244 BPM") && near(later(), 2 * heardLater, 1), `L2.4 taking double time, 244 BPM, doubles the later tempo too: ${2 * heardLater} BPM at ${chorus} (shows ${later()}; ${text().slice(0, 200)})`);
+  now += 5;
+  await tapFour(1 / 3);
+  check(text().includes("180 BPM") && later() === heardLater, `L2.7 a tap at 180 BPM, no octave of 122, leaves the later tempo as heard, ${heardLater} BPM at ${chorus} (shows ${later()}; ${text().slice(0, 200)})`);
+  now += 5;
+  await tapFour(0.25);
+  check(text().includes("240 BPM") && near(later(), 2 * heardLater, 1), `L2.7 a tap at 240 BPM, near double 122, doubles the later tempo: ${2 * heardLater} BPM at ${chorus} (shows ${later()}; ${text().slice(0, 200)})`);
+});
+
+await frozen("L2.8 the Review's tempo control changes nothing until Save", null, async () => {
   const stored = JSON.stringify([...store]);
   const sheet = await openSheet(twoHeadings(null));
   await startMic(sheet);
@@ -1443,9 +1599,9 @@ await frozen("L2.8 the Review's tempo control changes nothing until Save", "pend
   await press(button("Stop"), "Stop");
   await until(reviewing, "Review");
   await tapFour();
-  check(sheet.saved.length === 0 && JSON.stringify([...store]) === stored, "L2.8 tapping a tempo saves nothing and stores nothing", "pending until l2");
+  check(sheet.saved.length === 0 && JSON.stringify([...store]) === stored, "L2.8 tapping a tempo saves nothing and stores nothing");
   await press(button("Cancel"), "Cancel");
-  check(sheet.saved.length === 0 && JSON.stringify([...store]) === stored, "L2.8 Cancel after the taps leaves everything as it was", "pending until l2");
+  check(sheet.saved.length === 0 && JSON.stringify([...store]) === stored, "L2.8 Cancel after the taps leaves everything as it was");
   await closeSheets();
   const again = await openSheet(twoHeadings(null));
   await startMic(again);
@@ -1453,10 +1609,10 @@ await frozen("L2.8 the Review's tempo control changes nothing until Save", "pend
   await press(button("Stop"), "Stop");
   await until(reviewing, "Review");
   const heardWords = `${Math.round(rockHeard!.tempo.bpm)} BPM`;
-  check(text().includes(heardWords) && !text().includes("120 BPM"), `L2.8 listening again shows the heard ${heardWords}, not the cancelled tap (${text().slice(0, 200)})`, "pending until l2");
+  check(text().includes(heardWords) && !text().includes("120 BPM"), `L2.8 listening again shows the heard ${heardWords}, not the cancelled tap (${text().slice(0, 200)})`);
 });
 
-if (pendingFailures) console.log(`${pendingFailures} pending L1/L2 check(s) failed, not counted until their cooks land`);
+if (pendingFailures) console.log(`${pendingFailures} pending L1 check(s) failed, not counted until their cook lands`);
 if (failures) {
   console.error(`${failures} learn check(s) failed`);
   process.exit(1);

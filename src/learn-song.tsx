@@ -1,9 +1,10 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { type FieldBpm, addTap, fieldBpm, tapBpm } from "./bpm-detect";
 import { RAW_MIC } from "./bpm-finder";
 import { SongListener, beatsPerBar, learnedVersion, placeHeadings, shortHeading } from "./learn-analyze";
 import { chartChords, chartForm, heardBars, type HeardBar } from "./learn-chords";
-import type { Analysis, Heard } from "./learn-result";
+import type { Analysis, Band, Heard } from "./learn-result";
 import type { ScrollVersion, Span } from "./scroll-timing";
 import { formatRuntime, songDataFromForm } from "./song-data-editor";
 import type { Song, SongData } from "./types";
@@ -54,10 +55,22 @@ export function listenToSong(on: { heard: (seconds: number) => void; noMic: () =
   return stop;
 }
 
+/** The opening tempo the Review would save: as the listen heard it, in its band, or as the player set it, drawn black. */
+type TempoPick = { bpm: number; band: Band } | { bpm: FieldBpm; band: "set" };
+
 type Step =
   | { kind: "listening"; heard: number }
   | { kind: "note"; text: string }
-  | { kind: "review"; heard: Heard; boundaries: number[]; vocals: boolean[]; keepHeard: boolean[]; useForSong: boolean };
+  | {
+      kind: "review";
+      heard: Heard;
+      boundaries: number[];
+      vocals: boolean[];
+      keepHeard: boolean[];
+      useForSong: boolean;
+      tempo: TempoPick;
+      taps: number[];
+    };
 
 const clockText = (seconds: number) => formatRuntime(Math.max(0, Math.floor(seconds)));
 
@@ -132,6 +145,8 @@ export function LearnSong({
             vocals: heard.analysis.vocals.map(() => true),
             keepHeard: headings.map(() => false),
             useForSong: false,
+            tempo: { bpm: heard.tempo.bpm, band: heard.tempo.band },
+            taps: [],
           }
         : { kind: "note", text: NOT_HEARD },
     );
@@ -167,7 +182,7 @@ export function LearnSong({
             onCancel={cancel}
             onSave={() => {
               const { heard: { analysis }, boundaries, useForSong } = step;
-              const tempo = Math.round(analysis.tempos[0].bpm);
+              const tempo = Math.round(step.tempo.bpm);
               const vocals = analysis.vocals.filter((_, i) => step.vocals[i]);
               const heard = heardSections(song, analysis, boundaries, bar).map((bars, i) =>
                 step.keepHeard[i] && anySure(bars) ? bars.map((each) => each.chord) : undefined,
@@ -238,7 +253,24 @@ function Review({
   const { sound, beats, tempos } = analysis;
   const songTime = (seconds: number) => clockText(seconds - sound.start);
   const length = Math.round(sound.end - sound.start);
-  const tempo = Math.round(tempos[0].bpm);
+  const tempo = Math.round(step.tempo.bpm);
+  /**
+   * Half or double time, once chosen, holds for every tempo heard after the opening one too. A pick within a tenth of
+   * an octave of the heard tempo is that octave; any other tempo the player sets leaves the later tempos as heard.
+   */
+  const ratio = step.tempo.bpm / tempos[0].bpm;
+  const nearest = 2 ** Math.round(Math.log2(ratio));
+  const octave = Math.abs(ratio / nearest - 1) <= 0.1 ? nearest : 1;
+  const [best, next] = step.heard.tempo.choices;
+  const closeCall = step.heard.tempo.band === "likely" && next ? [Math.round(best.bpm), Math.round(next.bpm)] : [];
+  const other = closeCall.includes(tempo) ? closeCall.map(fieldBpm).find((bpm) => bpm != null && bpm !== tempo) : undefined;
+  const setTempo = (bpm: FieldBpm, taps: number[] = []) => onChange({ ...step, tempo: { bpm, band: "set" }, taps });
+  const tap = () => {
+    const taps = addTap(step.taps, performance.now());
+    const tapped = fieldBpm(tapBpm(taps));
+    if (tapped == null) onChange({ ...step, taps });
+    else setTempo(tapped, taps);
+  };
   const span = (each: Span) => `${songTime(each.start)}–${songTime(each.end)}`;
   /** A boundary moves a beat at a time and never onto or past its neighbours. */
   const limits = (index: number) => ({ earliest: (boundaries[index - 1] ?? 0) + 1, latest: (boundaries[index + 1] ?? beats.length) - 1 });
@@ -252,9 +284,25 @@ function Review({
   return (
     <>
       <p>
-        {formatRuntime(length)} ·{" "}
-        {tempos.map((each, i) => (i === 0 ? `${tempo} BPM` : `, ${Math.round(each.bpm)} BPM at ${songTime(each.at)}`)).join("")}
+        {formatRuntime(length)} · <span data-band={step.tempo.band}>{tempo} BPM</span>
+        {other ? (
+          <>
+            {" "}· or{" "}
+            <button type="button" className="learn-or" aria-label={`Use ${other} BPM`} onClick={() => setTempo(other)}>
+              {other}
+            </button>
+          </>
+        ) : null}
+        {tempos
+          .slice(1)
+          .map((each) => `, ${Math.round(each.bpm * octave)} BPM at ${songTime(each.at)}`)
+          .join("")}
       </p>
+      <div className="learn-actions">
+        <button type="button" onClick={tap}>
+          Tap the beat
+        </button>
+      </div>
       <ol className="learn-sections">
         {headings.map((heading, i) => {
           const name = shortHeading(heading);

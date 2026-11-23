@@ -332,8 +332,7 @@ export class Room extends DurableObject<Env> {
    */
   private lineups(userId: string): Map<string, string> {
     try {
-      const { gigs, past } = gigRoom.list(this.band, userId);
-      return new Map([...gigs, ...past].filter(({ gig }) => gig.lineup.includes(userId)).map(({ gig }) => [gig.gigId, gig.leader]));
+      return gigRoom.lineups(this.band, userId);
     } catch (error) {
       if (error instanceof Refused) return new Map();
       throw error;

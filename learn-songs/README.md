@@ -9,7 +9,7 @@ Everything in this folder except this file is gitignored. Recordings, sidecars a
 For a song called `rehearsal-take-1`:
 
 - `rehearsal-take-1.wav`: the recording. Mono or stereo (stereo is mixed to one channel), any sample rate, 16, 24 or 32-bit PCM or 32-bit float. Convert an MP3 or M4A on a computer with any tool, for example `ffmpeg -i take.m4a take.wav`.
-- `rehearsal-take-1.json`: the sidecar, what you know about the recording. Every field below is required. The lane names any field that is missing and skips the song.
+- `rehearsal-take-1.json`: the sidecar, what you know about the recording. Every field below except `license` is required. The lane names any field that is missing or of the wrong kind, or a chart it cannot read, and skips that song.
 - `rehearsal-take-1.song.json` (optional): your chart in the library's shape, for `--rechart`.
 
 ## The sidecar

@@ -20,7 +20,51 @@ const at = process.argv.indexOf("--dir");
 const dir = at > 0 ? resolve(process.argv[at + 1]) : join(root, "learn-songs");
 const label = at > 0 ? `${process.argv[at + 1]}/` : "learn-songs/";
 const rechart = process.argv.includes("--rechart");
-const FIELDS: (keyof Sidecar)[] = ["durationSec", "bpm", "downbeats", "changes", "sections", "anchors"];
+
+type Shape = (value: unknown) => boolean;
+const isNumber: Shape = (value) => typeof value === "number" && Number.isFinite(value);
+const isString: Shape = (value) => typeof value === "string";
+const optional = (shape: Shape): Shape => (value) => value === undefined || shape(value);
+const listOf = (shape: Shape): Shape => (value) => Array.isArray(value) && value.every(shape);
+const objectOf = (fields: Record<string, Shape>): Shape => (value) =>
+  typeof value === "object" && value !== null && !Array.isArray(value) && Object.entries(fields).every(([key, shape]) => shape((value as Record<string, unknown>)[key]));
+
+const SIDECAR: Record<keyof Sidecar, [Shape, string]> = {
+  durationSec: [isNumber, "a number of seconds"],
+  bpm: [isNumber, "a number"],
+  downbeats: [listOf(isNumber), "a list of seconds"],
+  changes: [listOf(objectOf({ at: isNumber, chord: isString })), 'a list of { "at": seconds, "chord": name }'],
+  sections: [listOf(objectOf({ fromBar: isNumber, toBar: isNumber, label: isString, group: isString })), 'a list of { "fromBar", "toBar", "label", "group" }'],
+  anchors: [listOf(isString), "a list of strings"],
+};
+const CHART = listOf(objectOf({ heading: isString, lines: listOf(objectOf({ chords: optional(isString), lyrics: optional(isString), bars: optional(isString), note: optional(isString) })) }));
+
+function readJson(file: string): unknown {
+  try {
+    return JSON.parse(readFileSync(file, "utf8"));
+  } catch (error) {
+    throw new Error(`${basename(file)} is not JSON (${error instanceof Error ? error.message : error})`);
+  }
+}
+
+function parseSidecar(file: string): Sidecar {
+  const json = readJson(file);
+  if (!objectOf({})(json)) throw new Error(`${basename(file)} is not an object`);
+  const fields = json as Record<string, unknown>;
+  const entries = Object.entries(SIDECAR) as [keyof Sidecar, [Shape, string]][];
+  const missing = entries.filter(([field]) => !(field in fields)).map(([field]) => `"${field}"`);
+  if (missing.length) throw new Error(`sidecar has no ${missing.join(", ")}`);
+  const wrong = entries.filter(([field, [shape]]) => !shape(fields[field])).map(([field, [, want]]) => `"${field}" is not ${want}`);
+  if (wrong.length) throw new Error(`sidecar ${wrong.join("; ")}`);
+  return json as Sidecar;
+}
+
+function parseChart(file: string): ChartSection[] {
+  const json = readJson(file);
+  const body = objectOf({})(json) ? (json as { body?: unknown }).body : undefined;
+  if (!CHART(body)) throw new Error(`${basename(file)} has no "body" in the library's shape (sections of { "heading", "lines" })`);
+  return body as ChartSection[];
+}
 
 const wavs = existsSync(dir) ? readdirSync(dir).filter((name) => /\.wav$/i.test(name)).sort() : [];
 if (!wavs.length) {
@@ -48,36 +92,16 @@ function chartChanges(body: ChartSection[]) {
   return tokens.filter((token, i) => token !== tokens[i - 1]);
 }
 
-for (const wav of wavs) {
+/** Scores one WAV and prints its card, or returns why it is skipped. */
+async function laneSong(wav: string): Promise<string | undefined> {
   const name = basename(wav, wav.slice(-4));
   const sidecarFile = join(dir, `${name}.json`);
-  if (!existsSync(sidecarFile)) {
-    console.log(`skip  ${wav}: no sidecar ${name}.json beside it`);
-    continue;
-  }
-  let sidecar: Sidecar;
-  try {
-    sidecar = JSON.parse(readFileSync(sidecarFile, "utf8"));
-  } catch (error) {
-    console.log(`skip  ${wav}: ${name}.json is not JSON (${error instanceof Error ? error.message : error})`);
-    continue;
-  }
-  const missing = FIELDS.filter((field) => !(field in sidecar));
-  if (missing.length) {
-    console.log(`skip  ${wav}: sidecar has no ${missing.map((field) => `"${field}"`).join(", ")}`);
-    continue;
-  }
-  let audio: ReturnType<typeof readWav>;
-  try {
-    audio = readWav(readFileSync(join(dir, wav)));
-  } catch (error) {
-    console.log(`skip  ${wav}: ${error instanceof Error ? error.message : error}`);
-    continue;
-  }
-  const { sampleRate, channels } = audio;
-  const samples = channels.length === 1 ? channels[0] : channels[0].map((_, i) => channels.reduce((sum, channel) => sum + channel[i], 0) / channels.length);
+  if (!existsSync(sidecarFile)) return `no sidecar ${name}.json beside it`;
+  const sidecar = parseSidecar(sidecarFile);
   const songFile = join(dir, `${name}.song.json`);
-  const chart: ChartSection[] | null = existsSync(songFile) ? (JSON.parse(readFileSync(songFile, "utf8")) as { body: ChartSection[] }).body : null;
+  const chart = existsSync(songFile) ? parseChart(songFile) : null;
+  const { sampleRate, channels } = readWav(readFileSync(join(dir, wav)));
+  const samples = channels.length === 1 ? channels[0] : channels[0].map((_, i) => channels.reduce((sum, channel) => sum + channel[i], 0) / channels.length);
   const lyrics = chart ? lyricsOf(stripChords(chart)) : null;
   const beatsPerBar = beatsPerBarOf(sidecar);
   const { listen } = await listenThrough(samples, sampleRate, {
@@ -87,29 +111,20 @@ for (const wav of wavs) {
     expectedSeconds: samples.length / sampleRate,
     stopped: "finished",
   });
+  const card = scoreListen(listen, sidecar).text;
   console.log(`${wav}: ${(samples.length / sampleRate).toFixed(1)} s at ${sampleRate} Hz${channels.length > 1 ? `, ${channels.length} channels mixed to one` : ""}`);
-  for (const line of scoreListen(listen, sidecar).text) console.log(line);
-  if (!rechart) continue;
-  if (!chart || !lyrics) {
-    console.log(`skip  ${wav}: --rechart needs a chart with words in ${name}.song.json`);
-    continue;
-  }
+  for (const line of card) console.log(line);
+  if (!rechart) return;
+  if (!chart || !lyrics) return `--rechart needs a chart with words in ${name}.song.json`;
   const rebuild = await rebuilder();
-  if (!rebuild) {
-    console.log(`skip  ${wav}: --rechart waits for L8 (src/learn-words.ts has no buildChart)`);
-    continue;
-  }
-  if (!listen?.lines.length) {
-    console.log(`skip  ${wav}: the listen timed no words`);
-    continue;
-  }
+  if (!rebuild) return "--rechart waits for L8 (src/learn-words.ts has no buildChart)";
+  if (!listen?.lines.length) return "the listen timed no words";
   const written = chartChanges(chart);
   const told = sidecar.changes.map((change) => change.chord);
   const differ = written.findIndex((chord, i) => chord !== told[i]);
   if (differ >= 0 || written.length !== told.length) {
     const k = differ >= 0 ? differ : Math.min(written.length, told.length);
-    console.log(`skip  ${wav}: the chart's chords do not follow the sidecar's changes at change ${k + 1} (chart ${written[k] ?? "none"}, sidecar ${told[k] ?? "none"})`);
-    continue;
+    return `the chart's chords do not follow the sidecar's changes at change ${k + 1} (chart ${written[k] ?? "none"}, sidecar ${told[k] ?? "none"})`;
   }
   const beats = listen.analysis.beats;
   const changes: HeardChange[] = sidecar.changes.map((change) => ({
@@ -123,4 +138,9 @@ for (const wav of wavs) {
   const rates = rechartRates(chartRows(chart), chartRows(rebuild(listen.sections, changes, listen.lines, lyrics)));
   const pct = (value: number) => `${Math.round(value * 100)}%`;
   console.log(`rechart ${wav}: exact ${pct(rates.exact)}, within one syllable ${pct(rates.withinSyllable)}, within one word ${pct(rates.withinWord)} (${rates.chords} chords)`);
+}
+
+for (const wav of wavs) {
+  const skipped = await laneSong(wav).catch((error: unknown) => (error instanceof Error ? error.message : String(error)));
+  if (skipped) console.log(`skip  ${wav}: ${skipped}`);
 }

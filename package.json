@@ -17,7 +17,7 @@
     "check:learn": "node --experimental-strip-types scripts/check-learn.ts",
     "check:learn-songs": "node --experimental-strip-types scripts/check-learn-songs.ts",
     "check:learn-local": "node --experimental-strip-types scripts/check-learn-local.ts",
-    "check:learned":"node --experimental-strip-types scripts/check-learned.ts",
+    "check:learned": "node --experimental-strip-types scripts/check-learned.ts",
     "check:storage": "node --experimental-strip-types scripts/check-storage.ts",
     "check:fit": "node --experimental-strip-types scripts/check-fit.ts",
     "check:chords": "node --experimental-strip-types scripts/check-chords.ts",

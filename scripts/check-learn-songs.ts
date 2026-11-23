@@ -378,12 +378,28 @@ writeFileSync(join(local, "test-song.json"), JSON.stringify(sidecarOf(truth), nu
 const { changes: _dropped, ...noChanges } = sidecarOf(truth);
 writeFileSync(join(local, "broken.wav"), writeWav([song.samples.subarray(0, rate)], rate));
 writeFileSync(join(local, "broken.json"), JSON.stringify(noChanges));
+const badInputs: [string, string, string, RegExp][] = [
+  ["bad-chart", JSON.stringify(sidecarOf(truth)), "{not json", /bad-chart\.song\.json is not JSON/],
+  ["no-body", JSON.stringify(sidecarOf(truth)), JSON.stringify({ title: "no body" }), /no-body\.song\.json has no "body"/],
+  ["null-changes", JSON.stringify({ ...sidecarOf(truth), changes: null }), "", /"changes" is not a list/],
+  ["string-downbeats", JSON.stringify({ ...sidecarOf(truth), downbeats: "1, 2" }), "", /"downbeats" is not a list/],
+  ["not-object", "null", "", /not-object\.json is not an object/],
+];
+for (const [name, sidecar, chart] of badInputs) {
+  writeFileSync(join(local, `${name}.wav`), writeWav([song.samples.subarray(0, rate)], rate));
+  writeFileSync(join(local, `${name}.json`), sidecar);
+  if (chart) writeFileSync(join(local, `${name}.song.json`), chart);
+}
 const scored = lane("--dir", local);
 const inMemory = scoreListen(await listenTo(song.samples, "test-song.wav", 4, null), sidecarOf(truth));
 const lines = scored.out.split(/\r?\n/);
 const missing = inMemory.text.filter((line) => !lines.includes(line));
 check(scored.status === 0 && missing.length === 0, `the local lane scores a WAV against its sidecar with the in-memory numbers (${missing.length} of ${inMemory.text.length} rows differ${missing.length ? `, first: ${missing[0]}` : ""})`);
 check(lines.some((line) => line.startsWith("skip  broken.wav") && line.includes('"changes"')), `a sidecar missing a field says which and is skipped (${lines.find((line) => line.startsWith("skip  broken")) ?? "no line"})`);
+for (const [name, , , says] of badInputs) {
+  const line = lines.find((each) => each.startsWith(`skip  ${name}.wav: `));
+  check(scored.status === 0 && !!line && says.test(line) && !/\n\s+at /.test(scored.out), `a bad hand-written ${name} file is skipped with a line naming what is wrong, and the lane goes on (${line ?? `exit ${scored.status}: ${scored.out.trim().split(/\r?\n/).find((each) => /Error/.test(each)) ?? "no line"}`})`);
+}
 
 const original = chartRows(song.chart);
 const stripped = stripChords(song.chart);

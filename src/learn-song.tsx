@@ -254,8 +254,13 @@ function Review({
   const songTime = (seconds: number) => clockText(seconds - sound.start);
   const length = Math.round(sound.end - sound.start);
   const tempo = Math.round(step.tempo.bpm);
-  /** Half or double time, once chosen, holds for every tempo heard after the opening one too. */
-  const octave = 2 ** Math.round(Math.log2(step.tempo.bpm / tempos[0].bpm));
+  /**
+   * Half or double time, once chosen, holds for every tempo heard after the opening one too. A pick within a tenth of
+   * an octave of the heard tempo is that octave; any other tempo the player sets leaves the later tempos as heard.
+   */
+  const ratio = step.tempo.bpm / tempos[0].bpm;
+  const nearest = 2 ** Math.round(Math.log2(ratio));
+  const octave = Math.abs(ratio / nearest - 1) <= 0.1 ? nearest : 1;
   const [best, next] = step.heard.tempo.choices;
   const closeCall = step.heard.tempo.band === "likely" && next ? [Math.round(best.bpm), Math.round(next.bpm)] : [];
   const other = closeCall.includes(tempo) ? closeCall.map(fieldBpm).find((bpm) => bpm != null && bpm !== tempo) : undefined;

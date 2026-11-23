@@ -60,6 +60,7 @@ const MINTERS: Partial<Record<CodeKind, Minter>> = {
   gig: { minutes: GIG_LINK_MINUTES, reuse: true, target: gigLinkTarget },
   "band-setlist": { minutes: NEVER_MINUTES, reuse: true, target: bandSetlistTarget },
   "my-setlist": { minutes: 7 * DAY_MINUTES, target: mySetlistTarget },
+  "sync-check": { minutes: 10, target: (_, user) => ({ targetId: user.user_id }) },
 };
 
 const fieldsOf = (row: CodeRow): CodeFields => ({ kind: row.kind, codeId: row.code_id, expiresAt: row.expires_at, nonce: row.nonce });
@@ -129,6 +130,17 @@ export const CODE_ROUTES: Record<string, Route> = {
     );
     return { body: await codeView(c.env, row) };
   }, { maxBody: MAX_CODE_BODY }),
+
+  /**
+   * Test with a bandmate: a live sync-check code opens to the name of one bare room the two phones meet in. The code is a
+   * secret only the two phones hold, so the room name is made from its id. The reply names no person, and a friend code
+   * is refused here, so a scan that measures never adds a friend and a scan that adds a friend never measures.
+   */
+  async "POST /api/codes/sync-check"(c) {
+    signedIn(c);
+    const row = await liveCode(c.sql, c.env, c.body.code, c.now, { kind: "sync-check", refusal: "not-a-sync-code" });
+    return { body: { room: `sync-${row.code_id}` } };
+  },
 
   async "POST /api/codes/stop"(c) {
     const fields = typeof c.body.code === "string" ? readPayload(c.body.code) : null;

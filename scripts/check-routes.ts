@@ -363,11 +363,11 @@ async function appCase(openSite: typeof import("./chrome.ts").openSite, startApi
       await page.close();
     });
 
-    await check("8b. Settings and the Connection screen outside a gig show no id, offset, epoch, follower or relay, and leave the rating slot empty", async () => {
+    await check("8b. Settings and the Connection screen outside a gig show no id, offset, epoch, follower or relay, and show the rating of a phone with no history", async () => {
       await page.openConnection();
       const rows = await page.rows();
       same(rows.map((row) => row.slots), rows.map(() => ["name", "line", "rating"]), "each row is name, line, rating");
-      same(rows.map((row) => row.rating), ["", "", "", ""], "the rating slot is empty until C18b");
+      truly(rows.every((row) => row.rating.startsWith("Not tried yet")), `each rating slot reads Not tried yet on a phone with no history: ${js(rows.map((row) => row.rating))}`);
       truly(rows.every((row) => row.line.length > 0 && !row.disabled), "every choice has its line and can be picked");
       const text = await page.evaluate<string>(`${DIALOG}.innerText`);
       truly(!FORBIDDEN.test(text), `forbidden words on the Connection screen: ${js(text.match(FORBIDDEN)?.[0])}`);

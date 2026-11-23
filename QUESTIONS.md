@@ -1,3 +1,52 @@
+# C22 corrective retry 2: CI's check:stage fail is a Windows font number in commit 1's vdiff case. May CoS apply this test patch?
+
+Deep verify run 45249452948 at cef301d failed one line twice: `FAIL and the base sizes ([64,64,64], bar 97 px)` in
+"the existing Live buttons are unchanged outside a gig" (`scripts/check-stage.ts:846`). Every other check:stage line
+passed. The markup line and the three 64 px buttons match the base. `SOLO_NAV.navHeight: 98` was measured in Edge on
+Windows, where the font stack `Inter, "Segoe UI", ...` resolves to Segoe UI. The bar is 83 px of padding, border, the
+64 px pill and its 2 px gap, plus one line of 12 px `.live-count` text, and that line's height depends on the font. The
+Linux runner has no Segoe UI, and its fallback font gives a line 1 px shorter.
+
+No product change can fix it. c22 leaves the solo bar alone: App.tsx only swaps the gig mount, and every `src/stage.css`
+selector is scoped to the stage bar. Making the solo bar 98 px on Linux would change it from the base, which is what
+condition 12 forbids. Under the rules I did not edit the commit-1 test. I stopped here.
+
+**Evidence (Edge on Windows, the case alone, one font forced on the page by a probe copy of the check):**
+
+| Font | Head cef301d | Untouched base 156b186 |
+|---|---|---|
+| default (Segoe UI) | ok, 98 px | ok, 98 px |
+| Calibri | FAIL, 97 px, CI's exact two FAIL lines | FAIL, 97 px, same lines |
+| Tahoma, Verdana | FAIL, 97 px | not run |
+| Georgia | ok, 98 px | not run |
+| Edge's default serif (an uninstalled name) | FAIL, 99 px | not run |
+
+So the reproduction fails on the current head and on the base alike.
+
+**Fix (measure without the font's line):** compare the bar's height less its count line, which is 83 px in every font
+tried. No requirement moves.
+
+```diff
+-  navHeight: 98,
++  chrome: 83,
+ ...
+-      page<{ html: string; heights: number[]; navHeight: number } | null>(`(() => {
++      page<{ html: string; heights: number[]; chrome: number } | null>(`(() => {
+ ...
+-        return { html: ..., heights: ..., navHeight: Math.round(nav.getBoundingClientRect().height) };
++        return { html: ..., heights: ..., chrome: Math.round(nav.getBoundingClientRect().height - nav.querySelector(".live-count").getBoundingClientRect().height) };
+ ...
+-    check(js(solo?.heights) === js(SOLO_NAV.heights) && solo?.navHeight === SOLO_NAV.navHeight, `and the base sizes (${js(solo?.heights)}, bar ${solo?.navHeight} px)`);
++    check(js(solo?.heights) === js(SOLO_NAV.heights) && solo?.chrome === SOLO_NAV.chrome, `and the base sizes (${js(solo?.heights)}, bar ${solo?.chrome} px past its count line)`);
+```
+
+The patched case passes on head and base under Segoe UI, Calibri, Tahoma and Georgia (83 px). It still fails on head
+and base when the bar's padding or the middle gap grows by 1 px (84 px). Logs and probe makers are in
+`.verify-logs/ci-fail/` (`font-*.log`, `patched-*.log`, `make-font-probe.mjs`, `make-patched-probe.mjs`,
+`shard4/stage.log`).
+
+---
+
 # C22 self-check fix pass 2: the same `src/gig-state.ts` lines now refuse a late section. Decide with pass 1's question below.
 
 Self-check 2's P2-1: a section chip held in the last beat before a pending Next snaps to one beat before the bar line

@@ -423,6 +423,7 @@ const SCREEN_CASES = [
   "1e. once the player pastes a chart in, the sheet no longer says No words yet",
   "8d. picking a song this phone already has asks first: Open goes to it, and Add anyway adds one copy",
   "8e. when the phone refuses the write, a pick says so, adds nothing, stays on My Songs, and a later pick still works",
+  "8f. in Add a song, picking a song this phone already has asks first, and Open goes to it with nothing added",
   "2d. across the whole flow the page asked only the catalog search, opened nothing, and stored no reply text",
 ];
 
@@ -864,7 +865,38 @@ if (site) {
     });
 
     await check(SCREEN_CASES[17], async () => {
-      const calls =await s.evaluate<{ url: string }[]>(`window.__mb.calls`);
+      await s.evaluate(`location.hash = "#/songs"`);
+      await app.until(`!!${addButton} && !document.querySelector("[role=dialog]")`, "My Songs");
+      const heldHref = await s.evaluate<string | null>(
+        `[...document.querySelectorAll(".song-list a.song-row")].find((a) => a.textContent.includes("Fire Away") && a.textContent.includes("Chris Stapleton"))?.getAttribute("href") ?? null`,
+      );
+      assert.ok(heldHref, "My Songs holds the built-in Fire Away by Chris Stapleton");
+      const OFFER = `${DIALOG_BOX}?.closest(".song-search")?.querySelector(".you-have-it")`;
+      const open = `[...(${OFFER}?.querySelectorAll("a, button") ?? [])].find((el) => el.textContent.trim() === "Open")`;
+      await catalog([recording("rec-stapleton", "Fire Away", "Chris Stapleton", 232000)]);
+      try {
+        await app.click("+ Add a song");
+        await app.until(`!!${DIALOG_BOX}`, "the catalog search in the New song dialog");
+        const before = (await stored()).length;
+        await sleep(1100);
+        await searchFor(DIALOG_BOX, "fire away stapleton");
+        await app.until(`${ROWS(DIALOG_BOX)}.length === 1`, "the one row in the dialog");
+        await s.evaluate(`${ROWS(DIALOG_BOX)}[0].click()`);
+        await app.until(`!!${OFFER} || /^#\\/song\\//.test(location.hash)`, "an answer to the tap", 4000);
+        await sleep(300);
+        assert.equal(await s.evaluate<string>(`location.hash`), "#/songs", "the tap stays in Add a song");
+        assert.equal((await stored()).length, before, "the tap adds no second Fire Away");
+        assert.match(await s.evaluate<string>(`${OFFER}.textContent`), /You already have Fire Away/, "the dialog says the phone has it");
+        await s.evaluate(`${open}.click()`);
+        await app.until(`location.hash === ${js(heldHref)} && !document.querySelector("[role=dialog]")`, "the Fire Away this phone has, with the dialog closed", 4000);
+        assert.equal((await stored()).length, before, "Open adds nothing");
+      } finally {
+        await catalog(null);
+      }
+    });
+
+    await check(SCREEN_CASES[18], async () => {
+      const calls = await s.evaluate<{ url: string }[]>(`window.__mb.calls`);
       assert.ok(calls.length > 0, "the flow searched");
       const other = calls.filter((call) => !call.url.startsWith(RECORDING_SEARCH));
       assert.deepEqual(other, [], "no request but the catalog's recording search left the page");

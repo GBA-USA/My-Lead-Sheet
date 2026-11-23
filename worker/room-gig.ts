@@ -8,7 +8,7 @@ import { deliver } from "./directory-inbox";
 import { fromRoom, Refused, roomRefused as refused } from "./refused";
 import { addColumns, chatRoom, type Posted } from "./room-chat";
 import { bandSongsOnly, isText, MAX_SETLIST_SONGS } from "./room-library";
-import { bandIdIn, inRoom, roomOf, type RoomStore } from "./room-members";
+import { bandIdIn, bandIdsOf, inRoom, roomOf, type RoomStore } from "./room-members";
 import { hmacKey } from "./session";
 
 const GIG_ID = /^gig_[A-Za-z0-9_-]{22}$/;
@@ -74,11 +74,38 @@ const MAY: Record<Change, (caller: Caller) => boolean> = {
   songs: ({ admin }) => admin,
 };
 
-const gigRow = (sql: SqlStorage, gigId: string) => sql.exec<GigRow>(`SELECT * FROM gigs WHERE gig_id = ?`, gigId).toArray()[0];
+type LiveState = { status: "live" | "ended"; leader: string; backup: string | null };
+const liveOf = (row: GigRow): LiveState | null => (row.state ? (JSON.parse(row.state) as LiveState) : null);
+
+/**
+ * The live state the leader's phone sends is the gig's truth once it exists (PLAN.md 7.10), so the row's status follows
+ * it: planned turns live once a state is held, and live turns ended when the state ends. The Room writes this the first
+ * time it reads the gig after the state changed, so every read, the lineup check on a socket included, sees one status.
+ */
+function settled(sql: SqlStorage, row: GigRow, now = Date.now()): GigRow {
+  const live = row && liveOf(row);
+  if (!live || row.status === "ended") return row;
+  if (live.status === "ended") {
+    sql.exec(`UPDATE gigs SET status = 'ended', ended_at = ? WHERE gig_id = ?`, now, row.gig_id);
+    return { ...row, status: "ended", ended_at: now };
+  }
+  if (row.status === "live") return row;
+  sql.exec(`UPDATE gigs SET status = 'live', started_at = ? WHERE gig_id = ?`, now, row.gig_id);
+  return { ...row, status: "live", started_at: now };
+}
+
+const gigRow = (sql: SqlStorage, gigId: string) => settled(sql, sql.exec<GigRow>(`SELECT * FROM gigs WHERE gig_id = ?`, gigId).toArray()[0]);
+const settleLive = (sql: SqlStorage) => sql.exec<GigRow>(`SELECT * FROM gigs WHERE state IS NOT NULL AND status != 'ended'`).toArray().forEach((row) => settled(sql, row));
 const lineupOf = (row: GigRow): string[] => JSON.parse(row.lineup);
 const songsOf = (row: GigRow): string[] => JSON.parse(row.song_order);
 const activeIds = (sql: SqlStorage) => new Set(sql.exec<{ user_id: string }>(`SELECT user_id FROM members WHERE state = 'active'`).toArray().map((row) => row.user_id));
 const isAdmin = (sql: SqlStorage, userId: string) => sql.exec(`SELECT 1 FROM members WHERE user_id = ? AND state = 'active' AND role = 'admin'`, userId).toArray().length > 0;
+
+/** While the gig is live, its leader and backup are whoever leads now, so the room introduces each phone to that leader. */
+const playingNow = (row: GigRow) => {
+  const live = row.status === "live" ? liveOf(row) : null;
+  return live ? { leader: live.leader, backup: live.backup } : { leader: row.leader, backup: row.backup };
+};
 
 const planOf = (row: GigRow, bandId: string): GigPlan => ({
   gigId: row.gig_id,
@@ -87,8 +114,7 @@ const planOf = (row: GigRow, bandId: string): GigPlan => ({
   name: row.name,
   date: row.date,
   lineup: lineupOf(row),
-  leader: row.leader,
-  backup: row.backup,
+  ...playingNow(row),
   route: row.route,
   status: row.status,
   kind: row.kind ?? "gig",
@@ -214,6 +240,7 @@ export const gigRoom = {
   /** The gigs not yet ended, soonest first, and the ended ones, newest first. An ended gig is kept as the band's record. */
   list(band: RoomStore, userId: string): GigList {
     inRoom(band.sql, userId);
+    settleLive(band.sql);
     const views = (query: string) => band.sql.exec<GigRow>(query).toArray().map((row) => viewOf(band, row));
     return {
       gigs: views(`SELECT * FROM gigs WHERE status != 'ended' ORDER BY date, gig_id`),
@@ -443,6 +470,21 @@ export const GIG_ROUTES: Record<string, Route> = {
   async "POST /api/bands/gig/list"(c) {
     const bandId = bandIdIn(c.body);
     return { body: await fromRoom(roomOf(c, bandId).gigList(signedIn(c).user_id)) };
+  },
+
+  /**
+   * The gigs the caller plays tonight across their bands: each live one, and each ended since yesterday so a phone that
+   * joined can say the gig is over. A gig whose lineup does not name the caller is not listed, an admin's included.
+   * A band that no longer has the caller is skipped.
+   */
+  async "POST /api/bands/gig/live"(c) {
+    const me = signedIn(c).user_id;
+    const since = new Date(c.now - 24 * 3_600_000).toISOString().slice(0, 10);
+    const lists = await Promise.all(bandIdsOf(c.sql, me).map((bandId) => fromRoom(roomOf(c, bandId).gigList(me)).catch(() => null)));
+    const gigs = lists.flatMap((list) =>
+      list ? [...list.gigs, ...list.past].map((view) => view.gig).filter((gig) => gig.lineup.includes(me) && (gig.status === "live" || (gig.status === "ended" && gig.date >= since))) : [],
+    );
+    return { body: { gigs } };
   },
 
   async "POST /api/bands/gig/open"(c) {

@@ -9,8 +9,8 @@ import { ConnectionEntry, landSyncCheck } from "./connection-setting";
 import { BackIcon, OverflowMenu, SongControls, TextSizeButtons } from "./controls";
 import { LearnedCues } from "./cues";
 import { APP_NAME } from "./data-kinds";
-import { useGigPosition } from "./gig-position";
-import { GigSongMissing, GigViewScreen, useGigPack } from "./gig-view";
+import { LiveGigStrip, useBandFollow, useGigStage } from "./gig-live.jsx";
+import { GigSongMissing, GigViewScreen } from "./gig-view";
 import { useAutoScroll, useScrolling, useStored, useWakeLock } from "./hooks";
 import { LearnSong } from "./learn-song";
 import { SetlistList, SongBody, SongList, Tabs } from "./library-lists";
@@ -164,8 +164,7 @@ export function App() {
 
   const back = backHref(route);
   const play = useBandPlay(route, owner ?? null);
-  const pack = useGigPack(owner ?? null, gigRoute?.gigId ?? "");
-  const position = useGigPosition(pack?.gig, owner ?? null, pack?.songs.length ?? 0, gigRoute?.index ?? null);
+  const { live, pack, position, following, sink, unread } = useGigStage({ me: owner ?? null, route: gigRoute, personal, setPersonal });
   const stage = onStage || liveRoute ? stageSetOf(route, library, play, pack, position) : null;
   const stageCanMove = !gigRoute || position.canMove;
   const activeSong = route.name === "song" ? songByRef(library.songs, localRef(route.id)) : route.name === "band-song" ? play.song : stage?.song;
@@ -197,6 +196,7 @@ export function App() {
     motion,
     take ? "take" : playing ? `version ${JSON.stringify(bandTiming ?? draft?.plan)}` : `even ${shownSong?.officialRuntimeSec} ${shownSong?.tempo}`,
     (reason) => (take ? (reason === "end" ? finishTake(take) : stopTake(take)) : performance.stopScroll()),
+    useBandFollow(following, sink, metronome, activeSong ?? null, performance),
   );
   useWakeLock();
   useFollowTempo(performance.scrolling && !take ? playing?.tempo : undefined, clock, setFollowed);
@@ -312,7 +312,7 @@ export function App() {
           ) : route.name === "settings" ? null : (
             <button type="button" className="icon-btn gear-btn" aria-label="Settings" onClick={() => (window.location.hash = settingsHref(tab))}>
               <GearIcon />
-              {inbox.unread > 0 ? <span className="chat-badge">{inbox.unread}</span> : null}
+              {unread(inbox.chats, inbox.unread) > 0 ? <span className="chat-badge">{unread(inbox.chats, inbox.unread)}</span> : null}
             </button>
           )}
           {activeSong && !onStage ? <SongLine key={activeSong.ref} state={songVersion} menu={menu} onToggleMenu={toggleMenu} onCloseMenu={closeMenu} /> : null}
@@ -410,6 +410,7 @@ export function App() {
         <SetlistCopySheet code={setlistCopy.code} onChat={openRoom} onSignedOut={() => setAccount(null)} onClose={() => setSetlistCopy(null)} />
       ) : null}
       {sendSong.sheet}
+      <LiveGigStrip live={live} />
 
       <div
         className="scroll"

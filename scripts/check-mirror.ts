@@ -342,6 +342,7 @@ async function realTabs() {
       assert.ok(counted.ok, js(counted));
       await sleep(Math.max(0, 30_000 - (Date.now() - frozenAt)));
       await samSite.send("Page.setWebLifecycleState", { state: "active" });
+      await samSite.send("Emulation.setFocusEmulationEnabled", { enabled: true });
       const back = await until("Sam synced again on Mike's song", () => view(samSite), (v) => v.confidence === "synced" && v.state?.key === order[4] && v.beats.length > before.beats.length + 2, 30_000);
       const after = back.strips.filter((s) => s.frame > before.frame);
       assert.ok(after.some((s) => s.key === "syncing"), `the strip said Syncing on the way back (${js(after.map((s) => s.key))})`);
@@ -360,13 +361,13 @@ async function realTabs() {
       await call(mikeSite, "close()");
       await mikeSite.close();
       sites.splice(sites.indexOf(mikeSite), 1);
-      const quiet = await until("isn't answering", () => view(samSite), (v) => v.strip.key === "quiet", 25_000);
+      const quiet = await until("isn't answering", () => view(samSite), (v) => v.strips.some((s) => s.key === "quiet"), 25_000);
       const quietLog = quiet.strips.filter((s) => s.key === "quiet").pop()!;
       const quietAfter = (quietLog.local - quietLog.heardAt!) / 1000;
       assert.equal(quiet.strip.words, "Mike's phone isn't answering");
       assert.ok(quietAfter >= 9.9 && quietAfter <= 11, `isn't answering 10 s after the last answer (${quietAfter.toFixed(2)} s)`);
       assert.ok(quietLog.local - closedAt <= 15_000, "and within 15 s of the tab closing");
-      const dropped = await until("dropped", () => view(samSite), (v) => v.strip.key === "dropped", 40_000);
+      const dropped = await until("dropped", () => view(samSite), (v) => v.strips.some((s) => s.key === "dropped"), 40_000);
       const droppedLog = dropped.strips.filter((s) => s.key === "dropped").pop()!;
       const droppedAfter = (droppedLog.local - droppedLog.heardAt!) / 1000;
       assert.equal(dropped.strip.words, `Mike's phone dropped · still on ${songNumber}`);
@@ -683,7 +684,7 @@ async function fakeClock() {
     const at = turned.last.at;
     room.push(turned, at - truth() + 200);
     let shownAt: number | null = null;
-    await advance(1_500, () => {
+    await advance(at - truth() + 1_000, () => {
       if (shownAt === null && L.position(live.view().state, live.bandNow()).section === 3) shownAt = live.bandNow();
     });
     assert.ok(shownAt !== null && shownAt - at >= 199 && shownAt - at <= 200 + FRAME + 1, `the page turn shows on the first frame after it arrives (${shownAt! - at} ms after its at)`);
@@ -766,10 +767,12 @@ async function fakeClock() {
     const grid = running.click[running.click.length - 1].value;
     const firstBeat = Math.ceil((handoffAt - grid.startAt) / BEAT) * BEAT + grid.startAt;
     const on: number[] = [];
+    let lit = false;
     for (let t = handoffAt; t < handoffAt + 8_000; t += 5) {
       const s = L.stripOf(input(viewOf(running, { handoffAt }), t));
       assert.equal(s.tone, "blue", "blue while the backup leads");
-      if (s.flash && (on.length === 0 || t - on[on.length - 1] > 50)) on.push(t);
+      if (s.flash && !lit) on.push(t);
+      lit = s.flash;
     }
     assert.equal(L.FLASH_BARS, 2);
     const expected = Array.from({ length: 8 }, (_, i) => firstBeat + i * BEAT);

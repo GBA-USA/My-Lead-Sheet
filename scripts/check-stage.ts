@@ -585,6 +585,47 @@ async function run(site: Site, script: string, css: string) {
     check(after?.startsWith("2 of 3") ?? false, `the leader's chart is on song 2 (${js(after)})`);
   });
 
+  it("a section chip held in the last beat before Next lands never turns song 2", async () => {
+    // Every moment a section hold can fire while Next is pending, on the real reducer: song 2 stays at its top a bar after it opens.
+    const sweep = await page<string[]>(`(() => {
+      const { startGig, reduce, position } = window.__pure;
+      let n = 0;
+      const op = (s, body, now) => reduce(s, { opId: "terry-" + ++n, epoch: s.epoch, ...body }, { by: "terry", now, lead: ${LEAD_MS} });
+      const s0 = op(startGig({ gigId: "g", order: ["a", "b"], leader: "terry", admin: "ann", backup: null, lineup: ["terry"], route: "auto", scrollAlong: false, now: 0 }), { kind: "countIn", bpm: ${BPM}, beatsPerBar: 4, bars: 1, version: null, rate: 1 }, 0).state;
+      const start = s0.click[s0.click.length - 1].value.startAt;
+      const wrong = [];
+      for (let nextAt = start + ${BAR_MS} + 50; nextAt < start + ${2 * BAR_MS}; nextAt += 500) {
+        const one = op(s0, { kind: "goTo", key: "b" }, nextAt).state;
+        const songAt = one.current[one.current.length - 1].at;
+        for (let fire = nextAt + 100; fire < songAt; fire += 100) {
+          const out = op(one, { kind: "section", index: 2 }, fire);
+          const s = out.ok ? out.state : one;
+          const sections = [5, ${BAR_MS + 5}, ${2 * BAR_MS + 5}].map((d) => position(s, songAt + d).section);
+          if (sections.some((section) => section !== null)) wrong.push("Next at +" + (nextAt - start) + ", section at " + (fire - songAt) + " ms: " + JSON.stringify(sections));
+        }
+      }
+      return wrong;
+    })()`);
+    check(sweep.length === 0, `no section hold before Next lands turns song 2 (${sweep.length} wrong${sweep.length ? ": " + sweep.slice(0, 3).join("; ") : ""})`);
+
+    await asLeader();
+    const grid = await startClick();
+    await afterBarLine(grid);
+    await hold('[data-stage="next"]');
+    const songAt = (await leaderState()).last.at as number;
+    await until("the last beat before Next lands", now, (t) => t >= songAt - BEAT_MS - 50, 2 * BAR_MS);
+    await hold('[data-stage="section"][data-index="2"]');
+    check((await now()) < songAt, "the section chip was held before Next landed");
+    const note = await until("the refusal", () => text("[data-stage-note]"), (words) => !!words, 2000).catch(() => text("[data-stage-note]"));
+    check(note === "The next song is on its way", `the leader reads "The next song is on its way" (saw ${js(note)})`);
+    const sent = (await ops()).filter((op) => op.kind !== "countIn");
+    check(sent.length === 1 && sent[0].kind === "goTo", `only Next reached the band (sent ${js(sent.map((op) => op.kind))})`);
+    const state = await leaderState();
+    await until("Sam's phone to hear the leader", () => followerState(), (s) => s?.rev === state.rev);
+    const seen = await Promise.all([5, BAR_MS + 5, 2 * BAR_MS + 5].map((d) => followerAt(songAt + d)));
+    check(seen.every((at) => at?.song.key === "s_brown" && at.section === null), `Sam's phone opens song 2 at its top and keeps it there for two bars (${js(seen.map((at) => at && [at.song.key, at.section]))})`);
+  });
+
   it("Hand off, Change backup and Take the lead appear only for the roles PLAN section 6 allows", async () => {
     const matrix = await page<Record<string, unknown> | null>(`(() => {
       const menu = window.__stage.stageMenu;

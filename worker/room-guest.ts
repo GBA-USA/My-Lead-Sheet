@@ -2,7 +2,7 @@ import { codeView, liveCode, storeCode } from "./codes";
 import { signedIn, userById, type Context, type Route } from "./directory-http";
 import { fromRoom, Refused, roomRefused as refused } from "./refused";
 import { gigIdIn } from "./room-gig";
-import { bandIdIn, bandRoom, roomOf, type RoomStore } from "./room-members";
+import { bandIdIn, bandRoom, roomOf, shutOut, type RoomStore } from "./room-members";
 import { randomBytes, toBase64Url } from "./bytes";
 
 /**
@@ -125,10 +125,14 @@ const viewOf = (row: PassRow): GuestPassView => ({
 const passRow = (sql: SqlStorage, passId: string) => sql.exec<PassRow>(`SELECT * FROM guest_passes WHERE pass_id = ?`, passId).toArray()[0];
 const gigOf = (sql: SqlStorage, gigId: string) => sql.exec<{ name: string; status: string }>(`SELECT name, status FROM gigs WHERE gig_id = ?`, gigId).toArray()[0];
 
-/** A pass `userId` may open now. Someone else's pass says only that it is taken, before anything about its end. */
+/** The account a pass makes a guest of: whoever holds it, unless they are in the band, since a member is never a guest. */
+const guestHolding = (sql: SqlStorage, row: PassRow) => (row.claimed_by !== null && shutOut(sql, row.claimed_by) ? row.claimed_by : null);
+
+/** A pass `userId` may open now. A band member is told they're in the band. Someone else's pass says only that it is taken, before anything about its end. */
 function usable(sql: SqlStorage, userId: string, passId: string, now: number): PassRow {
   const row = passRow(sql, passId);
   if (!row) throw refused("not-found");
+  if (!shutOut(sql, userId)) throw refused("in-band");
   if (row.claimed_by !== null && row.claimed_by !== userId) throw refused("pass-claimed");
   if (row.revoked) throw refused("pass-revoked");
   const gig = gigOf(sql, row.gig_id);
@@ -172,7 +176,7 @@ export const guestRoom = {
    * Revoke ends the pass and replaces the gig secret (`secret_rev`), so a secret the guest's phone kept no longer joins
    * by QR. The pack rev goes up with it, so lineup phones fetch the new secret. Revoking again changes nothing.
    */
-  revoke(band: RoomStore, adminId: string, passId: string): { pass: GuestPassView; codeId: string; claimedBy: string | null } {
+  revoke(band: RoomStore, adminId: string, passId: string): { pass: GuestPassView; codeId: string; guest: string | null } {
     bandRoom.requireAdmin(band, adminId);
     const row = passRow(band.sql, passId);
     if (!row) throw refused("not-found");
@@ -181,7 +185,7 @@ export const guestRoom = {
       band.sql.exec(`UPDATE gigs SET secret_rev = secret_rev + 1, rev = rev + 1 WHERE gig_id = ?`, row.gig_id);
     }
     const after = passRow(band.sql, passId);
-    return { pass: viewOf(after), codeId: after.code_id, claimedBy: after.claimed_by };
+    return { pass: viewOf(after), codeId: after.code_id, guest: guestHolding(band.sql, after) };
   },
 
   open(band: RoomStore, userId: string, passId: string, now: number): PassOpening {

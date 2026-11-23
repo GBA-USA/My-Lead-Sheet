@@ -253,7 +253,7 @@ export class Room extends DurableObject<Env> {
   guestRevoke(adminId: string, passId: string) {
     const revoked = guestRoom.revoke(this.band, adminId, passId);
     const { gigId } = revoked.pass;
-    const guest = revoked.claimedBy;
+    const { guest } = revoked;
     const out = guest !== null && shutOut(this.ctx.storage.sql, guest, true);
     for (const ws of this.ctx.getWebSockets()) {
       const joined = attachment(ws).gigId === gigId;

@@ -55,6 +55,7 @@ const newPassId = () => `pass_${toBase64Url(crypto.getRandomValues(new Uint8Arra
 const OFFLINE = "Can't reach the server. Check your connection and try again.";
 const MESSAGES: Record<string, string> = {
   "pass-claimed": "This pass belongs to another account. Ask the band for a new one.",
+  "in-band": "You're in this band already, so this pass is for someone else. Open the gig from your band.",
   "pass-revoked": "This pass was ended by the band. Ask the band for a new one.",
   "code-stopped": "This pass was ended by the band. Ask the band for a new one.",
   "pass-ended": "This pass has ended. Ask the band for a new one.",

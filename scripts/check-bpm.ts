@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { fakeDom, type FakeElement } from "./fake-dom.ts";
 import type { Song, SongData } from "../src/types.ts";
@@ -20,7 +20,7 @@ const entry = `
   export { createRoot } from "react-dom/client";
 `;
 const bundled = await build({
-  stdin: { contents: entry, resolveDir: new URL("..", import.meta.url).pathname, loader: "tsx" },
+  stdin: { contents: entry, resolveDir: fileURLToPath(new URL("..", import.meta.url)), loader: "tsx" },
   bundle: true,
   write: false,
   format: "esm",

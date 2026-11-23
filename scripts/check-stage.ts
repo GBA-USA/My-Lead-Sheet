@@ -844,6 +844,12 @@ async function run(site: Site, script: string, css: string) {
     const solo = await until("the solo bar", nav, (found) => found !== null);
     check(solo?.html === SOLO_NAV.html, `signed out, #/live/1/0's bar has the base markup${solo?.html === SOLO_NAV.html ? "" : `: ${solo?.html}`}`);
     check(js(solo?.heights) === js(SOLO_NAV.heights) && solo?.navHeight === SOLO_NAV.navHeight, `and the base sizes (${js(solo?.heights)}, bar ${solo?.navHeight} px)`);
+    for (const font of ["serif", "monospace"]) {
+      await page(`(() => { const s = document.createElement("style"); s.id = "font-probe"; s.textContent = "* { font-family: ${font} !important; }"; document.head.append(s); })()`);
+      const other = await nav();
+      await page(`document.getElementById("font-probe").remove()`);
+      check(js(other?.heights) === js(SOLO_NAV.heights) && other?.navHeight === SOLO_NAV.navHeight, `and the same sizes in ${font}, as another phone's font would give (${js(other?.heights)}, bar ${other?.navHeight} px)`);
+    }
     check(!(await has("[data-stage-bar]")), "with no gig there is no stage bar");
     await joinAs("terry");
     await page(`location.hash = "#/live/1/0"`);

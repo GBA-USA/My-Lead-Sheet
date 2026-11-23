@@ -1,3 +1,19 @@
+# C22 self-check fix pass 2: the same `src/gig-state.ts` lines now refuse a late section. Decide with pass 1's question below.
+
+Self-check 2's P2-1: a section chip held in the last beat before a pending Next snaps to one beat before the bar line
+after Next, so it landed on song 2 at song 1's section index. `move`'s `section` case now refuses it as `song-pending`
+when the song change lands first, and the bar says "The next song is on its way". The leader can hold the chip again
+once song 2 shows. A tie on the song's landing is refused only while the click runs, since a section on a running grid
+lands a beat before a bar line and a tie means it fell past the stopped click. With no click, a section sent with the
+song still opens that song at the section, as `check:mirror` case 8 asks. The Refusal union gains `song-pending`, and
+`stage-bar.tsx` `MESSAGES` gains its words. Clamping
+the section to land before Next was the other option. It would break condition 8, one beat before the bar line, and it
+can land sooner than the lead allows. The Worker imports only `receive`, which never calls `move`. `check:stage` "a
+section chip held in the last beat before Next lands never turns song 2" sweeps every hold moment on the reducer and
+drives the late hold through the App.
+
+---
+
 # C22 self-check fix pass 1: one edit outside C22's files (`src/gig-state.ts`). Owner, keep it or move it?
 
 The self-check's P2-1 fix is in the reducer, not in `stage-bar.tsx`. A section op that landed before a pending Next

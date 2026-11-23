@@ -101,6 +101,7 @@ const MESSAGES: Record<Refusal, string> = {
   "unknown-song": "That song isn't in tonight's set",
   "changes-songs": "That order adds or drops a song",
   "not-running": "The click isn't running",
+  "song-pending": "The next song is on its way",
   "scroll-off": "Scroll with the leader is off",
   "too-late": "Too late to undo",
   "not-on-lineup": "They're not on tonight's lineup",

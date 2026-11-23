@@ -363,6 +363,30 @@ async function run(site: Site, script: string, css: string) {
     check(!!bar && bar.y + bar.height <= PHONE.height + 0.5 && bar.y >= PHONE.height / 2, `the stage bar sits in the bottom half of the 844 px screen (${js(bar)})`);
   });
 
+  it("Prev and Next show their whole label at 360 and 390 wide, with nothing pending and with a move pending", async () => {
+    const cut = () =>
+      page<{ what: string; text: string; out: boolean; w: string; h: string }[]>(`[...document.querySelectorAll(".stage-move > button")].map((b) => {
+        const r = b.getBoundingClientRect();
+        return { what: b.dataset.stage, text: b.textContent, out: r.left < -0.5 || r.right > innerWidth + 0.5, w: b.scrollWidth + "/" + b.clientWidth, h: b.scrollHeight + "/" + b.clientHeight, cut: b.scrollWidth > b.clientWidth + 1 || b.scrollHeight > b.clientHeight + 1 };
+      }).filter((b) => b.cut || b.out)`);
+    try {
+      for (const [width, height] of [[360, 780], [390, 844]]) {
+        await send("Emulation.setDeviceMetricsOverride", { ...PHONE, width, height });
+        await asLeader();
+        const idle = await cut();
+        check(idle.length === 0 && (await text('[data-stage="next"]')) === "Next: Brown Eyed Girl ▶", `at ${width} px, with nothing pending, Prev and "Next: Brown Eyed Girl ▶" are whole (cut: ${js(idle)})`);
+        const grid = await startClick();
+        await afterBarLine(grid);
+        await hold('[data-stage="next"]');
+        check(await has('[data-stage="undo"]') && await has("[data-stage-chip]"), `at ${width} px the pending move shows its chip and Undo`);
+        const pending = await cut();
+        check(pending.length === 0 && (await text('[data-stage="next"]')) === "Next: Give Me One Reason ▶", `at ${width} px, with Next pending, Prev and "Next: Give Me One Reason ▶" are whole (cut: ${js(pending)})`);
+      }
+    } finally {
+      await send("Emulation.setDeviceMetricsOverride", PHONE);
+    }
+  });
+
   it("Undo within 5 s before the landing cancels and no phone flips", async () => {
     await asLeader();
     const grid = await startClick();
@@ -546,13 +570,16 @@ async function run(site: Site, script: string, css: string) {
     const two = await leaderState();
     const sectionAt = two.last.at as number;
     check((await now()) < songAt, "the section chip was held before Next landed");
-    const sent = await ops();
+    // The click this case started with Count in is not one of the two holds.
+    const sent = (await ops()).filter((op) => op.kind !== "countIn");
     check(sent.length === 2 && sent[0].kind === "goTo" && sent[1].kind === "section", `both holds reached the band (sent ${js(sent.map((op) => op.kind))})`);
     check(two.current[two.current.length - 1].at === songAt && two.current[two.current.length - 1].value === "s_brown", "the pending Next is kept, not erased by the section");
     check((await text("[data-stage-chip]")) === "On 4 ▸", `the chip names the section's landing beat (${js(await text("[data-stage-chip]"))})`);
     await until("Sam's phone to hear both", () => followerState(), (s) => s?.rev === two.rev);
     check((await followerAt(sectionAt - 5))?.section !== 2 && (await followerAt(sectionAt + 5))?.section === 2, "Sam's phone turns the section at its landing");
     check((await followerAt(songAt - 5))?.song.key === "s_bayou" && (await followerAt(songAt + 5))?.song.key === "s_brown", "and flips to song 2 at Next's landing");
+    const opened = await followerAt(songAt + 5);
+    check(opened?.section === null, `song 2 opens at its top on Sam's phone, not at song 1's section 3 (section ${js(opened?.section)})`);
     await until("both landings", now, (t) => t > Math.max(songAt, sectionAt) + 150);
     const after = await until("the leader's chart to flip", title, (words) => words?.startsWith("2 of 3") ?? false, 3000).catch(title);
     check(after?.startsWith("2 of 3") ?? false, `the leader's chart is on song 2 (${js(after)})`);
@@ -604,6 +631,62 @@ async function run(site: Site, script: string, css: string) {
     check(!(await has('[data-stage="more"]')) && !(await has("[data-stage-bar]")), "a member gets no ••• and no stage bar");
     await joinAs("mike", { follower: false });
     check(!(await has('[data-stage="more"]')), "the backup gets no ••• while the leader is answering");
+  });
+
+  it("Change backup sends the backup the leader taps and closes, and Escape closes an open panel", async () => {
+    await asLeader();
+    await tap('[data-stage="more"]');
+    await tap('[data-stage="change-backup"]');
+    await until("the backup list", () => has('[data-stage-backup="sam"]'), Boolean);
+    check(!(await has('[data-stage-backup="terry"]')) && (await has('[data-stage-backup=""]')), "the list offers the bandmates and No backup, not the leader");
+    await tap('[data-stage-backup="sam"]');
+    const sent = await ops();
+    check(sent.length === 1 && sent[0].kind === "setBackup" && sent[0].userId === "sam", `tapping Sam sends one setBackup to Sam (sent ${js(sent)})`);
+    check(!(await has("[data-stage-panel]")) && !(await has("[data-stage-menu]")), "the list closes");
+    const state = await leaderState();
+    const f = await until("Sam's phone to hear it", () => followerState(), (s) => s?.rev === state.rev);
+    check(f.backup === "sam", `Sam's phone holds Sam as the backup (${js(f.backup)})`);
+    await tap('[data-stage="more"]');
+    check((await text('[data-stage="change-backup"]')) === "Change backup · Sam", `the menu names the new backup (${js(await text('[data-stage="change-backup"]'))})`);
+    await tap('[data-stage="change-backup"]');
+    await until("the backup list", () => has('[data-stage-backup="sam"]'), Boolean);
+    await tap('[data-stage-backup="sam"]');
+    check((await ops()).length === 1 && !(await has("[data-stage-panel]")), "tapping the backup already picked sends nothing and closes the list");
+    const escape = async () => {
+      await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+      await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+      await sleep(100);
+    };
+    await tap('[data-stage="more"]');
+    await until("the ••• menu", () => has("[data-stage-menu]"), Boolean);
+    await escape();
+    check(!(await has("[data-stage-menu]")), "Escape closes the ••• menu");
+    await tap('[data-stage="edit-order"]');
+    await until("the order list", () => has("[data-stage-order]"), Boolean);
+    await tap('[data-stage-order] li[data-song="s_reason"] [data-stage-move="up"]');
+    await escape();
+    check(!(await has("[data-stage-order]")), "Escape closes Edit order");
+    check((await ops()).length === 1, "and sends nothing");
+  });
+
+  it("the admin's Take the lead in ••• takes the lead only on a hold and closes the menu", async () => {
+    await joinAs("ann", { follower: false });
+    await until("the admin's •••", () => has('[data-stage="more"]'), Boolean);
+    // A take-over needs the band's clock, which a follower's phone has once a link to the leader answers (about 9 s here).
+    await until("Ann's band clock", () => page<number | null>("window.__session().bandNow()"), (t) => t !== null, 20_000);
+    await tap('[data-stage="more"]');
+    await until("Take the lead", () => has('[data-stage="take-lead"]'), Boolean);
+    await tap('[data-stage="take-lead"]');
+    await sleep(LEAD_MS);
+    check((await ops("ann")).length === 0, `a tap on Take the lead sends nothing (sent ${js(await ops("ann"))})`);
+    check(await has('[data-stage="take-lead"]'), "and the menu stays open");
+    await hold('[data-stage="take-lead"]');
+    const sent = await ops("ann");
+    check(sent.length === 1 && sent[0].kind === "takeOver", `a hold sends one takeOver (sent ${js(sent)})`);
+    check(!(await has("[data-stage-menu]")), "the menu closes");
+    const state = await until("Ann to lead", () => leaderState(), (s) => s?.leader === "ann");
+    check(state.leader === "ann", "the gig names Ann the leader");
+    check(!!(await until("Ann's stage bar", () => has("[data-stage-bar]"), Boolean, 3000).catch(() => false)), "Ann's phone now has the stage bar");
   });
 
   it("Stage lock hides everything except hold-Next, hold-Prev, Count in and Stop", async () => {

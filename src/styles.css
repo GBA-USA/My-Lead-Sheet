@@ -1728,6 +1728,44 @@ a:focus-visible {
   height: 0;
 }
 
+/* Looking ahead in a gig: the tag rides the top of the view like the beat pill, and nothing here takes room in the sheet. */
+.look-rail {
+  position: sticky;
+  top: var(--chrome-over, 0px);
+  z-index: 2;
+  height: 0;
+}
+
+.look-tag {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--gold, #e1a01e);
+  color: #13120d;
+  font-size: 16px;
+  font-weight: 700;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.chart:has(> .band-line) {
+  position: relative;
+}
+
+.band-line {
+  position: absolute;
+  left: -14px;
+  width: 10px;
+  height: 3px;
+  margin-top: -1px;
+  border-radius: 2px;
+  background: var(--gold, #e1a01e);
+  pointer-events: none;
+}
+
 .beat-dot {
   width: 12px;
   height: 12px;

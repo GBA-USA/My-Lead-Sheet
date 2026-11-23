@@ -1,3 +1,53 @@
+# L1 questions: frozen L1.2 and four Chrome checks meet code L1 does not own
+
+L1 is built and its cases pass, except for two seams with code this cook does not own. Each one needs a decision from its owner. Neither one needs Terry.
+
+## 1. Frozen L1.2 fails because of the L2 tempo tracker, not the listen
+
+Frozen L1.2 in `scripts/check-learn.ts` changes 122 to 150 BPM 8 s before the end of a 60 s file. It expects the change in `analysis.tempos`. The listen delivers every sample to the worker, but the engine reads only "122.2 BPM at 3.00 s".
+
+The cause is in `src/learn-analyze.ts`. Since L2 (`928cb32`), `trackBeats` follows a local tempo only within 20% of the song's tempo (`FOLLOW_LOCAL`, `nearOctave`). 150 is 23% over 122. At the LT-A freeze (`f336126`) the tracker followed any local tempo, which is why LT-A's prototype passed L1.2.
+
+The position of the change does not matter. This engine probe uses the same song as L1.2 at 22050 Hz:
+
+| Song | Change | Found in `analysis.tempos` |
+| --- | --- | --- |
+| 60 s | 122 to 150 at 52 s (frozen L1.2) | no |
+| 60 s | 122 to 150 at 30 s | no |
+| 120 s | 122 to 150 at 60 s | no |
+| 90 s | 122 to 150 at 30 s | yes, because 150 is the song's tempo |
+| 60 s | 122 to 138 at 52 s | yes, at 52.6 s |
+
+The condition L1.2 names, "the last ten seconds count", holds. A new case shows it: a change to 138 BPM 8 s before the end of a picked file is found at 52.62 s. Frozen L1.2 stays marked "pending until l1". It still runs and prints its FAIL, but that FAIL does not fail `check:learn`.
+
+One of these settles it:
+
+- The L2 owner lets the tracker follow a lasting change past 20%, and keeps L2's push and drift cases green. Then remove the mark from L1.2.
+- The LT-A owner re-freezes L1.2 with a change the tracker follows, such as 138 BPM. That is the case this cook added.
+
+## 2. Four Chrome checks expect Learn by listen to open the mic at once
+
+The plan's flow opens the Learn sheet on two ways in: "Pick the song's file" and "Listen with the mic". Frozen L1.8 needs the wake lock asked for inside a tap on a mic button in the sheet. Before L1, **Learn by listen** started the mic as the sheet opened.
+
+These checks still tap **Learn by listen** and then wait for the mic. They pass on the base `1eeb615` and time out "waiting for the mic" on this branch:
+
+- `check:bar` ("Learn by listen" scenario)
+- `check:heard`
+- `check:learned`
+- `check:ux-sheet-controls-save` ("a take's Done and a learn review's Save land in the draft")
+
+Each one needs one more line right after its **Learn by listen** tap:
+
+```ts
+await click('[role=dialog] button[aria-label="Listen with the mic"]');
+```
+
+In `check:bar` and `check:ux-sheet-controls-save`, write it as `` await evaluate(`document.querySelector('[role=dialog] button[aria-label="Listen with the mic"]').click()`) ``, because their tap helpers match text, not a selector.
+
+On a scratch copy of this branch with only those four lines added, the four checks match the base line for line: `check:bar` 41 ok, `check:heard` 28 ok, `check:learned` 52 ok, and `check:ux-sheet-controls-save` 47 ok. `check:ux-sheet-controls-save` also prints the same two "first chord" FAIL lines as the base, which are the known Windows font gap. This cook does not own these checks, so the four lines are not on this branch.
+
+---
+
 # C20h question: two fixture faults in commit 1's `check:sync-check` (3e4995a). May CoS apply this test-only patch?
 
 The build (e9a3df1, d8fc388) is committed and complete. Per the queue rules I did not edit the commit-1 test after

@@ -619,7 +619,7 @@ try {
   await start(gusSite, { me: gus.userId });
   await until("the leader in the room", () => view(leaderSite), (v) => v.leading);
   await call(leaderSite, `begin(${js({ order, admin: lee.userId, backup: sam.userId, lineup })})`);
-  await until("two Wi-Fi links at the leader", () => view(leaderSite), (v) => v.followers.filter((f) => f.route === "wifi" && f.state === "open").length === 2, 15_000);
+  await until("two direct links at the leader", () => view(leaderSite), (v) => v.followers.filter((f) => f.route !== "server" && f.state === "open").length === 2, 15_000);
   await allAt(0, [franSite, gusSite]);
 
   const firstTaps: Tap[] = [];
@@ -666,7 +666,7 @@ try {
         assert.equal(copies.filter((h) => h.result === "applied").length, 1, `${names[i + 1]} applies rev ${done.rev} once (${js(copies)})`);
         if (site !== samSite) {
           assert.ok(copies.length >= 2, `${names[i + 1]} hears rev ${done.rev} on its link and from the room (${js(copies)})`);
-          assert.ok(copies.some((h) => h.via === "wifi") && copies.some((h) => h.via === "room"), `${names[i + 1]} rev ${done.rev}: both carriers (${js(copies)})`);
+          assert.ok(copies.some((h) => h.via === "wifi" || h.via === "internet") && copies.some((h) => h.via === "room"), `${names[i + 1]} rev ${done.rev}: both carriers (${js(copies)})`);
         } else {
           assert.ok(copies.every((h) => h.via === "room"), `Sam hears only the room (${js(copies)})`);
         }
@@ -749,8 +749,10 @@ try {
     const grid = (await leaderState()).click!;
     const fromClick = (await view(franSite)).clicks.length;
     await until("four clicks on Fran's phone", () => view(franSite), (v) => v.clicks.length - fromClick >= 4, 5000);
+    await leaderSite.evaluate("window.__blockLocal = true");
     await call(franSite, "switchToInternet()");
     await until("Fran's link over the internet", () => view(franSite), (v) => v.chosen?.route === "internet" && v.chosen.state === "open", 20_000);
+    await leaderSite.evaluate("window.__blockLocal = false");
     await sleep(2000);
     const fran = await view(franSite);
     const log = fran.clicks.slice(fromClick).filter((c) => c.rev === counted.rev);

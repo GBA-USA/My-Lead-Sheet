@@ -719,7 +719,8 @@ if (site) {
         const [first, second] = (await s.evaluate<{ url: string; at: number }[]>(`window.__mb.calls`)).slice(sent);
         assert.match(new URL(first.url).searchParams.get("query") ?? "", /fire/i, "the dialog's box asked first");
         assert.match(new URL(second.url).searchParams.get("query") ?? "", /kitchen/i, "then My Songs' box");
-        assert.ok(second.at - first.at >= 1000, `My Songs' box asked ${Math.round(second.at - first.at)} ms after the dialog's box`);
+        // The stub logs a request a moment after the floor's own clock read, so 5 ms of slack, far from the 600 ms debounce.
+        assert.ok(second.at - first.at >= 995, `My Songs' box asked ${(second.at - first.at).toFixed(1)} ms after the dialog's box`);
       } finally {
         await app.click("Cancel", `document.querySelector("[role=dialog]")`);
       }

@@ -87,7 +87,8 @@
     "check:new-song": "tsc -p worker && node --experimental-strip-types scripts/check-new-song.ts",
     "check:phone-layout": "tsc -p worker && node --experimental-strip-types scripts/check-phone-layout.ts",
     "check:links": "tsc -p worker && node --experimental-strip-types scripts/check-links.ts",
-    "check:routes": "tsc -p worker && node --experimental-strip-types scripts/check-routes.ts"
+    "check:routes": "tsc -p worker && node --experimental-strip-types scripts/check-routes.ts",
+    "check:fanout": "tsc -p worker && node --experimental-strip-types scripts/check-fanout.ts"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.5",

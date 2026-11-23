@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { NOT_A_MEMBER_CLOSE, type ChatMessage } from "../src/chat-model";
+import { GIG_SEND_MAX_CHARS, asGigSend, type GigCopy, type GigRefused, type GigSend } from "../src/leader-fanout";
 import { NOT_ON_LINEUP_CLOSE, type GigPeers, type Hello, type JoinGig, type OnLineup } from "../src/links/link";
 import type { Person } from "./directory-http";
 import type { Env } from "./index";
@@ -8,6 +9,7 @@ import { chatRoom, createChatTables, type Card, type Posted } from "./room-chat"
 import { exportBand, importBandFile } from "./room-export";
 import { bandLibrary, createLibraryTables, selfCopies, type SentSetlist, type SetlistFields, type SetlistSend, type SetlistShare, type SongChange, type SongShare } from "./room-library";
 import { createGigTables, gigRoom, type GigFields } from "./room-gig";
+import { gigRelay } from "./room-relay";
 import { bandRoom, createMemberTables, shutOut } from "./room-members";
 import { createNoteTables, noteRoom, type NoteFields } from "./room-notes";
 import { Refused } from "./refused";
@@ -18,13 +20,16 @@ import type { StoredShare } from "./share-guard";
 const RELAYED = ["intro", "ping", "pong", "link"] as const;
 type RelayKind = (typeof RELAYED)[number];
 
-type Inbound = { kind: RelayKind; to: string; body: unknown } | JoinGig;
+/** `gig-state` asks for the room's copy of the gig's state; `gig-op` and `gig-start` carry the leader's new state. */
+type Inbound = { kind: RelayKind; to: string; body: unknown } | JoinGig | { kind: "gig-state"; gigId: string } | GigSend;
 
 type Outbound =
   | Hello
   | { kind: RelayKind; from: string; body: unknown; rx: number; tx: number }
   | { kind: "message"; message: ChatMessage }
   | GigPeers
+  | GigCopy
+  | GigRefused
   | OnLineup
   | { kind: "error"; error: "bad-message" | "no-peer" | "not-on-lineup"; to?: string };
 
@@ -41,6 +46,8 @@ function parseInbound(message: string | ArrayBuffer): Inbound | null {
   }
   if (typeof value !== "object" || value === null) return null;
   const { kind, to, body, gigId, openedAt } = value as Record<string, unknown>;
+  if (kind === "gig-state") return typeof gigId === "string" ? { kind, gigId } : null;
+  if (kind === "gig-op" || kind === "gig-start") return message.length <= GIG_SEND_MAX_CHARS ? asGigSend(value) : null;
   if (kind === "join-gig") return typeof gigId === "string" ? { kind, gigId, ...(Number.isFinite(openedAt) ? { openedAt: openedAt as number } : {}) } : null;
   if (!RELAYED.includes(kind as RelayKind) || typeof to !== "string") return null;
   return { kind: kind as RelayKind, to, body };
@@ -353,11 +360,27 @@ export class Room extends DurableObject<Env> {
     tell(ws);
   }
 
+  /** A lineup player asks for the room's copy. That also joins the gig's socket list, so every later copy reaches it. */
+  private askGig(ws: WebSocket, gigId: string) {
+    if (!this.lineups(this.userOf(ws)).get(gigId)) return ws.close(NOT_ON_LINEUP_CLOSE, "not-on-lineup");
+    if (attachment(ws).gigId !== gigId) ws.serializeAttachment({ ...attachment(ws), gigId, openedAt: Date.now() });
+    send(ws, gigRelay.copy(this.ctx.storage.sql, gigId));
+  }
+
+  /** The leader's new state: kept and forwarded to the rest of the gig's sockets only when this send stored it. */
+  private takeGig(ws: WebSocket, sent: GigSend) {
+    const taken = gigRelay.take(this.ctx.storage.sql, attachment(ws).gigId ?? null, this.userOf(ws), sent, Date.now());
+    if (!taken.stored) return send(ws, { kind: "gig-refused", opId: sent.kind === "gig-op" ? sent.op.opId : null, refused: taken.refused });
+    for (const other of this.gigSockets(taken.copy.state.gigId)) if (other !== ws) send(other, taken.copy);
+  }
+
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
     const rx = Date.now();
     const inbound = parseInbound(message);
     if (!inbound) return send(ws, { kind: "error", error: "bad-message" });
     if (inbound.kind === "join-gig") return this.joinGig(ws, inbound);
+    if (inbound.kind === "gig-state") return this.askGig(ws, inbound.gigId);
+    if (inbound.kind === "gig-op" || inbound.kind === "gig-start") return this.takeGig(ws, inbound);
     const target = this.ctx.getWebSockets(inbound.to).find((ws) => this.socketId(ws) === inbound.to);
     if (!target) return send(ws, { kind: "error", error: "no-peer", to: inbound.to });
     const gigId = attachment(ws).gigId;

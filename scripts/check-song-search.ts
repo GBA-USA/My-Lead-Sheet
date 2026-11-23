@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
-import { appPage } from "./app-page.ts";
+import { startApi, TEST_ORIGIN } from "./api-session.ts";
+import { appPage, PASSWORD_PEPPER, passwordPlayer } from "./app-page.ts";
 import { openSite, type Site } from "./chrome.ts";
 
 /**
@@ -27,11 +29,13 @@ import { openSite, type Site } from "./chrome.ts";
  * the New song dialog (once it has a title or artist) offer "Find lyrics on the web".
  *
  * The unit cases run anywhere. The screen cases build the app and drive headless Chrome (`CHROME`) against a stub
- * `/api/me` and a stub catalog in the page, so nothing here reaches the live catalog or any lyrics site.
+ * `/api/me` and a stub catalog in the page, so nothing here reaches the live catalog or any lyrics site. The last case
+ * starts the Worker (`tsc -p worker` runs first): a pick has an empty chart, and an empty chart is no one's to guard.
  */
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const js = (value: unknown) => JSON.stringify(value);
+execFileSync(process.execPath, [join(root, "node_modules", "typescript", "bin", "tsc"), "-p", "worker"], { cwd: root, stdio: "inherit" });
+const js =(value: unknown) => JSON.stringify(value);
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
 
 let failed = 0;
@@ -389,7 +393,7 @@ const STUB = `(() => {
     const href = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     const url = new URL(href, location.href);
     if (url.origin === location.origin) return realFetch(input, init);
-    window.__mb.calls.push({ url: url.href, headers: Object.fromEntries(new Headers(init.headers || {})) });
+    window.__mb.calls.push({ url: url.href, headers: Object.fromEntries(new Headers(init.headers || {})), at: performance.now() });
     if (!url.href.startsWith(${js(RECORDING_SEARCH)})) return Promise.reject(new TypeError("refused by the check"));
     const mode = window.__mb.mode;
     if (mode === "offline") return Promise.reject(new TypeError("Failed to fetch"));
@@ -414,6 +418,9 @@ const SCREEN_CASES = [
   "9b. at 360 px and 390 px Find lyrics on the web on the new sheet fits and is glove-sized",
   "8b. in Add a song, the same search starts the new song from a pick",
   "1d. in Add a song, Find lyrics on the web follows the typed title and artist, and fits at 360 px and 390 px",
+  "7e. My Songs' box under the open Add a song still waits 1 s after the dialog's box asked, so the phone asks once a second",
+  "8c. a second tap on a result before the new sheet opens adds no second song",
+  "1e. once the player pastes a chart in, the sheet no longer says No words yet",
   "2d. across the whole flow the page asked only the catalog search, opened nothing, and stored no reply text",
 ];
 
@@ -685,6 +692,78 @@ if (site) {
     });
 
     await check(SCREEN_CASES[12], async () => {
+      const SONGS_BOX = `[...document.querySelectorAll('input[aria-label="Find a song to add"]')].find((el) => !el.closest("[role=dialog]"))`;
+      await s.evaluate(`location.hash = "#/songs"`);
+      await app.until(`!!${addButton}`, "My Songs");
+      await app.click("+ Add a song");
+      await app.until(`!!${DIALOG_BOX} && !!${SONGS_BOX}`, "both search boxes, the dialog's and My Songs' beneath it");
+      await sleep(1100);
+      const sent = (await s.evaluate<unknown[]>(`window.__mb.calls`)).length;
+      // The moment the dialog's box asks the catalog, the player types in My Songs' box as well.
+      await s.evaluate(`(() => {
+        const inner = window.fetch;
+        window.fetch = (input, init) => {
+          if (!String(input).startsWith(${js(RECORDING_SEARCH)})) return inner(input, init);
+          window.fetch = inner;
+          setTimeout(() => {
+            const field = ${SONGS_BOX};
+            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(field, "kitchen floor");
+            field.dispatchEvent(new Event("input", { bubbles: true }));
+          }, 0);
+          return inner(input, init);
+        };
+      })()`);
+      try {
+        await typeInto(DIALOG_BOX, "fire away");
+        await app.until(`window.__mb.calls.length >= ${sent + 2}`, "a request from each box", 8000);
+        const [first, second] = (await s.evaluate<{ url: string; at: number }[]>(`window.__mb.calls`)).slice(sent);
+        assert.match(new URL(first.url).searchParams.get("query") ?? "", /fire/i, "the dialog's box asked first");
+        assert.match(new URL(second.url).searchParams.get("query") ?? "", /kitchen/i, "then My Songs' box");
+        assert.ok(second.at - first.at >= 1000, `My Songs' box asked ${Math.round(second.at - first.at)} ms after the dialog's box`);
+      } finally {
+        await app.click("Cancel", `document.querySelector("[role=dialog]")`);
+      }
+    });
+
+    let tappedId: number | null = null;
+    await check(SCREEN_CASES[13], async () => {
+      await s.evaluate(`location.hash = "#/songs"`);
+      await app.until(`!!${addButton} && !document.querySelector("[role=dialog]")`, "My Songs");
+      await sleep(1100);
+      await searchFor(BOX, "fire away");
+      await app.until(`${ROWS(BOX)}.length === 2`, "rows");
+      const before = (await stored()).length;
+      await s.evaluate(`(() => { const row = ${ROWS(BOX)}[0]; row.click(); row.click(); })()`);
+      await app.until(`/^#\\/song\\/\\d+/.test(location.hash)`, "the new song's page", 6000);
+      await sleep(300);
+      tappedId = await hashId();
+      assert.equal((await stored()).length, before + 1, "exactly one song added for two taps");
+    });
+
+    await check(SCREEN_CASES[14], async () => {
+      assert.ok(tappedId !== null, "a song was picked");
+      const NO_WORDS = `(document.querySelector("#sheet-scroll")?.textContent ?? "").includes("No words yet")`;
+      await app.until(NO_WORDS, "No words yet on the new sheet");
+      await s.evaluate(`document.querySelector('.shell-header [aria-label="More"]').click()`);
+      await app.until(`!!document.querySelector("[role=menu]")`, "the More menu");
+      await app.click("Edit", `document.querySelector("[role=menu]")`);
+      const editor = `document.querySelector(".song-editor[role=dialog]")`;
+      await app.until(`!!${editor}`, "the editor on the new song");
+      const chart = ["[Verse 1]", "G        C", "Fire away, fire away"].join("\n");
+      await s.evaluate(`(() => {
+        const field = [...${editor}.querySelectorAll("label")].find((l) => l.textContent.trim() === "Chart").control;
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(field, ${js(chart)});
+        field.dispatchEvent(new Event("input", { bubbles: true }));
+      })()`);
+      await app.click("Save", editor);
+      await app.until(`!document.querySelector(".song-editor")`, "the editor to close");
+      const song = (await stored()).find((each) => each.id === tappedId);
+      assert.ok(Array.isArray(song?.body) && song.body.length > 0, "the song holds the pasted chart");
+      await app.until(`!!document.querySelector("#sheet-scroll .chart-heading")`, "the pasted chart on the sheet");
+      assert.equal(await s.evaluate<boolean>(NO_WORDS), false, "No words yet is gone once the song has words");
+    });
+
+    await check(SCREEN_CASES[15], async () => {
       const calls = await s.evaluate<{ url: string }[]>(`window.__mb.calls`);
       assert.ok(calls.length > 0, "the flow searched");
       const other = calls.filter((call) => !call.url.startsWith(RECORDING_SEARCH));
@@ -700,6 +779,36 @@ if (site) {
   }
 }
 api.close();
+
+// ---------------------------------------------------------------------------------------------- Worker case
+
+await check("10. a player's own catalog picks send on after a friend's Private pick arrived, while the friend's Private words still stay put", async () => {
+  const seed = JSON.parse(readFileSync(join(root, "data", "library.json"), "utf8")) as { songs: Record<string, unknown>[] };
+  const { id: _id, ...base } = seed.songs[0];
+  const pick = (title: string, artist: string) => ({ ...base, title, artist, body: [], officialRuntimeSec: 232 });
+  const withWords = (title: string, words: string) => ({ ...base, title, artist: "Bea", body: [{ heading: "Verse 1", lines: [{ chords: "G", lyrics: words }] }] });
+  const newId = () => crypto.randomUUID().replace(/-/g, "");
+  const { worker, base: apiUrl } = await startApi({ PASSWORD_PEPPER });
+  try {
+    const [bea, pat, cal] = [await passwordPlayer(apiUrl, TEST_ORIGIN, "Bea", "bea"), await passwordPlayer(apiUrl, TEST_ORIGIN, "Pat", "pat"), await passwordPlayer(apiUrl, TEST_ORIGIN, "Cal", "cal")];
+    for (const [a, b] of [[bea, pat], [pat, cal]]) {
+      assert.equal((await a.call("/api/friends/request", { handle: b.handle })).status, 200, `${a.name} asks ${b.name}`);
+      assert.equal((await b.call("/api/friends/accept", { userId: a.userId })).status, 200, `${b.name} accepts ${a.name}`);
+    }
+    const send = (from: typeof bea, to: typeof bea, song: object, choice: string) =>
+      from.call("/api/chat/send-song", { userId: to.userId, msgId: newId(), shareId: newId(), song, versions: [], data: null, choice });
+    assert.equal((await send(bea, pat, pick("Fire Away", "Bea Band"), "private")).status, 200, "Bea sends Pat her own pick, Private");
+    assert.equal((await send(bea, pat, withWords("Bea's Tune", "words only Bea wrote"), "private")).status, 200, "Bea sends Pat her own song with words, Private");
+    for (const choice of ["public", "private"]) {
+      const reply = await send(pat, cal, pick("Wagon Wheel", "Pat"), choice);
+      assert.equal(reply.status, 200, `Pat sends Cal Pat's own pick ${choice} (${reply.status} ${js(reply.body)})`);
+    }
+    const passOn = await send(pat, cal, withWords("Pat's Tune", "words only Bea wrote"), "public");
+    assert.deepEqual([passOn.status, passOn.body.error], [403, "private_copy"], "Bea's Private words still can't be passed on as Pat's");
+  } finally {
+    await worker.dispose();
+  }
+});
 
 console.log(failed ? `check:song-search: ${failed} FAIL` : "check:song-search: all ok");
 process.exit(failed ? 1 : 0);

@@ -37,11 +37,12 @@ const expo = (mean: number) => -mean * Math.log(rand() || 1e-12);
 const MODEL: Record<LinkRoute, { base: number; bias: number; jitter: number; spike: number; spikeMean: number; clockP95: number; p99: number }> = {
   wifi: { base: 3, bias: 0.5, jitter: 1.5, spike: 0.03, spikeMean: 60, clockP95: 0.6, p99: 72 },
   internet: { base: 30, bias: 4, jitter: 10, spike: 0.03, spikeMean: 100, clockP95: 4.3, p99: 160 },
-  relay: { base: 36, bias: 4, jitter: 11, spike: 0.03, spikeMean: 100, clockP95: 4.3, p99: 156 },
   server: { base: 46, bias: 5, jitter: 15, spike: 0.04, spikeMean: 120, clockP95: 5.5, p99: 230 },
 };
-const CLICK_MAX: Record<LinkRoute, number> = { wifi: 10, internet: 18, relay: 18, server: 20 };
-const ROUTE_NAMES = Object.keys(MODEL) as LinkRoute[];
+const CLICK_MAX: Record<LinkRoute, number> = { wifi: 10, internet: 18, server: 20 };
+const ROUTE_NAMES = Object.keys(T.PING_EVERY_MS) as LinkRoute[];
+const sameKeys = (table: object) => ROUTE_NAMES.length === Object.keys(table).length && ROUTE_NAMES.every((route) => route in table);
+check(sameKeys(MODEL) && sameKeys(CLICK_MAX), `the modeled routes (${Object.keys(MODEL)}) are exactly the product routes (${ROUTE_NAMES})`);
 
 const oneWay = (route: LinkRoute, sign: number, bias: number) => {
   const m = MODEL[route];
@@ -128,7 +129,7 @@ for (const route of ROUTE_NAMES) {
   check(p95(errors) <= limit, `${route}: estimate error p95 ${p95(errors).toFixed(2)} ms within modeled ${MODEL[route].clockP95} ms (+10%), max ${maxAbs(errors).toFixed(1)} ms`);
 }
 
-for (const [from, to] of [["wifi", "internet"], ["wifi", "server"], ["internet", "relay"], ["relay", "server"], ["server", "wifi"]] as [LinkRoute, LinkRoute][]) {
+for (const [from, to] of [["wifi", "internet"], ["wifi", "server"], ["internet", "server"], ["server", "wifi"]] as [LinkRoute, LinkRoute][]) {
   let slewOk = true;
   let worst = 0;
   for (let trial = 0; trial < 100; trial += 1) {
@@ -240,7 +241,7 @@ for (const route of ROUTE_NAMES) {
 
 {
   const lead = ROUTE_NAMES.map((route) => T.leadMs([MODEL[route].p99]));
-  check(JSON.stringify(lead) === JSON.stringify([150, 190, 190, 260]), `lead per slowest route matches sync-budget.out (${lead.join(", ")} ms)`);
+  check(JSON.stringify(lead) === JSON.stringify([150, 190, 260]), `lead per slowest route matches sync-budget.out (${lead.join(", ")} ms)`);
   check(T.leadMs([MODEL.wifi.p99, MODEL.internet.p99, MODEL.server.p99]) === 260, "a mixed lineup's lead comes from its slowest route");
   check(T.leadMs([]) === 150 && T.leadMs([900]) === 400, "lead stays between 150 and 400 ms");
 }

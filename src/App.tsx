@@ -5,6 +5,7 @@ import { BandPlayMissing, useBandPlay } from "./band-setlist-view";
 import { BandPage, BandsSheet, BandsTab, PlanGigScreen, type BandLanding } from "./bands";
 import { goneWords, openDm, queueOwner, useInbox } from "./chat";
 import { readPayload, type CodeScreen } from "./code-link";
+import { ConnectionEntry, landSyncCheck } from "./connection-setting";
 import { BackIcon, OverflowMenu, SongControls, TextSizeButtons } from "./controls";
 import { LearnedCues } from "./cues";
 import { APP_NAME } from "./data-kinds";
@@ -95,6 +96,7 @@ export function App() {
     friends: (code) => setFriends({ code }),
     bands: (code) => setBands({ code }),
     gig: (code) => setBands({ code }),
+    connection: landSyncCheck,
     setlists: (code) => (readPayload(code)?.kind === "my-setlist" ? setSetlistCopy({ code }) : setBands({ code })),
   };
 
@@ -435,6 +437,9 @@ export function App() {
             onFriends={() => setFriends({})}
             onMessages={() => (window.location.hash = messagesHref)}
           />
+        ) : null}
+        {route.name === "settings" ? (
+          <div className="settings"><ConnectionEntry /></div>
         ) : null}
         {holding ? <div className="bands-tab"><p className="bands-tab-note">Checking…</p></div> : null}
         {route.name === "bands" && !holding ? <BandsTab me={owner ?? null} notice={notice} onNew={() => setBands({})} onSignIn={() => setAccountOpen(true)} onSignedOut={() => setAccount(null)} /> : null}

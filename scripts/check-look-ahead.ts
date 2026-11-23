@@ -225,7 +225,7 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const PHONE = { width: 390, height: 844, deviceScaleFactor: 2, mobile: true };
 const RUNTIME_S = 100;
 const HARNESS = `
-  import { useState } from "react";
+  import { useLayoutEffect, useState } from "react";
   import { createRoot } from "react-dom/client";
   import { useAutoScroll } from "./src/hooks.ts";
   import { LeadSheet } from "./src/sheet.tsx";
@@ -236,8 +236,10 @@ const HARNESS = `
   const w = window;
   const motion = { kind: "timed", rate: 1, progressAt: (at) => Math.min(1, Math.max(0, at / ${RUNTIME_S})), startAt: (p) => p * ${RUNTIME_S}, holdOpening: false };
   const bandTime = () => w.__band;
-  function Harness({ song, gig, playing }) {
+  function Harness({ song, gig, playing, bare }) {
     const [on, setOn] = useState(true);
+    // Between songs there is no chart to place the band on: the scroll starts with no #chord-section.
+    useLayoutEffect(() => void (bare && document.getElementById("chord-section")?.removeAttribute("id")), []);
     // A redial, as when a phone drops out and rescans, hands the scroll a new band clock reading the same band time.
     const [time, setTime] = useState(() => (gig ? bandTime : undefined));
     w.__redial = () => setTime(() => () => w.__band);
@@ -250,13 +252,13 @@ const HARNESS = `
     );
   }
   let mounted = null;
-  w.__mount = (song, gig, playing = false) => {
+  w.__mount = (song, gig, playing = false, bare = false) => {
     mounted?.unmount();
     w.__stops = [];
     w.__prefs = [];
     w.__band = 0;
     mounted = createRoot(document.getElementById("root"));
-    mounted.render(<Harness song={song} gig={gig} playing={playing} />);
+    mounted.render(<Harness song={song} gig={gig} playing={playing} bare={bare} />);
   };
   w.__sent = 0;
   const count = (owner, name) => {
@@ -320,11 +322,11 @@ async function browserCases(): Promise<number> {
 
     const frames = (count = 1) => evaluate(`new Promise((done) => { let left = ${count}; const tick = () => (--left > 0 ? requestAnimationFrame(tick) : done(null)); requestAnimationFrame(tick); })`);
     const pause = (ms: number) => evaluate(`new Promise((done) => setTimeout(done, ${ms}))`);
-    type Seen = { top: number; start: number; end: number; chartHeight: number; tag: string | null; line: number | null; stops: string[]; sent: number; prefs: number };
+    type Seen = { top: number; start: number; end: number; chartHeight: number; tag: string | null; line: number | null; stops: string[]; sent: number; prefs: number; bare: boolean };
     const seen = () =>
       evaluate<Seen>(`(() => {
         const el = document.getElementById("sheet-scroll");
-        const chart = document.getElementById("chord-section");
+        const chart = document.getElementById("chord-section") ?? el.querySelector(".chart");
         const start = chart.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;
         const tag = document.querySelector("article.sheet .look-tag");
         const line = chart.querySelector(".band-line");
@@ -338,6 +340,7 @@ async function browserCases(): Promise<number> {
           stops: window.__stops,
           sent: window.__sent,
           prefs: window.__prefs.length,
+          bare: !document.getElementById("chord-section"),
         };
       })()`);
     const bandPlace = (s: Seen, second: number) => s.start + (s.end - s.start) * (second / RUNTIME_S);
@@ -358,10 +361,8 @@ async function browserCases(): Promise<number> {
       await touch("touchMove", 460);
       await frames(4);
     };
-    /** Lets go and reports how long the sheet took, from the touchend, to sit within 2 px of the band's place at `second`. */
-    const letGo = async (second: number) => {
-      const s = await seen();
-      const target = bandPlace(s, second);
+    /** Lets go and reports how long the sheet took, from the touchend, to sit within 2 px of `target`. */
+    const letGoTo = async (target: number) => {
       await evaluate(`(() => {
         const el = document.getElementById("sheet-scroll");
         window.__landed = null;
@@ -379,6 +380,8 @@ async function browserCases(): Promise<number> {
       await pause(700);
       return evaluate<number | null>("window.__landed");
     };
+    /** `letGoTo` the band's place at `second`. */
+    const letGo = async (second: number) => letGoTo(bandPlace(await seen(), second));
     const wheel = () => send("Input.dispatchMouseEvent", { type: "mouseWheel", x: X, y: 400, deltaX: 0, deltaY: 300 });
     const near = (a: number | null, b: number, tolerance: number) => a !== null && Math.abs(a - b) <= tolerance;
     /** The frames from the last release to landing on `target`: each one no farther from it than the one before, and at least five in between, so it glides and does not jump. */
@@ -401,6 +404,28 @@ async function browserCases(): Promise<number> {
     let s = await seen();
     check(s.end - s.start > 1500 && near(s.top, bandPlace(s, 30), 2), `in a gig the locked sheet sits on the band's place (top ${s.top.toFixed(1)}, band ${bandPlace(s, 30).toFixed(1)})`);
     check(s.tag === null && s.line === null, "a locked sheet shows no tag and no gold line");
+
+    await touch("touchStart", 600);
+    await frames(2);
+    const pressed = await seen();
+    await setBand(32);
+    const pressedOn = await seen();
+    await touch("touchEnd");
+    await frames(2);
+    s = await seen();
+    check(
+      pressed.tag === null && pressed.line === null && pressedOn.tag === null && near(pressedOn.top, bandPlace(pressedOn, 32), 2) && s.tag === null && near(s.top, bandPlace(s, 32), 2) && s.stops.length === 0,
+      `a tap on the chart in a gig does not look ahead: no tag, and the sheet keeps following the band under the finger (tag ${JSON.stringify(pressed.tag)}, then ${JSON.stringify(pressedOn.tag)} at top ${pressedOn.top.toFixed(1)}, band ${bandPlace(pressedOn, 32).toFixed(1)}, after the lift ${JSON.stringify(s.tag)})`,
+    );
+    await setBand(30);
+
+    await evaluate(`document.getElementById("sheet-scroll").scrollTo(0, 0)`);
+    await frames(3);
+    s = await seen();
+    check(
+      s.tag === null && s.line === null && near(s.top, bandPlace(s, 30), 2),
+      `a scroll the app writes (its reset to the top on a new route) is not looking ahead: no tag, and the sheet is back on the band (tag ${JSON.stringify(s.tag)}, top ${s.top.toFixed(1)}, band ${bandPlace(s, 30).toFixed(1)})`,
+    );
 
     await dragUp();
     s = await seen();
@@ -608,6 +633,21 @@ async function browserCases(): Promise<number> {
         `a finger on the beat pill just after a wheel holds the chart still, looking ahead, until it lifts (ahead ${pillAway.toFixed(1)} px, moved ${pillHeld.toFixed(1)} px in 500 ms, tag ${JSON.stringify(pillHeldTag)}, took ${landed?.toFixed(0)} ms)`,
       );
     } else check(false, "the beat pill shows while the metronome plays");
+
+    await evaluate(`window.__mount(${JSON.stringify(song)}, true, false, true)`);
+    await frames(10);
+    s = await seen();
+    const bareFrom = s.top;
+    await dragUp();
+    s = await seen();
+    const bareAhead = s.top;
+    const bareTag = s.tag;
+    landed = await letGoTo(0);
+    s = await seen();
+    check(
+      s.bare && near(bareFrom, 0, 2) && bareAhead > 100 && bareTag === "Looking ahead" && landed !== null && landed <= 450 && near(s.top, 0, 2) && s.tag === null && s.stops.length === 0,
+      `between songs (no band place on a chart) a drag looks ahead and glides back to the top (no #chord-section ${s.bare}, ahead ${bareAhead.toFixed(1)} px, tag ${JSON.stringify(bareTag)}, took ${landed?.toFixed(0)} ms, top ${s.top.toFixed(1)}, tag after ${JSON.stringify(s.tag)})`,
+    );
 
     await evaluate(`window.__mount(${JSON.stringify(song)}, false)`);
     await frames(30);

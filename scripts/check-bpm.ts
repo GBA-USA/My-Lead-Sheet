@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { fakeDom, type FakeElement } from "./fake-dom.ts";
 import type { Song, SongData } from "../src/types.ts";
@@ -20,7 +20,7 @@ const entry = `
   export { createRoot } from "react-dom/client";
 `;
 const bundled = await build({
-  stdin: { contents: entry, resolveDir: new URL("..", import.meta.url).pathname, loader: "tsx" },
+  stdin: { contents: entry, resolveDir: fileURLToPath(new URL("..", import.meta.url)), loader: "tsx" },
   bundle: true,
   write: false,
   format: "esm",
@@ -92,6 +92,16 @@ check(ui.addTap(tapsAt([500, 500]), 2000 + ui.TAP_RESET_MS).length === 4, "a tap
 check(Math.round(ui.tapBpm(tapsAt([1000, 1000, 1000, 400, 400, 400, 400, 400, 400, 400]))!) === 150, "only recent taps count when the tempo changes");
 check(JSON.stringify(ui.tempoChoices(120.4).map((c) => c.bpm)) === "[60,120,241]", "120.4 offers 60, 120 and 241");
 check(JSON.stringify(ui.tempoChoices(162).map((c) => c.feel)) === '["Half time","Suggested"]', "double time past 300 BPM is not offered");
+
+/** The candidates a whole song is scored at: the comb's top peaks between 40 and 220 BPM, which the listen pairs with their halves and doubles. */
+for (const bpm of [44, 70, 130, 210]) {
+  const detector = new ui.TempoDetector(48_000);
+  detector.push(clickTrack(bpm, 30, 48_000, []));
+  const found: number[] = typeof ui.tempoCandidates === "function" ? ui.tempoCandidates(detector.envelope, detector.hopsPerSecond) : [];
+  const covered = found.some((candidate) => [candidate / 2, candidate, candidate * 2].some((each) => Math.abs(each - bpm) <= 1));
+  const inRange = found.length > 0 && found.length <= 3 && found.every((candidate) => candidate >= 40 && candidate <= 220);
+  check(covered && inRange, `${bpm} BPM clicks are a song tempo candidate, its half or its double, among at most three between 40 and 220 (${found.map((candidate) => candidate.toFixed(1)).join(", ") || "none"})`);
+}
 
 const dom = fakeDom();
 const tracks: { stopped: boolean; stop: () => void }[] = [];

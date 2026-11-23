@@ -78,7 +78,8 @@
 }
 
 .learn-nudge button,
-.learn-actions button {
+.learn-actions button,
+.learn-or {
   height: 40px;
   border: var(--control-border);
   border-radius: 999px;
@@ -92,6 +93,30 @@
 .learn-nudge button {
   width: 40px;
   font-size: 18px;
+}
+
+.learn-or {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 14px;
+  vertical-align: middle;
+  font-variant-numeric: tabular-nums;
+}
+
+.learn [data-band="sure"] {
+  color: var(--chord-sure);
+}
+
+.learn [data-band="likely"] {
+  color: var(--chord-check);
+}
+
+.learn [data-band="check"] {
+  color: var(--chord-unsure);
+}
+
+.learn [data-band="set"] {
+  color: var(--text);
 }
 
 .learn-nudge button:disabled {

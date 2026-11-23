@@ -203,7 +203,7 @@ export function holdScreen(): () => void {
 export interface WorkerListen {
   /** Seconds handed to the worker so far. */
   readonly seconds: number;
-  /** Hands one chunk over, transferred; resolves once the worker has heard it, so a file goes no faster than it can listen. */
+  /** Hands one chunk over, transferred; resolves once the worker has heard it, so a file goes no faster than it can listen, and rejects once the worker breaks. */
   send(chunk: Float32Array, sampleRate: number): Promise<void>;
   /** Ends the listen with what only the phone knows; resolves with what was heard, or null when no song was. */
   finish(ending: Omit<Extract<ToWorker, { kind: "finish" }>, "kind">): Promise<Listen | null>;
@@ -214,13 +214,13 @@ export interface WorkerListen {
 /** One listen in its own analysis worker, the only place a SongListener runs. */
 export function listenInWorker(): WorkerListen {
   const worker = new Worker(new URL("./learn-worker.ts", import.meta.url), { type: "module" });
-  const heard: (() => void)[] = [];
+  const heard: { resolve: () => void; reject: (error: Error) => void }[] = [];
   let ended: { resolve: (listen: Listen | null) => void; reject: (error: Error) => void } | null = null;
   let broken: Error | null = null;
   let samples = 0;
   let rate = 1;
   worker.onmessage = ({ data }: MessageEvent<FromWorker>) => {
-    if (data.kind === "heard") heard.shift()?.();
+    if (data.kind === "heard") heard.shift()?.resolve();
     if (data.kind !== "done") return;
     worker.terminate();
     ended?.resolve(data.listen);
@@ -228,7 +228,7 @@ export function listenInWorker(): WorkerListen {
   worker.onerror = (event) => {
     worker.terminate();
     broken = new Error(event.message || "the listening worker failed");
-    heard.splice(0).forEach((done) => done());
+    for (const waiting of heard.splice(0)) waiting.reject(broken);
     ended?.reject(broken);
   };
   return {
@@ -236,11 +236,11 @@ export function listenInWorker(): WorkerListen {
       return samples / rate;
     },
     send(chunk, sampleRate) {
-      if (broken) return Promise.resolve();
+      if (broken) return Promise.reject(broken);
       samples += chunk.length;
       rate = sampleRate;
       worker.postMessage({ kind: "samples", chunk, sampleRate } satisfies ToWorker, [chunk.buffer]);
-      return new Promise((done) => heard.push(done));
+      return new Promise((resolve, reject) => heard.push({ resolve, reject }));
     },
     finish(ending) {
       if (broken) return Promise.reject(broken);

@@ -39,7 +39,7 @@ type TempoPick = { bpm: number; band: Band } | { bpm: FieldBpm; band: "set" };
 type Step =
   | { kind: "choose"; note: Note | null }
   | { kind: "listening"; from: Source["kind"]; name: string | null; heard: number; expected: number | null }
-  | { kind: "stopped"; heard: number; why: MicStop }
+  | { kind: "stopped"; heard: number; why: MicStop; refused: boolean }
   | { kind: "working"; from: Source["kind"] }
   | {
       kind: "review";
@@ -164,20 +164,26 @@ export function LearnSong({
     });
   };
 
-  /** Opens the mic inside this tap. Keep listening opens it again into the same listen. */
-  const listenWithMic = () => {
+  /**
+   * Opens the mic inside this tap. Keep listening opens it again into the same listen, passing why it stopped, so a mic
+   * refused then goes back to that stop with what was heard still there to use.
+   */
+  const listenWithMic = (again?: MicStop) => {
     keepScreenOn();
     const worker = session.current?.worker ?? listenInWorker();
+    const stop = (why: MicStop, refused: boolean) => {
+      letScreenOff();
+      setStep({ kind: "stopped", heard: worker.seconds, why, refused });
+    };
     const mic = fromMic({
       chunk: (samples) => {
-        void worker.send(samples, mic.source.sampleRate);
+        void worker.send(samples, mic.source.sampleRate).catch(() => {
+          if (session.current?.worker === worker) choose("failed");
+        });
         setStep((now) => (now.kind === "listening" ? { ...now, heard: worker.seconds } : now));
       },
-      stopped: (why) => {
-        letScreenOff();
-        setStep({ kind: "stopped", heard: worker.seconds, why });
-      },
-      failed: () => choose("no-mic"),
+      stopped: (why) => stop(why, false),
+      failed: () => (again ? stop(again, true) : choose("no-mic")),
     });
     session.current = { worker, source: mic.source, expectedSeconds: runtime, mic };
     setStep({ kind: "listening", from: "mic", name: null, heard: worker.seconds, expected: runtime });
@@ -194,8 +200,9 @@ export function LearnSong({
     if (typeof sound === "string") return choose(sound);
     Object.assign(mine, { source: sound.source, expectedSeconds: sound.expectedSeconds });
     for (const chunk of sound.chunks) {
-      await mine.worker.send(chunk, sound.source.sampleRate);
+      const heard = await mine.worker.send(chunk, sound.source.sampleRate).then(() => true, () => false);
       if (session.current !== mine) return;
+      if (!heard) return choose("failed");
       setStep({ kind: "listening", from: "file", name: file.name, heard: mine.worker.seconds, expected: sound.expectedSeconds });
     }
     await finish("finished");
@@ -206,13 +213,13 @@ export function LearnSong({
       <div className="learn" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <h2 id={titleId}>Learn this song</h2>
         {step.kind === "choose" ? (
-          <WaysIn note={step.note} onFile={listenToFile} onFileTap={keepScreenOn} onFileCancel={letScreenOff} onMic={listenWithMic} onCancel={cancel} />
+          <WaysIn note={step.note} onFile={listenToFile} onFileTap={keepScreenOn} onFileCancel={letScreenOff} onMic={() => listenWithMic()} onCancel={cancel} />
         ) : null}
         {step.kind === "listening" ? <Listening step={step} onStop={() => void finish("player")} onCancel={cancel} /> : null}
         {step.kind === "stopped" ? (
           <>
             <p role="status">
-              Listening stopped at {clockText(step.heard)}. {STOPPED[step.why].said} {SPEAKER}
+              Listening stopped at {clockText(step.heard)}. {step.refused ? NOTES["no-mic"] : STOPPED[step.why].said} {SPEAKER}
             </p>
             <div className="learn-actions">
               <button type="button" onClick={cancel}>
@@ -221,7 +228,7 @@ export function LearnSong({
               <button type="button" onClick={() => void finish(step.why)}>
                 Use what was heard
               </button>
-              <button type="button" className="is-primary" onClick={listenWithMic}>
+              <button type="button" className="is-primary" onClick={() => listenWithMic(step.why)}>
                 Keep listening
               </button>
             </div>

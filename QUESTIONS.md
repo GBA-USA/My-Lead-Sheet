@@ -3,6 +3,10 @@
 The build (e9a3df1, d8fc388) is committed and complete. Per the queue rules I did not edit the commit-1 test after
 the build. No assertion changes. Both fixes are to fixture data or a window edge the test built itself.
 
+**For the screen mount (PR #98 deep fix):** `SyncCheckSheet` takes a `metronome` prop. Pass App's own
+`useMetronome` result (`metronome={metronome}` in `src/App.tsx`). The speaker delay is saved through it, so no other
+metronome setting writes over it. A second `useMetronome` would bring the P2-1 bug back.
+
 ## 1. The sync-video fixture can't say which flash is which beat (7 cases fail every run)
 
 **Cases:** the six sync-video cases after "sync-video headline is FAIL", from "A: 17 flashes found" to "--all prints

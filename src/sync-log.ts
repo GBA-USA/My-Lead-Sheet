@@ -146,26 +146,32 @@ export function readSyncRows(text: string): SyncRow[] {
 /**
  * The phone's side of the log for one run. Rows wait here until `flush` sends them. A send that fails keeps nothing:
  * the beat already flashed and clicked, so its row is dropped and counted, and the count is shown after the run.
+ * Flushes run one after another, so the counts read once a flush settles include every send already under way.
  */
 export function syncLogQueue(send: (beats: SyncBeat[]) => Promise<unknown>, perSend = 40) {
   let waiting: SyncBeat[] = [];
   let logged = 0;
   let dropped = 0;
+  let sending = Promise.resolve();
+  const drain = async () => {
+    while (waiting.length) {
+      const batch = waiting.slice(0, perSend);
+      waiting = waiting.slice(perSend);
+      try {
+        await send(batch);
+        logged += batch.length;
+      } catch {
+        dropped += batch.length;
+      }
+    }
+  };
   return {
     add(beat: SyncBeat) {
       waiting.push(beat);
     },
-    async flush() {
-      while (waiting.length) {
-        const batch = waiting.slice(0, perSend);
-        waiting = waiting.slice(perSend);
-        try {
-          await send(batch);
-          logged += batch.length;
-        } catch {
-          dropped += batch.length;
-        }
-      }
+    flush() {
+      sending = sending.then(drain);
+      return sending;
     },
     counts: () => ({ logged, dropped }),
   };

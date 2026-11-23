@@ -9,6 +9,8 @@
  * 5. `scripts/sync-report.ts` prints each pair's p95 and max against the PLAN 7.15 targets.
  * 6. `scripts/sync-video.ts` reads a frame list and finds every flash within 5 ms of the log, or names the one that isn't.
  * 7. `docs/sync-results.md` has a row per 7.17 setup, Auto and forced, bright and dim, all "not yet measured".
+ * 8. After a run the screen shows what was logged and dropped, even for a send still on its way, and each pair against 7.15.
+ * 9. The sheet fits a 360 and a 390 px phone, measured in headless Chrome.
  * Relay setups and the relay target row are dropped (Terry t28u).
  */
 import { spawnSync } from "node:child_process";
@@ -17,6 +19,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
+import { openSite } from "./chrome.ts";
 import { fakeDom, type FakeElement } from "./fake-dom.ts";
 import { ROUTE_WORDS } from "../src/routes.ts";
 import { DATA_KINDS } from "../src/data-kinds.ts";
@@ -432,6 +435,79 @@ await part("data kinds", () => {
 });
 
 // ---------------------------------------------------------------------------------------------------------------
+// The Sync check fits a phone: at 360 and 390 px every button is on the screen and nothing scrolls sideways.
+// The sheet is built with the app's fonts and CSS and measured in headless Chrome with a phone viewport.
+// ---------------------------------------------------------------------------------------------------------------
+await part("sync check layout", async () => {
+  const page = mkdtempSync(join(tmpdir(), "check-sync-check-page-"));
+  await build({
+    stdin: {
+      contents: `import "@fontsource/inter/400.css";
+        import "@fontsource/inter/600.css";
+        import "@fontsource/inter/700.css";
+        import "@fontsource/inter/800.css";
+        import "./src/styles.css";
+        import "./src/account.css";
+        import "./src/settings.css";
+        import { createElement } from "react";
+        import { createRoot } from "react-dom/client";
+        import { SyncCheckSheet } from "./src/sync-check.tsx";
+        import { DEFAULT_METRONOME_PREFS, SPEAKER_DELAY_MAX_MS } from "./src/metronome.ts";
+        // The widest the rows get: the longest speaker delay, a carrier picked, an error line.
+        const metronome = { prefs: { ...DEFAULT_METRONOME_PREFS, sound: false, speakerDelayMs: SPEAKER_DELAY_MAX_MS }, setPrefs() {} };
+        const link = { route: "internet", bandAt: (ms) => ms, offsetMs: 0, spreadMs: 9, rttMs: 40 };
+        createRoot(document.getElementById("root")).render(createElement(SyncCheckSheet, { bandId: "band_x", admin: true, link, names: {}, metronome, onClose() {} }));`,
+      resolveDir: root,
+      loader: "tsx",
+    },
+    bundle: true,
+    outdir: page,
+    entryNames: "sheet",
+    format: "esm",
+    platform: "browser",
+    jsx: "automatic",
+    loader: { ".woff2": "file", ".woff": "file" },
+    define: { "process.env.NODE_ENV": '"production"' },
+    logLevel: "silent",
+  });
+  writeFileSync(
+    join(page, "index.html"),
+    `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/sheet.css"></head><body><div id="root"></div><script type="module" src="/sheet.js"></script></body></html>`,
+  );
+  const site = await openSite(page, "check-sync-check-layout");
+  try {
+    await site.send("Emulation.setDeviceMetricsOverride", { width: 360, height: 844, deviceScaleFactor: 2, mobile: true });
+    await site.send("Page.navigate", { url: `${site.origin}/` });
+    let up = false;
+    for (let i = 0; i < 150 && !up; i += 1) {
+      up = await site.evaluate<boolean>(`!!document.querySelector(".sync-check") && document.fonts.status === "loaded"`).catch(() => false);
+      if (!up) await new Promise((done) => setTimeout(done, 100));
+    }
+    check("layout: the Sync check page comes up in Chrome", up);
+    if (!up) return;
+    const carrier = site.evaluate<number>(`document.querySelectorAll('.sync-check [aria-label="Carrier"] button').length`);
+    if ((await carrier) > 0) await site.evaluate(`document.querySelector('.sync-check [aria-label="Carrier"] button').click()`);
+    for (const width of [360, 390]) {
+      await site.send("Emulation.setDeviceMetricsOverride", { width, height: 844, deviceScaleFactor: 2, mobile: true });
+      const seen = await site.evaluate<{ vw: number; sheetOver: number; pageOver: number; off: string[]; carriers: number }>(`(async () => {
+        await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+        const sheet = document.querySelector(".sync-check");
+        const vw = document.documentElement.clientWidth;
+        const off = [...sheet.querySelectorAll("button")]
+          .map((el) => [el.textContent, el.getBoundingClientRect()])
+          .filter(([, box]) => box.left < -0.5 || box.right > vw + 0.5)
+          .map(([name, box]) => name + " " + Math.round(box.left) + ".." + Math.round(box.right));
+        return { vw, sheetOver: sheet.scrollWidth - sheet.clientWidth, pageOver: document.documentElement.scrollWidth - vw, off, carriers: sheet.querySelectorAll('[aria-label="Carrier"] button').length };
+      })()`);
+      check(`layout at ${width} px: all 4 carrier buttons and every other button are on the screen`, seen.vw === width && seen.carriers === 4 && seen.off.length === 0, JSON.stringify(seen));
+      check(`layout at ${width} px: the sheet does not scroll sideways`, seen.sheetOver <= 0 && seen.pageOver <= 0, JSON.stringify(seen));
+    }
+  } finally {
+    await site.close();
+  }
+});
+
+// ---------------------------------------------------------------------------------------------------------------
 // 1-3. The Sync check screen in a fake page: band clock, audio clock and 60 Hz frames all driven by the test.
 // ---------------------------------------------------------------------------------------------------------------
 await part("sync check screen", async () => {
@@ -529,6 +605,15 @@ await part("sync check screen", async () => {
   const posts: { path: string; body: any }[] = [];
   let serverRun: { runId: string; startAt: number; endsAt: number } | null = null;
   let logOffline = false;
+  /** A signal that fades mid-run: the first log send lands, every later one hangs 2 s on the fake clock and then fails. */
+  let logFades = false;
+  let logSends = 0;
+  const fadedBeats: number[] = [];
+  /** A server a little behind: the current route still hands out the run after it ended. */
+  let currentStale = false;
+  let currentRefusal: { reason: string; status: number } | null = null;
+  /** What the rows route answers for each run: every phone's rows, for the report the screen shows after the run. */
+  const serverRows: Record<string, Row[]> = {};
   const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
   Object.defineProperty(globalThis, "fetch", {
     configurable: true,
@@ -536,12 +621,21 @@ await part("sync check screen", async () => {
       const body = init?.body ? JSON.parse(init.body) : undefined;
       posts.push({ path: String(path), body });
       if (path === "/api/bands/sync/start") return reply({ run: serverRun });
-      if (path === "/api/bands/sync/current") return reply({ run: serverRun && bandNow() < serverRun.endsAt ? serverRun : null });
+      if (path === "/api/bands/sync/current") {
+        if (currentRefusal) return reply({ error: currentRefusal.reason }, currentRefusal.status);
+        return reply({ run: serverRun && (currentStale || bandNow() < serverRun.endsAt) ? serverRun : null });
+      }
       if (path === "/api/bands/sync/log") {
         if (logOffline) throw new TypeError("Failed to fetch");
+        if (logFades && (logSends += 1) > 1) {
+          await new Promise((done) => window.setTimeout(done, 2000));
+          fadedBeats.push(...body.beats.map((each: Row) => each.beat));
+          posts.push({ path: "log send failed", body });
+          throw new TypeError("Failed to fetch");
+        }
         return reply({ stored: body.beats.length });
       }
-      if (path === "/api/bands/sync/rows") return reply({ rows: [] });
+      if (path === "/api/bands/sync/rows") return reply({ rows: serverRows[body.runId] ?? [] });
       return reply({ error: "not-found" }, 404);
     },
   });
@@ -549,6 +643,7 @@ await part("sync check screen", async () => {
   const ui = await bundle(
     "screen",
     `export { SyncCheckSheet } from "./src/sync-check.tsx";
+     export { useMetronome } from "./src/metronome-view.tsx";
      export * as model from "./src/metronome.ts";
      export * as band from "./src/band-time.ts";
      export { METRONOME_PREFS_KEY } from "./src/storage.ts";
@@ -632,14 +727,27 @@ await part("sync check screen", async () => {
   const container = dom.container;
   let root = ui.createRoot(container);
   let closed = 0;
-  const render = (props: Record<string, unknown>) => root.render(ui.createElement(ui.SyncCheckSheet, { names: {}, onClose: () => (closed += 1), ...props }));
+  /** App keeps one useMetronome for its whole life and hands it to the sheet, so the sheet opens here over the real hook. */
+  let metronome: { prefs: Record<string, unknown>; setPrefs: (patch: Record<string, unknown>) => void } | null = null;
+  function App({ open = true, ...props }: Record<string, unknown>) {
+    metronome = ui.useMetronome(null, 120);
+    return open ? ui.createElement(ui.SyncCheckSheet, { names: {}, onClose: () => (closed += 1), metronome, ...props }) : null;
+  }
+  const render = (props: Record<string, unknown>) => root.render(ui.createElement(App, props));
+  /** A fresh app: its metronome mounts at start, as App's does, and the sheet opens over it later. */
+  const openApp = async (props: Record<string, unknown>) => {
+    root = ui.createRoot(container);
+    render({ open: false });
+    await settle();
+    render(props);
+    await settle();
+  };
 
   // Saved before the screen opens: a Bluetooth dot nudge the speaker delay must not touch.
   store.set(ui.METRONOME_PREFS_KEY, JSON.stringify({ indicator: true, sound: true, syncMode: "on", syncOffsetMs: 30 }));
 
   // --- Alone: no leader, so the screen flashes on this phone's own click and says there is nothing to compare.
-  render({ bandId: null, admin: false, link: null });
-  await settle();
+  await openApp({ bandId: null, admin: false, link: null });
   const aloneFrom = scheduled.length;
   await advance(0.5);
   const alone = await advance(3);
@@ -659,9 +767,8 @@ await part("sync check screen", async () => {
 
   // --- Linked on the Wi-Fi link, as an admin. No run yet: flashes and clicks follow band time, nothing is logged.
   const wifi = { route: "wifi", bandAt, offsetMs: line.offset, spreadMs: 4, rttMs: 12 };
-  root = ui.createRoot(container);
-  render({ bandId: "band_SyncCheckBand000000000", admin: true, link: wifi });
-  await settle();
+  const names = { "u-ann": "Ann", "u-bob": "Bob" };
+  await openApp({ bandId: "band_SyncCheckBand000000000", admin: true, link: wifi, names });
   const idleClickFrom = scheduled.length;
   await advance(0.5);
   const idleFromBand = bandNow();
@@ -677,6 +784,13 @@ await part("sync check screen", async () => {
   // --- The admin starts a run. The fake server gives a 10 s run (20 beats) starting on a beat 2 s from now.
   const runStart = Math.ceil((bandNow() + 2000) / BEAT_MS) * BEAT_MS;
   serverRun = { runId: "run_first", startAt: runStart, endsAt: runStart + 10_000 };
+  // The band's rows for the report: Ann leads, Bob is 2 ms late on screen and 1 ms on the click (inside the Wi-Fi link's
+  // 17 / 30 and 5 / 10), and u-cat, who has no name here, is 40 ms late on screen. So Ann + Bob is on target, both pairs with u-cat over it.
+  serverRows.run_first = [
+    ...BEATS.map((n) => row("run_first", "u-ann", n, "leader")),
+    ...BEATS.map((n) => row("run_first", "u-bob", n, "wifi", { shown_at: beatAt(n) + 2, clicked_at: beatAt(n) + 1 })),
+    ...BEATS.map((n) => row("run_first", "u-cat", n, "wifi", { shown_at: beatAt(n) + 40 })),
+  ];
   await tap(button("Start a 60 s run"), "Start a 60 s run");
   check("Start posts the band to the start route", posts.some((post) => post.path === "/api/bands/sync/start" && post.body?.bandId === "band_SyncCheckBand000000000"));
   const runClickFrom = scheduled.length;
@@ -691,9 +805,23 @@ await part("sync check screen", async () => {
   check("each beat's shown_at is the band time of the frame that showed it, within half a frame", logged.every((beat) => beat.shown_at !== null && Math.abs(beat.shown_at - beat.at) <= FRAME_MS / 2 + 0.01), JSON.stringify(logged.map((beat) => beat.shown_at === null ? null : +(beat.shown_at - beat.at).toFixed(2))));
   check("each beat's clicked_at is when its click reached the listener, within 0.1 ms of the beat", logged.every((beat) => beat.clicked_at !== null && Math.abs(beat.clicked_at - beat.at) <= 0.1), JSON.stringify(logged.map((beat) => beat.clicked_at === null ? null : +(beat.clicked_at - beat.at).toFixed(3))));
   check("each beat carries the route, offset, spread, rtt and frame time", logged.every((beat) => beat.route === "wifi" && beat.offset_ms === line.offset && beat.spread_ms === 4 && beat.rtt_ms === 12 && near(beat.frame_ms, FRAME_MS, 0.01)));
+  check("after the run the screen says 20 beats logged, and none dropped", text().includes("Run over · 20 beats logged") && !text().includes("not logged"), text().slice(0, 400));
+  check("after the run the phone reads the run's rows for the report", posts.some((post) => post.path === "/api/bands/sync/rows" && post.body?.runId === "run_first" && post.body?.bandId === "band_SyncCheckBand000000000"));
+  const pairLine = (a: string, b: string, screen: string, click: string, verdict: string) => `${a} + ${b} · ${ROUTE_WORDS.wifi} · screens p95 ${screen} ms · clicks p95 ${click} ms · ${verdict}`;
+  for (const [a, b, screen, click, verdict] of [
+    ["Ann", "Bob", "2.0", "1.0", "on target"],
+    ["Ann", "u-cat", "40.0", "0.0", "over target"],
+    ["Bob", "u-cat", "38.0", "1.0", "over target"],
+  ]) {
+    check(`after the run the report line reads "${pairLine(a, b, screen, click, verdict)}"`, text().includes(pairLine(a, b, screen, click, verdict)), text().slice(0, 700));
+  }
+  check("after the run the admin can start the next run", !!button("Start a 60 s run"));
   const loggedAfterRun = posts.filter((post) => post.path === "/api/bands/sync/log").length;
+  currentStale = true;
   await advance(8);
   check("after the run no more beats are sent (zero rows outside the check)", posts.filter((post) => post.path === "/api/bands/sync/log").length === loggedAfterRun);
+  check("a server still handing out the ended run does not start it again on this phone", text().includes("Run over · 20 beats logged") && !text().includes("Run on"), text().slice(0, 400));
+  currentStale = false;
 
   // --- The route word and bars follow the link.
   render({ bandId: "band_SyncCheckBand000000000", admin: true, link: { ...wifi, route: "internet", spreadMs: 9 } });
@@ -720,10 +848,25 @@ await part("sync check screen", async () => {
   const movedBand = bandNow();
   await advance(3);
   clicksOnBeats(`after Line up: each click goes out ${delay} ms before its beat`, movedFrom, movedBand, bandNow() - 200, delay);
+  // The app's one metronome stays up when the sheet closes. Its Dot switch saves every setting it holds, the speaker delay too.
+  render({ open: false });
+  await settle();
+  metronome!.setPrefs({ indicator: false });
+  await settle();
+  check(`the Metronome sheet's Dot switch keeps the ${delay} ms speaker delay`, savedPrefs()?.speakerDelayMs === delay && savedPrefs()?.indicator === false, JSON.stringify(savedPrefs()));
+  render({ bandId: "band_SyncCheckBand000000000", admin: true, link: wifi });
+  await advance(0.3);
+  check(`the Sync check opened again in the same app shows Speaker delay ${delay} ms`, text().includes(`Speaker delay ${delay} ms`), text().slice(0, 400));
+  const againFrom = scheduled.length;
+  await advance(0.3);
+  const againBand = bandNow();
+  await advance(3);
+  clicksOnBeats(`opened again: each click still goes out ${delay} ms before its beat`, againFrom, againBand, bandNow() - 200, delay);
+  metronome!.setPrefs({ indicator: true });
+  await settle();
   root.unmount();
   await settle();
-  root = ui.createRoot(container);
-  render({ bandId: "band_SyncCheckBand000000000", admin: true, link: wifi });
+  await openApp({ bandId: "band_SyncCheckBand000000000", admin: true, link: wifi });
   await advance(0.3);
   check("the speaker delay is still there when the screen opens again", text().includes(`Speaker delay ${delay} ms`), text().slice(0, 400));
   for (let i = 0; i < steps; i += 1) await tap(button("My click is early"), "My click is early");
@@ -733,19 +876,64 @@ await part("sync check screen", async () => {
 
   // --- A member, offline for the log: the beat keeps flashing, the rows are dropped, and the count shows after.
   logOffline = true;
-  const offlineStart = Math.ceil((bandNow() + 1500) / BEAT_MS) * BEAT_MS;
+  serverRun = null;
+  await openApp({ bandId: "band_SyncCheckBand000000000", admin: false, link: wifi });
+  await advance(0.5);
+  check("before a run a member sees no Start button, only that an admin starts it", !button("Start a 60 s run") && text().includes("Waiting for an admin to start a run"), text().slice(0, 400));
+  // The next look for runs is 2.5 s off, so the run starts 3.5 s from now and the member finds it before its first beat.
+  const offlineStart = Math.ceil((bandNow() + 3500) / BEAT_MS) * BEAT_MS;
   serverRun = { runId: "run_offline", startAt: offlineStart, endsAt: offlineStart + 5_000 };
-  root = ui.createRoot(container);
-  render({ bandId: "band_SyncCheckBand000000000", admin: false, link: wifi });
-  await settle();
-  check("a member sees no Start button", !button("Start a 60 s run"));
   const offlineSeen = await advance((serverRun.endsAt - bandNow()) / 1000 + 8);
   check("the member's phone finds the run the admin started", posts.some((post) => post.path === "/api/bands/sync/current"));
   flashesOnBeats("offline log: the beat keeps flashing through the run", offlineSeen.filter((frame) => bandAt(frame.at * 1000) >= offlineStart && bandAt(frame.at * 1000) <= serverRun!.endsAt), bandAt);
   check("offline log: after the run the screen says 10 beats not logged", text().includes("10 beats not logged"), text().slice(0, 400));
+  check("offline log: and 0 beats logged", text().includes("Run over · 0 beats logged"), text().slice(0, 400));
+  check("after the run a member still sees no Start button", !button("Start a 60 s run"));
   root.unmount();
   await settle();
   logOffline = false;
+
+  // --- The signal fades at the run's end: the last timed send is still on its way when the run ends, and then fails.
+  // The 5 s send timer starts when the run goes live. The run ends 0-500 ms before its second tick, so that tick's
+  // batch is in flight when the screen sums the run up. The screen must wait for it and count its beats as not logged.
+  logFades = true;
+  logSends = 0;
+  serverRun = null;
+  await openApp({ bandId: "band_SyncCheckBand000000000", admin: true, link: wifi });
+  const secondTick = bandAt((now + 10) * 1000);
+  const fadeEnds = Math.ceil((secondTick - 400) / BEAT_MS) * BEAT_MS;
+  serverRun = { runId: "run_fades", startAt: fadeEnds - 6000, endsAt: fadeEnds };
+  const fadeFrom = posts.length;
+  await tap(button("Start a 60 s run"), "Start a 60 s run");
+  await advance((fadeEnds - bandNow()) / 1000 + 6);
+  const fadeSent = posts.slice(fadeFrom).filter((post) => post.path === "/api/bands/sync/log" && post.body?.runId === "run_fades");
+  const landed = fadeSent[0]?.body.beats.length ?? 0;
+  check("fading signal: the first send landed and a later one failed", landed > 0 && fadeSent.length >= 2 && fadedBeats.length > 0, `${fadeSent.length} sends, ${landed} landed, ${fadedBeats.length} failed`);
+  check(
+    `fading signal: after the run the screen says ${landed} beats logged and ${fadedBeats.length} beats not logged`,
+    landed + fadedBeats.length === 12 && text().includes(`Run over · ${landed} beats logged · ${fadedBeats.length} beats not logged`),
+    text().slice(0, 400),
+  );
+  const rowsRead = posts.findIndex((post, i) => i >= fadeFrom && post.path === "/api/bands/sync/rows" && post.body?.runId === "run_fades");
+  const lastFailed = posts.findLastIndex((post) => post.path === "log send failed" && post.body?.runId === "run_fades");
+  check("fading signal: the report reads the rows only after the last send has failed", lastFailed >= 0 && rowsRead > lastFailed, `rows read at post ${rowsRead}, last send failed at ${lastFailed}`);
+  root.unmount();
+  await settle();
+  logFades = false;
+
+  // --- The look for runs fails: the member is told why, in words, not left on a silent screen.
+  for (const [refusal, words] of [
+    [{ reason: "offline", status: 503 }, "Can't reach the server. Check your connection and try again."],
+    [{ reason: "not-a-member", status: 403 }, "You're not in this band anymore."],
+  ] as const) {
+    currentRefusal = refusal;
+    await openApp({ bandId: "band_SyncCheckBand000000000", admin: false, link: wifi });
+    await advance(0.5);
+    check(`a ${refusal.status} ${refusal.reason} look for runs shows "${words}"`, text().includes(words), text().slice(0, 400));
+    root.unmount();
+    await settle();
+  }
+  currentRefusal = null;
 
   // --- Saved prefs: one bad field never resets the others, and the speaker delay defaults to 0.
   const { model } = ui;

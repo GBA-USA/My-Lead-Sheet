@@ -4,11 +4,11 @@ import { flipNow, type BandMs, type Grid } from "./band-time";
 import type { Timeline } from "./gig-state";
 import { useEscape } from "./hooks";
 import { followBand, secondsSinceHeardClick, setMetronomeSound, stopMetronome } from "./metronome-audio";
-import { BEAT_FLASH_SECONDS, SPEAKER_DELAY_MAX_MS, SPEAKER_DELAY_MIN_MS, SPEAKER_DELAY_STEP_MS, clampSpeakerDelayMs, parseMetronomePrefs } from "./metronome";
+import { BEAT_FLASH_SECONDS, SPEAKER_DELAY_MAX_MS, SPEAKER_DELAY_MIN_MS, SPEAKER_DELAY_STEP_MS, clampSpeakerDelayMs } from "./metronome";
+import type { MetronomeState } from "./metronome-view";
 import { ROUTE_WORDS } from "./routes";
 import type { TimeSource } from "./scroll-timing";
 import { ApiError, api } from "./sign-in-methods";
-import { loadMetronomePrefs, saveMetronomePrefs } from "./storage";
 import { SYNC_BEAT_MS, syncLogQueue, syncReport, type RunReport, type SyncBeat, type SyncRoute, type SyncRow, type SyncRun } from "./sync-log";
 
 /** This phone's link to the leader as the Sync check reads it: the route, band time, and the clock estimate's numbers. */
@@ -67,23 +67,28 @@ function Bars({ spreadMs }: { spreadMs: number }) {
  * Sync check (PLAN.md 7.17): a white flash on every band beat and the click under it, for filming phones side by side.
  * The admin starts a 60 s run; during it every phone logs each beat to the band's `sync_log`. With no `link` to a leader
  * the phone flashes on its own click and logs nothing. Line up with the band sets this phone's speaker delay by ear.
+ * The speaker delay lives in the app's one metronome (`useMetronome` in App), so no other metronome setting writes over it.
  */
 export function SyncCheckSheet({
   bandId,
   admin,
   link,
   names,
+  metronome,
   onClose,
 }: {
   bandId: string | null;
   admin: boolean;
   link: SyncLink | null;
   names: Record<string, string>;
+  metronome: Pick<MetronomeState, "prefs" | "setPrefs">;
   onClose: () => void;
 }) {
   const titleId = useId();
   useEscape(onClose);
-  const [prefs, setPrefs] = useState(() => parseMetronomePrefs(loadMetronomePrefs()));
+  const { prefs, setPrefs } = metronome;
+  const sound = useRef(prefs.sound);
+  sound.current = prefs.sound;
   const [carrier, setCarrier] = useState("");
   const [runState, setRunState] = useState<RunState>({ kind: "idle" });
   const [error, setError] = useState("");
@@ -104,16 +109,12 @@ export function SyncCheckSheet({
   useEffect(
     () => () => {
       stopMetronome();
-      setMetronomeSound(parseMetronomePrefs(loadMetronomePrefs()).sound);
+      setMetronomeSound(sound.current);
     },
     [],
   );
 
-  const nudge = (ms: number) => {
-    const next = { ...prefs, speakerDelayMs: clampSpeakerDelayMs(prefs.speakerDelayMs + ms) };
-    setPrefs(next);
-    saveMetronomePrefs(next);
-  };
+  const nudge = (ms: number) => setPrefs({ speakerDelayMs: clampSpeakerDelayMs(speakerDelayMs + ms) });
 
   // Look for the admin's run while linked to a band and no run is live. Alone, nothing is asked of the server.
   const looking = bandId !== null && linked && runState.kind !== "live";
@@ -291,7 +292,7 @@ export function SyncCheckSheet({
             My click is late
           </button>
         </div>
-        <div className="sheet-row" role="group" aria-label="Carrier">
+        <div className="sheet-row" role="group" aria-label="Carrier" style={{ flexWrap: "wrap" }}>
           <span className="sheet-row-label">Carrier</span>
           {CARRIERS.map((name) => (
             <button key={name} type="button" className="account-secondary" aria-pressed={carrier === name} onClick={() => setCarrier(carrier === name ? "" : name)}>

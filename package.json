@@ -55,6 +55,7 @@
     "check:chat-songs": "tsc -p worker && node --experimental-strip-types scripts/check-chat-songs.ts",
     "check:band-status": "node --experimental-strip-types scripts/check-band-status.ts",
     "check:look-ahead": "node --experimental-strip-types scripts/check-look-ahead.ts",
+    "check:stage": "node --experimental-strip-types scripts/check-stage.ts",
     "check:spike-server": "node spike/server/check.mjs",
     "check:spike-links": "node --experimental-strip-types scripts/check-spike-links.ts",
     "check:share-guard": "node --experimental-strip-types scripts/check-share-guard.ts",

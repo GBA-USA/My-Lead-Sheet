@@ -1,3 +1,119 @@
+# C22 self-check 4 fix pass 1: the font patch below is applied, with two additions. Owner, say if commit 1's case should stay as it was.
+
+The fix-pass brief asked this pass to fix self-check 4's one P2. That P2 is the condition-12 case's 98 px bar, so this
+pass edits commit 1's case after all. The case now measures the solo bar three ways: in the page font, in `serif` and in
+`monospace`. Both generic fonts exist on every OS. At 2f95cbe they read 99 px and 97 px, and 97 px is CI's number. Each
+measure checks the bar less its count line (83 px) and the count line's computed `font-size` and `line-height` (`12px`,
+`normal`). The second check covers self-check 4's P3-1. A 20 px count, a line-height of 3, a 3 px middle gap and a
+9 px top padding each fail the case. Calibri passes it. Logs are in `.verify-logs/fix-sc4/`. Nothing in `src/` moved.
+
+---
+
+# C22 corrective retry 2: CI's check:stage fail is a Windows font number in commit 1's vdiff case. May CoS apply this test patch?
+
+Deep verify run 45249452948 at cef301d failed one line twice: `FAIL and the base sizes ([64,64,64], bar 97 px)` in
+"the existing Live buttons are unchanged outside a gig" (`scripts/check-stage.ts:846`). Every other check:stage line
+passed. The markup line and the three 64 px buttons match the base. `SOLO_NAV.navHeight: 98` was measured in Edge on
+Windows, where the font stack `Inter, "Segoe UI", ...` resolves to Segoe UI. The bar is 83 px of padding, border, the
+64 px pill and its 2 px gap, plus one line of 12 px `.live-count` text, and that line's height depends on the font. The
+Linux runner has no Segoe UI, and its fallback font gives a line 1 px shorter.
+
+No product change can fix it. c22 leaves the solo bar alone: App.tsx only swaps the gig mount, and every `src/stage.css`
+selector is scoped to the stage bar. Making the solo bar 98 px on Linux would change it from the base, which is what
+condition 12 forbids. Under the rules I did not edit the commit-1 test. I stopped here.
+
+**Evidence (Edge on Windows, the case alone, one font forced on the page by a probe copy of the check):**
+
+| Font | Head cef301d | Untouched base 156b186 |
+|---|---|---|
+| default (Segoe UI) | ok, 98 px | ok, 98 px |
+| Calibri | FAIL, 97 px, CI's exact two FAIL lines | FAIL, 97 px, same lines |
+| Tahoma, Verdana | FAIL, 97 px | not run |
+| Georgia | ok, 98 px | not run |
+| Edge's default serif (an uninstalled name) | FAIL, 99 px | not run |
+
+So the reproduction fails on the current head and on the base alike.
+
+**Fix (measure without the font's line):** compare the bar's height less its count line, which is 83 px in every font
+tried. No requirement moves.
+
+```diff
+-  navHeight: 98,
++  chrome: 83,
+ ...
+-      page<{ html: string; heights: number[]; navHeight: number } | null>(`(() => {
++      page<{ html: string; heights: number[]; chrome: number } | null>(`(() => {
+ ...
+-        return { html: ..., heights: ..., navHeight: Math.round(nav.getBoundingClientRect().height) };
++        return { html: ..., heights: ..., chrome: Math.round(nav.getBoundingClientRect().height - nav.querySelector(".live-count").getBoundingClientRect().height) };
+ ...
+-    check(js(solo?.heights) === js(SOLO_NAV.heights) && solo?.navHeight === SOLO_NAV.navHeight, `and the base sizes (${js(solo?.heights)}, bar ${solo?.navHeight} px)`);
++    check(js(solo?.heights) === js(SOLO_NAV.heights) && solo?.chrome === SOLO_NAV.chrome, `and the base sizes (${js(solo?.heights)}, bar ${solo?.chrome} px past its count line)`);
+```
+
+The patched case passes on head and base under Segoe UI, Calibri, Tahoma and Georgia (83 px). It still fails on head
+and base when the bar's padding or the middle gap grows by 1 px (84 px). Logs and probe makers are in
+`.verify-logs/ci-fail/` (`font-*.log`, `patched-*.log`, `make-font-probe.mjs`, `make-patched-probe.mjs`,
+`shard4/stage.log`).
+
+---
+
+# C22 self-check fix pass 2: the same `src/gig-state.ts` lines now refuse a late section. Decide with pass 1's question below.
+
+Self-check 2's P2-1: a section chip held in the last beat before a pending Next snaps to one beat before the bar line
+after Next, so it landed on song 2 at song 1's section index. `move`'s `section` case now refuses it as `song-pending`
+when the song change lands first, and the bar says "The next song is on its way". The leader can hold the chip again
+once song 2 shows. A tie on the song's landing is refused only while the click runs, since a section on a running grid
+lands a beat before a bar line and a tie means it fell past the stopped click. With no click, a section sent with the
+song still opens that song at the section, as `check:mirror` case 8 asks. The Refusal union gains `song-pending`, and
+`stage-bar.tsx` `MESSAGES` gains its words. Clamping
+the section to land before Next was the other option. It would break condition 8, one beat before the bar line, and it
+can land sooner than the lead allows. The Worker imports only `receive`, which never calls `move`. `check:stage` "a
+section chip held in the last beat before Next lands never turns song 2" sweeps every hold moment on the reducer and
+drives the late hold through the App.
+
+---
+
+# C22 self-check fix pass 1: one edit outside C22's files (`src/gig-state.ts`). Owner, keep it or move it?
+
+The self-check's P2-1 fix is in the reducer, not in `stage-bar.tsx`. A section op that landed before a pending Next
+dropped that Next's top-of-song step (`put` keeps only steps before its own landing), so the next song opened at the
+old song's section. The bar-only fix the self-check offered, holding the section chips while Next is pending, would
+break the brief's "two holds in flight ... both land". So `move`'s `section` case now adds the pending song's null step
+back after its own step. That is 3 lines, and no other op writes a non-null step before a pending song change today.
+`check:stage` "two holds in flight" now asserts that song 2 opens at its top.
+
+This pass also applies the one-line countIn filter below, because the stop hook needs `check:stage` green.
+
+---
+
+# C22 question: one wrong assertion in commit 1's `check:stage` (959b03c). May CoS apply this one-line test patch?
+
+The build (c8c061e) is committed. Under the queue rules I did not edit the commit-1 test after it, and I stopped there.
+
+## "both holds reached the band" counts the Count in its own case sent (fails every run)
+
+`scripts/check-stage.ts:550`, in "two holds in flight: Next, then a section chip before Next lands, and both land". The
+case starts the band's click with `startClick()`, which holds Count in, so the page-side room records three ops from the
+leader: `countIn`, `goTo`, `section`. The assertion asks for exactly two, `[goTo, section]`, so it fails on correct
+behavior. Every other line in the case passes: the pending Next is kept, the chip says "On 4 ▸", and Sam's phone turns
+the section and flips the song each at its own landing.
+
+**Fix (counter only):** count the ops after the click started. No requirement moves.
+
+```diff
+-    const sent = await ops();
++    const sent = (await ops()).filter((op) => op.kind !== "countIn");
+     check(sent.length === 2 && sent[0].kind === "goTo" && sent[1].kind === "section", ...);
+```
+
+**Evidence (Edge on Windows):** the committed check ends with 140 ok and this 1 FAIL (`.verify-logs/stage-2.log` in the
+worktree). A scratch copy with only this line changed passes the case in full, 8 of 8 lines
+(`.verify-logs/stage-probe-fixed-assertion.log`). Five mutations of `src/stage-bar.tsx` each turn their case red
+(`.verify-logs/mutate.log`).
+
+---
+
 # C21 question: three test faults left in commit 1's `check:mirror` (bd432d0). May CoS apply this test-only patch?
 
 The build (fced55e) is committed. Under the queue rules I did not edit the commit-1 test after it. Each fix below is

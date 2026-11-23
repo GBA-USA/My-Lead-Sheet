@@ -78,6 +78,7 @@ export type Refusal =
   | "unknown-song"
   | "changes-songs"
   | "not-running"
+  | "song-pending"
   | "scroll-off"
   | "too-late"
   | "not-on-lineup"
@@ -190,7 +191,14 @@ function move(state: GigState, op: Move, now: BandMs, lead: number): Change {
     case "section": {
       if (latest(state.section) === op.index) return "same-target";
       const t = at("section");
-      return { at: t, fields: { section: put(state.section, op.index, t, now) } };
+      // The chips name the song on screen, so a section landing after a pending song change would turn the next song mid-chart.
+      // With a click running a section lands a beat before a bar line, so landing on the song's bar line means it fell past the stopped click.
+      const song = state.current[state.current.length - 1];
+      const late = t > song.at || (t === song.at && valueAt(state.click, now) !== null);
+      if (song.at > now && late) return "song-pending";
+      const section = put(state.section, op.index, t, now);
+      // A song change still to land opens its song at the top, after this section has shown.
+      return { at: t, fields: { section: song.at > t ? [...section, { at: song.at, value: null }] : section } };
     }
     case "countIn": {
       const t = at("countIn");

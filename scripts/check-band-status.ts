@@ -24,7 +24,8 @@ import { openSite } from "./chrome.ts";
  *   inTime, heardMsAgo }`. A `PlayerStatus` is `{ id, route, spreadMs, p99Ms, lateRate, inTime, heardAt }`, with
  *   `heardAt` on the clock `now` reads. The newest status per player wins; a status for someone off the lineup is dropped.
  * - `seesBandStatus(admin, me, leader)`: only the admin and the live leader open Band status during a live gig.
- * - `BandStatusFaces({ players, live })`, with `live = { leader, admin, statuses(), now() }`, re-reads both getters
+ * - `opensBandStatus(status, me, feed)`: a gig that is not live opens for anyone; a live gig with no feed opens for no one.
+ * - `BandStatusFaces({ players, status, live })`, with `live = { leader, admin, statuses(), now() }`, re-reads both getters
  *   about once a second. Faces carry `band-status-face-steady`, `-amber` or `-grey`, the leader `-leader`. Rows carry
  *   `band-status-amber` or `band-status-grey`. A player not heard for 10 s is amber. A player who never joined reads
  *   "Not joined" in grey. The leader with no one heard yet reads "Just you so far".
@@ -36,11 +37,12 @@ const js = (value: unknown) => JSON.stringify(value);
 execFileSync(process.execPath, [join(root, "node_modules", "typescript", "bin", "tsc"), "-p", "worker"], { cwd: root, stdio: "inherit" });
 
 type Mod = typeof import("../src/band-status-model.ts") &
-  typeof import("../src/band-status.tsx") & { renderToStaticMarkup: (el: unknown) => string; createElement: (c: unknown, p: unknown) => unknown };
+  typeof import("../src/band-status.tsx") &
+  typeof import("../src/next-gig-card.tsx") & { renderToStaticMarkup: (el: unknown) => string; createElement: (c: unknown, p: unknown) => unknown };
 const bundled = await build({
   stdin: {
     contents:
-      'export * from "./src/band-status-model.ts"; export * from "./src/band-status.tsx"; export { renderToStaticMarkup } from "react-dom/server"; export { createElement } from "react";',
+      'export * from "./src/band-status-model.ts"; export * from "./src/band-status.tsx"; export { NextGigCard } from "./src/next-gig-card.tsx"; export { renderToStaticMarkup } from "react-dom/server"; export { createElement } from "react";',
     resolveDir: root,
     loader: "ts",
   },
@@ -114,7 +116,26 @@ await test("the planned panel shows the live-gig line, marks the leader and you,
   assert.ok(/Mike Keys.*?Leader/.test(html) && /Sam Rivera.*?You/.test(html), html);
   assert.ok(!html.includes("style=") && !html.includes("□") && !html.includes("band-status-amber"), html);
 });
-await test("with no players the strip renders nothing", () => assert.equal(m.renderToStaticMarkup(m.createElement(m.BandStatusFaces, { players: [] })), ""));
+await test("with no players the strip renders nothing", () => assert.equal(m.renderToStaticMarkup(m.createElement(m.BandStatusFaces, { players: [], status: "planned" })), ""));
+
+const liveView = { ...view, gig: { ...view.gig, status: "live" } } as GigView;
+const faceTags = (html: string) => [...html.matchAll(/<(button|span)[^>]*class="band-status-face[^"]*"/g)].map((match) => match[1]);
+await test("during a live gig this phone has no feed for, no one can open Band status", () => {
+  for (const me of ["u-sam", "u-mike", "u-terry"]) {
+    const html = m.renderToStaticMarkup(m.createElement(m.BandStatusFaces, { players: m.playersFrom(liveView, band, me), status: "live" }));
+    const tags = faceTags(html);
+    assert.equal(tags.length, 4, `${me} sees four faces (${html})`);
+    assert.deepEqual([...new Set(tags)], ["span"], `${me}'s faces are pictures, not buttons`);
+  }
+});
+await test("the next-gig card's strip during a live gig does not open Band status for a member", () => {
+  const card = (gig: GigView) =>
+    m.renderToStaticMarkup(
+      m.createElement(m.NextGigCard, { band, me: "u-sam", gigs: [gig], packs: {}, library: null, busy: false, onStart: () => {}, onOpen: () => {}, onPlan: () => {} }),
+    );
+  assert.deepEqual([...new Set(faceTags(card(view)))], ["button"], "before the gig goes live, Sam may open the panel");
+  assert.deepEqual([...new Set(faceTags(card(liveView)))], ["span"], "once it is live, Sam's faces are pictures");
+});
 
 await test("syncBars: four at 2 ms or less, three at 5, two at 8, else none", () =>
   assert.deepEqual([1.5, 2, 4, 5, 7.5, 8, 9].map(m.syncBars), [4, 4, 3, 3, 2, 2, 0]));
@@ -293,7 +314,7 @@ const harness = await build({
       };
       window.__render = (props) => {
         const live = props.live && { ...props.live, statuses: () => window.__statuses, now: () => window.__now };
-        root.render(createElement(BandStatusFaces, { players: props.players, live }));
+        root.render(createElement(BandStatusFaces, { players: props.players, status: "live", live }));
       };`,
     resolveDir: root,
     loader: "tsx",

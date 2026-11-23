@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
-import { livePlayers, panelLine, seesBandStatus, statusRows, type Player, type PlayerStatus, type StatusRow } from "./band-status-model";
+import { livePlayers, opensBandStatus, panelLine, statusRows, type Player, type PlayerStatus, type StatusRow } from "./band-status-model";
+import type { GigStatus } from "./gig-plan-model";
 import { useEscape } from "./hooks";
 import "./band-status.css";
 
@@ -87,19 +88,21 @@ function useTick(on: boolean) {
 }
 
 /**
- * The faces strip. Before a gig goes live anyone in the band may open the panel. During one, `live` feeds it and only
- * the admin and the leader may (PLAN.md 6), so for anyone else the faces are pictures, not buttons, with no status
- * rings. Losing the lead shuts an open panel, and getting it back does not reopen it. The panel mounts on `.app`,
+ * The faces strip for a gig in `status`. Before a gig goes live anyone in the band may open the panel. During one,
+ * `live` feeds it and only the admin and the leader may (PLAN.md 6), so for anyone else, and for everyone on a phone
+ * with no feed, the faces are pictures, not buttons, with no status rings. A feed on a gig that is not live is not
+ * read. Losing the lead shuts an open panel, and getting it back does not reopen it. The panel mounts on `.app`,
  * because `.scroll` is its own stacking context under the shell header.
  */
-export function BandStatusFaces({ players, live }: { players: Player[]; live?: LiveFeed }) {
+export function BandStatusFaces({ players, status, live }: { players: Player[]; status: GigStatus; live?: LiveFeed }) {
   const [sheetHost, setSheetHost] = useState<Element | null>(null);
-  useTick(!!live);
+  const feed = status === "live" ? live : undefined;
+  useTick(!!feed);
   if (players.length === 0) return null;
 
-  const shown = live ? livePlayers(players, live.leader, live.statuses(), live.now()) : players;
+  const shown = feed ? livePlayers(players, feed.leader, feed.statuses(), feed.now()) : players;
   const me = players.find((p) => p.you)?.id ?? "";
-  const opens = !live || seesBandStatus(live.admin, me, live.leader);
+  const opens = opensBandStatus(status, me, feed);
   if (!opens && sheetHost) setSheetHost(null);
 
   return (
@@ -108,7 +111,7 @@ export function BandStatusFaces({ players, live }: { players: Player[]; live?: L
         {statusRows(shown).map((row) => {
           const label = row.leader ? `${row.name}, leader` : row.name;
           return opens ? (
-            <button key={row.id} type="button" className={faceClass(row, !!live)} aria-label={label} onClick={(event) => setSheetHost(event.currentTarget.closest(".app") ?? document.body)}>
+            <button key={row.id} type="button" className={faceClass(row, !!feed)} aria-label={label} onClick={(event) => setSheetHost(event.currentTarget.closest(".app") ?? document.body)}>
               {initials(row.name)}
             </button>
           ) : (

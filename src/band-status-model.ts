@@ -1,5 +1,5 @@
 import type { BandView } from "./bands-model";
-import { downloaded, type GigView } from "./gig-plan-model";
+import { downloaded, type GigStatus, type GigView } from "./gig-plan-model";
 import { LOST_AFTER_MS } from "./links/attempt";
 import { CHOICE_WORDS, ROUTE_WORDS, type LinkRoute, type RouteChoice } from "./routes";
 import { rateRoute, type Rating } from "./sync-rating";
@@ -48,6 +48,15 @@ export function livePlayers(players: readonly Player[], leader: string, statuses
 
 /** During a live gig only the admin and the leader see every player's route and sync (PLAN.md 6). */
 export const seesBandStatus = (admin: boolean, me: string, leader: string) => admin || me === leader;
+
+/**
+ * Whether this phone may open Band status. Before or after a gig, anyone in the band may. During one, only the admin
+ * and the live leader, and only on a phone whose feed says who those are, so a live gig with no feed opens for no one.
+ */
+export function opensBandStatus(status: GigStatus, me: string, feed: { admin: boolean; leader: string } | undefined): boolean {
+  if (status !== "live") return true;
+  return feed !== undefined && seesBandStatus(feed.admin, me, feed.leader);
+}
 
 export function liveRating(live: Heard): Rating {
   return rateRoute({ spreadMs: live.spreadMs, p99Ms: live.p99Ms, lateRate: live.lateRate, ageDays: 0, tries: [true] });

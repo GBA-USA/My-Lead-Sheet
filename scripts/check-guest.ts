@@ -28,7 +28,7 @@ const PASS_ENDED = "This pass has ended";
 const seed = JSON.parse(readFileSync(join(root, "data", "library.json"), "utf8")) as { songs: (SongContent & { id: number })[] };
 const chart = (index: number, title: string): SongContent => {
   const { id: _id, ...song } = seed.songs[index];
-  return { ...song, title };
+  return { ...song, title, body: [{ heading: "Tag", lines: [{ chords: "G", lyrics: `${title} tag line` }] }, ...song.body] };
 };
 
 let failed = 0;
@@ -197,7 +197,7 @@ try {
     assert.deepEqual(refusal(await mike.call("/api/bands/guests/list", { bandId, gigId })), [403, "not-admin"], "or list them");
     assert.equal((await makePass(terry, { expiresAt: Date.now() - 1000 })).status, 400, "a pass that already ended is refused");
     assert.equal((await makePass(terry, { expiresAt: Date.now() + 400 * DAY_MS })).status, 400, "a pass longer than a year is refused");
-    assert.equal((await new Phone(base).call("/api/bands/guests/create", { bandId, gigId })).status, 401, "a signed-out phone makes no pass");
+    assert.equal((await new Phone(base).call("/api/bands/guests/create", { bandId, gigId }, { origin })).status, 401, "a signed-out phone makes no pass");
 
     const expiresAt = Date.now() + 3 * DAY_MS;
     samPassId = newPassId();
@@ -218,7 +218,7 @@ try {
   });
 
   await check("the pass binds to the first account that opens it and a second account with the same code is refused", async () => {
-    assert.equal((await new Phone(base).call("/api/guest/claim", { code: samCode })).status, 401, "nobody joins as a guest signed out: there is no name-only path");
+    assert.equal((await new Phone(base).call("/api/guest/claim", { code: samCode }, { origin })).status, 401, "nobody joins as a guest signed out: there is no name-only path");
     const opened = ok(await sam.call("/api/guest/open", { code: samCode }), "Sam opens the pass");
     assert.equal(opened.gigName, "Friday at the Elks", "the pass names its gig");
     const claimed = ok(await sam.call("/api/guest/claim", { code: samCode }), "Sam joins as a guest");
@@ -242,6 +242,8 @@ try {
     const patCode = ok(await makePass(terry, { name: "Pat" }), "a pass for Pat").code as string;
     ok(await pat.call("/api/guest/claim", { code: patCode }), "Pat's phone joins as a guest");
     const second = new Phone(base);
+    const secondCall = second.call.bind(second);
+    second.call = (path, body, headers = {}) => secondCall(path, body, { origin, ...headers });
     const { salt } = ok(await second.call("/api/auth/password/salt", { handle: "patfill" }, { origin }), "Pat's second phone asks for the salt");
     ok(await second.call("/api/auth/password/sign-in", { handle: "patfill", key: await passwordKey("violet tram 42 lantern", salt) }, { origin }), "Pat signs in on a second phone");
     assert.notEqual(second.cookie, pat.cookie, "with a session of its own");
@@ -346,6 +348,29 @@ try {
       "or pass it on to a friend in a setlist copy",
     );
     ok(await sam.call("/api/bands/library/share-song", { bandId: trio, song: chart(5, "Sam's Own Tune"), choice: "public", localId: null }), "a chart of Sam's own still shares");
+  });
+
+  await check("a guest's socket leaves the gig when the pass ends, and the leader's next move never reaches it", async () => {
+    const kit = await passwordPlayer(base, origin, "Kit Moss", "kitmoss");
+    const kitEnds = Date.now() + 3000;
+    ok(await kit.call("/api/guest/claim", { code: ok(await makePass(terry, { name: "Kit", expiresAt: kitEnds }), "a short pass for Kit").code }), "Kit joins as a guest");
+    const kitRoom = await socket(kit, bandId);
+    await joinGig(kitRoom, gigId);
+    const asked = terryRoom.messages.length;
+    terryRoom.ws.send(js({ kind: "gig-state", gigId }));
+    let held = (await heard(terryRoom, (m) => m.kind === "gig-state" && terryRoom.messages.indexOf(m) >= asked, "the room's copy for Terry")).state;
+    const move = (opId: string) => {
+      held = { ...held, rev: held.rev + 1 };
+      terryRoom.ws.send(js({ kind: "gig-op", op: { kind: "goTo", key: closer, opId, epoch: held.epoch }, state: held, at: Date.now() }));
+      return held.rev;
+    };
+    const before = move(newMsgId());
+    await heard(kitRoom, (m) => m.kind === "gig-state" && m.state?.rev === before, "the leader's move while Kit's pass lasts");
+    for (; Date.now() < kitEnds + 300; ) await settle(100);
+    const after = move(newMsgId());
+    await heard(mikeRoom, (m) => m.kind === "gig-state" && m.state?.rev === after, "the leader's move on Mike's socket");
+    assert.equal(await serverClose(kitRoom, "Kit's socket"), NOT_ON_LINEUP_CLOSE, "the ended guest's socket is closed with 4404 at the next move");
+    assert.ok(!kitRoom.messages.some((m) => m.kind === "gig-state" && m.state?.rev === after), "and the move after the end never reached it");
   });
 
   await check("Revoke closes the guest's link mid-gig and replaces the gig secret", async () => {
@@ -538,6 +563,84 @@ try {
       await site.send("Page.navigate", { url: `${origin}/?q=3#/gig/${bandId}/${gigId}` });
       await waitFor(`document.body.textContent.includes(${js(PASS_ENDED)})`, PASS_ENDED);
       assert.deepEqual(await site.evaluate<string[]>("window.__shown"), [], "online again, the charts stay gone");
+    });
+
+    await check("a guest pass scanned in the app's Bands scanner opens the guest sheet, not a wrong-code refusal", async () => {
+      const uma = await passwordPlayer(base, origin, "Uma Vance", "umavance");
+      const link = ok(await makePass(terry, { name: "Uma" }), "a pass for Uma").link as string;
+      await signedInAs(uma);
+      await app.openBands();
+      await waitFor(`document.querySelector(".bands-sheet")?.dataset.view === "list"`, "the Bands sheet");
+      await app.click("Scan a code", `document.querySelector(".bands-sheet")`);
+      await waitFor(`document.querySelector(".bands-sheet")?.dataset.view === "scan"`, "Scan a code");
+      await site.evaluate(`[...document.querySelectorAll(".bands-sheet label")].find((l) => l.textContent.trim() === "Paste a link").control.focus()`);
+      await site.send("Input.insertText", { text: link });
+      await app.click("Open link", `document.querySelector(".bands-sheet")`);
+      await waitFor(
+        `document.body.textContent.includes("Join Friday at the Elks as a guest") || document.body.textContent.includes("isn't a band, gig or setlist code")`,
+        "the scanner's answer to a guest pass",
+      );
+      assert.ok(!(await bodyText()).includes("isn't a band, gig or setlist code"), "the scanner does not call a guest pass a wrong code");
+      await tap("Join as a guest");
+      await waitFor(`location.hash === ${js(`#/gig/${bandId}/${gigId}`)}`, "the gig view after joining from the scanner");
+      assert.equal((await passesOf()).find((pass) => pass.name === "Uma").claimedName, "Uma Vance", "the scanned pass is bound to Uma");
+    });
+
+    const packsFor = async () => (await packsOnPhone()).filter((pack) => pack.gig.gigId === gigId).length;
+    const readyAs = async (who: Phone & { userId: string }, mark: string) => {
+      await signedInAs(who);
+      await site.send("Page.navigate", { url: `${origin}/?${mark}=1#/gig/${bandId}/${gigId}` });
+      await waitFor(`!!document.querySelector(${js(`.gig-view[data-gig="${gigId}"]`)})`, "the guest's gig view");
+      await tap("Get ready");
+      await waitFor(`document.body.textContent.includes("Elks Opener")`, "tonight's songs on the phone");
+      assert.equal(await packsFor(), 1, "the pack is on the guest's phone");
+    };
+
+    await check("a revoked pass takes its charts off the phone at the next open, and none show while the phone asks", async () => {
+      const rae = await passwordPlayer(base, origin, "Rae Lynn", "raelynn");
+      const raePass = ok(await makePass(terry, { name: "Rae", expiresAt: Date.now() + 7 * DAY_MS }), "a one-week pass for Rae");
+      ok(await rae.call("/api/guest/claim", { code: raePass.code }), "Rae joins as a guest");
+      await readyAs(rae, "r");
+      ok(await terry.call("/api/bands/guests/revoke", { bandId, passId: raePass.pass.passId }), "Terry revokes Rae's pass");
+
+      await site.send("Page.navigate", { url: `${origin}/?r=2#/gig/${bandId}/${gigId}` });
+      await waitFor(`document.body.textContent.includes(${js(ENDED_BY_BAND)})`, ENDED_BY_BAND);
+      assert.deepEqual(await site.evaluate<string[]>("window.__shown"), [], "no chart of the revoked pass shows, not even while the phone asks the server");
+      assert.equal(await packsFor(), 0, "the gigPacks row is gone");
+
+      await site.send("Network.setBlockedURLs", { urls: ["*/api/*", "*/c/*"] });
+      await site.send("Page.navigate", { url: `${origin}/?r=3#/gig/${bandId}/${gigId}` });
+      await waitFor(`!!document.querySelector(${js(`.gig-view[data-gig="${gigId}"]`)})`, "the gig view, opened with the server unreachable");
+      await settle(1000);
+      assert.deepEqual(await site.evaluate<string[]>("window.__shown"), [], "and with no signal afterwards the charts stay gone");
+      await site.send("Network.setBlockedURLs", { urls: [] });
+    });
+
+    await check("a pass that ends while the gig view is open takes its charts off the screen at that moment", async () => {
+      const noa = await passwordPlayer(base, origin, "Noa Wells", "noawells");
+      const noaEnds = Date.now() + 20_000;
+      ok(await noa.call("/api/guest/claim", { code: ok(await makePass(terry, { name: "Noa", expiresAt: noaEnds }), "a short pass for Noa").code }), "Noa joins as a guest");
+      await readyAs(noa, "n");
+      for (; Date.now() < noaEnds + 1500; ) await settle(250);
+      const text = await bodyText();
+      assert.ok(!text.includes("Elks Opener") && !text.includes("Elks Closer"), "no chart of the ended pass is still on screen");
+      await waitFor(`document.body.textContent.includes(${js(PASS_ENDED)})`, `${PASS_ENDED}, with no reload`);
+      assert.equal(await packsFor(), 0, "and the gigPacks row is gone");
+    });
+
+    await check("a guest following the live gig leaves it when the pass ends, and the sheet stops showing tonight's chart", async () => {
+      const ivy = await passwordPlayer(base, origin, "Ivy Bell", "ivybell");
+      const ivyEnds = Date.now() + 30_000;
+      ok(await ivy.call("/api/guest/claim", { code: ok(await makePass(terry, { name: "Ivy", expiresAt: ivyEnds }), "a short pass for Ivy").code }), "Ivy joins as a guest");
+      await readyAs(ivy, "i");
+      await waitFor(`[...document.querySelectorAll(".gig-strip button")].some((b) => b.textContent.trim() === "Join gig")`, "Join gig on the live strip");
+      await tap("Join gig", `document.querySelector(".gig-strip")`);
+      await waitFor(`!!document.querySelector(".gig-question") || location.hash.endsWith("/0")`, "the click question or the sheet");
+      if (await site.evaluate<boolean>(`!!document.querySelector(".gig-question")`)) await tap("Dot only", `document.querySelector(".gig-question")`);
+      await waitFor(`document.querySelector(".gig-strip")?.dataset.strip !== undefined && /Elks (Opener|Closer)/.test(document.body.textContent) && location.hash.endsWith("/0")`, "tonight's chart on the sheet while following");
+      for (; Date.now() < ivyEnds + 1500; ) await settle(250);
+      assert.ok(!/Elks (Opener|Closer)/.test(await bodyText()), "no chart of the ended pass is still on the sheet");
+      assert.equal(await packsFor(), 0, "and the gigPacks row is gone");
     });
   }
 } catch (error) {

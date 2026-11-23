@@ -9,7 +9,7 @@ import { chatRoom, createChatTables, type Card, type Posted } from "./room-chat"
 import { exportBand, importBandFile } from "./room-export";
 import { bandLibrary, createLibraryTables, selfCopies, type SentSetlist, type SetlistFields, type SetlistSend, type SetlistShare, type SongChange, type SongShare } from "./room-library";
 import { createGigTables, gigRoom, type GigFields } from "./room-gig";
-import { createGuestTables, guestRoom, type PassFields } from "./room-guest";
+import { createGuestTables, guestRoom, liveGuestGigs, type PassFields } from "./room-guest";
 import { gigRelay } from "./room-relay";
 import { bandRoom, createMemberTables, readsChat, shutOut } from "./room-members";
 import { createNoteTables, noteRoom, type NoteFields } from "./room-notes";
@@ -351,7 +351,15 @@ export class Room extends DurableObject<Env> {
 
   private socketId = (ws: WebSocket) => this.ctx.getTags(ws)[0];
   private userOf = (ws: WebSocket) => this.ctx.getTags(ws)[1].slice("user:".length);
-  private gigSockets = (gigId: string) => this.ctx.getWebSockets().filter((ws) => attachment(ws).gigId === gigId);
+  private gigSockets = (gigId: string) => this.ctx.getWebSockets().filter((ws) => attachment(ws).gigId === gigId && this.stillIn(ws, gigId));
+
+  /** A guest's socket stays in the gig only while the pass lasts. One that ended is closed here, as revoke closes it, so no later move reaches it. */
+  private stillIn(ws: WebSocket, gigId: string) {
+    const userId = this.userOf(ws);
+    if (!shutOut(this.ctx.storage.sql, userId) || liveGuestGigs(this.ctx.storage.sql, userId).has(gigId)) return true;
+    ws.close(NOT_ON_LINEUP_CLOSE, "pass-ended");
+    return false;
+  }
 
   /** A band or DM room gates its relay on tonight's lineup. A bare room with no members relays between any two sockets. */
   private get gated() {

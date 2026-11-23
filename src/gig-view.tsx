@@ -1,14 +1,14 @@
-import { useEffect, useId, useState, useSyncExternalStore } from "react";
+import { useEffect, useId, useReducer, useState, useSyncExternalStore } from "react";
 import { plural } from "./band-library";
 import { bandSong } from "./band-setlist-view";
 import { BandStatusFaces } from "./band-status";
 import { playersFrom } from "./band-status-model";
 import type { BandView } from "./bands-model";
-import { downloadPack, packEnded, type GigPack } from "./gig-pack";
+import { atPassEnd, downloadPack, packToShow, type GigPack } from "./gig-pack";
 import { gigLine, type GigView } from "./gig-plan-model";
 import type { GigPosition } from "./gig-position";
 import { displayKeyLabel } from "./music";
-import { getFromPhone, heldFor, onPhoneChange, phoneGeneration } from "./phone-db";
+import { heldFor, onPhoneChange, phoneGeneration } from "./phone-db";
 import { bandHref, gigHref } from "./route";
 import { ApiError, api } from "./sign-in-methods";
 import { tempoText } from "./storage";
@@ -47,24 +47,32 @@ async function fetchPack(me: string, bandId: string, gigId: string) {
   for (const listener of packListeners) listener();
 }
 
-/** The pack this phone holds for the gig: `undefined` while it looks, `null` when there is none for this account. */
+/**
+ * The pack this phone holds for the gig: `undefined` while it looks, `null` when there is none for this account. A
+ * guest's pack is read again the moment its pass ends, so its charts leave the screen then, not on the next open.
+ */
 export function useGigPack(me: string | null, gigId: string): GigPack | null | undefined {
   const generation = useSyncExternalStore(onPhoneChange, phoneGeneration, phoneGeneration);
   const round = useSyncExternalStore(onPackRound, packRoundNow, packRoundNow);
+  const [ends, readAgain] = useReducer((n: number) => n + 1, 0);
   const key = `${me}/${gigId}`;
   const [found, setFound] = useState<{ key: string; pack: GigPack | null } | null>(null);
 
   useEffect(() => {
     if (!me || !gigId || !heldFor(me)) return setFound({ key, pack: null });
     let live = true;
-    getFromPhone("gigPacks", gigId).then(
-      (pack) => live && setFound({ key, pack: pack && !packEnded(pack) ? pack : null }),
-      () => live && setFound({ key, pack: null }),
-    );
+    let cancel = () => {};
+    const show = (pack: GigPack | null) => {
+      if (!live) return;
+      setFound({ key, pack });
+      cancel = atPassEnd(pack, readAgain);
+    };
+    packToShow(gigId).then(show, () => show(null));
     return () => {
       live = false;
+      cancel();
     };
-  }, [key, generation, round]);
+  }, [key, generation, round, ends]);
 
   return found?.key === key ? found.pack : undefined;
 }
@@ -122,14 +130,18 @@ export function GigViewScreen({ me, bandId, gigId, pack, position, onSignIn, onS
     if (!unreachable(caught) && caught instanceof ApiError && MESSAGES[caught.reason]) setProblem(MESSAGES[caught.reason]);
   };
 
+  // Asked again when the pack leaves the phone, so a guest whose pass just ended hears why.
+  const noPack = pack === null;
   useEffect(() => {
     if (!me) return;
     api<GigView>("/api/bands/gig/open", { bandId, gigId }).then((view) => {
       setOpened(view);
       if (view.gig.status === "ended") setProblem(MESSAGES["gig-ended"]);
     }, refused);
-    api<BandView>("/api/bands/open", { bandId }).then(setBand, () => {});
-  }, [me, bandId, gigId]);
+  }, [me, bandId, gigId, noPack]);
+  useEffect(() => {
+    if (me) api<BandView>("/api/bands/open", { bandId }).then(setBand, () => {});
+  }, [me, bandId]);
 
   const run = async (work: () => Promise<void>) => {
     setBusy(true);

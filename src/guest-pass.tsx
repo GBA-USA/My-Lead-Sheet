@@ -133,7 +133,7 @@ export function GuestPassSheet({ code, onSignedOut, onClose }: { code: string; o
             <p className="account-note">
               {opening.bandName} · {endLine(opening.expiresAt)}
             </p>
-            <p className="account-note">You get tonight's songs on this phone and can follow the gig. When the pass ends they are deleted the next time the app opens.</p>
+            <p className="account-note">You get tonight's songs on this phone and can follow the gig. When the pass ends they are deleted from this phone.</p>
             <button type="button" className="account-primary" disabled={busy} onClick={join}>
               Join as a guest
             </button>

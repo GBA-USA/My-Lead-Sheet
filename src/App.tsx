@@ -392,7 +392,7 @@ export function App() {
       ) : null}
 
       {bands && owner ? (
-        <BandsSheet code={bands.code} onBand={openBand} onSetlistCopy={(code) => { setBands(null); setSetlistCopy({ code }); }} onSignedOut={() => setAccount(null)} onClose={() => setBands(null)} />
+        <BandsSheet code={bands.code} onBand={openBand} onSetlistCopy={(code) => { setBands(null); setSetlistCopy({ code }); }} onGuestPass={(code) => { setBands(null); setGuestPass(code); }} onSignedOut={() => setAccount(null)} onClose={() => setBands(null)} />
       ) : null}
       {setlistCode && account ? <MySetlistCodeSheet key={account.userId} setlist={setlistCode} onSignedOut={() => setAccount(null)} onClose={() => setSetlistCode(null)} /> : null}
       {setlistCopy && account ? (

@@ -161,7 +161,7 @@ export const DATA_KINDS: readonly DataKind[] = [
   {
     key: "mls-phone",
     place: "phone",
-    what: "Copies of the songs in your bands, and the gig packs you downloaded: the setlist for the night with its charts, the band timing for those songs, and the gig secret that proves your phone is on the lineup. Kept so they open with no signal. Removed when you sign out, or when another account signs in on this phone. A pack that came with a guest pass also holds when the pass ends, and is deleted the next time the app opens after that, even with no signal.",
+    what: "Copies of the songs in your bands, and the gig packs you downloaded: the setlist for the night with its charts, the band timing for those songs, and the gig secret that proves your phone is on the lineup. Kept so they open with no signal. Removed when you sign out, or when another account signs in on this phone. A pack that came with a guest pass also holds when the pass ends. It is deleted when the pass ends, even with no signal, and as soon as the phone hears that the band revoked the pass.",
   },
   {
     key: "syncHistory",

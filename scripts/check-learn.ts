@@ -1154,6 +1154,15 @@ const fourNineteen = await listenToFile(audioFile("Four Nineteen.m4a", { seconds
   check(!!change && Math.abs(change.at - 52) <= 2 * (60 / 150), `L1.2 the last ten seconds count: a change to 150 BPM 8 s before the end is in analysis.tempos (${heard || late.error})`, "pending until l1");
 }
 
+{
+  // L1.2 above uses +23%, past the 20% the tracker follows (src/learn-analyze.ts FOLLOW_LOCAL, since L2). This case keeps
+  // the condition itself, the last ten seconds heard, with a change the tracker does follow.
+  const late = await listenToFile(audioFile("Late Push.wav", { seconds: 60, channels: 1, song: fileSong(60, { change: { at: 52, bpm: 138 } }) }));
+  const tempos = late.listen?.analysis.tempos ?? [];
+  const change = tempos.find((tempo) => Math.abs(tempo.bpm - 138) <= 2);
+  const heard = tempos.map((tempo) => `${tempo.bpm.toFixed(1)} BPM at ${tempo.at.toFixed(2)} s`).join(", ");
+  check(!!change && Math.abs(change.at - 52) <= 2 * (60 / 138), `L1.2 a change to 138 BPM 8 s before the end of a picked file is in analysis.tempos (${heard || late.error})`, "pending until l1");
+}
 for (const seconds of [30, 70, 120, 259, 360]) {
   const run = seconds === 259 ? fourNineteen : await listenToFile(audioFile(`Take ${seconds}.mp3`, { seconds, channels: 2, song: fileSong(seconds) }));
   const coverage = run.listen?.coverage;

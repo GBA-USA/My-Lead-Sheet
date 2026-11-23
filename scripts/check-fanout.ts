@@ -848,6 +848,84 @@ try {
     }
   });
 
+  // The room's own write rules for a gig, sent straight from Node sockets: who may open it, an admin swap, and after the end.
+  const pure = await loadPure();
+  const gateLineup = [lee.userId, fran.userId, gus.userId];
+  const gateGig = await planGig("Gate", lee, gus, gateLineup);
+  const [leeGate, franGate, gusGate] = await Promise.all([socket(lee, bandId), socket(fran, bandId), socket(gus, bandId)]);
+  for (const opened of [leeGate, franGate, gusGate]) {
+    opened.ws.send(js({ kind: "gig-state", gigId: gateGig }));
+    await message(opened, "the empty copy", (m) => m.kind === "gig-state");
+  }
+  const copiesAt = (opened: Opened) => opened.received.filter((m) => m.kind === "gig-state" && m.state).length;
+  /** Sends one message and waits for the room's next refusal to it. */
+  const refusedTo = async (opened: Opened, body: object) => {
+    const seen = opened.received.filter((m) => m.kind === "gig-refused").length;
+    opened.ws.send(js(body));
+    const all = await until("the room's refusal", async () => opened.received.filter((m) => m.kind === "gig-refused"), (list) => list.length > seen);
+    return all[seen];
+  };
+  const gateCopy = async () => {
+    const probe = await socket(gus, bandId);
+    probe.ws.send(js({ kind: "gig-state", gigId: gateGig }));
+    const answer = await message(probe, "the room's copy", (m) => m.kind === "gig-state");
+    probe.ws.close();
+    return answer.state as GigState | null;
+  };
+  const gateStart = pure.startGig({ gigId: gateGig, order, leader: lee.userId, admin: lee.userId, backup: gus.userId, lineup: gateLineup, route: "auto", scrollAlong: true, now: band(Date.now()) });
+  let gateState = gateStart;
+
+  await check("open: only the planned leader opens the gig, at epoch 0, with the planned lineup and a real admin", async () => {
+    const bad: [string, Opened, GigState][] = [
+      ["Fran, a lineup follower, opening it as its leader", franGate, { ...gateStart, leader: fran.userId }],
+      ["Lee naming Fran, not an admin, as admin", leeGate, { ...gateStart, admin: fran.userId }],
+      ["Lee opening it with another lineup", leeGate, { ...gateStart, lineup: [lee.userId, fran.userId] }],
+      ["Lee opening it at epoch 1", leeGate, { ...gateStart, epoch: 1 }],
+    ];
+    for (const [what, from, state] of bad) {
+      const refusal = await refusedTo(from, { kind: "gig-start", state, at: Date.now() });
+      assert.equal(refusal.refused, "not-allowed", `${what} is refused not-allowed (${js(refusal)})`);
+    }
+    await sleep(300);
+    assert.deepEqual([leeGate, franGate, gusGate].map(copiesAt), [0, 0, 0], "no bad opening reached any socket");
+    assert.equal(await gateCopy(), null, "the room still holds no state");
+    leeGate.ws.send(js({ kind: "gig-start", state: gateStart, at: Date.now() }));
+    const opened = await message(gusGate, "Lee's opening", (m) => m.kind === "gig-state" && m.state?.rev === 0);
+    assert.deepEqual([opened.state.leader, opened.state.epoch], [lee.userId, 0], "the planned leader's opening is stored and forwarded");
+  });
+
+  await check("admin: the leader's op that names another admin is refused and reaches nobody", async () => {
+    const op = { kind: "goTo", key: "s2", opId: "gate-swap", epoch: 0 } as Op;
+    const out = pure.reduce(gateState, op, { by: lee.userId, now: band(Date.now()), lead: LEAD });
+    assert.ok(out.ok, "the op itself is one Lee may make");
+    const before = [franGate, gusGate].map(copiesAt);
+    const refusal = await refusedTo(leeGate, { kind: "gig-op", op, state: { ...out.state, admin: fran.userId }, at: Date.now() });
+    assert.deepEqual([refusal.opId, refusal.refused], ["gate-swap", "not-allowed"], `the room refuses the swap (${js(refusal)})`);
+    await sleep(300);
+    assert.deepEqual([franGate, gusGate].map(copiesAt), before, "nothing was forwarded");
+    const held = (await gateCopy())!;
+    assert.deepEqual([held.rev, held.admin], [gateStart.rev, lee.userId], "the room keeps Lee as admin");
+    const real = { kind: "goTo", key: "s2", opId: "gate-real", epoch: 0 } as Op;
+    const took = pure.reduce(gateState, real, { by: lee.userId, now: band(Date.now()), lead: LEAD });
+    assert.ok(took.ok, "Lee may go to s2");
+    leeGate.ws.send(js({ kind: "gig-op", op: real, state: took.state, at: Date.now() }));
+    await message(gusGate, "Lee's real op", (m) => m.kind === "gig-state" && m.state?.rev === took.state.rev);
+    gateState = took.state;
+  });
+
+  await check("ended: after the gig is ended, the leader's op is refused 'ended' and reaches nobody", async () => {
+    const ended = await lee.call("/api/bands/gig/end", { bandId, gigId: gateGig });
+    assert.equal(ended.status, 200, `Lee ends the gig (${js(ended.body)})`);
+    const op = { kind: "goTo", key: "s3", opId: "gate-after-end", epoch: 0 } as Op;
+    const out = pure.reduce(gateState, op, { by: lee.userId, now: band(Date.now()), lead: LEAD });
+    assert.ok(out.ok, "the op itself is one Lee may make");
+    const before = [franGate, gusGate].map(copiesAt);
+    const refusal = await refusedTo(leeGate, { kind: "gig-op", op, state: out.state, at: Date.now() });
+    assert.deepEqual([refusal.opId, refusal.refused], ["gate-after-end", "ended"], `the room refuses it (${js(refusal)})`);
+    await sleep(300);
+    assert.deepEqual([franGate, gusGate].map(copiesAt), before, "nothing was forwarded");
+  });
+
   await check("closing: every tab ends with no timer", async () => {
     for (const site of [...followers, leaderSite]) await call(site, "close()");
     await sleep(1500);

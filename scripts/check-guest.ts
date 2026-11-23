@@ -697,6 +697,68 @@ try {
       assert.ok(!(await hasButton("Band setlists", view)), "or band setlists");
     });
 
+    {
+      const view = `document.querySelector(${js(`.gig-view[data-gig="${gigId}"]`)})`;
+      const room = `${view}?.querySelector(".room")`;
+      const openChatAs = async (mark: string) => {
+        await signedInAs(gus);
+        await site.send("Page.navigate", { url: `${origin}/?${mark}#/gig/${bandId}/${gigId}` });
+        await waitFor(`${view}?.querySelector("h2")?.textContent === "Friday at the Elks"`, "Gus's gig view");
+        await waitFor(`[...${view}.querySelectorAll("button")].some((b) => b.textContent.trim() === "Band chat")`, "Band chat on Gus's gig view");
+        await tap("Band chat", view);
+      };
+      const cards = [
+        { title: "Brunch Tune", songId: brunch },
+        { title: "Elks Opener", songId: opener },
+      ];
+      for (const card of cards) ok(await mike.call("/api/chat/send", { roomId: bandId, msgId: newMsgId(), text: `🎵 ${card.title}`, card: { kind: "band-song", songId: card.songId } }), `Mike posts ${card.title} as a band-song card`);
+      const dead = `/Something went wrong/.test(document.body.textContent) || !document.querySelector(".gig-view, .missing")`;
+
+      for (const width of [360, 390]) {
+        await site.send("Emulation.setDeviceMetricsOverride", { width, height: 760, deviceScaleFactor: 2, mobile: true });
+
+        await check(`at ${width} px a guest's band-song card in Band chat names the song and opens no band page`, async () => {
+          await openChatAs(`gc=${width}`);
+          const card = (title: string) => `[...(${room}?.querySelectorAll(".chat-band-song") ?? [])].find((el) => el.textContent.includes(${js(title)}))`;
+          for (const { title } of cards) await waitFor(`!!(${card(title)})`, `the ${title} card in Gus's Band chat`);
+          const bandLinks = await site.evaluate<string[]>(`[...${view}.querySelectorAll("a[href]")].map((a) => a.getAttribute("href")).filter((href) => href.startsWith("#/band"))`);
+          assert.deepEqual(bandLinks, [], "nothing on the guest's gig view links to a band page");
+          for (const { title } of cards) {
+            await site.evaluate(`(${card(title)}).click()`);
+            await settle(1000);
+            assert.ok(!(await site.evaluate<string>("location.hash")).startsWith("#/band"), `tapping ${title} sends the guest to no band route`);
+            assert.ok(!(await site.evaluate<boolean>(dead)), `tapping ${title} leaves no blank page and no "Something went wrong"`);
+            assert.ok(await site.evaluate<boolean>(`!!${room}`), `Band chat is still open after tapping ${title}`);
+          }
+
+          await site.send("Page.navigate", { url: `${origin}/?gb=${width}#/band/${bandId}/song/${brunch}` });
+          await waitFor(`!!document.querySelector(".missing a[href]")`, "a message with a way back on a band song this phone doesn't hold").catch(async () => {
+            throw new Error(`the band song route reads ${js(await site.evaluate<string>(`(document.querySelector("main") ?? document.body).innerText.slice(0, 200)`))}`);
+          });
+          assert.match(await site.evaluate<string>(`document.querySelector(".missing").textContent`), /isn't on this phone/, "it says the song isn't on this phone");
+        });
+
+        await check(`at ${width} px a guest whose pass opens chat posts in Band chat from the gig view, and the band reads it with the guest's name`, async () => {
+          await openChatAs(`gp=${width}`);
+          const composer = `${room}?.querySelector(".chat-composer")`;
+          await waitFor(`!!(${composer})?.querySelector("textarea")`, "the composer in Gus's Band chat");
+          const send = await site.evaluate<{ seen: boolean; right: number; bottom: number }>(`(() => { const f = ${composer}; f.scrollIntoView({ block: "end" }); const b = [...f.querySelectorAll("button")].find((x) => x.textContent.trim() === "Send"); const r = b?.getBoundingClientRect(); return { seen: !!r && r.width > 0 && r.left >= 0 && r.right <= innerWidth + 0.5 && r.bottom <= innerHeight + 0.5, right: Math.round(r?.right ?? -1), bottom: Math.round(r?.bottom ?? -1) }; })()`);
+          assert.ok(send.seen, `Send is on screen at ${width} px (${js(send)})`);
+          const words = `Gus here, see you at 7 ${width} ${newMsgId()}`;
+          await site.evaluate(`(() => { const t = (${composer}).querySelector("textarea"); t.focus(); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(t, ${js(words)}); t.dispatchEvent(new Event("input", { bubbles: true })); })()`);
+          await settle(200);
+          await tap("Send", composer);
+          let post: { fromName: string } | undefined;
+          for (const end = Date.now() + 10_000; !post && Date.now() < end; await settle(250)) {
+            post = (ok(await mike.call("/api/chat/open", { roomId: bandId }), "Mike reads the band chat").messages as { text: string; fromName: string }[]).find((m) => m.text === words);
+          }
+          assert.ok(post, "Mike's /api/chat/open lists the guest's post");
+          assert.equal(post.fromName, "Gus Horn", "under the guest's name");
+        });
+      }
+      await site.send("Emulation.clearDeviceMetricsOverride");
+    }
+
     const packsFor = async () => (await packsOnPhone()).filter((pack) => pack.gig.gigId === gigId).length;
     const readyAs = async (who: Phone & { userId: string }, mark: string) => {
       await signedInAs(who);

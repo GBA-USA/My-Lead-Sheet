@@ -59,14 +59,14 @@ function Words({ text }: { text: string }) {
   );
 }
 
-/** A band song someone pointed at. It opens the band's copy, or says the band no longer has it. */
-function BandSongLink({ message, bandId, gone }: { message: ChatMessage; bandId: string; gone: boolean }) {
+/** A band song someone pointed at. It opens the band's copy, says the band no longer has it, or for a guest, who has no band page to open it on, only names it. */
+function BandSongLink({ message, bandId, gone, guest }: { message: ChatMessage; bandId: string; gone: boolean; guest: boolean }) {
   const songId = message.ref ?? "";
-  if (gone) {
+  if (gone || guest) {
     return (
       <span className="chat-bubble chat-band-song">
         {message.text}
-        <small>No longer in this band</small>
+        {gone ? <small>No longer in this band</small> : null}
       </span>
     );
   }
@@ -206,6 +206,7 @@ export function Room({
   roomId,
   entry,
   inline,
+  guest = false,
   band,
   onEntry,
   onGone,
@@ -215,6 +216,8 @@ export function Room({
   roomId: string;
   entry: ChatEntry | undefined;
   inline?: boolean;
+  /** A guest's Band chat on the gig view. Its band-song cards name the song and open nothing, since every band route is a member's. */
+  guest?: boolean;
   /** A band thread on its band page. A DM, or a band thread opened from Messages, has no + Song or @ list. */
   band?: RoomBand;
   onEntry: ChangeEntry;
@@ -299,7 +302,7 @@ export function Room({
             ) : line.message.kind === "setlist" ? (
               <SetlistCard message={line.message} me={me} />
             ) : line.message.kind === "band-song" ? (
-              <BandSongLink message={line.message} bandId={roomId} gone={!!line.message.ref && missing.includes(line.message.ref) && checked.has(line.message.ref)} />
+              <BandSongLink message={line.message} bandId={roomId} guest={guest} gone={!!line.message.ref && missing.includes(line.message.ref) && checked.has(line.message.ref)} />
             ) : (
               <span className="chat-bubble">
                 <Words text={line.message.text} />

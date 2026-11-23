@@ -83,7 +83,7 @@ export function GuestRooms({ me, bandId, opens, onSignedOut }: { me: string; ban
         </p>
       ) : null}
       {shown === "chat" ? (
-        <Room inline me={me} roomId={bandId} entry={undefined} onEntry={() => {}} onGone={(error) => (setShown(null), setGone(error))} onSignedOut={onSignedOut} />
+        <Room inline guest me={me} roomId={bandId} entry={undefined} onEntry={() => {}} onGone={(error) => (setShown(null), setGone(error))} onSignedOut={onSignedOut} />
       ) : null}
       {shown === "setlists" ? <GuestSetlists bandId={bandId} onSignedOut={onSignedOut} /> : null}
     </section>

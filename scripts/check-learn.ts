@@ -1323,6 +1323,17 @@ for (const [word, song, what] of [
 
 check(!fourNineteen.error && !!fourNineteen.listen && fourNineteen.busyMs <= budgetMs(259), `L1.14 a 4:19 file is analyzed no slower than the recorded baseline times 1.2 (${fourNineteen.busyMs.toFixed(0)} ms in the worker, budget ${budgetMs(259).toFixed(0)} ms on this machine)`);
 
+await frozen("L1.9 the mic's last part-second reaches the worker", null, async () => {
+  const sheet = await openSheet(twoHeadings(259));
+  await startMic(sheet);
+  const heard = truth.samples.subarray(0, Math.round(40.5 * SAMPLE_RATE));
+  await micPlay(heard);
+  await press(button("Stop"), "Stop");
+  await until(reviewing, "Review");
+  const fromMic = posted().reduce((sum, message) => sum + message.chunk.length, 0);
+  check(fromMic === heard.length && Math.abs((lastListen()?.coverage.heardSeconds ?? 0) - 40.5) < 0.01, `L1.9 a 40.5 s mic take reaches the worker whole, its last half second too (${fromMic} of ${heard.length}; ${JSON.stringify(lastListen()?.coverage)})`);
+});
+
 // L1's empty and error states and the stopped mic's evidence, beyond the frozen cases above.
 const filePicker = () => elements().some((el) => el.nodeName === "INPUT" && (el as unknown as { type?: string }).type === "file") && elements().some((el) => (el.nodeName === "BUTTON" || el.nodeName === "LABEL") && FILE_WORD.test(nameOf(el)));
 await frozen("L1 empty: no file picked shows the two ways in", null, async () => {

@@ -63,10 +63,9 @@ const CANT_TEST = "Can't test now. Check your connection and try again.";
 
 const CHOICES = Object.keys(CHOICE_WORDS) as RouteChoice[];
 
-const ROW: CSSProperties = { gridTemplateColumns: "auto minmax(0, 1fr) auto" };
-const RATING: CSSProperties = { gridColumn: 3, gridRow: "1 / span 2", color: "var(--text-dim)", fontSize: 13, textAlign: "right" };
-const WORD: CSSProperties = { display: "block", color: "var(--text)", fontWeight: 700 };
-const AGE: CSSProperties = { display: "block" };
+/** The rating is a third line under the name and line, so it shares their width and never squeezes them into a strip. */
+const RATING: CSSProperties = { gridColumn: 2, color: "var(--text-dim)", fontSize: 13 };
+const WORD: CSSProperties = { color: "var(--text)", fontWeight: 700 };
 const GREYED: CSSProperties = { opacity: 0.5 };
 
 /** Settings > Connection: four choices as rows of name, line and rating. During a gig the admin's choice shows and the rows are greyed out. */
@@ -156,13 +155,13 @@ function ConnectionSheet({ choice, onChoose, onClose }: { choice: RouteChoice; o
           {CHOICES.map((route) => {
             const { word, age } = ratingParts(RATED_AS[route], summaries ?? {});
             return (
-              <label key={route} style={ROW}>
+              <label key={route}>
                 <input type="radio" name="connection" checked={shown === route} onChange={() => pick(route)} />
                 <span data-slot="name">{CHOICE_WORDS[route].name}</span>
                 <small data-slot="line">{CHOICE_WORDS[route].line}</small>
                 <span data-slot="rating" style={RATING}>
                   <span data-word style={WORD}>{word}</span>
-                  <small data-age style={AGE}>{age}</small>
+                  {age ? <> · <span data-age>{age}</span></> : null}
                 </span>
               </label>
             );

@@ -529,6 +529,8 @@ try {
         } catch (error) { db.close(); fail(error); }
       };
     })`);
+  const clearHistory = (phone: Phone) =>
+    phone.site.evaluate(`new Promise((done) => { const open = indexedDB.open("mls-phone"); open.onsuccess = () => { const tx = open.result.transaction("syncHistory", "readwrite"); tx.objectStore("syncHistory").clear(); tx.oncomplete = () => { open.result.close(); done(true); }; }; })`);
   const local = (ms: number) => {
     const d = new Date(ms);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -561,7 +563,46 @@ try {
     const auto = await rowOf(phoneA, "Auto");
     is.equal(auto.word, "Best");
     is.ok(auto.age.includes("Through the server"), `Auto names the route it would use (${auto.age})`);
-    await phoneA.site.evaluate(`new Promise((done) => { const open = indexedDB.open("mls-phone"); open.onsuccess = () => { const tx = open.result.transaction("syncHistory", "readwrite"); tx.objectStore("syncHistory").clear(); tx.oncomplete = () => { open.result.close(); done(true); }; }; })`);
+    await clearHistory(phoneA);
+  });
+
+  await check("2d. with history on every row, each row keeps its name and line readable at 360 and 390 wide", async () => {
+    type Box = { name: string; nameWidth: number; lineWidth: number; height: number; ratingFits: boolean };
+    const boxes = () =>
+      phoneA.site.evaluate<Box[]>(
+        `[...document.querySelectorAll("[role=dialog] .gig-plan-route label")].map((l) => { const rating = l.querySelector("[data-slot=rating]"); return { name: l.querySelector("[data-slot=name]").textContent, nameWidth: Math.round(l.querySelector("[data-slot=name]").getBoundingClientRect().width), lineWidth: Math.round(l.querySelector("[data-slot=line]").getBoundingClientRect().width), height: Math.round(l.getBoundingClientRect().height), ratingFits: rating.scrollWidth <= rating.clientWidth + 1 }; })`,
+      );
+    const histories: Array<[string, number[]]> = [
+      ["recent", [2, 2, 0]],
+      ["older than a week", [12, 10, 9]],
+    ];
+    try {
+      for (const [label, [serverAgo, wifiAgo, internetAgo]] of histories) {
+        await seed(phoneA, [
+          [`server/${local(Date.now() - serverAgo * DAY)}`, { ...GOOD, day: local(Date.now() - serverAgo * DAY), source: "gig" }],
+          [`wifi/${local(Date.now() - wifiAgo * DAY)}`, { ...GOOD, day: local(Date.now() - wifiAgo * DAY), source: "bandmate" }],
+          [`internet/${local(Date.now() - internetAgo * DAY)}`, { ...BAD, day: local(Date.now() - internetAgo * DAY), source: internetAgo === 0 ? "test-now" : "bandmate" }],
+        ]);
+        await goSettings(phoneA);
+        await openConnection(phoneA);
+        for (const width of [360, 390]) {
+          await phoneA.site.send("Emulation.setDeviceMetricsOverride", { width, height: 844, deviceScaleFactor: 2, mobile: true });
+          await settle(150);
+          const read = await boxes();
+          is.equal(read.length, 4, "four rows");
+          for (const row of read) {
+            const at = `${label} @${width}px ${row.name}`;
+            is.ok(row.nameWidth >= 200 && row.lineWidth >= 200, `${at}: the name and line get ${row.nameWidth} and ${row.lineWidth} px, want at least 200`);
+            is.ok(row.height <= 140, `${at}: the row is ${row.height} px tall, want at most 140`);
+            is.ok(row.ratingFits, `${at}: the rating is not cut off`);
+          }
+        }
+        await clearHistory(phoneA);
+      }
+    } finally {
+      await clearHistory(phoneA);
+      await phoneA.site.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
+    }
   });
 
   await check("3c. Test now fills the server and internet rows and leaves the Wi-Fi link as 'Not tried yet · test with a bandmate'", async () => {

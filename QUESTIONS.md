@@ -2,6 +2,8 @@
 
 L1 is built and its cases pass, except for two seams with code this cook does not own. Each one needs a decision from its owner. Neither one needs Terry.
 
+Both seams are still open at `017c881`, measured Nov 23, 2026 with Edge on Windows. `check:learn` prints 162 ok and only the pending L1.2 FAIL, and it exits 0. The four Chrome checks in item 2 time out "waiting for the mic". With item 2's four lines added, they read 41, 28, 52 and 47 ok. `origin/mls-int-20261113` (`1fdc30d`) has not changed any of these files since `1eeb615`.
+
 ## 1. Frozen L1.2 fails because of the L2 tempo tracker, not the listen
 
 Frozen L1.2 in `scripts/check-learn.ts` changes 122 to 150 BPM 8 s before the end of a 60 s file. It expects the change in `analysis.tempos`. The listen delivers every sample to the worker, but the engine reads only "122.2 BPM at 3.00 s".

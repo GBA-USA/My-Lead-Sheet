@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { fakeDom, type FakeElement } from "./fake-dom.ts";
-import { FakeWorker, clearWorkerLog, listenThrough, workerIdle, workerLog, workerReplies } from "./fake-worker.ts";
+import { FakeWorker, clearWorkerLog, listenThrough, workerFaults, workerIdle, workerLog, workerReplies } from "./fake-worker.ts";
 import { FORM, HEAD as BLUES_HEAD, blues } from "./blues.ts";
 import { MIC_LEVELS, SAMPLE_RATE as L0_RATE, micColor, render } from "./learn-render.ts";
 import { TOLERANCE, scoreListen } from "./learn-score.ts";
@@ -387,6 +387,8 @@ interface FakeAudio {
   seconds: number;
   channels: number;
   song?: (rate: number) => Float32Array;
+  /** False for a file whose length an <audio> never reads, as iOS may do for a blob: no metadata event and no error. */
+  metadata?: false;
 }
 const fakeAudio = new Map<string, FakeAudio>();
 function audioFile(name: string, audio: FakeAudio): File {
@@ -458,6 +460,7 @@ function makeMedia(el: FakeElement) {
         fireOn(el, "error");
         return;
       }
+      if (audio.metadata === false) return;
       Object.assign(media, { duration: audio.seconds, readyState: 1 });
       for (const type of ["durationchange", "loadedmetadata", "loadeddata", "canplay", "canplaythrough"]) fireOn(el, type);
     });
@@ -1370,6 +1373,92 @@ await frozen("L1.6 the Review names why the mic stopped", null, async () => {
   await until(reviewing, "Review");
   check(text().includes("From the mic · heard 0:30 of 4:19 · the app was left"), `L1.6 the Review's coverage line carries the reason, "the app was left" (${text().slice(0, 200)})`);
 });
+
+// The file path's wake lock, a worker that breaks, a file whose length is never read, and a header that is off.
+const fileWay = () => elements().find((el) => el.nodeName === "LABEL" && FILE_WORD.test(nameOf(el)));
+const fileInput = () => elements().find((el) => el.nodeName === "INPUT" && (el as unknown as { type?: string }).type === "file");
+/** Hands `file` to the sheet's file input, as the picker does when the player chooses one. */
+function pick(file: File) {
+  const input = fileInput();
+  if (!input) throw new Error(`no file input in the Learn sheet (${text().slice(0, 300)})`);
+  Object.assign(input, { files: Object.assign([file], { item: (i: number) => (i === 0 ? file : null) }), value: `C:\\fakepath\\${file.name}` });
+  fire(input, "input");
+  fire(input, "change");
+}
+const locksText = () => `${wakeLocks.length} asked, ${wakeLocks.filter((lock) => lock.duringClick).length} inside a tap, ${wakeLocks.filter((lock) => lock.released).length} released`;
+
+await frozen("L1.8 a picked file holds the wake lock from the tap on the picker until the Review", null, async () => {
+  wakeLocks.length = 0;
+  await openSheet(twoHeadings(null));
+  await press(fileWay(), "the file picker");
+  check(wakeLocks.length > 0 && wakeLocks.every((lock) => lock.duringClick), `L1.8 a tap on "Pick the song's file" asks for the wake lock inside the tap (${locksText()})`);
+  pick(audioFile("Held.wav", { seconds: 30, channels: 1, song: fileSong(30) }));
+  await settle();
+  check(text().includes("Listening to Held.wav.") && wakeLocks.some((lock) => !lock.released), `L1.8 the lock is held while the file is heard (${locksText()}; ${text().slice(0, 160)})`);
+  await until(reviewing, "Review");
+  await settle();
+  check(wakeLocks.length > 0 && wakeLocks.every((lock) => lock.released), `L1.8 the Review lets the file's wake lock go (${locksText()})`);
+});
+
+await frozen("L1.8 a cancelled file picker lets the wake lock go", null, async () => {
+  wakeLocks.length = 0;
+  await openSheet(twoHeadings(null));
+  await press(fileWay(), "the file picker");
+  const input = fileInput();
+  if (!input) throw new Error(`no file input in the Learn sheet (${text().slice(0, 300)})`);
+  fire(input, "cancel");
+  await settle();
+  check(wakeLocks.length > 0 && wakeLocks.every((lock) => lock.released) && filePicker() && !!buttonNamed(MIC_WORD), `L1.8 closing the file picker with no file lets the wake lock go and leaves the two ways in (${locksText()}; ${text().slice(0, 160)})`);
+});
+
+for (const [from, failOn] of [["mic", "finish"], ["file", "samples"]] as const) {
+  await frozen(`L1.9 a worker that breaks on ${failOn} during a ${from} listen says so`, null, async () => {
+    wakeLocks.length = 0;
+    workerFaults.failOn = failOn;
+    try {
+      if (from === "mic") {
+        const sheet = await openSheet(twoHeadings(259));
+        await startMic(sheet);
+        await micPlay(truth.samples.subarray(0, 20 * SAMPLE_RATE));
+        await press(button("Stop"), "Stop");
+      } else {
+        await openSheet(twoHeadings(null));
+        await press(fileWay(), "the file picker");
+        pick(audioFile("Broken Worker.wav", { seconds: 30, channels: 1, song: fileSong(30) }));
+      }
+      await until(() => text().includes("Listening failed. Try again."), `"Listening failed. Try again." after the worker broke on ${failOn}`);
+      check(
+        filePicker() && !!buttonNamed(MIC_WORD) && wakeLocks.every((lock) => lock.released) && workerLog.errors.length > 0,
+        `L1.9 a ${from} listen whose worker breaks on ${failOn} says "Listening failed. Try again.", offers the two ways in again and lets the lock go (${locksText()}; ${text().slice(0, 160)})`,
+      );
+    } finally {
+      workerFaults.failOn = null;
+    }
+  });
+}
+
+{
+  const memo = await listenToFile(audioFile("Voice Memo.m4a", { seconds: 60, channels: 1, song: fileSong(60), metadata: false }));
+  const said = memo.listen?.coverage.expectedSeconds;
+  check(
+    memo.text.includes("From a file · 1:00 · ") && said != null && Math.abs(said - 60) <= 0.5 && memo.decodes === 1,
+    `L1.12 a file whose length the browser never reads is decoded after the wait and heard whole (${memo.decodes} decode(s); ${coverageText(memo)}; ${memo.text.slice(0, 120)})`,
+  );
+  const rehearsal = await listenToFile(
+    audioFile("Rehearsal.m4a", { seconds: 21 * 60, channels: 1, song: (rate) => new Float32Array(21 * 60 * rate), metadata: false }),
+    () => text().includes("longer than a song"),
+  );
+  check(
+    rehearsal.text.includes("That's longer than a song. Pick a file under twenty minutes.") && rehearsal.decodes === 1 && !rehearsal.listen && rehearsal.canPick,
+    `L1.12 a 21-minute file whose length is never read is refused after decode, and the file picker stays (${rehearsal.decodes} decode(s); ${rehearsal.error || rehearsal.text.slice(0, 200)})`,
+  );
+  const off = await listenToFile(audioFile("Header Off.mp3", { seconds: 64, channels: 2, song: fileSong(60) }));
+  const expected = off.listen?.coverage.expectedSeconds;
+  check(
+    off.text.includes("From a file · 1:00 · ") && expected != null && Math.abs(expected - 60) <= 0.5,
+    `L1.1 a file whose header says 1:04 but decodes to 1:00 is heard whole, by the decoded length (${coverageText(off)}; ${off.text.slice(0, 120)})`,
+  );
+}
 {
   const take = render(SONGS[0]);
   for (const [kind, samples, word] of [["file", take.samples, "clear"], ["mic loud", micColor(take.samples, "loud"), "noisy"]] as const) {

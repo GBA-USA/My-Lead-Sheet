@@ -7,7 +7,8 @@
  * - Messages are delivered in order, each in its own task. A throw in `handle` reaches the phone as an "error" event.
  * The phone makes its worker with `new Worker(new URL("./learn-worker.ts", import.meta.url), { type: "module" })`, the
  * form Vite builds and esbuild leaves alone. `workerLog` keeps every message both ways and how long `handle` ran.
- * `workerIdle` waits for the worker to catch up, and `workerReplies.rewrite` changes what the phone is told.
+ * `workerIdle` waits for the worker to catch up, `workerReplies.rewrite` changes what the phone is told, and
+ * `workerFaults.failOn` makes the worker throw.
  */
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -41,6 +42,9 @@ export const workerLog = { started: 0, toWorker: [] as ToWorker[], fromWorker: [
 
 /** Set `rewrite` to change each reply on its way to the phone, so a check can show the phone a result it chose. */
 export const workerReplies: { rewrite: ((reply: FromWorker) => FromWorker) | null } = { rewrite: null };
+
+/** Set `failOn` to a message kind, and the worker throws on the next one it gets, as a worker that breaks does. */
+export const workerFaults: { failOn: ToWorker["kind"] | null } = { failOn: null };
 
 export function clearWorkerLog() {
   Object.assign(workerLog, { started: 0, toWorker: [], fromWorker: [], errors: [], busyMs: 0 });
@@ -92,6 +96,7 @@ export class FakeWorker {
       if (!handle || this.terminated) return handle;
       const started = process.hrtime.bigint();
       try {
+        if (workerFaults.failOn === copy.kind) throw new Error(`the worker broke on ${copy.kind}`);
         handle(copy, (reply, back = []) => this.reply(reply, back));
       } catch (error) {
         this.fail(error);

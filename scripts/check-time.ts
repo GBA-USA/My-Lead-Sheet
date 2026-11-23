@@ -41,11 +41,8 @@ const MODEL: Record<LinkRoute, { base: number; bias: number; jitter: number; spi
 };
 const CLICK_MAX: Record<LinkRoute, number> = { wifi: 10, internet: 18, server: 20 };
 const ROUTE_NAMES = Object.keys(T.PING_EVERY_MS) as LinkRoute[];
-
-const modeled = (table: Record<string, unknown>) => Object.keys(table).sort().join(", ");
-for (const [name, table] of [["MODEL", MODEL], ["CLICK_MAX", CLICK_MAX]] as const) {
-  check(modeled(table) === modeled(T.PING_EVERY_MS), `${name} models exactly the routes band-time.ts pings: ${modeled(table)} against ${modeled(T.PING_EVERY_MS)}`);
-}
+const sameKeys = (table: object) => ROUTE_NAMES.length === Object.keys(table).length && ROUTE_NAMES.every((route) => route in table);
+check(sameKeys(MODEL) && sameKeys(CLICK_MAX), `the modeled routes (${Object.keys(MODEL)}) are exactly the product routes (${ROUTE_NAMES})`);
 
 const oneWay = (route: LinkRoute, sign: number, bias: number) => {
   const m = MODEL[route];

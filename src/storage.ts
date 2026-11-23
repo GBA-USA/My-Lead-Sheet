@@ -2,6 +2,7 @@ import seedLibrary from "../data/library.json";
 import { PER_ACCOUNT, SONG_SETTING_KEYS } from "./backup-keys";
 import { clampScrollPercent, isNotation, pitchClass, type Notation } from "./music";
 import { parsePersonal, type PersonalDefaults } from "./personal-settings-model";
+import { CHOICE_WORDS, type RouteChoice } from "./routes";
 import type { Learned, Mark, ScrollPlan, Span, Tempo } from "./scroll-timing";
 import type { BassNote, ChartLine, ChartSection, CopyMark, Library, LibraryFile, Song, SongData, SongRef } from "./types";
 
@@ -448,6 +449,18 @@ export function loadMetronomePrefs(): unknown {
 
 export function saveMetronomePrefs(prefs: object): boolean {
   return writeRaw(METRONOME_PREFS_KEY, JSON.stringify(prefs));
+}
+
+/** This phone's own Connection choice, used outside a gig. A value this build doesn't know reads as Auto. */
+export const CONNECTION_KEY = "leadSheetsConnection";
+
+export function loadConnection(): RouteChoice {
+  const raw = readRaw(CONNECTION_KEY);
+  return raw !== null && Object.hasOwn(CHOICE_WORDS, raw) ? (raw as RouteChoice) : "auto";
+}
+
+export function saveConnection(choice: RouteChoice): boolean {
+  return writeRaw(CONNECTION_KEY, choice);
 }
 
 export function tempoText(tempo: number | null): string {

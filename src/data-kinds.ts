@@ -68,6 +68,7 @@ export const DATA_KINDS: readonly DataKind[] = [
     what: "For each account on this phone, its songs and song settings moved aside while the backup of another account used the same place, put back when that account signs in here again.",
   },
   { key: "leadSheetsLibraryMode", place: "phone", what: "Whether this server keeps My Songs per account, so My Songs shows only the songs of the account signed in." },
+  { key: "leadSheetsConnection", place: "phone", what: "How this phone connects to the band outside a gig: Auto, Wi-Fi link, Over the internet or Server. In a gig the admin picks the route for everyone, and this stays as you set it." },
   { key: "users", place: "server", what: "Your account: the name bandmates see, your handle (the name others find you by), when you joined, and a number that goes up when you sign out everywhere." },
   {
     key: "passkeys",
@@ -161,6 +162,11 @@ export const DATA_KINDS: readonly DataKind[] = [
     key: "mls-phone",
     place: "phone",
     what: "Copies of the songs in your bands, and the gig packs you downloaded: the setlist for the night with its charts, the band timing for those songs, and the gig secret that proves your phone is on the lineup. Kept so they open with no signal. Removed when you sign out, or when another account signs in on this phone.",
+  },
+  {
+    key: "syncHistory",
+    place: "phone",
+    what: "For each route (Wi-Fi link, Over the internet, Server) and each of the last 30 days: how steady the clock was, how long the slowest message took, how many timing changes came late, whether the tries to connect worked, and whether a gig, Test now or a test with a bandmate measured it. Kept for the sync rating under Settings, then Connection. It is about this phone and the route, never a Wi-Fi network name or a venue, and it stays when another account signs in.",
   },
   { key: "leadSheetsPhoneOwner", place: "phone", what: "Which account the band data on this phone belongs to, so another account signing in here never sees it." },
   {

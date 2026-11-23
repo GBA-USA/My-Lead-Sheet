@@ -15,6 +15,8 @@
     "check:teach-screen": "node --experimental-strip-types scripts/check-teach-screen.ts",
     "check:bpm": "node --experimental-strip-types scripts/check-bpm.ts",
     "check:learn": "node --experimental-strip-types scripts/check-learn.ts",
+    "check:learn-songs": "node --experimental-strip-types scripts/check-learn-songs.ts",
+    "check:learn-local": "node --experimental-strip-types scripts/check-learn-local.ts",
     "check:learned": "node --experimental-strip-types scripts/check-learned.ts",
     "check:storage": "node --experimental-strip-types scripts/check-storage.ts",
     "check:fit": "node --experimental-strip-types scripts/check-fit.ts",
@@ -48,7 +50,7 @@
     "check:band-library": "node --experimental-strip-types scripts/check-band-library.ts",
     "check:setlist-code": "tsc -p worker && node --experimental-strip-types scripts/check-setlist-code.ts",
     "check:codes": "tsc -p worker && node --experimental-strip-types scripts/check-codes.ts",
-    "check:sync-rating": "node --experimental-strip-types scripts/check-sync-rating.ts",
+    "check:sync-rating": "tsc -p worker && node --experimental-strip-types scripts/check-sync-rating.ts",
     "check:chat": "tsc -p worker && node --experimental-strip-types scripts/check-chat.ts",
     "check:chat-songs": "tsc -p worker && node --experimental-strip-types scripts/check-chat-songs.ts",
     "check:band-status": "node --experimental-strip-types scripts/check-band-status.ts",
@@ -86,6 +88,9 @@
     "check:song-notes": "tsc -p worker && node --experimental-strip-types scripts/check-song-notes.ts",
     "check:new-song": "tsc -p worker && node --experimental-strip-types scripts/check-new-song.ts",
     "check:phone-layout": "tsc -p worker && node --experimental-strip-types scripts/check-phone-layout.ts",
+    "check:links": "tsc -p worker && node --experimental-strip-types scripts/check-links.ts",
+    "check:routes": "tsc -p worker && node --experimental-strip-types scripts/check-routes.ts",
+    "check:fanout": "tsc -p worker && node --experimental-strip-types scripts/check-fanout.ts",
     "check:sync-check": "tsc -p worker && node --experimental-strip-types scripts/check-sync-check.ts"
   },
   "dependencies": {

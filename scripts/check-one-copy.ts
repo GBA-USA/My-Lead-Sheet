@@ -36,7 +36,7 @@ const ONE_COPY: { what: string; pattern: RegExp; home: string | string[]; dir?: 
   { what: "the stage bar: Prev, Scroll, Next at 64 px", pattern: /function StageBar\b/, home: "src/stage-bar.tsx" },
   { what: "LeadSheet is the only sheet renderer", pattern: /className="sheet"/, home: "src/sheet.tsx", dir: "src/" },
   { what: "ROUTE_WORDS, the words for each kind of live link", pattern: /server: "Through the server"/, home: "src/routes.ts", dir: "src/" },
-  { what: "L1.9 the song listener, so analysis runs off the main thread,", pattern: /new SongListener\(/, home: "src/learn-worker.ts", dir: "src/", pending: "pending until l1" },
+  { what: "L1.9 the song listener, so analysis runs off the main thread,", pattern: /new SongListener\(/, home: "src/learn-worker.ts", dir: "src/" },
 ];
 
 for (const { what, pattern, home, dir, pending } of ONE_COPY) {

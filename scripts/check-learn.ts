@@ -1141,9 +1141,9 @@ const coverageText = (run: FileRun) => (run.listen ? JSON.stringify(run.listen.c
 const fourNineteen = await listenToFile(audioFile("Four Nineteen.m4a", { seconds: 259, channels: 2, song: fileSong(259) }));
 {
   const heard = fourNineteen.listen?.coverage.heardSeconds;
-  check(heard !== undefined && Math.abs(heard - 259) <= 0.5, `L1.1 a picked file is decoded and heard to its last second (${coverageText(fourNineteen)})`, "pending until l1");
+  check(heard !== undefined && Math.abs(heard - 259) <= 0.5, `L1.1 a picked file is decoded and heard to its last second (${coverageText(fourNineteen)})`);
   const first = fourNineteen.text.indexOf("From a file · 4:19 · clear");
-  check(first >= 0 && first < fourNineteen.text.indexOf(" BPM"), `L1.1 the Review's first line reads "From a file · 4:19 · clear" (${fourNineteen.text.slice(0, 160)})`, "pending until l1");
+  check(first >= 0 && first < fourNineteen.text.indexOf(" BPM"), `L1.1 the Review's first line reads "From a file · 4:19 · clear" (${fourNineteen.text.slice(0, 160)})`);
 }
 
 {
@@ -1161,20 +1161,20 @@ const fourNineteen = await listenToFile(audioFile("Four Nineteen.m4a", { seconds
   const tempos = late.listen?.analysis.tempos ?? [];
   const change = tempos.find((tempo) => Math.abs(tempo.bpm - 138) <= 2);
   const heard = tempos.map((tempo) => `${tempo.bpm.toFixed(1)} BPM at ${tempo.at.toFixed(2)} s`).join(", ");
-  check(!!change && Math.abs(change.at - 52) <= 2 * (60 / 138), `L1.2 a change to 138 BPM 8 s before the end of a picked file is in analysis.tempos (${heard || late.error})`, "pending until l1");
+  check(!!change && Math.abs(change.at - 52) <= 2 * (60 / 138), `L1.2 a change to 138 BPM 8 s before the end of a picked file is in analysis.tempos (${heard || late.error})`);
 }
 for (const seconds of [30, 70, 120, 259, 360]) {
   const run = seconds === 259 ? fourNineteen : await listenToFile(audioFile(`Take ${seconds}.mp3`, { seconds, channels: 2, song: fileSong(seconds) }));
   const coverage = run.listen?.coverage;
   const full = !!coverage && Math.abs(coverage.heardSeconds - seconds) <= 0.5 && Math.abs((coverage.expectedSeconds ?? -1) - seconds) <= 0.5 && coverage.stopped === "finished";
-  check(full && run.text.includes(`From a file · ${songClock(seconds)}`), `L1.3 a ${songClock(seconds)} file shows full coverage (${coverageText(run)})`, "pending until l1");
+  check(full && run.text.includes(`From a file · ${songClock(seconds)}`), `L1.3 a ${songClock(seconds)} file shows full coverage (${coverageText(run)})`);
 }
 
 {
   const { made, chunks } = fourNineteen;
-  check(made.length > 0 && made.every((each) => each.channels === 1 && each.sampleRate === FILE_RATE), `L1.4 decode is mono at 22050 Hz: every OfflineAudioContext has one channel at 22050 (${JSON.stringify(made) === "[]" ? "none made" : JSON.stringify(made)})`, "pending until l1");
+  check(made.length > 0 && made.every((each) => each.channels === 1 && each.sampleRate === FILE_RATE), `L1.4 decode is mono at 22050 Hz: every OfflineAudioContext has one channel at 22050 (${JSON.stringify(made) === "[]" ? "none made" : JSON.stringify(made)})`);
   const seconds = chunks.every((chunk, i) => chunk.sampleRate === FILE_RATE && (i === chunks.length - 1 ? chunk.length > 0 && chunk.length <= FILE_RATE : chunk.length === FILE_RATE));
-  check(chunks.length > 0 && seconds, `L1.4 the worker's chunks are one second each (${chunks.length} chunks, ${[...new Set(chunks.map((chunk) => `${chunk.length} at ${chunk.sampleRate} Hz`))].join(", ") || "none"})`, "pending until l1");
+  check(chunks.length > 0 && seconds, `L1.4 the worker's chunks are one second each (${chunks.length} chunks, ${[...new Set(chunks.map((chunk) => `${chunk.length} at ${chunk.sampleRate} Hz`))].join(", ") || "none"})`);
   const slow = synthesizeSong(FILE_RATE);
   const ear = new learn.SongListener(FILE_RATE);
   for (let at = 0; at < slow.samples.length; at += FILE_RATE) ear.push(slow.samples.subarray(at, at + FILE_RATE));
@@ -1182,16 +1182,16 @@ for (const seconds of [30, 70, 120, 259, 360]) {
   const late = at22 ? Math.max(...slow.beats.map((beat) => nearest(at22.beats, beat))) : Infinity;
   const read = at22?.tempos.map((tempo) => `${tempo.bpm.toFixed(2)} BPM at ${tempo.at.toFixed(2)} s`).join(", ") ?? "nothing heard";
   const tempoRight = !!at22 && at22.tempos.length === 2 && Math.abs(at22.tempos[0].bpm - 122) <= 1 && Math.abs(at22.tempos[1].bpm - 104) <= 1 && Math.abs(at22.tempos[1].at - slow.starts[2]) <= 60 / 104;
-  check(tempoRight && late <= 0.03, `L1.4 at 22050 Hz the song above keeps every beat within 30 ms and reads 122 then 104 BPM (worst ${(late * 1000).toFixed(1)} ms; ${read})`, "pending until l1");
+  check(tempoRight && late <= 0.03, `L1.4 at 22050 Hz the song above keeps every beat within 30 ms and reads 122 then 104 BPM (worst ${(late * 1000).toFixed(1)} ms; ${read})`);
   const steady = temposHeard(64, () => 112, 0.02, FILE_RATE);
-  check(steady.tempos.length === 1 && Math.abs(steady.tempos[0].bpm - 112) <= 1, `L1.4 at 22050 Hz a steady 112 BPM take reads as one tempo within 1 BPM (${steady.text})`, "pending until l1");
+  check(steady.tempos.length === 1 && Math.abs(steady.tempos[0].bpm - 112) <= 1, `L1.4 at 22050 Hz a steady 112 BPM take reads as one tempo within 1 BPM (${steady.text})`);
   const blues12 = hearAt(blues(FILE_RATE, { choruses: 2, noise: 0, reverb: false, pickup: 0, swaps: {} }), FILE_RATE);
   const bars = blues12 ? learn.heardBars(blues12.analysis.chroma, 0, blues12.analysis.chroma.length, 4, ["A7", "D7", "E7"]) : [];
   const right = [0, 1].map((chorus) => bars.slice(12 * chorus, 12 * chorus + 12).filter((bar, i) => bar.chord === FORM[i]).length);
-  check(right.every((count) => count >= 11), `L1.4 at 22050 Hz the clean blues reads at least 11 of 12 bars right in each chorus (${right.join(", ")})`, "pending until l1");
+  check(right.every((count) => count >= 11), `L1.4 at 22050 Hz the clean blues reads at least 11 of 12 bars right in each chorus (${right.join(", ")})`);
 }
 
-await frozen("L1.5 a mic that stops mid-song says why and offers to go on or use what was heard", "pending until l1", async () => {
+await frozen("L1.5 a mic that stops mid-song says why and offers to go on or use what was heard", null, async () => {
   const sheet = await openSheet(twoHeadings(259));
   await startMic(sheet);
   await micPlay(truth.samples.subarray(0, 70 * SAMPLE_RATE));
@@ -1199,15 +1199,15 @@ await frozen("L1.5 a mic that stops mid-song says why and offers to go on or use
   latest().emit("ended");
   await settle();
   const said = text();
-  check(said.includes("Listening stopped at 1:10.") && said.includes("Play the song from a speaker or another device and stay on this screen."), `L1.5 a mic track that ends at 1:10 says why (${said.slice(0, 240)})`, "pending until l1");
-  check(!!button("Keep listening") && !!button("Use what was heard"), "L1.5 it offers Keep listening and Use what was heard", "pending until l1");
+  check(said.includes("Listening stopped at 1:10.") && said.includes("Play the song from a speaker or another device and stay on this screen."), `L1.5 a mic track that ends at 1:10 says why (${said.slice(0, 240)})`);
+  check(!!button("Keep listening") && !!button("Use what was heard"), "L1.5 it offers Keep listening and Use what was heard");
   await press(button("Use what was heard"), "Use what was heard");
   await until(reviewing, "Review");
   const coverage = lastListen()?.coverage;
-  check(text().includes("From the mic · heard 1:10 of 4:19") && coverage?.stopped === "mic-ended", `L1.5 the Review then reads "From the mic · heard 1:10 of 4:19" (${JSON.stringify(coverage)}; ${text().slice(0, 160)})`, "pending until l1");
+  check(text().includes("From the mic · heard 1:10 of 4:19") && coverage?.stopped === "mic-ended", `L1.5 the Review then reads "From the mic · heard 1:10 of 4:19" (${JSON.stringify(coverage)}; ${text().slice(0, 160)})`);
 });
 
-await frozen("L1.5 Keep listening goes on with the same listen", "pending until l1", async () => {
+await frozen("L1.5 Keep listening goes on with the same listen", null, async () => {
   const sheet = await openSheet(twoHeadings(259));
   await startMic(sheet);
   await micPlay(truth.samples.subarray(0, 70 * SAMPLE_RATE));
@@ -1221,10 +1221,10 @@ await frozen("L1.5 Keep listening goes on with the same listen", "pending until 
   await press(button("Stop"), "Stop");
   await until(reviewing, "Review");
   const coverage = lastListen()?.coverage;
-  check(!!coverage && Math.abs(coverage.heardSeconds - 100) <= 0.5 && coverage.stopped === "player", `L1.5 after Keep listening and 30 s more, the listen holds all 1:40 (${JSON.stringify(coverage)})`, "pending until l1");
+  check(!!coverage && Math.abs(coverage.heardSeconds - 100) <= 0.5 && coverage.stopped === "player", `L1.5 after Keep listening and 30 s more, the listen holds all 1:40 (${JSON.stringify(coverage)})`);
 });
 
-await frozen("L1.6 a hidden page is reported as the reason", "pending until l1", async () => {
+await frozen("L1.6 a hidden page is reported as the reason", null, async () => {
   const sheet = await openSheet(twoHeadings(259));
   await startMic(sheet);
   await micPlay(truth.samples.subarray(0, 30 * SAMPLE_RATE));
@@ -1235,41 +1235,41 @@ await frozen("L1.6 a hidden page is reported as the reason", "pending until l1",
   fire(dom.document as unknown as FakeElement, "visibilitychange");
   await settle();
   const said = text();
-  check(said.includes("Listening stopped at 0:30.") && said.includes("This app was left while listening."), `L1.6 leaving the app stops the listen and says so (${said.slice(0, 240)})`, "pending until l1");
+  check(said.includes("Listening stopped at 0:30.") && said.includes("This app was left while listening."), `L1.6 leaving the app stops the listen and says so (${said.slice(0, 240)})`);
   await press(button("Use what was heard"), "Use what was heard");
   await until(reviewing, "Review");
-  check(lastListen()?.coverage.stopped === "page-hidden", `L1.6 the listen records stopped: "page-hidden" (${JSON.stringify(lastListen()?.coverage)})`, "pending until l1");
+  check(lastListen()?.coverage.stopped === "page-hidden", `L1.6 the listen records stopped: "page-hidden" (${JSON.stringify(lastListen()?.coverage)})`);
 });
 
 for (const [stopped, stop] of [
   ["mic-muted", () => ((latest().muted = true), latest().emit("mute"))],
   ["audio-suspended", () => ((FakeAudioContext.last.stuck = true), FakeAudioContext.last.setState("suspended"))],
 ] as const) {
-  await frozen(`L1.7 a ${stopped === "mic-muted" ? "muted track" : "suspended context"} is reported`, "pending until l1", async () => {
+  await frozen(`L1.7 a ${stopped === "mic-muted" ? "muted track" : "suspended context"} is reported`, null, async () => {
     const sheet = await openSheet(twoHeadings(259));
     await startMic(sheet);
     await micPlay(truth.samples.subarray(0, 30 * SAMPLE_RATE));
     stop();
     await settle();
-    check(text().includes("Listening stopped at 0:30."), `L1.7 ${stopped} stops the listen and says when (${text().slice(0, 200)})`, "pending until l1");
+    check(text().includes("Listening stopped at 0:30."), `L1.7 ${stopped} stops the listen and says when (${text().slice(0, 200)})`);
     await press(button("Use what was heard"), "Use what was heard");
     await until(reviewing, "Review");
-    check(lastListen()?.coverage.stopped === stopped, `L1.7 the listen records stopped: "${stopped}" (${JSON.stringify(lastListen()?.coverage)})`, "pending until l1");
+    check(lastListen()?.coverage.stopped === stopped, `L1.7 the listen records stopped: "${stopped}" (${JSON.stringify(lastListen()?.coverage)})`);
   });
 }
 
-await frozen("L1.8 listening holds the wake lock from the tap and lets it go", "pending until l1", async () => {
+await frozen("L1.8 listening holds the wake lock from the tap and lets it go", null, async () => {
   for (const end of ["Stop", "Cancel"]) {
     wakeLocks.length = 0;
     const sheet = await openSheet(twoHeadings(259));
     await startMic(sheet);
     const asked = wakeLocks.length;
-    check(asked > 0 && wakeLocks.every((lock) => lock.duringClick), `L1.8 the wake lock is asked for inside the tap that starts listening (${asked} asked, ${wakeLocks.filter((lock) => lock.duringClick).length} inside a tap)`, "pending until l1");
+    check(asked > 0 && wakeLocks.every((lock) => lock.duringClick), `L1.8 the wake lock is asked for inside the tap that starts listening (${asked} asked, ${wakeLocks.filter((lock) => lock.duringClick).length} inside a tap)`);
     await micPlay(truth.samples.subarray(0, 5 * SAMPLE_RATE));
     await press(button(end), end);
     await workerIdle();
     await settle();
-    check(asked > 0 && wakeLocks.every((lock) => lock.released), `L1.8 ${end} lets the wake lock go (${wakeLocks.filter((lock) => lock.released).length} of ${wakeLocks.length} released)`, "pending until l1");
+    check(asked > 0 && wakeLocks.every((lock) => lock.released), `L1.8 ${end} lets the wake lock go (${wakeLocks.filter((lock) => lock.released).length} of ${wakeLocks.length} released)`);
     await closeSheets();
   }
   const held = (navigator as unknown as { wakeLock?: unknown }).wakeLock;
@@ -1277,15 +1277,15 @@ await frozen("L1.8 listening holds the wake lock from the tap and lets it go", "
   try {
     const sheet = await openSheet(twoHeadings(259));
     await startMic(sheet);
-    check(text().includes("Keep this screen on while it listens"), `L1.8 with no wake lock the sheet says "Keep this screen on while it listens" (${text().slice(0, 200)})`, "pending until l1");
+    check(text().includes("Keep this screen on while it listens"), `L1.8 with no wake lock the sheet says "Keep this screen on while it listens" (${text().slice(0, 200)})`);
   } finally {
     Object.assign(navigator, { wakeLock: held });
   }
 });
 
-await frozen("L1.9 analysis runs off the main thread", "pending until l1", async () => {
+await frozen("L1.9 analysis runs off the main thread", null, async () => {
   const total = fourNineteen.chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-  check(total === Math.round(259 * FILE_RATE), `L1.9 the worker receives every sample of a picked file (${total} of ${Math.round(259 * FILE_RATE)})`, "pending until l1");
+  check(total === Math.round(259 * FILE_RATE), `L1.9 the worker receives every sample of a picked file (${total} of ${Math.round(259 * FILE_RATE)})`);
   const sheet = await openSheet(twoHeadings(259));
   await startMic(sheet);
   const heard = truth.samples.subarray(0, 40 * SAMPLE_RATE);
@@ -1293,23 +1293,23 @@ await frozen("L1.9 analysis runs off the main thread", "pending until l1", async
   await press(button("Stop"), "Stop");
   await until(reviewing, "Review");
   const fromMic = posted().reduce((sum, message) => sum + message.chunk.length, 0);
-  check(fromMic === heard.length && posted().every((message) => message.sampleRate === SAMPLE_RATE), `L1.9 the worker receives every sample the mic heard (${fromMic} of ${heard.length})`, "pending until l1");
+  check(fromMic === heard.length && posted().every((message) => message.sampleRate === SAMPLE_RATE), `L1.9 the worker receives every sample the mic heard (${fromMic} of ${heard.length})`);
 });
 
 {
   const { progress, bars } = fourNineteen;
   const rising = progress.every((fraction, i) => fraction >= 0 && fraction <= 1 && (i === 0 || fraction >= progress[i - 1]));
-  check(!fourNineteen.error && bars === 1 && progress.length >= 3 && rising && progress[progress.length - 1] >= 0.9, `L1.10 progress is one bar from the file's duration (${bars} bar(s), ${progress.length} steps, ${progress.slice(0, 3).map((fraction) => fraction.toFixed(2)).join(", ")} ... ${progress.slice(-2).map((fraction) => fraction.toFixed(2)).join(", ")}; ${fourNineteen.error})`, "pending until l1");
+  check(!fourNineteen.error && bars === 1 && progress.length >= 3 && rising && progress[progress.length - 1] >= 0.9, `L1.10 progress is one bar from the file's duration (${bars} bar(s), ${progress.length} steps, ${progress.slice(0, 3).map((fraction) => fraction.toFixed(2)).join(", ")} ... ${progress.slice(-2).map((fraction) => fraction.toFixed(2)).join(", ")}; ${fourNineteen.error})`);
 }
 
 {
   const broken = await listenToFile(audioFile("Bought Song.m4p", { seconds: 215, channels: 2 }), () => text().includes("Can't read this file"));
-  check(broken.text.includes("Can't read this file. Try an MP3, M4A or WAV.") && broken.canPick && !broken.listen, `L1.11 a file that cannot be decoded fails kindly and the file button stays (${broken.error || broken.text.slice(0, 200)})`, "pending until l1");
+  check(broken.text.includes("Can't read this file. Try an MP3, M4A or WAV.") && broken.canPick && !broken.listen, `L1.11 a file that cannot be decoded fails kindly and the file button stays (${broken.error || broken.text.slice(0, 200)})`);
 }
 
 {
   const long = await listenToFile(audioFile("Whole Concert.mp3", { seconds: 21 * 60, channels: 2, song: fileSong(30) }), () => text().includes("longer than a song"));
-  check(long.text.includes("That's longer than a song. Pick a file under twenty minutes.") && long.decodes === 0, `L1.12 a file over twenty minutes is refused before decode (${long.decodes} decode(s); ${long.error || long.text.slice(0, 200)})`, "pending until l1");
+  check(long.text.includes("That's longer than a song. Pick a file under twenty minutes.") && long.decodes === 0, `L1.12 a file over twenty minutes is refused before decode (${long.decodes} decode(s); ${long.error || long.text.slice(0, 200)})`);
 }
 
 for (const [word, song, what] of [
@@ -1318,37 +1318,36 @@ for (const [word, song, what] of [
   ["some noise", clipped(fileSong(60)), "a clipped"],
 ] as const) {
   const run = await listenToFile(audioFile(`${word}.wav`, { seconds: 60, channels: 1, song }));
-  check(run.text.includes(`From a file · 1:00 · ${word}`) && run.listen?.coverage.quality === word, `L1.13 quality is a word from measured things: ${what} file reads "${word}" (${run.listen?.coverage.quality ?? run.error})`, "pending until l1");
+  check(run.text.includes(`From a file · 1:00 · ${word}`) && run.listen?.coverage.quality === word, `L1.13 quality is a word from measured things: ${what} file reads "${word}" (${run.listen?.coverage.quality ?? run.error})`);
 }
 
-check(!fourNineteen.error && !!fourNineteen.listen && fourNineteen.busyMs <= budgetMs(259), `L1.14 a 4:19 file is analyzed no slower than the recorded baseline times 1.2 (${fourNineteen.busyMs.toFixed(0)} ms in the worker, budget ${budgetMs(259).toFixed(0)} ms on this machine)`, "pending until l1");
+check(!fourNineteen.error && !!fourNineteen.listen && fourNineteen.busyMs <= budgetMs(259), `L1.14 a 4:19 file is analyzed no slower than the recorded baseline times 1.2 (${fourNineteen.busyMs.toFixed(0)} ms in the worker, budget ${budgetMs(259).toFixed(0)} ms on this machine)`);
 
 // L1's empty and error states and the stopped mic's evidence, beyond the frozen cases above.
 const filePicker = () => elements().some((el) => el.nodeName === "INPUT" && (el as unknown as { type?: string }).type === "file") && elements().some((el) => (el.nodeName === "BUTTON" || el.nodeName === "LABEL") && FILE_WORD.test(nameOf(el)));
-await frozen("L1 empty: no file picked shows the two ways in", "pending until l1", async () => {
+await frozen("L1 empty: no file picked shows the two ways in", null, async () => {
   const asked = micAsks;
   await openSheet(twoHeadings(259));
   check(
     text().includes("Pick the song's file for the best result, or play it from a speaker near the phone.") && filePicker() && !!buttonNamed(MIC_WORD) && !button("Stop") && micAsks === asked,
     `L1 empty: the sheet opens on a file picker and a mic button with the speaker line, and asks for nothing yet (${micAsks - asked} mic asks; ${text().slice(0, 240)})`,
-    "pending until l1",
   );
 });
-await frozen("L1 empty: a denied mic says so and the file picker stays", "pending until l1", async () => {
+await frozen("L1 empty: a denied mic says so and the file picker stays", null, async () => {
   micAllowed = false;
   const sheet = await openSheet(twoHeadings(259));
   await press(buttonNamed(MIC_WORD), "a button for the mic");
   await until(() => text().includes("The mic isn't available."), "the denied mic's note");
-  check(filePicker() && FakeAudioContext.made > sheet.contexts && FakeAudioContext.last.state === "closed", `L1 empty: after "The mic isn't available." the file picker stays and the audio is closed (${FakeAudioContext.last.state}; ${text().slice(0, 240)})`, "pending until l1");
+  check(filePicker() && FakeAudioContext.made > sheet.contexts && FakeAudioContext.last.state === "closed", `L1 empty: after "The mic isn't available." the file picker stays and the audio is closed (${FakeAudioContext.last.state}; ${text().slice(0, 240)})`);
 });
 {
   const bought = await listenToFile(audioFile("Bought Song.m4p", { seconds: 215, channels: 2 }), () => text().includes("Can't read this file"));
-  check(bought.text.includes("Protected music can't be read.") && !bought.listen, `L1.11 a file that cannot be decoded adds "Protected music can't be read." (${bought.error || bought.text.slice(0, 240)})`, "pending until l1");
+  check(bought.text.includes("Protected music can't be read.") && !bought.listen, `L1.11 a file that cannot be decoded adds "Protected music can't be read." (${bought.error || bought.text.slice(0, 240)})`);
   const roomTone = (rate: number) => groove({ bpm: 120, seconds: 30, clicks: true, tail: 30 }, rate);
   const silent = await listenToFile(audioFile("Room Tone.wav", { seconds: 30, channels: 1, song: roomTone }), () => text().includes("No song with a steady beat heard"));
-  check(silent.text.includes("No song with a steady beat heard.") && silent.canPick && !silent.error, `L1 empty: a silent file says "No song with a steady beat heard." and the file picker stays (${silent.error || silent.text.slice(0, 240)})`, "pending until l1");
+  check(silent.text.includes("No song with a steady beat heard.") && silent.canPick && !silent.error, `L1 empty: a silent file says "No song with a steady beat heard." and the file picker stays (${silent.error || silent.text.slice(0, 240)})`);
 }
-await frozen("L1.6 the Review names why the mic stopped", "pending until l1", async () => {
+await frozen("L1.6 the Review names why the mic stopped", null, async () => {
   const sheet = await openSheet(twoHeadings(259));
   await startMic(sheet);
   await micPlay(truth.samples.subarray(0, 30 * SAMPLE_RATE));
@@ -1358,13 +1357,13 @@ await frozen("L1.6 the Review names why the mic stopped", "pending until l1", as
   dom.document.visibilityState = "visible";
   await press(button("Use what was heard"), "Use what was heard");
   await until(reviewing, "Review");
-  check(text().includes("From the mic · heard 0:30 of 4:19 · the app was left"), `L1.6 the Review's coverage line carries the reason, "the app was left" (${text().slice(0, 200)})`, "pending until l1");
+  check(text().includes("From the mic · heard 0:30 of 4:19 · the app was left"), `L1.6 the Review's coverage line carries the reason, "the app was left" (${text().slice(0, 200)})`);
 });
 {
   const take = render(SONGS[0]);
   for (const [kind, samples, word] of [["file", take.samples, "clear"], ["mic loud", micColor(take.samples, "loud"), "noisy"]] as const) {
     const heard = await listenThrough(samples, L0_RATE, { beatsPerBar: SONGS[0].beatsPerBar, lyrics: null, source: { kind: kind === "file" ? "file" : "mic", name: null, stereo: false, sampleRate: L0_RATE }, expectedSeconds: null, stopped: "finished" });
-    check(heard.listen?.coverage.quality === word, `L1.13 ${SONGS[0].title} ${kind === "file" ? "as a file" : "through the mic at the loud noise level"} reads "${word}" (${heard.listen?.coverage.quality ?? "nothing heard"})`, "pending until l1");
+    check(heard.listen?.coverage.quality === word, `L1.13 ${SONGS[0].title} ${kind === "file" ? "as a file" : "through the mic at the loud noise level"} reads "${word}" (${heard.listen?.coverage.quality ?? "nothing heard"})`);
   }
 }
 

@@ -289,6 +289,9 @@ const harness = await build({
         host.className = "app";
         document.body.append(host);
         root = createRoot(host);
+        window.__render(props);
+      };
+      window.__render = (props) => {
         const live = props.live && { ...props.live, statuses: () => window.__statuses, now: () => window.__now };
         root.render(createElement(BandStatusFaces, { players: props.players, live }));
       };`,
@@ -398,6 +401,49 @@ try {
     await mount(ids.terry, asAdmin);
     await tap("Sam Rivera");
     await until(`!!document.querySelector(${js(SHEET)})`, "the panel for the admin");
+    await close();
+  });
+
+  await test("a member's strip shows no one's sync status", async () => {
+    const STATUS = ["band-status-face-steady", "band-status-face-amber", "band-status-face-grey"];
+    for (const [feed, list] of [["the full feed", statuses], ["an empty feed", []]] as const) {
+      await mount(ids.sam, { leader: ids.mike, admin: false }, list);
+      const faces = await site.evaluate<{ label: string; classes: string[]; ring: string; style: string }[]>(
+        `[...document.querySelectorAll(${js(FACE)})].map((el) => ({ label: el.getAttribute("aria-label"), classes: [...el.classList], ring: getComputedStyle(el).borderTopColor, style: getComputedStyle(el).borderTopStyle }))`,
+      );
+      const marked = faces.filter((f) => f.classes.some((c) => STATUS.includes(c)));
+      assert.deepEqual(marked.map((f) => f.label), [], `with ${feed}, no face carries a status class (${js(marked)})`);
+      const others = faces.filter((f) => !f.classes.includes("band-status-face-leader"));
+      assert.equal(new Set(others.map((f) => `${f.ring} ${f.style}`)).size, 1, `with ${feed}, every non-leader face rings alike (${js(others)})`);
+    }
+  });
+
+  await test("a lead handed off and back does not reopen Band status untapped", async () => {
+    await mount(ids.mike, { leader: ids.mike, admin: false });
+    await tap("Sam Rivera");
+    await until(`!!document.querySelector(${js(SHEET)})`, "the panel for the leader");
+    await site.evaluate(`window.__render(${js({ players: lineupFor(ids.mike), live: { leader: ids.dana, admin: false } })}); true`);
+    await until(`!document.querySelector(${js(SHEET)})`, "the panel to close when Dana takes the lead");
+    await site.evaluate(`window.__render(${js({ players: lineupFor(ids.mike), live: { leader: ids.mike, admin: false } })}); true`);
+    await new Promise((done) => setTimeout(done, 600));
+    assert.equal(await isOpen(), false, "the lead comes back to Mike and the panel stays shut");
+    await tap("Sam Rivera");
+    await until(`!!document.querySelector(${js(SHEET)})`, "the panel on Mike's next tap");
+    await close();
+  });
+
+  await test("the panel draws each player's sync bars as filled and empty boxes", async () => {
+    await mount(ids.terry, asAdmin);
+    await tap("Terry Bass");
+    await until(`!!document.querySelector(${js(SHEET)})`, "the panel");
+    for (const want of Object.values(expected)) {
+      const bars = await site.evaluate<{ text: string; label: string | null } | null>(
+        `(() => { const el = ${row(want.name)}.querySelector(".band-status-bars"); return el && { text: el.textContent.trim(), label: el.querySelector("[role=img]")?.getAttribute("aria-label") ?? null }; })()`,
+      );
+      if (want.bars === null) assert.equal(bars, null, `${want.name} has no bars`);
+      else if (want.out) assert.deepEqual(bars, { text: "Out of sync", label: null }, `${want.name}'s bars`);
+      else assert.deepEqual(bars, { text: "■".repeat(want.bars) + "□".repeat(4 - want.bars), label: `Sync: ${want.bars} of 4 bars` }, `${want.name}'s bars`);
+    }
     await close();
   });
 

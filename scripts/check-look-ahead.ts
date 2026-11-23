@@ -363,8 +363,10 @@ async function browserCases(): Promise<number> {
         const el = document.getElementById("sheet-scroll");
         window.__landed = null;
         window.__released = null;
+        window.__track = [];
         addEventListener("touchend", () => (window.__released = performance.now()), { capture: true, once: true });
         const watch = () => {
+          if (window.__released !== null) window.__track.push(el.scrollTop);
           if (window.__released !== null && Math.abs(el.scrollTop - ${target}) < 2) return (window.__landed = performance.now() - window.__released);
           requestAnimationFrame(watch);
         };
@@ -375,6 +377,14 @@ async function browserCases(): Promise<number> {
       return evaluate<number | null>("window.__landed");
     };
     const near = (a: number | null, b: number, tolerance: number) => a !== null && Math.abs(a - b) <= tolerance;
+    /** The frames from the last release to landing on `target`: each one no farther from it than the one before, and at least five in between, so it glides and does not jump. */
+    const glide = async (target: number) => {
+      const track = await evaluate<number[]>("window.__track");
+      const away = track.map((top) => Math.abs(top - target));
+      const toward = away.every((each, i) => i === 0 || each <= away[i - 1] + 1);
+      const between = new Set(track.filter((top, i) => away[i] > 2 && Math.abs(top - track[0]) > 2).map(Math.round)).size;
+      return { ok: toward && between >= 5, words: `toward ${toward}, ${between} frames in between` };
+    };
 
     // Sanity: a counted send is seen, so a zero below means nothing went out.
     await evaluate(`fetch("data:,probe").catch(() => {}); window.__sent`);
@@ -409,6 +419,8 @@ async function browserCases(): Promise<number> {
       landed !== null && landed <= 450 && near(s.top, bandPlace(s, 30), 2),
       `on release the scroll reaches the band's place within 450 ms (took ${landed?.toFixed(0)} ms, top ${s.top.toFixed(1)}, band ${bandPlace(s, 30).toFixed(1)})`,
     );
+    let glided = await glide(bandPlace(s, 30));
+    check(glided.ok, `the release glides to the band's place frame by frame, never jumping (${glided.words})`);
     check(s.tag === null && s.line === null, `once locked again the tag and the gold line are gone (tag ${JSON.stringify(s.tag)}, line ${s.line})`);
 
     await dragUp();
@@ -423,6 +435,8 @@ async function browserCases(): Promise<number> {
       heldWhileBandMoved && landed !== null && landed <= 450 && near(s.top, bandPlace(s, 50), 2),
       `if the band moved during the drag it lands on the new place (held ${heldWhileBandMoved}, took ${landed?.toFixed(0)} ms, top ${s.top.toFixed(1)}, band ${bandPlace(s, 50).toFixed(1)})`,
     );
+    glided = await glide(bandPlace(s, 50));
+    check(glided.ok, `after the band moved, the release glides toward the new place, never the old one (${glided.words})`);
     await setBand(60);
     s = await seen();
     check(near(s.top, bandPlace(s, 60), 2), `after the glide the sheet is locked to the band again (top ${s.top.toFixed(1)}, band ${bandPlace(s, 60).toFixed(1)})`);

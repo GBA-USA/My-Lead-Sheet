@@ -1078,7 +1078,10 @@ async function fakeScreens() {
     root.unmount();
   });
 
-  await appStage();
+  await appStage().catch((error) => {
+    failures += 1;
+    console.log(`FAIL App's gig hooks could not run\n     ${String((error as Error)?.stack ?? error).split("\n").slice(0, 8).join("\n     ")}`);
+  });
 
   /** App's own gig hooks, mounted the way App mounts them, on the leader's phone with the room holding a running gig. */
   async function appStage() {

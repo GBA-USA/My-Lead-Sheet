@@ -64,19 +64,53 @@ export class TempoDetector {
 
 /** The steadiest beat in an onset envelope sampled `rate` times a second. Needs about 8 s of it. */
 export function tempoOf(onsets: readonly number[], rate: number): number | null {
-  const longestLag = Math.ceil((HARMONICS * 60 * rate) / SLOWEST) + 1;
+  const comb = combOf(onsets, rate, SLOWEST, FASTEST);
+  if (!comb) return null;
+  let best = 0;
+  comb.scores.forEach((score, i) => (score > comb.scores[best] ? (best = i) : 0));
+  return comb.scores[best] >= MIN_CLARITY ? comb.bpm(best) : null;
+}
+
+/** The tempos a whole song is heard at: every candidate from here on lies in this range. */
+export const CANDIDATE_SLOWEST = 40;
+export const CANDIDATE_FASTEST = 220;
+/** Peaks closer than this share of their tempo are one peak. */
+const SAME_PEAK = 0.04;
+
+/**
+ * The strongest `count` peaks of the beat comb between 40 and 220 BPM, strongest first; empty when nothing steady was
+ * heard. Octave mistakes live between these and their halves and doubles, so the caller scores those too.
+ */
+export function tempoCandidates(onsets: readonly number[], rate: number, count = 3): number[] {
+  const comb = combOf(onsets, rate, CANDIDATE_SLOWEST, CANDIDATE_FASTEST);
+  if (!comb) return [];
+  const { scores } = comb;
+  const peaks = scores
+    .map((score, i) => ({ bpm: comb.bpm(i), score, i }))
+    .filter(({ score, i }) => score >= MIN_CLARITY && score >= (scores[i - 1] ?? -Infinity) && score > (scores[i + 1] ?? -Infinity))
+    .sort((a, b) => b.score - a.score);
+  const kept: number[] = [];
+  for (const peak of peaks) {
+    if (kept.length === count) break;
+    if (kept.every((bpm) => Math.abs(bpm - peak.bpm) > SAME_PEAK * bpm)) kept.push(peak.bpm);
+  }
+  return kept;
+}
+
+/** How well a beat at each tempo from `slowest` to `fastest` fits the envelope, as a share of its energy. */
+function combOf(onsets: readonly number[], rate: number, slowest: number, fastest: number) {
+  const longestLag = Math.ceil((HARMONICS * 60 * rate) / slowest) + 1;
   if (onsets.length < 2 * longestLag) return null;
   const correlation = autocorrelate(centered(smoothed(onsets)), longestLag);
   if (correlation[0] <= 0) return null;
-
-  let best = SLOWEST;
-  let bestScore = -Infinity;
-  for (let bpm = SLOWEST; bpm <= FASTEST; bpm += GRID_STEP) {
+  const bpm = (i: number) => slowest + i * GRID_STEP;
+  const scores: number[] = [];
+  for (let i = 0; bpm(i) <= fastest + 1e-9; i++) {
     let score = 0;
-    for (let harmonic = 1; harmonic <= HARMONICS; harmonic++) score += at(correlation, (harmonic * 60 * rate) / bpm);
-    if (score > bestScore) [best, bestScore] = [bpm, score];
+    for (let harmonic = 1; harmonic <= HARMONICS; harmonic++) score += at(correlation, (harmonic * 60 * rate) / bpm(i));
+    scores.push(score / (HARMONICS * correlation[0]));
   }
-  return bestScore / (HARMONICS * correlation[0]) >= MIN_CLARITY ? best : null;
+  return { scores, bpm };
 }
 
 export function smoothed(values: readonly number[]): number[] {

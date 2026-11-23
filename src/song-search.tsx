@@ -1,6 +1,8 @@
 // song-search.ts holds the same stem, so it is "./song-search.js" here: esbuild maps ".js" to the ".ts" file, as gig-live.tsx does.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { songHref } from "./route";
+import { songYouHave } from "./search";
+import { YouHaveIt } from "./search-box";
 import { catalogSearcher, lengthText, lyricsSearchUrl, type CatalogSong, type Floor, type SearchState } from "./song-search.js";
 import { ownSong } from "./song-text";
 import { addOwnSong, madeHere } from "./storage";
@@ -36,11 +38,12 @@ const MESSAGES: Record<Exclude<SearchState["kind"], "idle" | "found">, (query: s
   failed: () => "The song list didn't answer. Try again in a moment.",
 };
 
-/** Search the public song catalog and start a new sheet from a pick. Signed in only, the same as + Add a song. */
-export function SongSearch() {
+/** Search the public song catalog and start a new sheet from a pick. Signed in only, the same as + Add a song. A pick of a song in `songs` asks first, as New song's Save does. */
+export function SongSearch({ songs }: { songs: Song[] }) {
   const [query, setQuery] = useState("");
   const [state, setState] = useState<SearchState>({ kind: "idle" });
   const [problem, setProblem] = useState("");
+  const [asking, setAsking] = useState<{ pick: CatalogSong; have: Song } | null>(null);
   const searcher = useMemo(browserSearcher, []);
   const picked = useRef(false);
   useEffect(() => searcher.stop, [searcher]);
@@ -48,10 +51,15 @@ export function SongSearch() {
   const change = (next: string) => {
     setQuery(next);
     setProblem("");
+    setAsking(null);
     searcher.search(next, setState);
   };
-  const pick = (song: CatalogSong) => {
+  const pick = (song: CatalogSong, anyway = false) => {
     if (picked.current) return;
+    setProblem("");
+    const have = anyway ? undefined : songYouHave(songs, song);
+    setAsking(have ? { pick: song, have } : null);
+    if (have) return;
     const id = addCatalogSong(song);
     if (id === null) return setProblem(NOT_ADDED);
     picked.current = true;
@@ -92,6 +100,7 @@ export function SongSearch() {
                 {song.artist ? <span className="song-artist">{song.artist}</span> : null}
                 <span className="song-meta">{[song.year, song.lengthSec === null ? null : lengthText(song.lengthSec)].filter(Boolean).join(" · ")}</span>
               </button>
+              {asking?.pick.id === song.id ? <YouHaveIt have={asking.have} onAdd={() => pick(song, true)} /> : null}
             </li>
           ))}
         </ul>

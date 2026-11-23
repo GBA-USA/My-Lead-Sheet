@@ -185,7 +185,7 @@ export function SongList({ songs, userId, onAdd }: { songs: Song[]; userId: stri
           <button type="button" className="song-list-add" onClick={onAdd}>
             + Add a song
           </button>
-          <SongSearch />
+          <SongSearch songs={songs} />
         </>
       ) : null}
       {searching ? <SearchChips keys={keys} bands={bands} chips={chips} onChange={setChips} /> : null}

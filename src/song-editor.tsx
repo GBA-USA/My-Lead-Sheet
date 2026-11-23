@@ -139,7 +139,7 @@ function SongEditor({ song, songs, onTempo, onClose }: { song?: Song; songs: Son
         }}
       >
         <h2 id={titleId}>{song ? "Edit song" : "New song"}</h2>
-        {!song && !form.title && !form.artist && !form.chart ? <SongSearch /> : null}
+        {!song && !form.title && !form.artist && !form.chart ? <SongSearch songs={songs} /> : null}
         <div className="song-editor-fields">
           <div className="song-data-field">
             <label htmlFor={ids.title}>Title</label>

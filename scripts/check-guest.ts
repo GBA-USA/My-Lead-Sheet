@@ -398,6 +398,8 @@ try {
 
   if (site) {
     const app = await appPage(site);
+    // Network.setBlockedURLs does nothing until the Network domain is on.
+    await site.send("Network.enable");
     await site.send("Page.addScriptToEvaluateOnNewDocument", {
       // __shown records whether a chart title of tonight's set was ever on screen, from the very first frame.
       source: `window.__shown = []; new MutationObserver(() => { const text = document.body?.textContent ?? ""; for (const title of ["Elks Opener", "Elks Closer"]) if (text.includes(title) && !__shown.includes(title)) __shown.push(title); }).observe(document, { childList: true, subtree: true, characterData: true });`,
@@ -409,6 +411,13 @@ try {
     const signInSheet = `document.querySelector(".account-sheet[data-step]")`;
     const atStep = (step: string) => waitFor(`${signInSheet}?.dataset.step === ${js(step)}`, `the ${step} screen`);
     const bodyText = () => site.evaluate<string>(`document.body.textContent`);
+    /** Opens `url` with the server unreachable, and proves it: a call to the API gets no answer at all. */
+    const openWithNoSignal = async (url: string) => {
+      await site.send("Network.setBlockedURLs", { urls: ["*/api/*", "*/c/*"] });
+      await site.send("Page.navigate", { url });
+      const probe = await site.evaluate<string>(`fetch("/api/auth/config").then((r) => "answered " + r.status, () => "no network")`);
+      assert.equal(probe, "no network", "the server really is unreachable");
+    };
     const fresh = async () => {
       await site.send("Network.setBlockedURLs", { urls: [] });
       await site.send("WebAuthn.disable");
@@ -553,8 +562,7 @@ try {
       assert.deepEqual(refusal(await quinn.call("/api/bands/gig/open", { bandId, gigId })), [410, "pass-ended"], "the room refuses the pass once it ended");
       assert.ok((await land(quinnPass.code)).text.includes(PASS_ENDED), "and the link says the pass has ended");
 
-      await site.send("Network.setBlockedURLs", { urls: ["*/api/*", "*/c/*"] });
-      await site.send("Page.navigate", { url: `${origin}/?q=2#/gig/${bandId}/${gigId}` });
+      await openWithNoSignal(`${origin}/?q=2#/gig/${bandId}/${gigId}`);
       await waitFor(`!!document.querySelector(${js(`.gig-view[data-gig="${gigId}"]`)})`, "the gig view, opened with the server unreachable");
       await settle(1000);
       assert.deepEqual(await site.evaluate<string[]>("window.__shown"), [], "no chart of the ended pass shows, not even for one frame");
@@ -595,6 +603,36 @@ try {
       await waitFor(`document.body.textContent.includes("Elks Opener")`, "tonight's songs on the phone");
       assert.equal(await packsFor(), 1, "the pack is on the guest's phone");
     };
+    const gigView = `!!document.querySelector(${js(`.gig-view[data-gig="${gigId}"]`)})`;
+    const charts = `/Elks (Opener|Closer)/.test(document.body.textContent)`;
+
+    let wesPassId = "";
+    await check("a live pass's charts show with no signal at all, since the pack's own end decides", async () => {
+      const wes = await passwordPlayer(base, origin, "Wes Hale", "weshale");
+      const wesPass = ok(await makePass(terry, { name: "Wes", expiresAt: Date.now() + 7 * DAY_MS }), "a one-week pass for Wes");
+      wesPassId = wesPass.pass.passId;
+      ok(await wes.call("/api/guest/claim", { code: wesPass.code }), "Wes joins as a guest");
+      await readyAs(wes, "w");
+      await openWithNoSignal(`${origin}/?w=2#/gig/${bandId}/${gigId}`);
+      await waitFor(gigView, "the gig view, opened with the server unreachable");
+      await waitFor(charts, "tonight's charts with no signal", 8000);
+      await site.send("Network.setBlockedURLs", { urls: [] });
+    });
+
+    await check("a live pass's charts show while the server is slow to answer, and a revoke heard late still takes them off", async () => {
+      await site.send("Fetch.enable", { patterns: [{ urlPattern: "*/api/bands/gig/open*" }] });
+      try {
+        await site.send("Page.navigate", { url: `${origin}/?w=3#/gig/${bandId}/${gigId}` });
+        await waitFor(gigView, "the gig view, with the server not answering");
+        await waitFor(charts, "tonight's charts while the server hangs", 8000);
+        ok(await terry.call("/api/bands/guests/revoke", { bandId, passId: wesPassId }), "Terry revokes Wes's pass meanwhile");
+      } finally {
+        await site.send("Fetch.disable");
+      }
+      for (const end = Date.now() + 10_000; (await packsFor()) > 0 && Date.now() < end; ) await settle(250);
+      assert.equal(await packsFor(), 0, "the late pass-revoked reply takes the pack off the phone");
+      await waitFor(`!${charts}`, "the charts gone from the screen once the late reply lands");
+    });
 
     await check("a revoked pass takes its charts off the phone at the next open, and none show while the phone asks", async () => {
       const rae = await passwordPlayer(base, origin, "Rae Lynn", "raelynn");
@@ -608,8 +646,7 @@ try {
       assert.deepEqual(await site.evaluate<string[]>("window.__shown"), [], "no chart of the revoked pass shows, not even while the phone asks the server");
       assert.equal(await packsFor(), 0, "the gigPacks row is gone");
 
-      await site.send("Network.setBlockedURLs", { urls: ["*/api/*", "*/c/*"] });
-      await site.send("Page.navigate", { url: `${origin}/?r=3#/gig/${bandId}/${gigId}` });
+      await openWithNoSignal(`${origin}/?r=3#/gig/${bandId}/${gigId}`);
       await waitFor(`!!document.querySelector(${js(`.gig-view[data-gig="${gigId}"]`)})`, "the gig view, opened with the server unreachable");
       await settle(1000);
       assert.deepEqual(await site.evaluate<string[]>("window.__shown"), [], "and with no signal afterwards the charts stay gone");

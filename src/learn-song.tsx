@@ -1,8 +1,9 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { RAW_MIC } from "./bpm-finder";
-import { SongListener, beatsPerBar, learnedVersion, shortHeading, type Analysis } from "./learn-analyze";
+import { SongListener, beatsPerBar, learnedVersion, placeHeadings, shortHeading } from "./learn-analyze";
 import { chartChords, chartForm, heardBars, type HeardBar } from "./learn-chords";
+import type { Analysis, Heard } from "./learn-result";
 import type { ScrollVersion, Span } from "./scroll-timing";
 import { formatRuntime, songDataFromForm } from "./song-data-editor";
 import type { Song, SongData } from "./types";
@@ -56,7 +57,7 @@ export function listenToSong(on: { heard: (seconds: number) => void; noMic: () =
 type Step =
   | { kind: "listening"; heard: number }
   | { kind: "note"; text: string }
-  | { kind: "review"; analysis: Analysis; boundaries: number[]; vocals: boolean[]; keepHeard: boolean[]; useForSong: boolean };
+  | { kind: "review"; heard: Heard; boundaries: number[]; vocals: boolean[]; keepHeard: boolean[]; useForSong: boolean };
 
 const clockText = (seconds: number) => formatRuntime(Math.max(0, Math.floor(seconds)));
 
@@ -120,14 +121,15 @@ export function LearnSong({
     onClose();
   };
   const finish = () => {
-    const analysis = stopListening.current()?.analyze(headings.length, bar);
+    const heard = stopListening.current()?.analyze(bar);
+    const boundaries = heard && placeHeadings(heard.analysis, headings.length, bar);
     setStep(
-      analysis
+      heard && boundaries
         ? {
             kind: "review",
-            analysis,
-            boundaries: analysis.boundaries,
-            vocals: analysis.vocals.map(() => true),
+            heard,
+            boundaries,
+            vocals: heard.analysis.vocals.map(() => true),
             keepHeard: headings.map(() => false),
             useForSong: false,
           }
@@ -164,7 +166,7 @@ export function LearnSong({
             onChange={setStep}
             onCancel={cancel}
             onSave={() => {
-              const { analysis, boundaries, useForSong } = step;
+              const { heard: { analysis }, boundaries, useForSong } = step;
               const tempo = Math.round(analysis.tempos[0].bpm);
               const vocals = analysis.vocals.filter((_, i) => step.vocals[i]);
               const heard = heardSections(song, analysis, boundaries, bar).map((bars, i) =>
@@ -232,7 +234,7 @@ function Review({
   onCancel: () => void;
   onSave: () => void;
 }) {
-  const { analysis, boundaries } = step;
+  const { heard: { analysis }, boundaries } = step;
   const { sound, beats, tempos } = analysis;
   const songTime = (seconds: number) => clockText(seconds - sound.start);
   const length = Math.round(sound.end - sound.start);

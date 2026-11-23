@@ -1,7 +1,7 @@
-export const CODE_KINDS = ["band", "gig", "guest", "band-setlist", "my-setlist", "friend-now", "friend-link"] as const;
+export const CODE_KINDS = ["band", "gig", "guest", "band-setlist", "my-setlist", "friend-now", "friend-link", "sync-check"] as const;
 export type CodeKind = (typeof CODE_KINDS)[number];
 
-export type CodeScreen = "bands" | "gig" | "setlists" | "friends";
+export type CodeScreen = "bands" | "gig" | "setlists" | "friends" | "connection";
 
 /** Where each kind of code lands, for a link opened in a browser and for the in-app scanner alike (PLAN.md 9.3). */
 export const CODE_SCREEN: Record<CodeKind, CodeScreen> = {
@@ -12,6 +12,7 @@ export const CODE_SCREEN: Record<CodeKind, CodeScreen> = {
   "my-setlist": "setlists",
   "friend-now": "friends",
   "friend-link": "friends",
+  "sync-check": "connection",
 };
 
 /**

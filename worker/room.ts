@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { NOT_A_MEMBER_CLOSE, type ChatMessage } from "../src/chat-model";
 import { GIG_SEND_MAX_CHARS, asGigSend, type GigCopy, type GigRefused, type GigSend } from "../src/leader-fanout";
-import { NOT_ON_LINEUP_CLOSE, type GigPeers } from "../src/links/link";
+import { NOT_ON_LINEUP_CLOSE, type GigPeers, type Hello, type JoinGig, type OnLineup } from "../src/links/link";
 import type { Person } from "./directory-http";
 import type { Env } from "./index";
 import { handleBackup, myLibraryPerAccount } from "./room-backup";
@@ -21,19 +21,20 @@ const RELAYED = ["intro", "ping", "pong", "link"] as const;
 type RelayKind = (typeof RELAYED)[number];
 
 /** `gig-state` asks for the room's copy of the gig's state; `gig-op` and `gig-start` carry the leader's new state. */
-type Inbound = { kind: RelayKind; to: string; body: unknown } | { kind: "join-gig"; gigId: string } | { kind: "gig-state"; gigId: string } | GigSend;
+type Inbound = { kind: RelayKind; to: string; body: unknown } | JoinGig | { kind: "gig-state"; gigId: string } | GigSend;
 
 type Outbound =
-  | { kind: "hello"; you: string; peers: string[] }
+  | Hello
   | { kind: RelayKind; from: string; body: unknown; rx: number; tx: number }
   | { kind: "message"; message: ChatMessage }
   | GigPeers
   | GigCopy
   | GigRefused
+  | OnLineup
   | { kind: "error"; error: "bad-message" | "no-peer" | "not-on-lineup"; to?: string };
 
-/** What a socket carries across hibernation: its session version, and the gig it joined (and when) once the lineup check passed. */
-type Attachment = { version: number; gigId?: string; joinedAt?: number };
+/** What a socket carries across hibernation: its session version, and the gig it joined (and when its phone opened it) once the lineup check passed. */
+type Attachment = { version: number; gigId?: string; openedAt?: number };
 
 function parseInbound(message: string | ArrayBuffer): Inbound | null {
   if (typeof message !== "string") return null;
@@ -44,9 +45,10 @@ function parseInbound(message: string | ArrayBuffer): Inbound | null {
     return null;
   }
   if (typeof value !== "object" || value === null) return null;
-  const { kind, to, body, gigId } = value as Record<string, unknown>;
-  if (kind === "join-gig" || kind === "gig-state") return typeof gigId === "string" ? { kind, gigId } : null;
+  const { kind, to, body, gigId, openedAt } = value as Record<string, unknown>;
+  if (kind === "gig-state") return typeof gigId === "string" ? { kind, gigId } : null;
   if (kind === "gig-op" || kind === "gig-start") return message.length <= GIG_SEND_MAX_CHARS ? asGigSend(value) : null;
+  if (kind === "join-gig") return typeof gigId === "string" ? { kind, gigId, ...(Number.isFinite(openedAt) ? { openedAt: openedAt as number } : {}) } : null;
   if (!RELAYED.includes(kind as RelayKind) || typeof to !== "string") return null;
   return { kind: kind as RelayKind, to, body };
 }
@@ -93,7 +95,7 @@ export class Room extends DurableObject<Env> {
     const [client, server] = Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(server, [you, userTag(userId)]);
     server.serializeAttachment({ version });
-    send(server, { kind: "hello", you, peers });
+    send(server, { kind: "hello", you, peers, lineups: [...this.lineups(userId).keys()] });
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -200,7 +202,12 @@ export class Room extends DurableObject<Env> {
 
   gigLineup(userId: string, gigId: string, lineup: string[]) {
     const view = gigRoom.setLineup(this.band, userId, gigId, lineup);
-    for (const ws of this.gigSockets(gigId)) if (!view.gig.lineup.includes(this.userOf(ws))) ws.close(NOT_ON_LINEUP_CLOSE, "not-on-lineup");
+    for (const ws of this.ctx.getWebSockets()) {
+      const joined = attachment(ws).gigId === gigId;
+      const onLineup = view.gig.lineup.includes(this.userOf(ws));
+      if (joined && !onLineup) ws.close(NOT_ON_LINEUP_CLOSE, "not-on-lineup");
+      if (!joined && onLineup) send(ws, { kind: "on-lineup", gigId });
+    }
     return view;
   }
 
@@ -319,34 +326,44 @@ export class Room extends DurableObject<Env> {
     return this.ctx.storage.sql.exec(`SELECT 1 FROM meta`).toArray().length > 0;
   }
 
-  /** The gig's leader, if `userId` is on its lineup. Membership alone is not enough (PLAN.md 7.14), and an admin who isn't playing is not let in. */
-  private lineupLeader(userId: string, gigId: string): string | null {
+  /**
+   * The gigs `userId` is on the lineup of, each with its leader. Membership alone is not enough (PLAN.md 7.14), and an
+   * admin who isn't playing is not let in. `hello` and `join-gig` both read this, so the greeting never disagrees with the join.
+   */
+  private lineups(userId: string): Map<string, string> {
     try {
-      const { gig } = gigRoom.open(this.band, userId, gigId);
-      return gig.lineup.includes(userId) ? gig.leader : null;
+      const { gigs, past } = gigRoom.list(this.band, userId);
+      return new Map([...gigs, ...past].filter(({ gig }) => gig.lineup.includes(userId)).map(({ gig }) => [gig.gigId, gig.leader]));
     } catch (error) {
-      if (error instanceof Refused) return null;
+      if (error instanceof Refused) return new Map();
       throw error;
     }
   }
 
-  /** Lineup players are told where the leader's socket is, and when the leader arrives the waiting players are told too. */
-  private joinGig(ws: WebSocket, gigId: string) {
-    const leader = this.lineupLeader(this.userOf(ws), gigId);
+  /**
+   * Lineup players are told where the leader's socket is, and when the leader arrives the waiting players are told too.
+   * Of the leader's phones, the one that opened the gig first leads until it leaves, so opening the gig on a second phone
+   * moves nobody. A reconnecting phone sends back the `openedAt` it was given (only ever earlier than now), so a room
+   * blip keeps its place.
+   */
+  private joinGig(ws: WebSocket, { gigId, openedAt }: JoinGig) {
+    const leader = this.lineups(this.userOf(ws)).get(gigId);
     if (!leader) return ws.close(NOT_ON_LINEUP_CLOSE, "not-on-lineup");
-    ws.serializeAttachment({ ...attachment(ws), gigId, joinedAt: Date.now() });
+    const now = Date.now();
+    ws.serializeAttachment({ ...attachment(ws), gigId, openedAt: Math.min(openedAt ?? now, now) });
     const sockets = this.gigSockets(gigId);
-    const newest = (a: WebSocket, b: WebSocket) => (attachment(a).joinedAt ?? 0) - (attachment(b).joinedAt ?? 0);
-    const leaderSocket = sockets.filter((other) => this.userOf(other) === leader).sort(newest).at(-1);
-    const tell = (to: WebSocket) => send(to, { kind: "gig", gigId, you: this.socketId(to), leader: leaderSocket ? this.socketId(leaderSocket) : null });
+    const opened = (socket: WebSocket) => attachment(socket).openedAt ?? now;
+    const leaderSocket = sockets.filter((other) => this.userOf(other) === leader).sort((a, b) => opened(a) - opened(b))[0];
+    const tell = (to: WebSocket) =>
+      send(to, { kind: "gig", gigId, you: this.socketId(to), leader: leaderSocket ? this.socketId(leaderSocket) : null, openedAt: opened(to) });
     if (leaderSocket === ws) for (const other of sockets) if (other !== ws) tell(other);
     tell(ws);
   }
 
   /** A lineup player asks for the room's copy. That also joins the gig's socket list, so every later copy reaches it. */
   private askGig(ws: WebSocket, gigId: string) {
-    if (!this.lineupLeader(this.userOf(ws), gigId)) return ws.close(NOT_ON_LINEUP_CLOSE, "not-on-lineup");
-    if (attachment(ws).gigId !== gigId) ws.serializeAttachment({ ...attachment(ws), gigId, joinedAt: Date.now() });
+    if (!this.lineups(this.userOf(ws)).get(gigId)) return ws.close(NOT_ON_LINEUP_CLOSE, "not-on-lineup");
+    if (attachment(ws).gigId !== gigId) ws.serializeAttachment({ ...attachment(ws), gigId, openedAt: Date.now() });
     send(ws, gigRelay.copy(this.ctx.storage.sql, gigId));
   }
 
@@ -361,7 +378,7 @@ export class Room extends DurableObject<Env> {
     const rx = Date.now();
     const inbound = parseInbound(message);
     if (!inbound) return send(ws, { kind: "error", error: "bad-message" });
-    if (inbound.kind === "join-gig") return this.joinGig(ws, inbound.gigId);
+    if (inbound.kind === "join-gig") return this.joinGig(ws, inbound);
     if (inbound.kind === "gig-state") return this.askGig(ws, inbound.gigId);
     if (inbound.kind === "gig-op" || inbound.kind === "gig-start") return this.takeGig(ws, inbound);
     const target = this.ctx.getWebSockets(inbound.to).find((ws) => this.socketId(ws) === inbound.to);

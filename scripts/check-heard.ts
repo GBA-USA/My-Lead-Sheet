@@ -76,7 +76,7 @@ for (const { name, take, least } of TAKES) {
   const started = performance.now();
   for (let at = 0; at < samples.length; at += 4096) listener.push(samples.subarray(at, at + 4096));
   const listened = performance.now() - started;
-  const analysis = listener.analyze(SIX, 4);
+  const analysis = listener.analyze(4)?.analysis;
   if (!analysis) {
     console.log(`     ${name}: Learn hears no steady beat, so there are no bars to hear`);
     rows.push(`| ${name} | no steady beat heard | | | |`);

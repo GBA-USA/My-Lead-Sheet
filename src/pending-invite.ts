@@ -12,6 +12,7 @@ const LINES: Partial<Record<CodeKind, string>> = {
   band: "Sign in to join the band.",
   "friend-link": "Sign in to add your friend.",
   "friend-now": "Sign in to add your friend.",
+  "sync-check": "Sign in to test your connection with your bandmate.",
 };
 
 type Held = { code: string; at: number };

@@ -1,6 +1,7 @@
 import { bandSongRef, type BandSong, type SongContent } from "./band-library-model";
 import type { GigPack } from "./gig-pack";
 import type { ShareChoice } from "./share-rule";
+import type { HistoryStore, SyncRecord } from "./sync-history";
 import type { SongRef } from "./types";
 
 /** A band song cached on this phone so search and the gig pack can read it with no signal (PLAN.md 10). */
@@ -8,18 +9,27 @@ export type CachedBandSong = { bandId: string; bandName: string; songId: string;
 
 /**
  * The stores of this phone's `mls-phone` database, each with its key and value. `bandSongs` is keyed
- * `"<bandId>/<songId>"`, the song's `SongRef` from `bandSongRef`. `gigPacks` is keyed by gig id.
+ * `"<bandId>/<songId>"`, the song's `SongRef` from `bandSongRef`. `gigPacks` is keyed by gig id. `syncHistory` is keyed
+ * `"<route>/<day>"` (src/sync-history.ts) and belongs to this phone, not to an account.
  */
 export type PhoneStores = {
   bandSongs: { key: SongRef; value: CachedBandSong };
   gigPacks: { key: string; value: GigPack };
+  syncHistory: { key: string; value: SyncRecord };
 };
 
 export type PhoneStore = keyof PhoneStores;
 
-export const PHONE_STORES: readonly PhoneStore[] = ["bandSongs", "gigPacks"];
+/** Band data: cleared when another account takes the phone. */
+export const PHONE_STORES: readonly Exclude<PhoneStore, "syncHistory">[] = ["bandSongs", "gigPacks"];
 
-const PHONE_DB_VERSION = 1;
+/** The store of the sync history, which `check:privacy` finds by this name. */
+const SYNC_HISTORY_KEY = "syncHistory" satisfies PhoneStore;
+
+/** Every store the database has. The sync history is numbers about this phone and its routes, so it stays when the account changes. */
+const ALL_STORES: readonly PhoneStore[] = [...PHONE_STORES, SYNC_HISTORY_KEY];
+
+const PHONE_DB_VERSION = 2;
 
 const settled = <T>(request: IDBRequest<T>): Promise<T> =>
   new Promise((resolve, reject) => {
@@ -31,7 +41,7 @@ const settled = <T>(request: IDBRequest<T>): Promise<T> =>
 export function openPhoneDb(): Promise<IDBDatabase> {
   const request = indexedDB.open("mls-phone", PHONE_DB_VERSION);
   request.onupgradeneeded = () => {
-    for (const store of PHONE_STORES) if (!request.result.objectStoreNames.contains(store)) request.result.createObjectStore(store);
+    for (const store of ALL_STORES) if (!request.result.objectStoreNames.contains(store)) request.result.createObjectStore(store);
   };
   return settled(request);
 }
@@ -153,3 +163,20 @@ export async function keepBandsOnPhone(bandIds: string[]): Promise<void> {
   });
   phoneChanged();
 }
+
+/** The phone's sync history in the shape `src/sync-history.ts` reads and writes. */
+export const syncHistoryStore: HistoryStore = {
+  get: (key) => getFromPhone("syncHistory", key),
+  put: (key, value) => putOnPhone("syncHistory", key, value),
+  remove: (key) => inStore("syncHistory", "readwrite", (objects) => objects.delete(key)).then(() => undefined),
+  async entries() {
+    const db = await openPhoneDb();
+    try {
+      const objects = db.transaction("syncHistory", "readonly").objectStore("syncHistory");
+      const [keys, values] = await Promise.all([settled(objects.getAllKeys()), settled(objects.getAll() as IDBRequest<SyncRecord[]>)]);
+      return keys.map((key, i): [string, SyncRecord] => [String(key), values[i]]);
+    } finally {
+      db.close();
+    }
+  },
+};

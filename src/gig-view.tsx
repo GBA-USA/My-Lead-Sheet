@@ -4,7 +4,7 @@ import { bandSong } from "./band-setlist-view";
 import { BandStatusFaces } from "./band-status";
 import { playersFrom } from "./band-status-model";
 import type { BandView } from "./bands-model";
-import { downloadPack, type GigPack } from "./gig-pack";
+import { downloadPack, packEnded, type GigPack } from "./gig-pack";
 import { gigLine, type GigView } from "./gig-plan-model";
 import type { GigPosition } from "./gig-position";
 import { displayKeyLabel } from "./music";
@@ -20,6 +20,9 @@ const MESSAGES: Record<string, string> = {
   "no-band": "This band isn't there any more.",
   "not-on-lineup": "This gig is for tonight's lineup.",
   "not-allowed": "Only the admin or tonight's leader can do that.",
+  "pass-revoked": "This pass was ended by the band.",
+  "pass-ended": "This pass has ended.",
+  guest: "A guest pass doesn't open that.",
 };
 const NEEDS_CONNECTION = "Needs a connection";
 const PACK_OFFLINE = "Can't download now · try on Wi-Fi";
@@ -55,7 +58,7 @@ export function useGigPack(me: string | null, gigId: string): GigPack | null | u
     if (!me || !gigId || !heldFor(me)) return setFound({ key, pack: null });
     let live = true;
     getFromPhone("gigPacks", gigId).then(
-      (pack) => live && setFound({ key, pack: pack ?? null }),
+      (pack) => live && setFound({ key, pack: pack && !packEnded(pack) ? pack : null }),
       () => live && setFound({ key, pack: null }),
     );
     return () => {

@@ -28,6 +28,10 @@ const ROOM_REFUSALS = {
   "is-leader": 400,
   "gig-ended": 409,
   "set-locked": 409,
+  guest: 403,
+  "pass-claimed": 403,
+  "pass-revoked": 410,
+  "pass-ended": 410,
 } as const;
 
 export const roomRefused = (reason: keyof typeof ROOM_REFUSALS) => new Refused(reason, ROOM_REFUSALS[reason]);

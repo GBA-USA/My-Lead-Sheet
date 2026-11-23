@@ -1,3 +1,49 @@
+# C21c question: three test faults in commit 1's `check:guest` (e232ade). May CoS apply this test-only patch?
+
+The build is committed on `cook/c21c`. Under the queue rules I did not edit the commit-1 test after it. Each fix
+below is to a request the test itself makes. No assertion changes what it requires, and no expected value moves.
+With the patch applied, `check:guest` passes 13 of 13 here (Edge on Windows). Without it, the committed test reads
+6 ok and 7 FAIL, every FAIL caused by the faults below (the first one aborts the case that makes Sam's pass, and
+every later Worker case uses that pass).
+
+## 1. Two signed-out probes send the wrong Origin (lines 200 and 221)
+
+`new Phone(base)` sends `origin: https://app.test`. When Chrome starts, the Worker's `APP_ORIGIN` is the site's
+localhost origin, so `worker/index.ts` answers `403 wrong-origin` before the Directory can say `401 signed-out`.
+The assertions mean "signed out is refused with 401", so the probe must come from the app's origin.
+
+## 2. Pat's second phone sends no Origin after it signs in (line 244)
+
+The same bare `Phone`: its salt and sign-in calls pass `{ origin }`, but its later `claim`, `pack` and socket calls do
+not, so the claim reads `403 wrong-origin`. The fix gives it the app's origin the way `passwordPlayer` does.
+
+## 3. The test's band songs are built-in library charts, so "send them on" can't be refused (line 31)
+
+`chart()` copies `data/library.json` songs and changes only the title. `printOf` hashes the body alone, so every band
+song in the test is a built-in chart that every phone ships with. `guardContent` lets anyone pass on a built-in
+chart (CLAUDE.md rule 5, same content is not the same item), so refusing it would judge by content. The fix makes the
+test's band songs the band's own with one tag line, the way a band's real chart differs from the built-in one.
+
+```diff
+--- a/scripts/check-guest.ts
++++ b/scripts/check-guest.ts
+@@ const chart = (index: number, title: string): SongContent => {
+   const { id: _id, ...song } = seed.songs[index];
+-  return { ...song, title };
++  return { ...song, title, body: [{ heading: "Tag", lines: [{ chords: "G", lyrics: `${title} tag line` }] }, ...song.body] };
+ };
+@@ only the admin makes a guest pass
+-    assert.equal((await new Phone(base).call("/api/bands/guests/create", { bandId, gigId })).status, 401, "a signed-out phone makes no pass");
++    assert.equal((await new Phone(base).call("/api/bands/guests/create", { bandId, gigId }, { origin })).status, 401, "a signed-out phone makes no pass");
+@@ the pass binds to the first account
+-    assert.equal((await new Phone(base).call("/api/guest/claim", { code: samCode })).status, 401, "nobody joins as a guest signed out: there is no name-only path");
++    assert.equal((await new Phone(base).call("/api/guest/claim", { code: samCode }, { origin })).status, 401, "nobody joins as a guest signed out: there is no name-only path");
+@@ a forwarded pass link opened on a second phone
+     const second = new Phone(base);
++    const secondCall = second.call.bind(second);
++    second.call = (path, body, headers = {}) => secondCall(path, body, { origin, ...headers });
+```
+
 # C21 question: three test faults left in commit 1's `check:mirror` (bd432d0). May CoS apply this test-only patch?
 
 The build (fced55e) is committed. Under the queue rules I did not edit the commit-1 test after it. Each fix below is

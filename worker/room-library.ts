@@ -6,6 +6,7 @@ import { liveCode } from "./codes";
 import { signedIn, type Context, type Route, type User } from "./directory-http";
 import { fromRoom, Refused, roomRefused as refused } from "./refused";
 import { selfRoomId } from "./room-backup";
+import { everAGuest, guestBandIdsOf } from "./room-guest";
 import { bandIdIn, bandIdsOf, inRoom, roomOf, shutOut, type RoomStore } from "./room-members";
 import { checkSend, lineage, type ShareChoice, type StoredShare } from "./share-guard";
 
@@ -134,7 +135,7 @@ export type SetlistShare = SetlistFields & { localId: number | null; choice: Sha
 /** Every user id here is trusted: only the Directory calls these, after it has checked the session and the share rule. */
 export const bandLibrary = {
   view(band: RoomStore, userId: string): BandLibrary {
-    inRoom(band.sql, userId);
+    inRoom(band.sql, userId, "setlists");
     const names = memberNames(band.sql);
     return {
       songs: band.sql
@@ -238,7 +239,10 @@ export const bandLibrary = {
    * share ids the caller's own copies came through), only the songs the caller shared or took a copy from; with null, all.
    */
   heldByPrint(band: RoomStore, userId: string, print: string, except: string | null, takenFrom: string[] | null): Chain[] {
-    if (shutOut(band.sql, userId)) return [];
+    if (shutOut(band.sql, userId)) {
+      if (everAGuest(band.sql, userId) && band.sql.exec(`SELECT 1 FROM band_songs WHERE print = ? LIMIT 1`, print).toArray().length) throw refused("guest");
+      return [];
+    }
     const taken = takenFrom && JSON.stringify(takenFrom);
     return band.sql
       .exec<SongRow>(
@@ -412,7 +416,7 @@ export async function guardContent(c: Context, userId: string, print: string, ch
   if (mine.named) mustAllow(mine.named.chain, userId, choice);
   if (mine.named?.print === print || (await isBuiltIn(print))) return mine.named?.chain ?? null;
   const takenFrom = mine.named ? null : mine.takenFrom;
-  const inBands = await Promise.all(bandIdsOf(c.sql, userId).map((bandId) => fromRoom(roomOf(c, bandId).heldByPrint(userId, print, except, takenFrom))));
+  const inBands = await Promise.all([...bandIdsOf(c.sql, userId), ...guestBandIdsOf(c.sql, userId)].map((bandId) => fromRoom(roomOf(c, bandId).heldByPrint(userId, print, except, takenFrom))));
   const held = [...mine.byPrint, ...inBands.flat()];
   const allowing = held.find((chain) => verdict(chain).ok);
   if (held.length > 0 && !allowing) mustAllow(held[0], userId, choice);

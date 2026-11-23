@@ -1,6 +1,6 @@
 import type { SongContent } from "./band-library-model";
 import type { GigPlan } from "./gig-plan-model";
-import { claimPhone, getFromPhone, putOnPhone } from "./phone-db";
+import { claimPhone, getFromPhone, openPhoneDb, putOnPhone } from "./phone-db";
 import type { ScrollVersion } from "./scroll-timing";
 import { api } from "./sign-in-methods";
 
@@ -23,6 +23,33 @@ export type GigPack = {
   expiresAt: number | null;
 };
 
+/** Whether the guest pass a pack came with has ended. A lineup player's pack has no end. */
+export const packEnded = (pack: GigPack, now = Date.now()) => pack.expiresAt !== null && pack.expiresAt <= now;
+
+/**
+ * Deletes every pack whose guest pass has ended. The end is in the pack, so this needs no signal. `src/main.tsx` awaits
+ * it before the first render, so an ended pass's charts never show, not even for one frame (PLAN.md 7.14).
+ */
+export async function dropEndedPacks(now = Date.now()): Promise<void> {
+  const db = await openPhoneDb();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const sweeping = db.transaction("gigPacks", "readwrite");
+      const cursor = sweeping.objectStore("gigPacks").openCursor();
+      cursor.onsuccess = () => {
+        const at = cursor.result;
+        if (!at) return;
+        if (packEnded(at.value as GigPack, now)) at.delete();
+        at.continue();
+      };
+      sweeping.oncomplete = () => resolve();
+      sweeping.onerror = () => reject(sweeping.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+
 /** Downloads the pack and keeps it on this phone under the gig's id, so a second download replaces the first. An older rev never replaces a newer one. */
 export async function downloadPack(userId: string, bandId: string, gigId: string): Promise<GigPack> {
   const fresh = await api<GigPack>("/api/bands/gig/pack", { bandId, gigId });
@@ -41,5 +68,5 @@ export async function packsOnPhone(userId: string, gigIds: string[]): Promise<Re
   );
   if (!claimed) return {};
   const found = await Promise.all(gigIds.map((gigId) => getFromPhone("gigPacks", gigId).catch(() => undefined)));
-  return Object.fromEntries(found.flatMap((pack) => (pack ? [[pack.gig.gigId, pack]] : [])));
+  return Object.fromEntries(found.flatMap((pack) => (pack && !packEnded(pack) ? [[pack.gig.gigId, pack]] : [])));
 }

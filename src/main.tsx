@@ -7,6 +7,7 @@ import "@fontsource/inter/800.css";
 import "@fontsource/ibm-plex-mono/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import { App } from "./App";
+import { dropEndedPacks } from "./gig-pack";
 import "./styles.css";
 
 /** The library is repaired on load, so a fresh load is the way back. Stored songs are never cleared here. */
@@ -43,10 +44,13 @@ if (import.meta.env.PROD && "serviceWorker" in navigator) {
 const root = document.getElementById("root");
 if (!root) throw new Error("Missing #root");
 
-createRoot(root).render(
-  <StrictMode>
-    <ErrorBoundary>
-      <App />
-    </ErrorBoundary>
-  </StrictMode>,
-);
+/** A guest pass that ended takes its charts with it before anything is drawn, with or without a signal. */
+const swept = () =>
+  createRoot(root).render(
+    <StrictMode>
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
+    </StrictMode>,
+  );
+dropEndedPacks().then(swept, swept);

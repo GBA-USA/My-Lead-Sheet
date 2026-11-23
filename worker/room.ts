@@ -9,8 +9,9 @@ import { chatRoom, createChatTables, type Card, type Posted } from "./room-chat"
 import { exportBand, importBandFile } from "./room-export";
 import { bandLibrary, createLibraryTables, selfCopies, type SentSetlist, type SetlistFields, type SetlistSend, type SetlistShare, type SongChange, type SongShare } from "./room-library";
 import { createGigTables, gigRoom, type GigFields } from "./room-gig";
+import { createGuestTables, guestRoom, type PassFields } from "./room-guest";
 import { gigRelay } from "./room-relay";
-import { bandRoom, createMemberTables, shutOut } from "./room-members";
+import { bandRoom, createMemberTables, readsChat, shutOut } from "./room-members";
 import { createNoteTables, noteRoom, type NoteFields } from "./room-notes";
 import { Refused } from "./refused";
 import type { RouteChoice } from "../src/routes";
@@ -74,6 +75,7 @@ export class Room extends DurableObject<Env> {
     createLibraryTables(ctx.storage.sql);
     createGigTables(ctx.storage.sql);
     createNoteTables(ctx.storage.sql);
+    createGuestTables(ctx.storage.sql);
   }
 
   private floor(userId: string): number {
@@ -84,7 +86,7 @@ export class Room extends DurableObject<Env> {
     const userId = request.headers.get(USER_HEADER);
     const version = Number(request.headers.get(SESSION_HEADER));
     if (!userId || !(version >= this.floor(userId))) return Response.json({ error: "signed-out" }, { status: 401 });
-    if (shutOut(this.ctx.storage.sql, userId)) return Response.json({ error: "not-a-member" }, { status: 403 });
+    if (shutOut(this.ctx.storage.sql, userId, request.headers.get("Upgrade") === "websocket")) return Response.json({ error: "not-a-member" }, { status: 403 });
     if (new URL(request.url).pathname === BACKUP_PATH) return handleBackup(request, this.ctx.storage, this.ctx.id.name, userId, myLibraryPerAccount(this.env.MY_SONGS_PER_ACCOUNT));
     if (request.method === "POST") return importBandFile(request, this.ctx.storage, this.band, userId, this.env.APP_ORIGIN);
     if (request.headers.get("Upgrade") !== "websocket") {
@@ -182,7 +184,7 @@ export class Room extends DurableObject<Env> {
   }
 
   private broadcast(posted: Posted) {
-    if (posted.stored) for (const ws of this.ctx.getWebSockets()) send(ws, { kind: "message", message: posted.message });
+    if (posted.stored) for (const ws of this.ctx.getWebSockets()) if (readsChat(this.ctx.storage.sql, this.userOf(ws))) send(ws, { kind: "message", message: posted.message });
     return posted;
   }
 
@@ -237,6 +239,36 @@ export class Room extends DurableObject<Env> {
 
   requireGigAdmin(userId: string, gigId: string) {
     gigRoom.requireGigAdmin(this.band, userId, gigId);
+  }
+
+  guestCreate(adminId: string, fields: PassFields, codeId: string) {
+    return guestRoom.create(this.band, adminId, fields, codeId);
+  }
+
+  guestList(adminId: string, gigId: string) {
+    return guestRoom.list(this.band, adminId, gigId);
+  }
+
+  /** Revoke closes the guest's link to the gig at once, and tells the lineup's phones to ask again for the new secret. */
+  guestRevoke(adminId: string, passId: string) {
+    const revoked = guestRoom.revoke(this.band, adminId, passId);
+    const { gigId } = revoked.pass;
+    const guest = revoked.claimedBy;
+    const out = guest !== null && shutOut(this.ctx.storage.sql, guest, true);
+    for (const ws of this.ctx.getWebSockets()) {
+      const joined = attachment(ws).gigId === gigId;
+      if (guest !== null && this.userOf(ws) === guest && (out || joined)) ws.close(NOT_ON_LINEUP_CLOSE, "pass-revoked");
+      else if (joined) send(ws, { kind: "on-lineup", gigId });
+    }
+    return revoked;
+  }
+
+  guestOpen(userId: string, passId: string, now: number) {
+    return guestRoom.open(this.band, userId, passId, now);
+  }
+
+  guestClaim(userId: string, passId: string, now: number) {
+    return this.ctx.storage.transactionSync(() => guestRoom.claim(this.band, userId, passId, now));
   }
 
   songNotes(userId: string, songId: string) {
@@ -368,6 +400,7 @@ export class Room extends DurableObject<Env> {
 
   /** The leader's new state: kept and forwarded to the rest of the gig's sockets only when this send stored it. */
   private takeGig(ws: WebSocket, sent: GigSend) {
+    if (shutOut(this.ctx.storage.sql, this.userOf(ws))) return send(ws, { kind: "gig-refused", opId: sent.kind === "gig-op" ? sent.op.opId : null, refused: "not-allowed" });
     const taken = gigRelay.take(this.ctx.storage.sql, attachment(ws).gigId ?? null, this.userOf(ws), sent, Date.now());
     if (!taken.stored) return send(ws, { kind: "gig-refused", opId: sent.kind === "gig-op" ? sent.op.opId : null, refused: taken.refused });
     for (const other of this.gigSockets(taken.copy.state.gigId)) if (other !== ws) send(other, taken.copy);

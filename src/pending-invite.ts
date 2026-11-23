@@ -10,6 +10,7 @@ export type Invite = { code: string; screen: CodeScreen; line?: string };
 
 const LINES: Partial<Record<CodeKind, string>> = {
   band: "Sign in to join the band.",
+  guest: "Sign in or create an account to join the gig as a guest.",
   "friend-link": "Sign in to add your friend.",
   "friend-now": "Sign in to add your friend.",
   "sync-check": "Sign in to test your connection with your bandmate.",

@@ -561,6 +561,21 @@ async function browserCases(): Promise<number> {
       `a wheel that arrives mid-glide looks ahead from there, then glides back to the band (past the glide by ${pastGlide.toFixed(1)} px, tag ${JSON.stringify(wheelMidTag)}, landed ${landed?.toFixed(0)} ms after the wheel)`,
     );
 
+    // DevTools touch makes no fling, so a scroll with no input of its own just after the lift stands in for one.
+    await dragUp();
+    await touch("touchEnd");
+    await evaluate(`document.getElementById("sheet-scroll").scrollBy(0, 300)`);
+    await frames(4);
+    s = await seen();
+    const flung = s.top - bandPlace(s, 30);
+    const flungTag = s.tag;
+    await pause(900);
+    s = await seen();
+    check(
+      flung > 400 && flungTag === "Looking ahead" && near(s.top, bandPlace(s, 30), 2) && s.tag === null,
+      `the fling after a look's release keeps looking ahead from where it carries the chart, then glides back (ahead ${flung.toFixed(1)} px, tag ${JSON.stringify(flungTag)}, then top ${s.top.toFixed(1)}, band ${bandPlace(s, 30).toFixed(1)}, tag ${JSON.stringify(s.tag)})`,
+    );
+
     await evaluate(`window.__mount(${JSON.stringify(song)}, true, true)`);
     await frames(10);
     await setBand(30);

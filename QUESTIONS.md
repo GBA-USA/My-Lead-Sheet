@@ -1,3 +1,10 @@
+# C21c fix pass 1 (97443dc): the `check:guest` patch below is applied. One leftover for the owner.
+
+The self-check asked for the test-only patch, so it is in 97443dc, byte-identical to the one the self-check ran.
+No CoS action is needed for it. The leftover: the Room closes an ended guest's socket at the next gig fan-out, but
+the WebRTC signalling relay (`webSocketMessage` `to` messages) does not check the pass, so a guest's open peer
+link to the leader can keep carrying the mirror past the end. The phone hides the charts at the end either way.
+
 # C21c question: three test faults in commit 1's `check:guest` (e232ade). May CoS apply this test-only patch?
 
 The build is committed on `cook/c21c`. Under the queue rules I did not edit the commit-1 test after it. Each fix

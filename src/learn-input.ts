@@ -24,7 +24,7 @@ export class FileRefused extends Error {
   }
 }
 
-/** A decoded file: where it came from, how long it says it is, and its samples a second at a time. */
+/** A decoded file: where it came from, its decoded length, and its samples a second at a time. */
 export interface FileSound {
   source: Source;
   expectedSeconds: number;
@@ -83,7 +83,7 @@ export async function fromFile(file: File): Promise<FileSound> {
   if (decoded.duration > LONGEST_FILE_SECONDS) throw new FileRefused("too-long");
   return {
     source: { kind: "file", name: file.name, stereo: false, sampleRate: decoded.sampleRate },
-    expectedSeconds: said ?? decoded.duration,
+    expectedSeconds: decoded.duration,
     chunks: seconds(mono(decoded), decoded.sampleRate),
   };
 }

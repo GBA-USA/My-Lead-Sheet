@@ -205,7 +205,9 @@ export function LearnSong({
     <div className="learn-backdrop">
       <div className="learn" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <h2 id={titleId}>Learn this song</h2>
-        {step.kind === "choose" ? <WaysIn note={step.note} onFile={listenToFile} onFileTap={keepScreenOn} onMic={listenWithMic} onCancel={cancel} /> : null}
+        {step.kind === "choose" ? (
+          <WaysIn note={step.note} onFile={listenToFile} onFileTap={keepScreenOn} onFileCancel={letScreenOff} onMic={listenWithMic} onCancel={cancel} />
+        ) : null}
         {step.kind === "listening" ? <Listening step={step} onStop={() => void finish("player")} onCancel={cancel} /> : null}
         {step.kind === "stopped" ? (
           <>
@@ -275,17 +277,26 @@ function WaysIn({
   note,
   onFile,
   onFileTap,
+  onFileCancel,
   onMic,
   onCancel,
 }: {
   note: Note | null;
   onFile: (file: File) => void;
   onFileTap: () => void;
+  onFileCancel: () => void;
   onMic: () => void;
   onCancel: () => void;
 }) {
   const fileLine = useId();
   const micLine = useId();
+  /** React binds `cancel` only on a dialog, so the picker closed with no file is heard here. */
+  const picker = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const input = picker.current;
+    input?.addEventListener("cancel", onFileCancel);
+    return () => input?.removeEventListener("cancel", onFileCancel);
+  }, [onFileCancel]);
   return (
     <>
       {note ? <p role="alert">{NOTES[note]}</p> : null}
@@ -293,6 +304,7 @@ function WaysIn({
       <div className="learn-ways">
         <label className="learn-way is-primary" onClick={onFileTap}>
           <input
+            ref={picker}
             type="file"
             accept="audio/*"
             className="learn-file"

@@ -1,3 +1,14 @@
+# song-search resume rerun at 38f5fb9 (no code change)
+
+After a limit pause, the head was rerun on the Windows laptop with Edge as `CHROME`. `npm run build` exit 0.
+`check:song-search` 34 ok, 1 FAIL (8a, P2-1's test line), in 39 s. `check:portable` red on the same two P1-1 lines.
+Logs are `.verify-logs/resume-*.log`. Both self-check passes are used. What stays open needs the owner: P1-1, P2-1
+and the Worker edit from fix pass 1 (QUESTIONS.md, top entry and items 1 and 2).
+
+VERDICT: FAIL, on owner seams only. No P0-P2 is open inside this cook's files.
+
+---
+
 # song-search fix pass 1 (on top of the self-check below)
 
 The test cases landed first, in c2c0879, and the fix came after. Logs are in `.verify-logs/fix1/` (gitignored). Run on

@@ -362,6 +362,8 @@ try {
     assert.ok(chat.some((m) => m.text === text), "and sees Mike's post");
     const library = ok(await gus.call("/api/bands/library", { bandId }), "Gus reads the band's setlists with the switch on");
     assert.ok(library.setlists.some((s: { name: string }) => s.name === "Other set"), "and sees the other setlists");
+    const sharers = [...new Set([...library.songs, ...library.setlists].map((item: { sharedByName: string }) => item.sharedByName))];
+    assert.deepEqual(sharers, ["Terry"], "and who shared each one by first name only");
     assert.deepEqual(refusal(await gus.call("/api/bands/open", { bandId })), [403, "guest"], "the members list stays closed even with both switches on");
   });
 
@@ -668,6 +670,31 @@ try {
       await waitFor(`document.querySelector(".guest-pass-sheet")?.textContent.includes("You're in this band already")`, "the in-band words on the pass sheet");
       assert.ok(!(await hasButton("Join as a guest")), "the sheet offers no Join button");
       assert.equal((await passesOf()).find((pass) => pass.passId === made.pass.passId).claimedBy, null, "and the pass is still free for its guest");
+    });
+
+    await check("a guest whose pass opens chat and setlists finds both on the gig view, and a guest whose pass doesn't finds neither", async () => {
+      const view = `document.querySelector(${js(`.gig-view[data-gig="${gigId}"]`)})`;
+      const opened = `${view}?.querySelector("h2")?.textContent === "Friday at the Elks"`;
+      const text = `Load in at 6 ${newMsgId()}`;
+      ok(await mike.call("/api/chat/send", { roomId: bandId, msgId: newMsgId(), text }), "Mike posts in the band chat");
+      await signedInAs(gus);
+      await site.send("Page.navigate", { url: `${origin}/?g=1#/gig/${bandId}/${gigId}` });
+      await waitFor(opened, "Gus's gig view");
+      await waitFor(`[...${view}.querySelectorAll("button")].some((b) => b.textContent.trim() === "Band chat")`, "Band chat on the gig view of a guest with chat on");
+      await tap("Band chat", view);
+      await waitFor(`(${view}.querySelector(".room")?.textContent ?? "").includes(${js(text)})`, "Mike's post in the band chat, on the gig view");
+      await tap("Band setlists", view);
+      await waitFor(`/Other set/.test(${view}.textContent) && /Brunch Tune/.test(${view}.textContent)`, "the band's other setlists and their songs, on the gig view");
+      assert.ok(!/Terry Bass|Mike Keys|Dana Drums/.test(await site.evaluate<string>(`${view}.textContent`)), "with no member's full name");
+
+      const lou = await passwordPlayer(base, origin, "Lou Park", "loupark");
+      ok(await lou.call("/api/guest/claim", { code: ok(await makePass(terry, { name: "Lou" }), "a pass for Lou with both switches off").code }), "Lou joins as a guest");
+      await signedInAs(lou);
+      await site.send("Page.navigate", { url: `${origin}/?l=1#/gig/${bandId}/${gigId}` });
+      await waitFor(opened, "Lou's gig view");
+      await settle(1500);
+      assert.ok(!(await hasButton("Band chat", view)), "a guest with chat off is offered no band chat");
+      assert.ok(!(await hasButton("Band setlists", view)), "or band setlists");
     });
 
     const packsFor = async () => (await packsOnPhone()).filter((pack) => pack.gig.gigId === gigId).length;

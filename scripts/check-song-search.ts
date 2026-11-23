@@ -387,7 +387,7 @@ await check("7d. stop() ends a pending search: no request, no report", async () 
 const STUB = `(() => {
   const PAYLOAD = ${js(PAYLOAD)};
   const EMPTY = ${js(EMPTY)};
-  window.__mb = { mode: "ok", calls: [], opened: [] };
+  window.__mb = { mode: "ok", payload: null, calls: [], opened: [] };
   const realFetch = window.fetch.bind(window);
   window.fetch = (input, init = {}) => {
     const href = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -399,7 +399,7 @@ const STUB = `(() => {
     if (mode === "offline") return Promise.reject(new TypeError("Failed to fetch"));
     if (mode === "error") return Promise.resolve(new Response("busy", { status: 503 }));
     if (mode === "malformed") return Promise.resolve(new Response("<html>oops</html>", { status: 200, headers: { "content-type": "text/html" } }));
-    return Promise.resolve(new Response(JSON.stringify(mode === "none" ? EMPTY : PAYLOAD), { status: 200, headers: { "content-type": "application/json" } }));
+    return Promise.resolve(new Response(JSON.stringify(mode === "none" ? EMPTY : window.__mb.payload ?? PAYLOAD), { status: 200, headers: { "content-type": "application/json" } }));
   };
   window.open = (url) => { window.__mb.opened.push(String(url)); return null; };
 })();`;
@@ -421,6 +421,8 @@ const SCREEN_CASES = [
   "7e. My Songs' box under the open Add a song still waits 1 s after the dialog's box asked, so the phone asks once a second",
   "8c. a second tap on a result before the new sheet opens adds no second song",
   "1e. once the player pastes a chart in, the sheet no longer says No words yet",
+  "8d. picking a song this phone already has asks first: Open goes to it, and Add anyway adds one copy",
+  "8e. when the phone refuses the write, a pick says so, adds nothing, stays on My Songs, and a later pick still works",
   "2d. across the whole flow the page asked only the catalog search, opened nothing, and stored no reply text",
 ];
 
@@ -464,6 +466,10 @@ if (site) {
       await s.evaluate(`(() => { const field = [...document.querySelectorAll("[role=dialog] label")].find((l) => l.textContent.trim() === ${js(label)}).control; Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field), "value").set.call(field, ${js(text)}); field.dispatchEvent(new Event("input", { bubbles: true })); })()`);
     };
     const mode = (next: string) => s.evaluate(`window.__mb.mode = ${js(next)}`);
+    /** The catalog answers these recordings until `catalog(null)` puts the usual reply back. */
+    const catalog = (recordings: object[] | null) =>
+      s.evaluate(`window.__mb.payload = ${recordings ? js({ ...EMPTY, count: recordings.length, recordings }) : "null"}`);
+    const recording = (id: string, title: string, artist: string, length: number) => ({ id, score: 100, title, length, "artist-credit": [{ name: artist, joinphrase: "" }], "first-release-date": "2014" });
     const stored = () => s.evaluate<Record<string, unknown>[]>(`JSON.parse(localStorage.getItem("leadSheetsLibrary") ?? "{}").songs ?? []`);
     const hashId = () => s.evaluate<number | null>(`(() => { const m = location.hash.match(/^#\\/song\\/(\\d+)/); return m ? Number(m[1]) : null; })()`);
     type Box = { left: number; right: number; top: number; bottom: number; h: number; w: number; clipped: boolean; inner: number; page: number };
@@ -730,15 +736,21 @@ if (site) {
     await check(SCREEN_CASES[13], async () => {
       await s.evaluate(`location.hash = "#/songs"`);
       await app.until(`!!${addButton} && !document.querySelector("[role=dialog]")`, "My Songs");
-      await sleep(1100);
-      await searchFor(BOX, "fire away");
-      await app.until(`${ROWS(BOX)}.length === 2`, "rows");
-      const before = (await stored()).length;
-      await s.evaluate(`(() => { const row = ${ROWS(BOX)}[0]; row.click(); row.click(); })()`);
-      await app.until(`/^#\\/song\\/\\d+/.test(location.hash)`, "the new song's page", 6000);
-      await sleep(300);
-      tappedId = await hashId();
-      assert.equal((await stored()).length, before + 1, "exactly one song added for two taps");
+      // A song no one on this phone holds, so the first tap adds and the second meets only the double-tap guard.
+      await catalog([recording("rec-wagon", "Wagon Wheel", "Pat Bass", 245000)]);
+      try {
+        await sleep(1100);
+        await searchFor(BOX, "wagon wheel");
+        await app.until(`${ROWS(BOX)}.length === 1`, "the one row");
+        const before = (await stored()).length;
+        await s.evaluate(`(() => { const row = ${ROWS(BOX)}[0]; row.click(); row.click(); })()`);
+        await app.until(`/^#\\/song\\/\\d+/.test(location.hash)`, "the new song's page", 6000);
+        await sleep(300);
+        tappedId = await hashId();
+        assert.equal((await stored()).length, before + 1, "exactly one song added for two taps");
+      } finally {
+        await catalog(null);
+      }
     });
 
     await check(SCREEN_CASES[14], async () => {
@@ -765,7 +777,94 @@ if (site) {
     });
 
     await check(SCREEN_CASES[15], async () => {
-      const calls = await s.evaluate<{ url: string }[]>(`window.__mb.calls`);
+      await s.evaluate(`location.hash = "#/songs"`);
+      await app.until(`!!${addButton} && !document.querySelector("[role=dialog]")`, "My Songs");
+      const heldHref = await s.evaluate<string[]>(
+        `[...document.querySelectorAll(".song-list a.song-row")].filter((a) => a.textContent.includes("Fire Away") && a.textContent.includes("Chris Stapleton")).map((a) => a.getAttribute("href"))`,
+      );
+      assert.equal(heldHref.length, 1, `My Songs holds the built-in Fire Away by Chris Stapleton once (${js(heldHref)})`);
+      const OFFER = `${BOX}?.closest(".song-search")?.querySelector(".you-have-it")`;
+      const inOffer = (label: string) => `[...(${OFFER}?.querySelectorAll("a, button") ?? [])].find((el) => el.textContent.trim() === ${js(label)})`;
+      await catalog([recording("rec-stapleton", "Fire Away", "Chris Stapleton", 232000)]);
+      try {
+        const before = (await stored()).length;
+        const tapHeld = async () => {
+          await sleep(1100);
+          await searchFor(BOX, "fire away stapleton");
+          await app.until(`${ROWS(BOX)}.length === 1`, "the one row");
+          await s.evaluate(`${ROWS(BOX)}[0].click()`);
+          await app.until(`!!${OFFER} || /^#\\/song\\//.test(location.hash)`, "an answer to the tap", 4000);
+          await sleep(300);
+          assert.equal(await s.evaluate<string>(`location.hash`), "#/songs", "the tap stays on My Songs");
+          assert.equal((await stored()).length, before, "the tap adds no second Fire Away");
+        };
+        await tapHeld();
+        assert.match(await s.evaluate<string>(`${OFFER}.textContent`), /You already have Fire Away/, "it says the phone has it");
+        assert.equal(await s.evaluate<string>(`${inOffer("Open")}?.getAttribute("href") ?? ""`), heldHref[0], "Open goes to the Fire Away this phone has");
+        await phone(360);
+        for (const label of ["Open", "Add anyway"]) await glove(inOffer(label), label, 360);
+        await phone(390);
+        await s.evaluate(`${inOffer("Open")}.click()`);
+        await app.until(`location.hash === ${js(heldHref[0])}`, "the Fire Away this phone has", 4000);
+        assert.equal((await stored()).length, before, "Open adds nothing");
+        await s.evaluate(`location.hash = "#/songs"`);
+        await app.until(`!!${BOX} && !${OFFER}`, "My Songs, with no offer left over");
+        await tapHeld();
+        await s.evaluate(`(() => { const add = ${inOffer("Add anyway")}; add.click(); add.click(); })()`);
+        await app.until(`/^#\\/song\\/\\d+/.test(location.hash)`, "the new song's page", 6000);
+        await sleep(300);
+        const songs = await stored();
+        assert.equal(songs.length, before + 1, "Add anyway, tapped twice, adds one copy");
+        const openId = await hashId();
+        const song = songs.find((each) => each.id === openId);
+        assert.deepEqual([song?.title, song?.artist, song?.officialRuntimeSec, song?.body], ["Fire Away", "Chris Stapleton", 232, []], "the open page is the added copy");
+      } finally {
+        await catalog(null);
+      }
+    });
+
+    await check(SCREEN_CASES[16], async () => {
+      await s.evaluate(`location.hash = "#/songs"`);
+      await app.until(`!!${addButton} && !document.querySelector("[role=dialog]")`, "My Songs");
+      await catalog([recording("rec-gravel", "Gravel Road", "Pat Bass", 201000)]);
+      // The phone refuses only the library write, as a full or locked-down storage does.
+      await s.evaluate(`(() => {
+        const real = Storage.prototype.setItem;
+        window.__realSetItem = real;
+        Storage.prototype.setItem = function (key, value) {
+          if (key === "leadSheetsLibrary") throw new DOMException("full", "QuotaExceededError");
+          return real.call(this, key, value);
+        };
+      })()`);
+      try {
+        const before = (await stored()).length;
+        await sleep(1100);
+        await searchFor(BOX, "gravel road");
+        await app.until(`${ROWS(BOX)}.length === 1`, "the one row");
+        await s.evaluate(`${ROWS(BOX)}[0].click()`);
+        await app.until(`/couldn't add/.test(${NOTE(BOX)}) || /^#\\/song\\//.test(location.hash)`, "an answer to the tap", 4000);
+        await sleep(300);
+        assert.equal(await s.evaluate<string>(`location.hash`), "#/songs", "the page stays on My Songs");
+        assert.equal(
+          await s.evaluate<string>(`${BOX}.closest(".song-search").querySelector("[role=alert]")?.textContent ?? ""`),
+          "This phone couldn't add the song. Free some space and try again.",
+          "it says the phone couldn't add the song",
+        );
+        assert.equal((await stored()).length, before, "no song added");
+        await s.evaluate(`Storage.prototype.setItem = window.__realSetItem`);
+        await s.evaluate(`${ROWS(BOX)}[0].click()`);
+        await app.until(`/^#\\/song\\/\\d+/.test(location.hash)`, "the new song's page once the phone can write again", 6000);
+        const openId = await hashId();
+        const song = (await stored()).find((each) => each.id === openId);
+        assert.deepEqual([song?.title, song?.artist], ["Gravel Road", "Pat Bass"], "the later pick adds the song");
+      } finally {
+        await s.evaluate(`if (window.__realSetItem) Storage.prototype.setItem = window.__realSetItem`);
+        await catalog(null);
+      }
+    });
+
+    await check(SCREEN_CASES[17], async () => {
+      const calls =await s.evaluate<{ url: string }[]>(`window.__mb.calls`);
       assert.ok(calls.length > 0, "the flow searched");
       const other = calls.filter((call) => !call.url.startsWith(RECORDING_SEARCH));
       assert.deepEqual(other, [], "no request but the catalog's recording search left the page");

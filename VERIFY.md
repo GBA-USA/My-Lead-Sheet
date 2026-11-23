@@ -1,3 +1,119 @@
+# song-search fix pass 2 (on top of self-check 2 below)
+
+The cases landed first, in their own commit, then the fix. Logs are in `.verify-logs/fix2/` (gitignored). Run on the
+Windows laptop with Edge as `CHROME`.
+
+| Finding | Case | At 9c77321 with the case, or under its mutation | After |
+|---|---|---|---|
+| P2-4, a pick skips "You already have" | 8d, a pick of the built-in Fire Away / Chris Stapleton | head: `FAIL 8d ... the tap stays on My Songs` (the tap added a copy and opened it) | ok |
+| P2-5, add-failed untested | 8e, `Storage.prototype.setItem` throws for the library key | holds at head (the code was right, only untested). N2, delete the `id === null` line: `FAIL 8e ... the page stays on My Songs` | ok |
+
+- The fix is in `src/song-search.tsx`. `SongSearch` takes the `songs` its mount already holds: My Songs' list, or New
+  song's `songs`, the same list `save` checks. `pick` asks `songYouHave` first. A held song shows `YouHaveIt` under
+  the tapped row, with Open going to the held song and Add anyway adding one copy. Typing again clears the offer.
+  `library-lists.tsx` and `song-editor.tsx` each pass `songs` in, one line each.
+- 8d also checks that Open and Add anyway are 44 px or more at 360 px, that Open adds nothing, and that a double tap of
+  Add anyway adds one song. 8e also checks that a later pick works once the phone can write again.
+- 8c now picks a song no one holds ("Wagon Wheel" through a per-case stub reply), since after the fix 8a's pick makes
+  the old row 0 a held song.
+- Mutations (`.verify-logs/fix2/mutate.mjs`, `mutate.log`, one at a time, tree restored after). Each fails its case,
+  plus only the known 8a line: N1 no guard on a pick (8d), N2 no add-failed line (8e), N3 Add anyway asks again (8d),
+  M1 no shared floor (7e), M2 no double-tap guard (8c and 8d), M3 No words yet with words (1e).
+- `npm run build` exit 0. `check:song-search` is 36 ok and 1 FAIL. The FAIL is 8a, P2-1's test line, unchanged.
+  At head with the new cases it was 35 ok, 2 FAIL (8a, 8d). `check:new-song` passed. `check:one-copy` and
+  `check:screens` crash on Windows at their `.pathname` root before testing anything. From temp copies with a
+  `fileURLToPath` root, both passed (one-copy "all passed", screens "16 routes").
+- Still open for the owner: P1-1, P2-1, and the keep-or-revert on the Worker edit (QUESTIONS.md). P3-5 (`lengthText`
+  copies `formatRuntime`) needs a file outside this cook's set.
+
+VERDICT: FAIL, on owner seams only. No P0-P2 is open inside this cook's files.
+
+---
+
+VERDICT: FAIL
+
+# song-search in-cook self-check 2, tier deep, at 9c77321
+
+Goal: from My Songs or Add a song, a player searches the public song catalog and starts a new sheet with title, artist
+and length filled in, and can tap Find lyrics on the web to paste the words in. This pass verifies the diff
+da2ce97..9c77321 only. Code last changed at 85c9c5e, so the build and named checks were not rerun (the resume rerun
+below holds at this tree's code). Run on the Windows laptop with Edge as `CHROME`. The probe and its log are in
+`.verify-logs/self-check2/` (gitignored).
+
+Verdict: FAIL. Two new P2s in this cook's own files: a catalog pick skips the "You already have" guard that New song's
+Save runs (P2-4, measured), and the pick's add-failed path has no test (P2-5). The two owner seams are still open
+(P1-1 and P2-1 below, QUESTIONS.md items 1 and 2), and so is the owner's keep-or-revert on the Worker edit.
+
+## P2
+
+**P2-4. A catalog pick adds a duplicate blank song with no warning, even when the player already holds that song.**
+CLASS=state-machine. `pick` in `src/song-search.tsx:53` calls `addOwnSong` directly. New song's `save`
+(`src/song-editor.tsx:114`) asks `songYouHave` first and offers "You already have … · Open it?". The brief says a pick
+goes through "the existing add-own-song path", and that path includes this guard. The built-in library ships
+"Fire Away / Chris Stapleton", which the catalog returns under the same title and artist, so a player who searches the
+catalog for a song they hold gets an empty sheet beside their full chart. Each later pick adds another one. No case
+covers it: 8a, 8b and 8c search for "Pat Bass" songs that no library holds.
+Hands-on repro (`.verify-logs/self-check2/probe.ts`, real built App in Edge at 360 px, stub `/api/me` and a stub catalog
+reply of one recording, "Fire Away" by Chris Stapleton, 3:52), `probe.log`:
+
+| Step | Result |
+|---|---|
+| A. My Songs before | 1 row: Fire Away / Chris Stapleton, A major ~116 bpm (built-in) |
+| B. New song, Title Fire Away, Artist Chris Stapleton, a chart, Save | "You already have Fire Away · Open it?" |
+| C1. My Songs, Find a song to add "fire away", tap the row | no warning, opens `#/song/17`, No words yet |
+| C2. Back to My Songs, the same again | no warning, opens `#/song/18`, No words yet |
+| D. My Songs after | 3 rows of Fire Away / Chris Stapleton, two of them C major, Tempo —, empty |
+
+Fix inside the owned files: check `songYouHave` on the pick and show `YouHaveIt` (Open it, or add anyway), the same as
+`save`. Add a screen case that picks a song the library holds and fails at this head.
+C2 also shows that `picked` does not go stale. My Songs unmounts on `#/song/<id>`, so the second pick works.
+
+**P2-5. The pick's add-failed path is new and untested.** CLASS=other. `src/song-search.tsx:56` shows "This phone
+couldn't add the song. Free some space and try again." when `addOwnSong` returns null (storage full or refused). No
+script holds that text, and no case makes the write fail (`grep -rln "couldn't add" scripts/` is empty). p6's own
+add-failed message is tested in `check:new-song`, so this was the precedent. Smallest repro, by reading the code: delete
+line 56, and `id` null reaches `songHref(null)`, which opens `#/song/null` with no song saved. check:song-search does
+not exercise that line, so its result cannot change. I did not run that mutation. Fix: one screen case that fills or
+stubs `localStorage.setItem` to throw, taps a row, and expects the message, no new song and the page still on My Songs.
+
+## Pass conditions, walked again at 9c77321
+
+| # | Condition | Result |
+|---|---|---|
+| 1 | Find lyrics URL | Holds (1a-1d). A plain new-tab link with no referrer. |
+| 2 | No lyrics fetch or store | Holds (2a-2d). |
+| 3 | Recording search, fmt=json, User-Agent, rows | Holds. The User-Agent names `location.origin` and not the brief's literal preview host. CLAUDE.md rule 3 and the brief disagree here, and the code follows CLAUDE.md. |
+| 4 | No results | Holds (4, 4b). |
+| 5 | Offline | Holds (5a-5c). |
+| 6 | API error or malformed | Holds (6a-6d). |
+| 7 | One request a second, 400-800 ms debounce | Holds (7a-7e), including two boxes sharing `PHONE_FLOOR`. |
+| 8 | Pick adds through the existing path and opens the sheet prefilled | Prefill holds (8a code, 8b, 8c). It skips the existing path's duplicate guard (P2-4), and 8a's last line is still red (P2-1). |
+| 9 | 360 and 390 px, 44 px targets | Holds (9a, 9b, 1d). The probe's 360 px screenshot shows the box under + Add a song, unclipped. |
+
+## Wrong-but-passing read
+
+- Stale state: none found. The editor closes on any hash change (`App.tsx` `[hash]` effect), and My Songs unmounts on
+  `#/song/<id>`, so the query, rows and `picked` reset (probe C2). A reply for a replaced query or an unmounted box is
+  dropped (`stop` on unmount, 6c, 7d).
+- Signed out: the box mounts only with + Add a song (case 0). `NoWordsYet` needs `madeHere`.
+- Second phone or account switch: a pick is an ordinary own song in the current account's library, so it leaks nothing.
+- Offline: no request and no rows. Try again respects the floor (7c).
+- Data loss: none found. A pick drops a Key, BPM or Time signature already set in New song (P3-3 below).
+
+## P3, new this pass
+
+- P3-5. `lengthText` (`src/song-search.ts:43`) copies `formatRuntime` (`src/song-data-editor.tsx:8`). CLAUDE.md
+  repeat-mistake 4 asks for one home. song-search.ts must stay free of React and CSS for L9 and the check's neutral
+  bundle, so the right home is a pure file both import. `song-data-editor.tsx` is outside this cook's files, so this
+  needs the owner. `check:one-copy` does not guard it.
+- P3-6. The Worker edit (85c9c5e) makes an empty chart's print common, so an empty Private copy is judged only through
+  the copy the phone names, the same as a built-in chart already is. A phone that leaves the copy unnamed can pass on
+  the friend's title, artist and notes. Built-in charts already had that gap. I inferred both from `guardContent` and
+  did not measure them. This is part of the owner's keep-or-revert
+  decision. It is not a new finding against the cook.
+
+---
+
 # song-search resume rerun at 38f5fb9 (no code change)
 
 After a limit pause, the head was rerun on the Windows laptop with Edge as `CHROME`. `npm run build` exit 0.

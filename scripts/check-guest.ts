@@ -81,7 +81,50 @@ const phone = {
   ),
 };
 
-type Message = { kind: string; [key: string]: any };
+await check("a band room made from the member tables alone still refuses a removed member and a stranger not-a-member", async () => {
+  const bundled = await build({
+    stdin: { contents: `export { createMemberTables, bandRoom } from "./worker/room-members.ts";`, resolveDir: root, loader: "ts" },
+    bundle: true,
+    write: false,
+    format: "esm",
+    platform: "node",
+    external: ["cloudflare:workers"],
+    logLevel: "silent",
+  });
+  const file = join(mkdtempSync(join(tmpdir(), "check-guest-members-")), "members.mjs");
+  writeFileSync(file, bundled.outputFiles[0].text);
+  const w = await import(pathToFileURL(file).href);
+  const { DatabaseSync } = await import("node:sqlite");
+  const db = new DatabaseSync(":memory:");
+  const sql = {
+    exec(query: string, ...bindings: unknown[]) {
+      const statement = db.prepare(query);
+      const reads = /^\s*(SELECT|PRAGMA|WITH)\b/i.test(query) || /\bRETURNING\b/i.test(query);
+      const rows = reads ? (statement.all(...(bindings as never[])) as Record<string, unknown>[]) : [];
+      if (!reads) statement.run(...(bindings as never[]));
+      return { toArray: () => rows, one: () => rows[0], [Symbol.iterator]: () => rows[Symbol.iterator]() };
+    },
+  };
+  const band = { sql, bandId: "band_GuestMemberTables000000" };
+  w.createMemberTables(sql);
+  const t0 = Date.now();
+  w.bandRoom.create(band, { userId: "u-ann", name: "Ann" }, "The Member Band", t0);
+  w.bandRoom.join(band, { userId: "u-cat", name: "Cat" }, { inviterId: "u-ann", madeAt: t0 }, t0);
+  w.bandRoom.remove(band, "u-ann", "u-cat", t0);
+  const said = (userId: string) => {
+    try {
+      w.bandRoom.pack(band, userId);
+      return "let in";
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
+    }
+  };
+  assert.equal(said("u-cat"), "not-a-member", "the removed member");
+  assert.equal(said("u-stranger"), "not-a-member", "a stranger");
+  assert.equal(said("u-ann"), "let in", "the admin");
+});
+
+type Message ={ kind: string; [key: string]: any };
 type Socket = { ws: WebSocket; messages: Message[]; opened: boolean; closed: Promise<number> };
 
 /** A phone's socket to the band room, keeping every message it hears. */

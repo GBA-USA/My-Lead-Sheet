@@ -1743,8 +1743,8 @@ a:focus-visible {
   transform: translateX(-50%);
   padding: 4px 12px;
   border-radius: 999px;
-  background: var(--gold, #e1a01e);
-  color: #13120d;
+  background: var(--accent);
+  color: var(--on-accent);
   font-size: 16px;
   font-weight: 700;
   white-space: nowrap;
@@ -1762,7 +1762,7 @@ a:focus-visible {
   height: 3px;
   margin-top: -1px;
   border-radius: 2px;
-  background: var(--gold, #e1a01e);
+  background: var(--heading);
   pointer-events: none;
 }
 

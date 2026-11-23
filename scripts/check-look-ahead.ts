@@ -238,7 +238,10 @@ const HARNESS = `
   const bandTime = () => w.__band;
   function Harness({ song, gig, playing }) {
     const [on, setOn] = useState(true);
-    useAutoScroll(on, motion, "plan", (reason) => { w.__stops.push(reason); setOn(false); }, gig ? bandTime : undefined);
+    // A redial, as when a phone drops out and rescans, hands the scroll a new band clock reading the same band time.
+    const [time, setTime] = useState(() => (gig ? bandTime : undefined));
+    w.__redial = () => setTime(() => () => w.__band);
+    useAutoScroll(on, motion, "plan", (reason) => { w.__stops.push(reason); setOn(false); }, time);
     const metronome = { bpm: 96, playing, setBpm() {}, nudge() {}, toggle() {}, stop() {}, prefs: DEFAULT_METRONOME_PREFS, setPrefs: (patch) => w.__prefs.push(patch) };
     return (
       <div className="scroll" id="sheet-scroll" style={{ height: "100vh" }}>
@@ -441,6 +444,29 @@ async function browserCases(): Promise<number> {
     s = await seen();
     check(near(s.top, bandPlace(s, 60), 2), `after the glide the sheet is locked to the band again (top ${s.top.toFixed(1)}, band ${bandPlace(s, 60).toFixed(1)})`);
     check(s.stops.length === 0 && s.sent === 0, `the whole look ahead sent nothing and never stopped the band's scroll (stops ${JSON.stringify(s.stops)}, sent ${s.sent})`);
+
+    await dragUp();
+    await evaluate("window.__redial()");
+    await frames(10);
+    s = await seen();
+    const redialed = s.tag === null && s.line === null && near(s.top, bandPlace(s, 60), 2);
+    await touch("touchEnd");
+    await frames(4);
+    await setBand(70);
+    s = await seen();
+    check(
+      redialed && near(s.top, bandPlace(s, 70), 2) && s.stops.length === 0,
+      `a phone that drops out and rescans mid-look goes back to the band's place, locked, with no tag (back ${redialed}, top ${s.top.toFixed(1)}, band ${bandPlace(s, 70).toFixed(1)})`,
+    );
+    await dragUp();
+    s = await seen();
+    const againTag = s.tag;
+    landed = await letGo(70);
+    s = await seen();
+    check(
+      againTag === "Looking ahead" && landed !== null && landed <= 450 && s.tag === null,
+      `after the rescan a drag looks ahead and glides back again (tag ${JSON.stringify(againTag)}, took ${landed?.toFixed(0)} ms)`,
+    );
 
     await evaluate(`window.__mount(${JSON.stringify(song)}, true, true)`);
     await frames(10);

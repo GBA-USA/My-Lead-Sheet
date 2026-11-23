@@ -718,6 +718,24 @@ try {
       for (const [, value] of saved) is.equal(value.source, "bandmate");
     }
   });
+
+  await check("4g. the scanning phone drops out mid-test and rescans the same code: both phones reach Done", async () => {
+    await clearHistory(phoneA);
+    await goSettings(phoneA);
+    await openConnection(phoneA);
+    const link = await showCode(phoneA);
+    await goSettings(phoneB);
+    await openConnection(phoneB);
+    await scanLink(phoneB, link);
+    await phoneB.app.until(`/Testing/.test(${bandmateDialog}?.querySelector("[data-slot=bandmate-status]")?.textContent ?? "")`, "the scanning phone to start", 20_000);
+    await closeBandmate(phoneB);
+    await phoneA.app.until(`/didn't answer/.test(${bandmateDialog}?.querySelector("[data-slot=bandmate-status]")?.textContent ?? "")`, "the showing phone to see the drop", 20_000);
+    is.ok(await phoneA.site.evaluate<boolean>(`!!${bandmateDialog}.querySelector(".codes-qr")`), "the code is still on screen after the drop");
+    await scanLink(phoneB, link);
+    for (const phone of [phoneA, phoneB]) await phone.app.until(`/^Done/.test(${bandmateDialog}?.querySelector("[data-slot=bandmate-status]")?.textContent ?? "")`, `${phone.name} to finish the rescan`, 60_000);
+    const saved = (await store(phoneA))!;
+    is.ok(saved.length > 0 && saved.every(([, value]) => value.source === "bandmate"), "the showing phone saved the rescan's numbers");
+  });
 } catch (error) {
   failures += 1;
   console.log(`FAIL the Chrome section could not run\n     ${String((error as Error)?.stack ?? error).split("\n").slice(0, 6).join("\n     ")}`);

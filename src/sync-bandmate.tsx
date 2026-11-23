@@ -60,7 +60,8 @@ function helloOf(room: RoomLine, ms: number): Promise<{ you: string; peers: stri
 /**
  * The phone showing its code: it waits in the room with no clock running, since the scan can take as long as the person
  * takes, and answers whatever the scanning phone dials. The scanning phone measures and sends the numbers back, so
- * both phones keep the same ones. Silence from the scanning phone once the test has begun ends it.
+ * both phones keep the same ones. Silence from the scanning phone once the test has begun fails it, but the code stays
+ * on screen, so the next word from a phone that scans it starts the test over.
  */
 export function showSide(options: { room: RoomLine; config: BandmateConfig; onStatus: (status: Status) => void; onDone: () => void }): () => void {
   const { room, config } = options;
@@ -68,16 +69,24 @@ export function showSide(options: { room: RoomLine; config: BandmateConfig; onSt
   const links: WiredLink[] = [];
   const serving = new Map<string, WiredLink>();
   let begun = false;
-  let finished = false;
+  let state: "live" | "failed" | "over" = "live";
   let stall: ReturnType<typeof setTimeout> | null = null;
 
   const fail = () => {
-    if (finished) return;
-    finished = true;
+    if (state !== "live") return;
+    state = "failed";
     options.onStatus({ phase: "failed", words: NO_ANSWER });
   };
+  const restart = () => {
+    for (const link of links) link.close();
+    links.length = 0;
+    peers.clear();
+    serving.clear();
+    begun = false;
+    state = "live";
+  };
   const heard = () => {
-    if (finished) return;
+    if (state !== "live") return;
     if (!begun) options.onStatus({ phase: "testing", words: "Testing with your bandmate…" });
     begun = true;
     if (stall) clearTimeout(stall);
@@ -86,12 +95,13 @@ export function showSide(options: { room: RoomLine; config: BandmateConfig; onSt
 
   options.onStatus({ phase: "waiting", words: "Waiting for your bandmate to scan this code…" });
   const unlisten = room.listen((message: RoomIn) => {
-    if (finished || typeof message.from !== "string") return;
+    if (state === "over" || typeof message.from !== "string") return;
+    if (state === "failed") restart();
     const from = message.from;
     if (message.kind === "intro" && isControl(message.body)) {
       heard();
       if (message.body.ctl === "result") {
-        finished = true;
+        state = "over";
         if (stall) clearTimeout(stall);
         void save(message.body.results).then(() => {
           options.onStatus({ phase: "done", words: DONE });
@@ -124,7 +134,7 @@ export function showSide(options: { room: RoomLine; config: BandmateConfig; onSt
     }
   });
   return () => {
-    finished = true;
+    state = "over";
     if (stall) clearTimeout(stall);
     unlisten();
     for (const link of links) link.close();

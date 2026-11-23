@@ -1210,6 +1210,16 @@ await frozen("L1.5 a mic that stops mid-song says why and offers to go on or use
   check(text().includes("From the mic · heard 1:10 of 4:19") && coverage?.stopped === "mic-ended", `L1.5 the Review then reads "From the mic · heard 1:10 of 4:19" (${JSON.stringify(coverage)}; ${text().slice(0, 160)})`);
 });
 
+await frozen("L1.5 a mic take of the whole song reads as the song's length, as a file does", null, async () => {
+  const sheet = await openSheet(twoHeadings(70));
+  await startMic(sheet);
+  await micPlay(truth.samples.subarray(0, 70 * SAMPLE_RATE));
+  await press(button("Stop"), "Stop");
+  await until(reviewing, "Review");
+  const said = text();
+  check(said.includes("From the mic · 1:10 · ") && !said.includes("heard 1:10"), `L1.5 a whole mic take reads "From the mic · 1:10 · <quality>" (${JSON.stringify(lastListen()?.coverage)}; ${said.slice(0, 160)})`);
+});
+
 await frozen("L1.5 Keep listening goes on with the same listen", null, async () => {
   const sheet = await openSheet(twoHeadings(259));
   await startMic(sheet);
@@ -1409,6 +1419,25 @@ await frozen("L1.8 a cancelled file picker lets the wake lock go", null, async (
   fire(input, "cancel");
   await settle();
   check(wakeLocks.length > 0 && wakeLocks.every((lock) => lock.released) && filePicker() && !!buttonNamed(MIC_WORD), `L1.8 closing the file picker with no file lets the wake lock go and leaves the two ways in (${locksText()}; ${text().slice(0, 160)})`);
+});
+
+await frozen("L1.8 a file picker that hides the page asks for the wake lock again on return", null, async () => {
+  wakeLocks.length = 0;
+  await openSheet(twoHeadings(null));
+  await press(fileWay(), "the file picker");
+  dom.document.visibilityState = "hidden";
+  fire(dom.document as unknown as FakeElement, "visibilitychange");
+  for (const lock of wakeLocks) await lock.release();
+  await settle();
+  dom.document.visibilityState = "visible";
+  fire(dom.document as unknown as FakeElement, "visibilitychange");
+  await settle();
+  pick(audioFile("Back.wav", { seconds: 30, channels: 1, song: fileSong(30) }));
+  await settle();
+  check(text().includes("Listening to Back.wav.") && wakeLocks.some((lock) => !lock.released), `L1.8 after the picker hid the page, a lock is held while the file is heard (${locksText()}; ${text().slice(0, 160)})`);
+  await until(reviewing, "Review");
+  await settle();
+  check(wakeLocks.length > 1 && wakeLocks.every((lock) => lock.released), `L1.8 the Review lets the lock asked on return go too (${locksText()})`);
 });
 
 for (const [from, failOn] of [["mic", "finish"], ["file", "samples"]] as const) {

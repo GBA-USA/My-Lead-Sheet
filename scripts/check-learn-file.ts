@@ -128,6 +128,10 @@ try {
       const clock = line.match(/^From a file · (\d+):(\d\d) · /);
       const heard = clock ? 60 * Number(clock[1]) + Number(clock[2]) : Number.NaN;
       check(Math.abs(heard - WAV_SECONDS) <= 1, `L1.15 ${at} the Review says the whole ${WAV_SECONDS} s WAV was heard, within 1 s ("${line}")`);
+      const short = await evaluate<string[]>(
+        `[...document.querySelectorAll(".learn-actions button")].filter((b) => b.getBoundingClientRect().height < 44).map((b) => b.textContent.trim() + " " + b.getBoundingClientRect().height + " px")`,
+      );
+      check(short.length === 0, `L1 ${at} every Learn sheet action button is at least 44 px tall (${short.join(", ") || "all 44 px or more"})`);
       const workers = await evaluate<{ url: string; type: string }[]>("window.__workers");
       check(workers.length === 1 && workers[0].type === "module" && /learn-worker/.test(workers[0].url), `L1.15 ${at} one module worker did the listening (${JSON.stringify(workers)})`);
       check((await evaluate<number>("window.__micAsks")) === 0, `L1.15 ${at} the mic was never asked for`);

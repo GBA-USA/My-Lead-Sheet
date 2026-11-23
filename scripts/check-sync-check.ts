@@ -193,7 +193,8 @@ await part("sync-video", () => {
   const FLASH_MS = 100;
   /** Film starts 2249.3 band ms in, so beats 0-2 are before it and each phone shows 17 flashes (beats 3-19). */
   const FILM_START_BAND = 2249.3;
-  const logged = (user: string, n: number) => beatAt(n) + (user === "B" && n % 2 === 0 ? 1.5 : 0);
+  /** Each phone's own frame-to-frame jitter in shown_at, as a real log has, so the film lines up on one beat only. */
+  const logged = (user: string, n: number) => beatAt(n) + (user === "B" && n % 2 === 0 ? 1.5 : 0) + ((n * 7 + user.charCodeAt(0)) % 16) * 0.5;
   const log = ["A", "B", "C"].flatMap((user) => BEATS.map((n) => row("film", user, n, user === "A" ? "leader" : "wifi", { shown_at: logged(user, n) })));
   /** Brightness when lit and dark: B is a dimmed phone, so a fixed threshold would miss it. */
   const LEVELS: Record<string, [number, number]> = { A: [250, 12], B: [60, 20], C: [200, 30] };
@@ -617,9 +618,11 @@ await part("sync check screen", async () => {
     const stray = flashes.filter((flash) => !beats.some((at) => Math.abs(flash - at) <= FRAME_MS / 2 + 0.01));
     check(`${name}: ${beats.length} beats, each flashes on the frame closest to it`, beats.length > 0 && missed.length === 0 && stray.length === 0 && flashes.length === beats.length, `missed ${missed.length}, stray ${stray.length}, ${flashes.length} flashes`);
   };
+  /** Band times are epoch-scale doubles, so a beat on a window edge can land a few thousandths of a ms outside it. Beats are 500 ms apart, so no other beat comes in. */
+  const EDGE_MS = 1;
   /** Every beat between two times is clicked once, presented `speakerMs` before its band time so it is heard on it. */
   const clicksOnBeats = (name: string, fromClick: number, fromBand: number, toBand: number, speakerMs: number) => {
-    const heard = heardClicks(fromClick).map((click) => bandAt(presented(click.time) * 1000) + speakerMs).filter((at) => at >= fromBand && at <= toBand);
+    const heard = heardClicks(fromClick).map((click) => bandAt(presented(click.time) * 1000) + speakerMs).filter((at) => at >= fromBand - EDGE_MS && at <= toBand + EDGE_MS);
     const beats: number[] = [];
     for (let n = Math.ceil(fromBand / BEAT_MS); n * BEAT_MS <= toBand; n += 1) beats.push(n * BEAT_MS);
     const worst = Math.max(...beats.map((at) => Math.min(...heard.map((each) => Math.abs(each - at)))));

@@ -926,6 +926,25 @@ try {
     assert.deepEqual([franGate, gusGate].map(copiesAt), before, "nothing was forwarded");
   });
 
+  await check("leader phone: a phone that moves to a gig by asking for its copy queues behind the phone that opened it first", async () => {
+    const people = [lee.userId, fran.userId];
+    const [x, y] = [await planGig("Phone X", lee, fran, people), await planGig("Phone Y", lee, fran, people)];
+    const [l1, l2, f] = await Promise.all([socket(lee, bandId), socket(lee, bandId), socket(fran, bandId)]);
+    const joined = async (opened: Opened, gig: string) => {
+      opened.ws.send(js({ kind: "join-gig", gigId: gig }));
+      return message(opened, `the join to ${gig}`, (m) => m.kind === "gig" && m.gigId === gig);
+    };
+    await joined(l1, x);
+    await sleep(200);
+    const second = await joined(l2, y);
+    assert.equal(second.leader, second.you, `Lee's phone 2, first on Y, is told it leads Y (${js(second)})`);
+    l1.ws.send(js({ kind: "gig-state", gigId: y }));
+    await message(l1, "Y's copy on phone 1", (m) => m.kind === "gig-state");
+    const follower = await joined(f, y);
+    assert.equal(follower.leader, second.you, `Fran is sent to phone 2, not to phone 1 carrying X's opening time (${js({ follower, phone2: second.you })})`);
+    for (const opened of [l1, l2, f]) opened.ws.close();
+  });
+
   await check("closing: every tab ends with no timer", async () => {
     for (const site of [...followers, leaderSite]) await call(site, "close()");
     await sleep(1500);

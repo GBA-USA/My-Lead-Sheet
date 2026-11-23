@@ -1033,6 +1033,7 @@ async function until(done: () => boolean, what: string, frameLimit = 3000) {
 }
 const lastListen = () => (workerLog.fromWorker.filter((reply) => reply.kind === "done").at(-1) as Extract<FromWorker, { kind: "done" }> | undefined)?.listen ?? null;
 const posted = () => workerLog.toWorker.filter((message): message is Extract<ToWorker, { kind: "samples" }> => message.kind === "samples");
+const locksText = () => `${wakeLocks.length} asked, ${wakeLocks.filter((lock) => lock.duringClick).length} inside a tap, ${wakeLocks.filter((lock) => lock.released).length} released`;
 
 /** A chart of two headings, so a short listen still places them. */
 const twoHeadings = (officialRuntimeSec: number | null) =>
@@ -1237,6 +1238,46 @@ await frozen("L1.5 Keep listening goes on with the same listen", null, async () 
   check(!!coverage && Math.abs(coverage.heardSeconds - 100) <= 0.5 && coverage.stopped === "player", `L1.5 after Keep listening and 30 s more, the listen holds all 1:40 (${JSON.stringify(coverage)})`);
 });
 
+await frozen("L1.5 Keep listening with the mic refused keeps what was heard", null, async () => {
+  wakeLocks.length = 0;
+  const sheet = await openSheet(twoHeadings(259));
+  await startMic(sheet);
+  await micPlay(truth.samples.subarray(0, 70 * SAMPLE_RATE));
+  latest().readyState = "ended";
+  latest().emit("ended");
+  await settle();
+  micAllowed = false;
+  await press(button("Keep listening"), "Keep listening");
+  await until(() => text().includes("The mic isn't available.") || text().includes("Pick the song's file"), "the refused mic's note");
+  await settle();
+  const said = text();
+  check(
+    said.includes("Listening stopped at 1:10.") && said.includes("The mic isn't available.") && !!button("Use what was heard") && !!button("Keep listening") && wakeLocks.every((lock) => lock.released),
+    `L1.5 a refused Keep listening stays on the stopped mic with "The mic isn't available.", keeps Use what was heard and lets the lock go (${locksText()}; ${said.slice(0, 240)})`,
+  );
+  await press(button("Use what was heard"), "Use what was heard");
+  await until(reviewing, "Review");
+  const coverage = lastListen()?.coverage;
+  check(text().includes("From the mic · heard 1:10 of 4:19 · the mic was turned off") && coverage?.stopped === "mic-ended", `L1.5 Use what was heard after the refusal reviews all 1:10 (${JSON.stringify(coverage)}; ${text().slice(0, 160)})`);
+});
+
+await frozen("L1.9 a worker that breaks on samples during a mic listen says so at once", null, async () => {
+  wakeLocks.length = 0;
+  workerFaults.failOn = "samples";
+  try {
+    const sheet = await openSheet(twoHeadings(259));
+    await startMic(sheet);
+    await micPlay(truth.samples.subarray(0, 5 * SAMPLE_RATE));
+    await settle();
+    check(
+      text().includes("Listening failed. Try again.") && !button("Stop") && FakeAudioContext.last.state === "closed" && wakeLocks.every((lock) => lock.released) && workerLog.errors.length > 0,
+      `L1.9 a mic listen whose worker breaks on samples says "Listening failed. Try again." with no Stop tap, closes the mic and lets the lock go (${FakeAudioContext.last.state}; ${locksText()}; ${text().slice(0, 160)})`,
+    );
+  } finally {
+    workerFaults.failOn = null;
+  }
+});
+
 await frozen("L1.6 a hidden page is reported as the reason", null, async () => {
   const sheet = await openSheet(twoHeadings(259));
   await startMic(sheet);
@@ -1395,7 +1436,6 @@ function pick(file: File) {
   fire(input, "input");
   fire(input, "change");
 }
-const locksText = () => `${wakeLocks.length} asked, ${wakeLocks.filter((lock) => lock.duringClick).length} inside a tap, ${wakeLocks.filter((lock) => lock.released).length} released`;
 
 await frozen("L1.8 a picked file holds the wake lock from the tap on the picker until the Review", null, async () => {
   wakeLocks.length = 0;

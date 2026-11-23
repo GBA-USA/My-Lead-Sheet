@@ -1,3 +1,14 @@
+# C22 self-check 4 fix pass 1: the font patch below is applied, with two additions. Owner, say if commit 1's case should stay as it was.
+
+The fix-pass brief asked this pass to fix self-check 4's one P2. That P2 is the condition-12 case's 98 px bar, so this
+pass edits commit 1's case after all. The case now measures the solo bar three ways: in the page font, in `serif` and in
+`monospace`. Both generic fonts exist on every OS. At 2f95cbe they read 99 px and 97 px, and 97 px is CI's number. Each
+measure checks the bar less its count line (83 px) and the count line's computed `font-size` and `line-height` (`12px`,
+`normal`). The second check covers self-check 4's P3-1. A 20 px count, a line-height of 3, a 3 px middle gap and a
+9 px top padding each fail the case. Calibri passes it. Logs are in `.verify-logs/fix-sc4/`. Nothing in `src/` moved.
+
+---
+
 # C22 corrective retry 2: CI's check:stage fail is a Windows font number in commit 1's vdiff case. May CoS apply this test patch?
 
 Deep verify run 45249452948 at cef301d failed one line twice: `FAIL and the base sizes ([64,64,64], bar 97 px)` in

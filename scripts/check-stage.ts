@@ -31,14 +31,16 @@ function check(ok: boolean, message: string) {
 }
 
 /**
- * The solo `#/live/1/0` bar as the base tree (156b186) renders it at 390×844: its markup and every child's height. The
+ * The solo `#/live/1/0` bar as the base tree (156b186) renders it at 390×844: its markup, every button's height, the
+ * bar's height less its count line (that line's height follows the phone's font), and the count line's own style. The
  * plan's "32 px" is older than the tree, where the UX pass already made these 64 px (`--touch-stage`), so the vdiff holds
  * the bar to the base as it is.
  */
 const SOLO_NAV = {
   html: '<nav class="live-nav" aria-label="Set"><button type="button" class="stage-step" aria-label="Previous song" disabled="">Prev</button><div class="stage-middle"><button type="button" class="scroll-pill" aria-pressed="false">Scroll: Off</button><span class="live-count">Worship Set · 1/4</span></div><button type="button" class="stage-step" aria-label="Next song">Next</button></nav>',
   heights: [64, 64, 64],
-  navHeight: 98,
+  chrome: 83,
+  count: { fontSize: "12px", lineHeight: "normal" },
 };
 
 const library = JSON.parse(readFileSync(join(root, "data", "library.json"), "utf8")) as { songs: Record<string, unknown>[] };
@@ -835,20 +837,29 @@ async function run(site: Site, script: string, css: string) {
 
   it("the existing Live buttons are unchanged outside a gig", async () => {
     const nav = async () =>
-      page<{ html: string; heights: number[]; navHeight: number } | null>(`(() => {
+      page<{ html: string; heights: number[]; chrome: number; count: { fontSize: string; lineHeight: string } } | null>(`(() => {
         const nav = document.querySelector(".live-nav");
         if (!nav) return null;
-        return { html: nav.outerHTML, heights: [...nav.querySelectorAll("button")].map((b) => Math.round(b.getBoundingClientRect().height)), navHeight: Math.round(nav.getBoundingClientRect().height) };
+        const count = nav.querySelector(".live-count");
+        const style = getComputedStyle(count);
+        return {
+          html: nav.outerHTML,
+          heights: [...nav.querySelectorAll("button")].map((b) => Math.round(b.getBoundingClientRect().height)),
+          chrome: Math.round(nav.getBoundingClientRect().height - count.getBoundingClientRect().height),
+          count: { fontSize: style.fontSize, lineHeight: style.lineHeight },
+        };
       })()`);
     await page(`window.__boot(${js({ me: null, hash: "#/live/1/0", songs: SONGS })})`);
     const solo = await until("the solo bar", nav, (found) => found !== null);
     check(solo?.html === SOLO_NAV.html, `signed out, #/live/1/0's bar has the base markup${solo?.html === SOLO_NAV.html ? "" : `: ${solo?.html}`}`);
-    check(js(solo?.heights) === js(SOLO_NAV.heights) && solo?.navHeight === SOLO_NAV.navHeight, `and the base sizes (${js(solo?.heights)}, bar ${solo?.navHeight} px)`);
+    const sized = (bar: typeof solo) => js(bar?.heights) === js(SOLO_NAV.heights) && bar?.chrome === SOLO_NAV.chrome && js(bar?.count) === js(SOLO_NAV.count);
+    const sizes = (bar: typeof solo) => `${js(bar?.heights)}, bar ${bar?.chrome} px past its count line, count ${js(bar?.count)}`;
+    check(sized(solo), `and the base sizes (${sizes(solo)})`);
     for (const font of ["serif", "monospace"]) {
       await page(`(() => { const s = document.createElement("style"); s.id = "font-probe"; s.textContent = "* { font-family: ${font} !important; }"; document.head.append(s); })()`);
       const other = await nav();
       await page(`document.getElementById("font-probe").remove()`);
-      check(js(other?.heights) === js(SOLO_NAV.heights) && other?.navHeight === SOLO_NAV.navHeight, `and the same sizes in ${font}, as another phone's font would give (${js(other?.heights)}, bar ${other?.navHeight} px)`);
+      check(sized(other), `and the same sizes in ${font}, as another phone's font would give (${sizes(other)})`);
     }
     check(!(await has("[data-stage-bar]")), "with no gig there is no stage bar");
     await joinAs("terry");

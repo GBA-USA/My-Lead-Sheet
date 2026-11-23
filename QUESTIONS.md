@@ -1,3 +1,19 @@
+# song-search fix pass 1: an empty chart no longer counts as a friend's Private chart. This edits a Worker file. Owner, keep it or revert it?
+
+Self-check P2-2. A catalog pick is an own song with an empty chart, and `printOf` hashes only the chart, so every pick
+prints the same. Once a friend sent a player a Private pick, `guardContent` refused every pick the player made with
+`403 private_copy`. The fix is in `worker/room-library.ts`, which this cook does not own. `isBuiltIn` became
+`isCommon`, and its print set now holds the empty chart's print beside the built-in library's. An empty or built-in
+chart is judged only by a named copy, so a Private copy the phone names is still refused through its lineage.
+`check:song-search` case 10 fails at 1cedda1 with `403 {"error":"private_copy"}` on Pat's own pick and passes after
+the fix. The same case confirms that Bea's Private words, sent on as Pat's own song, still get `403 private_copy`.
+The other way to fix it is in the phone: hold a pick back from sending until it has words. That needs
+`src/send-song.tsx`, the band share and the copy-code screens, which this cook does not own either.
+
+Items 1 and 2 below are still open. This pass left both alone.
+
+---
+
 # song-search: two test fixes before this cook is green. May CoS apply them?
 
 The feature is built and committed (f8c6a76). `check:song-search` is 30 of 31 ok, and `npm run build` is green. Two checks

@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { chartColumns, chartFont, fitChartFont, wrapAligned, type ChartPiece } from "./chart-fit";
 import { useBattery } from "./battery";
 import { usePlayingLearned } from "./cues";
-import { onPlayhead } from "./hooks";
+import { onPlayhead, useLookAhead } from "./hooks";
 import { BeatDot, type MetronomeState } from "./metronome-view";
 import {
   displayBassNote,
@@ -41,6 +41,7 @@ export function LeadSheet({
   return (
     <article className="sheet" style={{ fontSize: `calc(16px * ${scale})` }}>
       {metronome.playing ? <BeatDot metronome={metronome} battery={battery} /> : null}
+      <LookTag />
       <h1 className="sheet-title">
         <span className="sheet-name">{song.title}</span>
         <span className="sheet-artist"> — {song.artist}</span>
@@ -89,6 +90,22 @@ export function LeadSheet({
       ) : null}
     </article>
   );
+}
+
+/** While this phone looks ahead in a gig, the gold tag at the top of the view. */
+function LookTag() {
+  const look = useLookAhead();
+  return look ? (
+    <div className="look-rail">
+      <span className="look-tag">{look.tag}</span>
+    </div>
+  ) : null;
+}
+
+/** While this phone looks ahead in a gig, a thin gold line in the margin where the band is on the chart. */
+function BandLine() {
+  const look = useLookAhead();
+  return look ? <div className="band-line" style={{ top: look.bandAt }} aria-hidden="true" /> : null;
 }
 
 function OriginalKeyHint({ song, semitones }: { song: Song; semitones: number }) {
@@ -184,6 +201,7 @@ function Chart({
 
   return (
     <div className="chart" id="chord-section" ref={ref}>
+      <BandLine />
       {notation === "chords" && !evenPlan(song) && !hasTiming(song.ref) ? (
         <p className="chart-note">This song has no tempo and length yet, so the chords don't fill as it plays.</p>
       ) : null}

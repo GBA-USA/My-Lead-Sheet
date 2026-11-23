@@ -1,4 +1,4 @@
-# C21 question: four test faults in commit 1's `check:mirror` (bd432d0). May CoS apply this test-only patch?
+# C21 question: three test faults left in commit 1's `check:mirror` (bd432d0). May CoS apply this test-only patch?
 
 The build (fced55e) is committed. Under the queue rules I did not edit the commit-1 test after it. Each fix below is
 to a window, a counter or a page setup that the test made itself. No assertion changes what it requires, and no
@@ -17,14 +17,21 @@ that is 1.65 s after the tap, and the stand-in room delivers it 200 ms after tha
 
 **Fix (window only):** watch until 1 s past the change's own `at`.
 
-## 2. The flash case counts each 100 ms flash twice (fails every run)
+## 2. The flash case counts each 100 ms flash twice (answered in the build, no test patch needed)
 
 It samples every 5 ms and starts a new "onset" whenever a lit sample is more than 50 ms after the first sample of
 the current flash. A 100 ms flash then reads as two onsets, so 8 flashes count as 16.
 
-**Fix (counter only):** count a flash when the strip goes from unlit to lit.
+**Answered:** the hand-off flash is now a 50 ms blink (`FLASH_MS` in `src/gig-live.ts`), so case 14 passes as written.
+The diff hunk for it below still passes if applied, but it is no longer needed.
 
-## 3. The 30 s freeze leaves the tab hidden, so its frame loop never runs again (fails every run under Edge)
+## Still on Ubuntu CI at c0c2175 (GitHub Actions Deep verify)
+
+Items 1, 3 and 4 fail there with the same messages as here. Item 3 is not Edge-only: Chrome on Linux leaves the
+unfrozen tab's frame loop stopped too. With the build fixes in the commit after c0c2175, these three are the only
+`check:mirror` FAIL lines left (28 ok).
+
+## 3. The 30 s freeze leaves the tab hidden, so its frame loop never runs again (fails every run, Edge and Chrome)
 
 In headless Edge, `Page.setWebLifecycleState frozen` hides the page, and `active` does not make it visible again. A
 probe showed `requestAnimationFrame` stopped and `setInterval` throttled until `Emulation.setFocusEmulationEnabled`

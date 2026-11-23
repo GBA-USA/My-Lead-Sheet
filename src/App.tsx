@@ -9,7 +9,8 @@ import { ConnectionEntry, landSyncCheck } from "./connection-setting";
 import { BackIcon, OverflowMenu, SongControls, TextSizeButtons } from "./controls";
 import { LearnedCues } from "./cues";
 import { APP_NAME } from "./data-kinds";
-import { LiveGigStrip, useBandFollow, useGigStage } from "./gig-live.jsx";
+// @ts-expect-error TS5097: esbuild maps "./gig-live.jsx" to gig-live.ts, so only ".tsx" names this file in tsc, Vite and esbuild.
+import { LiveGigStrip, useBandFollow, useGigStage } from "./gig-live.tsx";
 import { GigSongMissing, GigViewScreen } from "./gig-view";
 import { useAutoScroll, useScrolling, useStored, useWakeLock } from "./hooks";
 import { LearnSong } from "./learn-song";

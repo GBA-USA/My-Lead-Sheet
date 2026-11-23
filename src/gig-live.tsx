@@ -1,7 +1,7 @@
 /**
  * The live gig on screen: the strip, Join gig and the click question, and the hooks App runs for the gig sheet. Its
  * model is gig-live.ts, the file of the same name, so this file imports it as "./gig-live.js" and App imports this one
- * as "./gig-live.jsx": a TypeScript importer maps each to its own file, where a bare "./gig-live" would find only one.
+ * as "./gig-live.tsx": esbuild maps both ".js" and ".jsx" to gig-live.ts first, so only ".tsx" reaches this file.
  */
 import { useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
 import type { LocalMs } from "./band-time";
@@ -383,7 +383,7 @@ const TONE_STYLE: Record<Strip["tone"], CSSProperties> = {
 };
 const STRIP_STYLE: CSSProperties = { display: "flex", flexWrap: "wrap", alignItems: "center", gap: "6px 10px", padding: "8px 12px", fontWeight: 600 };
 const FLASH_STYLE: CSSProperties = { filter: "brightness(1.6)" };
-const BUTTON_STYLE: CSSProperties = { minHeight: 44, padding: "0 14px", borderRadius: 8, border: "1px solid currentColor", background: "transparent", color: "inherit", font: "inherit" };
+const BUTTON_STYLE: CSSProperties = { minHeight: 44, padding: "0 14px", borderRadius: 8, border: "2px solid currentColor", background: "transparent", color: "inherit", font: "inherit" };
 
 /** A button that acts only after a half-second hold, as every change that moves the band does. */
 function HoldButton({ label, onHeld }: { label: string; onHeld?: () => void }) {

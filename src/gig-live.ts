@@ -6,7 +6,7 @@ import { LOST_AFTER_MS, linkToLeader, type GigLinks } from "./links/attempt";
 import { NOT_ON_LINEUP_CLOSE, type Link } from "./links/link";
 import { WAITING_FOR_LEADER, type RoomLine } from "./links/server-link";
 import { localNow } from "./links/wire";
-import { BEAT_FLASH_SECONDS, type ClickPrefs } from "./metronome";
+import type { ClickPrefs } from "./metronome";
 import type { PersonalDefaults } from "./personal-settings-model";
 import { ROUTE_WORDS } from "./routes";
 
@@ -162,7 +162,8 @@ function keyOf({ me, phase, view }: StripInput): StripKey {
   return view.confidence;
 }
 
-const FLASH_MS = BEAT_FLASH_SECONDS * 1000;
+/** Each hand-off flash is a 50 ms blink, so the 8 blinks of 2 bars read as 8 separate beats. */
+const FLASH_MS = 50;
 /** Two bars of flash for a hand-off. */
 export const FLASH_BARS = 2;
 /** Between songs there is no band beat, so the flash keeps a 120 bpm 4/4 from the hand-off itself. */

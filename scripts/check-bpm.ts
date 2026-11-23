@@ -93,6 +93,16 @@ check(Math.round(ui.tapBpm(tapsAt([1000, 1000, 1000, 400, 400, 400, 400, 400, 40
 check(JSON.stringify(ui.tempoChoices(120.4).map((c) => c.bpm)) === "[60,120,241]", "120.4 offers 60, 120 and 241");
 check(JSON.stringify(ui.tempoChoices(162).map((c) => c.feel)) === '["Half time","Suggested"]', "double time past 300 BPM is not offered");
 
+/** The candidates a whole song is scored at: the comb's top peaks between 40 and 220 BPM, which the listen pairs with their halves and doubles. */
+for (const bpm of [44, 70, 130, 210]) {
+  const detector = new ui.TempoDetector(48_000);
+  detector.push(clickTrack(bpm, 30, 48_000, []));
+  const found: number[] = typeof ui.tempoCandidates === "function" ? ui.tempoCandidates(detector.envelope, detector.hopsPerSecond) : [];
+  const covered = found.some((candidate) => [candidate / 2, candidate, candidate * 2].some((each) => Math.abs(each - bpm) <= 1));
+  const inRange = found.length > 0 && found.length <= 3 && found.every((candidate) => candidate >= 40 && candidate <= 220);
+  check(covered && inRange, `${bpm} BPM clicks are a song tempo candidate, its half or its double, among at most three between 40 and 220 (${found.map((candidate) => candidate.toFixed(1)).join(", ") || "none"})`);
+}
+
 const dom = fakeDom();
 const tracks: { stopped: boolean; stop: () => void }[] = [];
 let micAsks = 0;

@@ -1387,6 +1387,18 @@ await frozen("L2.4 a close call is yellow and both tempos are offered", null, as
   check(text().includes("76 BPM · or 152") && bandAround("76 BPM") === "likely", `L2.4 the Review shows a close call as "76 BPM · or 152" in yellow (76 BPM has data-band ${bandAround("76 BPM")}; ${text().slice(0, 200)})`);
 });
 
+await frozen("L2.4 a close call offers only a tempo the BPM field takes", null, async () => {
+  const fast = { bpm: 200, choices: [{ bpm: 200, feel: "as heard" as const, score: 1 }, { bpm: 400, feel: "double" as const, score: 0.95 }, { bpm: 100, feel: "half" as const, score: 0.2 }], band: "likely" as const };
+  await withHeardTempo(fast, async () => {
+    const sheet = await openSheet(twoHeadings(null));
+    await startMic(sheet);
+    await micPlay(clickTrack);
+    await press(button("Stop"), "Stop");
+    await until(reviewing, "Review");
+  });
+  check(bandAround("200 BPM") === "likely" && !text().includes("or 400") && !buttonNamed(/400/), `L2.4 a 200 BPM close call with 400 does not offer 400, past the BPM field's 300 (${text().slice(0, 200)})`);
+});
+
 for (const pickup of [0, 2]) {
   const heard = hearAt(blues(FILE_RATE, { choruses: 2, noise: 0, reverb: false, pickup, swaps: {} }), FILE_RATE);
   const beats = heard?.analysis.beats ?? [];

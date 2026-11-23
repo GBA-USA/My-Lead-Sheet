@@ -110,19 +110,33 @@ export async function clearPhone(): Promise<void> {
 
 const bandKeys = (bandId: string) => IDBKeyRange.bound(`${bandId}/`, `${bandId}/\uffff`);
 
+function sweepPacks(transaction: IDBTransaction, gone: (pack: GigPack) => boolean, dropped = () => {}) {
+  const packs = transaction.objectStore("gigPacks").openCursor();
+  packs.onsuccess = () => {
+    const cursor = packs.result;
+    if (!cursor) return;
+    if (gone(cursor.value as GigPack)) {
+      cursor.delete();
+      dropped();
+    }
+    cursor.continue();
+  };
+}
+
 /** Empties one band's songs and gig packs, so nothing of a band stays on this phone once the player is out of it (SCREEN-MAP 4, band-only rule). */
 export async function clearBand(bandId: string): Promise<void> {
   await written(["bandSongs", "gigPacks"], (clearing) => {
     clearing.objectStore("bandSongs").delete(bandKeys(bandId));
-    const packs = clearing.objectStore("gigPacks").openCursor();
-    packs.onsuccess = () => {
-      const cursor = packs.result;
-      if (!cursor) return;
-      if ((cursor.value as GigPack).gig.bandId === bandId) cursor.delete();
-      cursor.continue();
-    };
+    sweepPacks(clearing, (pack) => pack.gig.bandId === bandId);
   });
   phoneChanged();
+}
+
+/** Deletes the gig packs `gone` picks. When any went, every screen holding one reads again, so it never shows a deleted pack. */
+export async function dropGigPacks(gone: (pack: GigPack) => boolean): Promise<void> {
+  let any = false;
+  await written(["gigPacks"], (dropping) => sweepPacks(dropping, gone, () => (any = true)));
+  if (any) phoneChanged();
 }
 
 /** Whether this phone's band data is `userId`'s. Unlike `claimPhone` it writes nothing, so a reader cannot clear the phone and wake itself again. */

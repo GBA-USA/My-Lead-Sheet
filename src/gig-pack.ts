@@ -1,6 +1,6 @@
 import type { SongContent } from "./band-library-model";
 import type { GigPlan } from "./gig-plan-model";
-import { claimPhone, getFromPhone, openPhoneDb, putOnPhone } from "./phone-db";
+import { claimPhone, dropGigPacks, getFromPhone, putOnPhone } from "./phone-db";
 import type { ScrollVersion } from "./scroll-timing";
 import { ApiError, api } from "./sign-in-methods";
 
@@ -45,50 +45,35 @@ export function atPassEnd(pack: GigPack | null | undefined, then: () => void): (
 /** The server's words for a guest pass that no longer opens its gig. Its pack leaves the phone as soon as the phone hears one. */
 const PASS_GONE: readonly string[] = ["pass-revoked", "pass-ended"];
 
+/** How long a guest's phone waits for the server's word on the pass. A weak venue signal can leave a request hanging. */
+const ASK_PASS_MS = 4000;
+
 /**
  * Deletes every pack whose guest pass has ended. The end is in the pack, so this needs no signal. `src/main.tsx` awaits
  * it before the first render, so an ended pass's charts never show, not even for one frame (PLAN.md 7.14).
  */
-export const dropEndedPacks = (now = Date.now()) => dropPacks((pack) => packEnded(pack, now));
-
-async function dropPacks(gone: (pack: GigPack) => boolean): Promise<void> {
-  const db = await openPhoneDb();
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const sweeping = db.transaction("gigPacks", "readwrite");
-      const cursor = sweeping.objectStore("gigPacks").openCursor();
-      cursor.onsuccess = () => {
-        const at = cursor.result;
-        if (!at) return;
-        if (gone(at.value as GigPack)) at.delete();
-        at.continue();
-      };
-      sweeping.oncomplete = () => resolve();
-      sweeping.onerror = () => reject(sweeping.error);
-    });
-  } finally {
-    db.close();
-  }
-}
+export const dropEndedPacks = (now = Date.now()) => dropGigPacks((pack) => packEnded(pack, now));
 
 /**
  * The pack this phone may show for the gig, or null. A lineup player's pack shows at once, with or without a signal. A
- * guest's pack shows only once the server says the pass still opens the gig, so a revoked pass's charts never flash up;
- * a pass the server calls revoked or ended takes its pack off the phone. With no signal the pack's own end decides.
+ * guest's pack shows once the server says the pass still opens the gig, so a revoked pass's charts don't flash up. With
+ * no signal, or no answer within ASK_PASS_MS, the pack's own end decides. A pass the server calls revoked or ended
+ * takes its pack off the phone even when the answer comes late, and the screens showing it read again.
  */
 export async function packToShow(gigId: string): Promise<GigPack | null> {
   const pack = await getFromPhone("gigPacks", gigId);
   if (!pack) return null;
   if (packEnded(pack)) return dropEndedPacks().then(() => null);
   if (pack.expiresAt === null) return pack;
-  try {
-    await api("/api/bands/gig/open", { bandId: pack.gig.bandId, gigId });
-    return pack;
-  } catch (error) {
-    if (!(error instanceof ApiError)) throw error;
-    if (PASS_GONE.includes(error.reason)) return dropPacks((held) => held.gig.gigId === gigId).then(() => null);
-    return error.reason === "offline" || error.status >= 500 ? pack : null;
-  }
+  const verdict = api("/api/bands/gig/open", { bandId: pack.gig.bandId, gigId }).then(
+    () => pack,
+    (error) => {
+      if (!(error instanceof ApiError)) throw error;
+      if (PASS_GONE.includes(error.reason)) return dropGigPacks((held) => held.gig.gigId === gigId).then(() => null);
+      return error.reason === "offline" || error.status >= 500 ? pack : null;
+    },
+  );
+  return Promise.race([verdict, new Promise<GigPack>((resolve) => setTimeout(resolve, ASK_PASS_MS, pack))]);
 }
 
 /** Downloads the pack and keeps it on this phone under the gig's id, so a second download replaces the first. An older rev never replaces a newer one. */

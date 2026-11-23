@@ -625,13 +625,16 @@ try {
         await site.send("Page.navigate", { url: `${origin}/?w=3#/gig/${bandId}/${gigId}` });
         await waitFor(gigView, "the gig view, with the server not answering");
         await waitFor(charts, "tonight's charts while the server hangs", 8000);
+        // The sheet has no gig/open of its own, so only the pack's late verdict can take the chart off it.
+        await site.send("Page.navigate", { url: `${origin}/?w=4#/gig/${bandId}/${gigId}/0` });
+        await waitFor(`location.search === "?w=4" && ${charts}`, "tonight's chart on the sheet while the server hangs", 8000);
         ok(await terry.call("/api/bands/guests/revoke", { bandId, passId: wesPassId }), "Terry revokes Wes's pass meanwhile");
       } finally {
         await site.send("Fetch.disable");
       }
       for (const end = Date.now() + 10_000; (await packsFor()) > 0 && Date.now() < end; ) await settle(250);
       assert.equal(await packsFor(), 0, "the late pass-revoked reply takes the pack off the phone");
-      await waitFor(`!${charts}`, "the charts gone from the screen once the late reply lands");
+      await waitFor(`!${charts}`, "the chart gone from the sheet once the late reply lands", 5000);
     });
 
     await check("a revoked pass takes its charts off the phone at the next open, and none show while the phone asks", async () => {

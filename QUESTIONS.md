@@ -1,3 +1,16 @@
+# C21c fix pass 2: a slow signal no longer hides a guest's pack, and the "no signal" cases now run offline.
+
+`packToShow` waits at most 4 s for `gig/open`, then shows a live guest's pack as it does with no signal. A
+`pass-revoked` or `pass-ended` reply that lands later still deletes the pack, and `dropGigPacks` (now in
+`src/phone-db.ts`) bumps the phone generation, so a screen showing it reads again. The cost is that a revoked pass
+whose answer takes longer than 4 s shows its charts until that answer lands.
+
+One finding for the self-check's record: check:guest never enabled the CDP Network domain, so each
+`Network.setBlockedURLs` in it did nothing. Its "network off" cases, and the self-check's Probe A, ran online. They
+passed for a local reason: an ended pack is dropped on the phone, and a revoked pack was already gone. check:guest
+now enables Network, and `openWithNoSignal` asserts that a fetch gets no answer. The three other checks that block
+URLs (`ux-invite-links`, `ux-sheet-controls-save`, `ux-theme-tokens`) already enable Network.
+
 # C21c fix pass 1 (97443dc): the `check:guest` patch below is applied. One leftover for the owner.
 
 The self-check asked for the test-only patch, so it is in 97443dc, byte-identical to the one the self-check ran.

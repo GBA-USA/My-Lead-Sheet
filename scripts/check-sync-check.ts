@@ -728,7 +728,7 @@ await part("sync check screen", async () => {
   let root = ui.createRoot(container);
   let closed = 0;
   /** App keeps one useMetronome for its whole life and hands it to the sheet, so the sheet opens here over the real hook. */
-  let metronome: { prefs: Record<string, unknown>; setPrefs: (patch: Record<string, unknown>) => void } | null = null;
+  let metronome: { prefs: Record<string, unknown>; setPrefs: (patch: Record<string, unknown>) => void; playing: boolean; toggle: () => void } | null = null;
   function App({ open = true, ...props }: Record<string, unknown>) {
     metronome = ui.useMetronome(null, 120);
     return open ? ui.createElement(ui.SyncCheckSheet, { names: {}, onClose: () => (closed += 1), metronome, ...props }) : null;
@@ -934,6 +934,24 @@ await part("sync check screen", async () => {
     await settle();
   }
   currentRefusal = null;
+
+  // --- Sound off in the Metronome sheet: the Sync check still clicks, and closing it hands Sound off back to the song metronome.
+  store.set(ui.METRONOME_PREFS_KEY, JSON.stringify({ indicator: true, sound: false, syncMode: "auto", syncOffsetMs: 0 }));
+  await openApp({ bandId: null, admin: false, link: null });
+  const quietFrom = scheduled.length;
+  await advance(2);
+  check("with Sound off the Sync check still sounds its click", scheduled.length - quietFrom >= 3, `${scheduled.length - quietFrom} clicks`);
+  render({ open: false });
+  await settle();
+  metronome!.toggle();
+  await settle();
+  const songFrom = scheduled.length;
+  await advance(2);
+  check("after the Sync check closes, the song metronome with Sound off sounds no click", metronome!.playing && scheduled.length === songFrom, `playing ${metronome!.playing}, ${scheduled.length - songFrom} clicks`);
+  metronome!.toggle();
+  await settle();
+  root.unmount();
+  await settle();
 
   // --- Saved prefs: one bad field never resets the others, and the speaker delay defaults to 0.
   const { model } = ui;

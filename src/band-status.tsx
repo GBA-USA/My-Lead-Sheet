@@ -88,8 +88,9 @@ function useTick(on: boolean) {
 
 /**
  * The faces strip. Before a gig goes live anyone in the band may open the panel. During one, `live` feeds it and only
- * the admin and the leader may (PLAN.md 6), so for anyone else the faces are pictures, not buttons. The panel mounts on
- * `.app`, because `.scroll` is its own stacking context under the shell header.
+ * the admin and the leader may (PLAN.md 6), so for anyone else the faces are pictures, not buttons, with no status
+ * rings. Losing the lead shuts an open panel, and getting it back does not reopen it. The panel mounts on `.app`,
+ * because `.scroll` is its own stacking context under the shell header.
  */
 export function BandStatusFaces({ players, live }: { players: Player[]; live?: LiveFeed }) {
   const [sheetHost, setSheetHost] = useState<Element | null>(null);
@@ -99,6 +100,7 @@ export function BandStatusFaces({ players, live }: { players: Player[]; live?: L
   const shown = live ? livePlayers(players, live.leader, live.statuses(), live.now()) : players;
   const me = players.find((p) => p.you)?.id ?? "";
   const opens = !live || seesBandStatus(live.admin, me, live.leader);
+  if (!opens && sheetHost) setSheetHost(null);
 
   return (
     <>
@@ -110,13 +112,13 @@ export function BandStatusFaces({ players, live }: { players: Player[]; live?: L
               {initials(row.name)}
             </button>
           ) : (
-            <span key={row.id} className={faceClass(row, !!live)} role="img" aria-label={label}>
+            <span key={row.id} className={faceClass(row, false)} role="img" aria-label={label}>
               {initials(row.name)}
             </span>
           );
         })}
       </div>
-      {opens && sheetHost ? createPortal(<BandStatusPanel players={shown} onClose={() => setSheetHost(null)} />, sheetHost) : null}
+      {sheetHost ? createPortal(<BandStatusPanel players={shown} onClose={() => setSheetHost(null)} />, sheetHost) : null}
     </>
   );
 }

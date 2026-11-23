@@ -439,6 +439,30 @@ try {
     assert.ok(!page.text.includes("Elks") && !page.text.includes("Blue Notes"), "with no gig or band in the refusal");
   });
 
+  await check("a band member or the admin can't use up a guest pass meant for someone else", async () => {
+    const tess = await passwordPlayer(base, origin, "Tess Vale", "tessvale");
+    const made = ok(await makePass(terry, { name: "Tess" }), "a pass meant for Tess");
+    assert.deepEqual(refusal(await mike.call("/api/guest/open", { code: made.code })), [403, "in-band"], "a lineup member opening the pass hears they're in the band");
+    assert.deepEqual(refusal(await mike.call("/api/guest/claim", { code: made.code })), [403, "in-band"], "and can't claim it");
+    assert.deepEqual(refusal(await terry.call("/api/guest/claim", { code: made.code })), [403, "in-band"], "nor can the admin who made it");
+    assert.equal((await passesOf()).find((pass) => pass.passId === made.pass.passId).claimedBy, null, "so nobody holds it yet");
+    ok(await tess.call("/api/guest/claim", { code: made.code }), "the guest it was made for still gets it");
+  });
+
+  await check("revoking a pass held by someone who has since joined the band leaves their gig socket open", async () => {
+    const vic = await passwordPlayer(base, origin, "Vic Lane", "viclane");
+    const vicPass = ok(await makePass(terry, { name: "Vic", gig: brunchGig }), "a brunch pass for Vic");
+    ok(await vic.call("/api/guest/claim", { code: vicPass.code }), "Vic follows brunch as a guest");
+    ok(await vic.call("/api/bands/join", { code: invite }), "then joins the band");
+    ok(await terry.call("/api/bands/gig/lineup", { bandId, gigId: brunchGig, lineup: [...lineup, vic.userId] }), "and the brunch lineup");
+    const vicRoom = await socket(vic, bandId);
+    await joinGig(vicRoom, brunchGig);
+    ok(await terry.call("/api/bands/guests/revoke", { bandId, passId: vicPass.pass.passId }), "Terry revokes the pass Vic no longer needs");
+    await settle(1000);
+    assert.equal(vicRoom.ws.readyState, WebSocket.OPEN, "the member's gig socket stays open");
+    assert.equal(terryRoom.ws.readyState, WebSocket.OPEN, "and so does the leader's");
+  });
+
   if (site) {
     const app = await appPage(site);
     // Network.setBlockedURLs does nothing until the Network domain is on.
@@ -637,6 +661,15 @@ try {
       assert.equal((await passesOf()).find((pass) => pass.name === "Uma").claimedName, "Uma Vance", "the scanned pass is bound to Uma");
     });
 
+    await check("a band member who opens a guest pass link is told they're in the band, with no Join button", async () => {
+      const made = ok(await makePass(terry, { name: "For a guest" }), "a pass");
+      await signedInAs(mike);
+      await site.send("Page.navigate", { url: made.link });
+      await waitFor(`document.querySelector(".guest-pass-sheet")?.textContent.includes("You're in this band already")`, "the in-band words on the pass sheet");
+      assert.ok(!(await hasButton("Join as a guest")), "the sheet offers no Join button");
+      assert.equal((await passesOf()).find((pass) => pass.passId === made.pass.passId).claimedBy, null, "and the pass is still free for its guest");
+    });
+
     const packsFor = async () => (await packsOnPhone()).filter((pack) => pack.gig.gigId === gigId).length;
     const readyAs = async (who: Phone & { userId: string }, mark: string) => {
       await signedInAs(who);
@@ -711,9 +744,9 @@ try {
       assert.equal(await packsFor(), 0, "and the gigPacks row is gone");
     });
 
-    await check("a guest following the live gig leaves it when the pass ends, and the sheet stops showing tonight's chart", async () => {
+    await check("a guest following the live gig sees the leader by first name, leaves the gig when the pass ends, and the sheet stops showing tonight's chart", async () => {
       const ivy = await passwordPlayer(base, origin, "Ivy Bell", "ivybell");
-      const ivyEnds = Date.now() + 30_000;
+      const ivyEnds = Date.now() + 50_000;
       ok(await ivy.call("/api/guest/claim", { code: ok(await makePass(terry, { name: "Ivy", expiresAt: ivyEnds }), "a short pass for Ivy").code }), "Ivy joins as a guest");
       await readyAs(ivy, "i");
       await waitFor(`[...document.querySelectorAll(".gig-strip button")].some((b) => b.textContent.trim() === "Join gig")`, "Join gig on the live strip");
@@ -721,6 +754,11 @@ try {
       await waitFor(`!!document.querySelector(".gig-question") || location.hash.endsWith("/0")`, "the click question or the sheet");
       if (await site.evaluate<boolean>(`!!document.querySelector(".gig-question")`)) await tap("Dot only", `document.querySelector(".gig-question")`);
       await waitFor(`document.querySelector(".gig-strip")?.dataset.strip !== undefined && /Elks (Opener|Closer)/.test(document.body.textContent) && location.hash.endsWith("/0")`, "tonight's chart on the sheet while following");
+      const stripWords = `document.querySelector(".gig-strip-words")?.textContent ?? ""`;
+      await waitFor(`(${stripWords}).includes("Terry")`, "the leader's first name on the guest's strip", 20_000).catch(async () => {
+        throw new Error(`the guest's strip reads ${js(await site.evaluate<string>(stripWords))}`);
+      });
+      assert.ok(!(await site.evaluate<string>(stripWords)).includes("Bass"), "first name only");
       for (; Date.now() < ivyEnds + 1500; ) await settle(250);
       assert.ok(!/Elks (Opener|Closer)/.test(await bodyText()), "no chart of the ended pass is still on the sheet");
       assert.equal(await packsFor(), 0, "and the gigPacks row is gone");

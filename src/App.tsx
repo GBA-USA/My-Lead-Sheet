@@ -36,21 +36,7 @@ import { SongEditors, type SongEdit } from "./song-editor";
 import { BandSongNotes } from "./song-notes";
 import { useSongVersion } from "./song-version";
 import { StageBar, stageSetOf } from "./stage-bar";
-import {
-  TEXT_SCALES,
-  loadLibrary,
-  loadPersonal,
-  loadSongData,
-  loadTextScaleIndex,
-  localRef,
-  madeHere,
-  savePersonal,
-  saveSongData,
-  saveTextScaleIndex,
-  songByRef,
-  tempoText,
-  withSongData,
-} from "./storage";
+import { TEXT_SCALES, loadLibrary, loadPersonal, loadSongData, loadTextScaleIndex, localRef, madeHere, savePersonal, saveSongData, saveTextScaleIndex, songByRef, tempoText, withSongData } from "./storage";
 import { SongLine, TakeBar, taughtPlan, useFollowTempo, type LineMenu } from "./teach";
 import type { Library, Setlist, Song, SongData, SongRef } from "./types";
 

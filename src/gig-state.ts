@@ -190,7 +190,10 @@ function move(state: GigState, op: Move, now: BandMs, lead: number): Change {
     case "section": {
       if (latest(state.section) === op.index) return "same-target";
       const t = at("section");
-      return { at: t, fields: { section: put(state.section, op.index, t, now) } };
+      const section = put(state.section, op.index, t, now);
+      // A song change still to land opens its song at the top, after this section has shown.
+      const song = state.current[state.current.length - 1];
+      return { at: t, fields: { section: song.at > t ? [...section, { at: song.at, value: null }] : section } };
     }
     case "countIn": {
       const t = at("countIn");

@@ -1,3 +1,16 @@
+# C22 self-check fix pass 1: one edit outside C22's files (`src/gig-state.ts`). Owner, keep it or move it?
+
+The self-check's P2-1 fix is in the reducer, not in `stage-bar.tsx`. A section op that landed before a pending Next
+dropped that Next's top-of-song step (`put` keeps only steps before its own landing), so the next song opened at the
+old song's section. The bar-only fix the self-check offered, holding the section chips while Next is pending, would
+break the brief's "two holds in flight ... both land". So `move`'s `section` case now adds the pending song's null step
+back after its own step. That is 3 lines, and no other op writes a non-null step before a pending song change today.
+`check:stage` "two holds in flight" now asserts that song 2 opens at its top.
+
+This pass also applies the one-line countIn filter below, because the stop hook needs `check:stage` green.
+
+---
+
 # C22 question: one wrong assertion in commit 1's `check:stage` (959b03c). May CoS apply this one-line test patch?
 
 The build (c8c061e) is committed. Under the queue rules I did not edit the commit-1 test after it, and I stopped there.

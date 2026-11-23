@@ -109,37 +109,28 @@
   color: var(--text-strong);
 }
 
+/* Prev is as wide as its label and Next takes the rest, so the leader reads the whole next title. A long one wraps; the button grows. */
 .stage-move {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr);
 }
 
 .stage-move > .stage-btn {
   min-height: var(--touch-stage);
   width: 100%;
   min-width: 0;
-  padding: 0 10px;
+  padding: 4px 12px;
+  line-height: 1.2;
   white-space: nowrap;
-  text-overflow: ellipsis;
+}
+
+.stage-move > .stage-next {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .stage-now {
-  display: flex;
-  align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-width: 0;
-  max-width: 180px;
-}
-
-.stage-caption {
-  overflow: hidden;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-dim);
-  text-align: center;
-  white-space: nowrap;
-  text-overflow: ellipsis;
 }
 
 /* The landing chip counts down to the beat it names. */

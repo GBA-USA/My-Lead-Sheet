@@ -426,9 +426,25 @@ function InGig({ gig, set, canMove, scroll, bpm, song }: BarProps & { gig: GigSt
     </>
   );
 
+  // The chip, Undo and the unlock hold get a row of their own while they show, so Next always has the width for its title.
+  // It sits at the top of the bar, so nothing a thumb is reaching for moves when it comes or goes.
+  const status =
+    locked || pending ? (
+      <div className="stage-row stage-now">
+        {chip}
+        {undoable && !locked ? (
+          <button type="button" className="stage-btn" data-stage="undo" onClick={() => send({ kind: "undo", target: state.last!.opId })}>
+            Undo
+          </button>
+        ) : null}
+        {locked ? <button {...hold("unlock", () => setLocked(false), { hint: UNLOCK_HINT, attrs: { "data-stage": "unlock" } })}>Hold to unlock</button> : null}
+      </div>
+    ) : null;
+
   return (
     <nav className="stage-bar" data-stage-bar="" aria-label="Stage" style={{ "--stage-hold": `${HOLD_MS}ms` } as CSSProperties}>
       {panel && !locked ? panels[panel] : null}
+      {status}
       {locked ? noteLine : (
         <div className="stage-row stage-tools">
           <div className="stage-tools-note">{noteLine}</div>
@@ -466,21 +482,6 @@ function InGig({ gig, set, canMove, scroll, bpm, song }: BarProps & { gig: GigSt
       </div>
       <div className="stage-row stage-move">
         {prev}
-        <div className="stage-now">
-          {chip}
-          {undoable && !locked ? (
-            <button type="button" className="stage-btn" data-stage="undo" onClick={() => send({ kind: "undo", target: state.last!.opId })}>
-              Undo
-            </button>
-          ) : null}
-          {locked ? (
-            <button {...hold("unlock", () => setLocked(false), { hint: UNLOCK_HINT, attrs: { "data-stage": "unlock" } })}>Hold to unlock</button>
-          ) : pending ? null : (
-            <span className="stage-caption">
-              {where ? `${where.song.index + 1}/${order.length}` : ""} · {where ? titleOf(where.song.key) : ""}
-            </span>
-          )}
-        </div>
         {next}
       </div>
     </nav>

@@ -318,11 +318,12 @@ function livePosition({ pack, session }: Following): GigPosition {
  * session while this phone follows that gig and from the phone's own index otherwise. The metronome comes later in
  * App's render, so the click question reaches it through `sink`, which `useBandFollow` fills.
  */
-export function useGigStage({ me, route, personal, setPersonal }: { me: string | null; route: GigRoute | null; personal: PersonalDefaults; setPersonal(next: PersonalDefaults): void }) {
+export function useGigStage({ me, route, personal, setPersonal, deps }: { me: string | null; route: GigRoute | null; personal: PersonalDefaults; setPersonal(next: PersonalDefaults): void; deps?: Partial<LiveDeps> }) {
   const heldPack = useGigPack(me, route?.gigId ?? "");
   const sink = useRef<PrefsSink["current"]>(() => {});
   const live = useLiveGig({
     me,
+    deps,
     stage: route && heldPack ? { gig: heldPack.gig, pack: heldPack } : null,
     metronome: { setPrefs: (patch) => sink.current(patch) },
     personal,

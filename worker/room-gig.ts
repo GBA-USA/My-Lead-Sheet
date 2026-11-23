@@ -101,11 +101,8 @@ const songsOf = (row: GigRow): string[] => JSON.parse(row.song_order);
 const activeIds = (sql: SqlStorage) => new Set(sql.exec<{ user_id: string }>(`SELECT user_id FROM members WHERE state = 'active'`).toArray().map((row) => row.user_id));
 const isAdmin = (sql: SqlStorage, userId: string) => sql.exec(`SELECT 1 FROM members WHERE user_id = ? AND state = 'active' AND role = 'admin'`, userId).toArray().length > 0;
 
-/** While the gig is live, its leader and backup are whoever leads now, so the room introduces each phone to that leader. */
-const playingNow = (row: GigRow) => {
-  const live = row.status === "live" ? liveOf(row) : null;
-  return live ? { leader: live.leader, backup: live.backup } : { leader: row.leader, backup: row.backup };
-};
+/** Who leads the gig now: the live state's leader once it is live, the planned leader before. Only the room's introductions read it; every plan keeps the planned pair. */
+const leadingNow = (row: GigRow) => (row.status === "live" ? liveOf(row)?.leader : null) ?? row.leader;
 
 const planOf = (row: GigRow, bandId: string): GigPlan => ({
   gigId: row.gig_id,
@@ -114,7 +111,8 @@ const planOf = (row: GigRow, bandId: string): GigPlan => ({
   name: row.name,
   date: row.date,
   lineup: lineupOf(row),
-  ...playingNow(row),
+  leader: row.leader,
+  backup: row.backup,
   route: row.route,
   status: row.status,
   kind: row.kind ?? "gig",
@@ -235,6 +233,14 @@ export const gigRoom = {
       fields.notes,
     );
     return { view: viewOf(band, gigRow(band.sql, fields.gigId)), posted: chatRoom.post(band, planner, fields.gigId, text, now, card) };
+  },
+
+  /** The gigs `userId` is on the lineup of, each with whoever leads it now, so the room introduces each phone to that leader. */
+  lineups(band: RoomStore, userId: string): Map<string, string> {
+    inRoom(band.sql, userId);
+    settleLive(band.sql);
+    const rows = band.sql.exec<GigRow>(`SELECT * FROM gigs`).toArray();
+    return new Map(rows.filter((row) => lineupOf(row).includes(userId)).map((row) => [row.gig_id, leadingNow(row)]));
   },
 
   /** The gigs not yet ended, soonest first, and the ended ones, newest first. An ended gig is kept as the band's record. */

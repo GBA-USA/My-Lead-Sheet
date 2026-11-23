@@ -113,7 +113,7 @@ let flips = [], strips = [], beats = [], backwards = 0, lastBand = -Infinity, la
 const localNow = () => performance.timeOrigin + performance.now();
 const keep = (list, entry) => { list.push(entry); if (list.length > 4000) list.shift(); };
 const gridAt = (click, t) => { let grid = null; for (const step of click) if (step.at <= t) grid = step.value; return grid; };
-const strip = () => stripOf({ me: opts.me, gigName: opts.gigName, plannedLeader: opts.planned, names: opts.names, phase: "joined", view: live.view(), bandNow: live.bandNow() });
+const strip = (plannedLeader = opts.planned) => stripOf({ me: opts.me, gigName: opts.gigName, plannedLeader, names: opts.names, phase: "joined", view: live.view(), bandNow: live.bandNow() });
 
 function frameLoop() {
   raf = requestAnimationFrame(frameLoop);
@@ -148,11 +148,13 @@ window.harness = {
   begin(plan) { live.start(plan); },
   tap(body) { const out = live.tap(body); return out.ok ? { ok: true, rev: out.state.rev, at: out.state.last ? out.state.last.at : null } : { ok: false, refused: out.refused }; },
   deafen() { window.__deaf = true; },
+  askToLead() { live.askToLead(); },
+  stripFor(plannedLeader) { const s = strip(plannedLeader); return { key: s.key, words: s.words, tone: s.tone }; },
   view() {
     const v = live.view();
     const t = live.bandNow();
     return {
-      leading: v.leading, route: v.route, confidence: v.confidence, heard: v.heard, steppedDown: v.steppedDown, offLineup: v.offLineup, refused: v.refused,
+      leading: v.leading, route: v.route, confidence: v.confidence, heard: v.heard, steppedDown: v.steppedDown, offLineup: v.offLineup, refused: v.refused, asks: v.asks,
       state: v.state && { rev: v.state.rev, epoch: v.state.epoch, leader: v.state.leader, backup: v.state.backup, key: v.state.current[v.state.current.length - 1].value, status: v.state.status },
       strip: strip(), flips, strips, beats, backwards, frame, bandErr: t === null ? null : t - (localNow() + opts.offset),
     };
@@ -181,6 +183,7 @@ type View = {
   steppedDown: boolean;
   offLineup: boolean;
   refused: string | null;
+  asks: string[];
   state: { rev: number; epoch: number; leader: string; backup: string | null; key: string; status: string } | null;
   strip: StripOut;
   flips: Flip[];
@@ -327,6 +330,21 @@ async function realTabs() {
       assert.ok(!samNow.flips.some((f) => f.key === order[2]), "Sam never flipped to Terry's stale song");
     });
 
+    await check("t739u. a phone that reads the gig from /gig/live after the take-over, as one joining or reloading does, shows blue while the backup leads", async () => {
+      const [gig] = (await sam.call("/api/bands/gig/live", {})).body.gigs as { leader: string; backup: string | null }[];
+      assert.deepEqual([gig.leader, gig.backup], [terry.userId, mike.userId], "/gig/live keeps the planned leader and backup");
+      const plan = (await terry.call("/api/bands/gig/list", { bandId })).body.gigs[0].gig as { leader: string; backup: string | null };
+      assert.deepEqual([plan.leader, plan.backup], [terry.userId, mike.userId], "the plan screen keeps the planned leader and backup");
+      const fresh = await call<{ key: string; tone: string }>(samSite, `stripFor(${js(gig.leader)})`);
+      assert.equal(fresh.tone, "blue", `Sam's strip from the listed gig (${js(fresh)})`);
+    });
+
+    await check("3b. Ask to lead reaches the leader, who hears who asked", async () => {
+      await until("Terry linked to Mike", () => view(terrySite), (v) => v.route !== null, 20_000);
+      await call(terrySite, "askToLead()");
+      await until("Mike hears Terry ask", () => view(mikeSite), (v) => v.asks.includes(terry.userId), 20_000);
+    });
+
     await check("2. a tab off for 30 s rejoins on the right bar with no backward jump and no double flip", async () => {
       const count = await call<{ ok: boolean }>(mikeSite, `tap(${js({ kind: "countIn", bpm: 120, beatsPerBar: 4, bars: 1, version: null, rate: 1 })})`);
       assert.ok(count.ok, js(count));
@@ -361,14 +379,15 @@ async function realTabs() {
       await call(mikeSite, "close()");
       await mikeSite.close();
       sites.splice(sites.indexOf(mikeSite), 1);
-      const quiet = await until("isn't answering", () => view(samSite), (v) => v.strips.some((s) => s.key === "quiet"), 25_000);
-      const quietLog = quiet.strips.filter((s) => s.key === "quiet").pop()!;
+      const since = (v: View, key: string) => v.strips.filter((s) => s.frame > playing.frame && s.key === key);
+      const quiet = await until("isn't answering", () => view(samSite), (v) => since(v, "quiet").length > 0, 25_000);
+      const quietLog = since(quiet, "quiet").pop()!;
       const quietAfter = (quietLog.local - quietLog.heardAt!) / 1000;
       assert.equal(quiet.strip.words, "Mike's phone isn't answering");
       assert.ok(quietAfter >= 9.9 && quietAfter <= 11, `isn't answering 10 s after the last answer (${quietAfter.toFixed(2)} s)`);
       assert.ok(quietLog.local - closedAt <= 15_000, "and within 15 s of the tab closing");
-      const dropped = await until("dropped", () => view(samSite), (v) => v.strips.some((s) => s.key === "dropped"), 40_000);
-      const droppedLog = dropped.strips.filter((s) => s.key === "dropped").pop()!;
+      const dropped = await until("dropped", () => view(samSite), (v) => since(v, "dropped").length > 0, 40_000);
+      const droppedLog = since(dropped, "dropped").pop()!;
       const droppedAfter = (droppedLog.local - droppedLog.heardAt!) / 1000;
       assert.equal(dropped.strip.words, `Mike's phone dropped · still on ${songNumber}`);
       assert.ok(droppedAfter >= 29.9 && droppedAfter <= 31, `dropped 30 s after the last answer (${droppedAfter.toFixed(2)} s)`);
@@ -378,6 +397,14 @@ async function realTabs() {
       assert.equal(dropped.strip.waiting, "Waiting for the admin", "Sam is told who can take the lead");
       const terryNow = await until("Terry hears the drop", () => view(terrySite), (v) => v.strip.key === "dropped" || v.strip.takeOver, 10_000);
       assert.ok(terryNow.strip.takeOver, "Terry, the admin, has the take-over button");
+    });
+
+    await check("ended: /gig/live lists a gig ended today for its lineup, so a joined phone hears it is over", async () => {
+      const ended = await terry.call("/api/bands/gig/end", { bandId, gigId });
+      assert.equal(ended.status, 200, js(ended.body));
+      const samLive = await sam.call("/api/bands/gig/live", {});
+      assert.deepEqual(samLive.body.gigs.map((g: { gigId: string; status: string }) => [g.gigId, g.status]), [[gigId, "ended"]]);
+      assert.deepEqual((await ben.call("/api/bands/gig/live", {})).body.gigs, [], "and still not to Ben, off the lineup");
     });
   } catch (error) {
     failures += 1;
@@ -837,7 +864,8 @@ async function fakeClock() {
 async function fakeScreens() {
   const ui = await bundle(
     "screen",
-    `export { GigStrip, LiveGigStrip, useLiveGig } from "./src/gig-live.tsx";
+    `export { GigStrip, LiveGigStrip, useBandFollow, useGigStage, useLiveGig } from "./src/gig-live.tsx";
+     export { startGig } from "./src/gig-state.ts";
      export { useMetronome } from "./src/metronome-view.tsx";
      export * as storage from "./src/storage.ts";
      export { createElement, useState } from "react";
@@ -848,8 +876,45 @@ async function fakeScreens() {
   const store = new Map<string, string>();
   Object.assign(globalThis, { setTimeout: real.setTimeout, clearTimeout: real.clearTimeout, setInterval: real.setInterval, clearInterval: real.clearInterval });
   Object.defineProperty(globalThis, "performance", { configurable: true, value: real.performance });
+  /** Each click the metronome schedules, at its audio time. The audio clock is the page clock in seconds and presents at once. */
+  const scheduled: number[] = [];
+  class FakeAudioContext {
+    state = "running";
+    destination = {};
+    outputLatency = 0;
+    baseLatency = 0;
+    get currentTime() {
+      return real.performance.now() / 1000;
+    }
+    getOutputTimestamp() {
+      const now = real.performance.now();
+      return { contextTime: now / 1000, performanceTime: now };
+    }
+    resume() {
+      return Promise.resolve();
+    }
+    createOscillator() {
+      const param = { setValueAtTime() {}, exponentialRampToValueAtTime() {} };
+      return { type: "", frequency: param, connect() {}, disconnect() {}, start: (time: number) => void scheduled.push(time), stop() {}, onended: null };
+    }
+    createGain() {
+      return { gain: { setValueAtTime() {}, exponentialRampToValueAtTime() {} }, connect() {}, disconnect() {} };
+    }
+  }
   Object.assign(globalThis, {
-    window: { document: dom.document, setTimeout: real.setTimeout, clearTimeout: real.clearTimeout, setInterval: real.setInterval, clearInterval: real.clearInterval, addEventListener() {}, removeEventListener() {}, location: { hash: "#/songs" }, HTMLIFrameElement: class {} },
+    window: {
+      document: dom.document,
+      performance: real.performance,
+      AudioContext: FakeAudioContext,
+      setTimeout: real.setTimeout,
+      clearTimeout: real.clearTimeout,
+      setInterval: real.setInterval,
+      clearInterval: real.clearInterval,
+      addEventListener() {},
+      removeEventListener() {},
+      location: { hash: "#/songs" },
+      HTMLIFrameElement: class {},
+    },
     document: dom.document,
     localStorage: {
       getItem: (key: string) => store.get(key) ?? null,
@@ -981,7 +1046,7 @@ async function fakeScreens() {
     const held = released;
     gigs = [liveRow("ended")];
     await until("the ended words", async () => text(), (t) => t.includes("That's the gig. Nice playing."), 40_000);
-    assert.ok(released > held, "the gig's screen lock is let go");
+    await until("the gig's screen lock let go", async () => released, (n) => n > held, 2_000);
   });
 
   await check("5. (screen) the take-over button only for the backup after a drop and for the admin", async () => {
@@ -998,6 +1063,128 @@ async function fakeScreens() {
     assert.ok(!/follower/i.test(text()));
     root.unmount();
   });
+
+  await check("3c. (screen) the leader who was asked sees 'Sam asks to lead' with Hold to hand off, and not once Sam is offered the lead", async () => {
+    const leading = { key: "leading", words: "You're leading", tone: "gold", flash: false, bars: null, quiet: false, takeOver: false, askToLead: false, accept: false, waiting: null, join: false, start: false };
+    const asked = (handoff: object | null) => ({ strip: leading, sleepy: false, error: null, asking: false, names: { sam: "Sam" }, joined: { session: { view: () => ({ leading: true, state: { handoff }, asks: ["sam"] }) } } });
+    root = ui.createRoot(dom.container);
+    root.render(ui.createElement(ui.LiveGigStrip, { live: asked(null) }));
+    await settle();
+    assert.ok(text().includes("Sam asks to lead"), text());
+    assert.ok(button("Hold to hand off"), text());
+    root.render(ui.createElement(ui.LiveGigStrip, { live: asked({ to: "sam" }) }));
+    await settle();
+    assert.ok(!text().includes("asks to lead"), text());
+    root.unmount();
+  });
+
+  await appStage();
+
+  /** App's own gig hooks, mounted the way App mounts them, on the leader's phone with the room holding a running gig. */
+  async function appStage() {
+    const DELAY = 35;
+    const order = ["s1", "s2", "s3", "s4"];
+    const localNow = () => real.performance.timeOrigin + real.performance.now();
+    const plan = { gigId: "gig_1", bandId: "band_1", setlistId: "set_1", name: "Friday at the Elks", date: "2026-11-27", status: "live", route: "auto", leader: "terry", backup: "mike", lineup: ["terry", "mike", "sam"] };
+    const listeners = new Set<(m: any) => void>();
+    const room = {
+      state: "open",
+      held: ui.startGig({ gigId: "gig_1", order, leader: "terry", admin: "terry", backup: "mike", lineup: plan.lineup, route: "auto", scrollAlong: true, now: localNow() }),
+      sent: [] as any[],
+      send(m: any) {
+        room.sent.push(m);
+        const tell = (reply: object) => realSetTimeout(() => listeners.forEach((cb) => cb(reply)), 1);
+        if (m.kind === "join-gig") tell({ kind: "gig", gigId: "gig_1", you: "terry-sock", leader: "terry-sock", openedAt: 0 });
+        if (m.kind === "gig-state") tell({ kind: "gig-state", state: room.held, at: room.held.changedAt });
+        if (m.kind === "gig-op" || m.kind === "gig-start") room.held = m.state;
+        return true;
+      },
+      listen(cb: (m: any) => void) {
+        listeners.add(cb);
+        return () => listeners.delete(cb);
+      },
+      close() {
+        listeners.clear();
+      },
+    };
+    const stageDeps = {
+      ...deps,
+      gigs: async () => [plan],
+      pack: async () => ({ gig: plan, songs: order.map((songId) => ({ songId })), scrollWithLeader: true, secret: "s", packRev: 1, expiresAt: null }),
+      room: () => room,
+      admins: async () => ["terry"],
+    };
+    const route = { name: "gig", bandId: "band_1", gigId: "gig_1", index: 0 };
+    const song = { id: 1, ref: "local:1", timeSignature: "4/4" };
+    const scrolled: boolean[] = [];
+    const scroll = { setScrolling: (on: boolean) => void scrolled.push(on) };
+    let app: any = null;
+    function Stage() {
+      const [personal, setPersonal] = ui.useState(() => ({ ...ui.storage.loadPersonal("terry"), clickAsked: true }));
+      const stage = ui.useGigStage({ me: "terry", route, personal, setPersonal, deps: stageDeps });
+      const metronome = ui.useMetronome(null, 120);
+      ui.useBandFollow(stage.following, stage.sink, metronome, song, scroll);
+      app = { ...stage, metronome };
+      return ui.createElement(ui.LiveGigStrip, { live: stage.live });
+    }
+    const ops = (from: number) => room.sent.slice(from).filter((m) => m.kind === "gig-op");
+    const lastClick = (state: any) => state.click[state.click.length - 1].value;
+
+    store.set(ui.storage.METRONOME_PREFS_KEY, js({ indicator: true, sound: true, syncMode: "auto", syncOffsetMs: 0, speakerDelayMs: DELAY }));
+    root = ui.createRoot(dom.container);
+    root.render(ui.createElement(Stage));
+    await until("Join gig", async () => text(), (t) => t.includes("Join gig"));
+    await tap("Join gig");
+    await until("App follows the gig as its leader", async () => app, (a) => !!a.following && a.live.joined.session.view().leading && a.live.joined.session.view().state !== null);
+
+    await check("App: on the gig sheet Next goes through the live session, and the song shown comes from band time", async () => {
+      assert.equal(app.position.canMove, true, "the leader may move the set");
+      assert.equal(app.position.index, 0);
+      const from = room.sent.length;
+      app.position.goTo(2);
+      const [sent] = ops(from);
+      assert.ok(sent, "Next sent the band a change");
+      assert.equal(sent.state.current[sent.state.current.length - 1].value, "s3", "the change goes to song 3");
+      await until("the sheet shows song 3", async () => app.position.index, (index) => index === 2, 5_000);
+      assert.equal(route.index, 0, "the gig route still says 0, so the index came from band time");
+    });
+
+    await check("App: the leader's metronome Start counts the band in", async () => {
+      const from = room.sent.length;
+      app.metronome.toggle();
+      const [counted] = await until("a count-in", async () => ops(from).filter((m) => lastClick(m.state)), (list) => list.length > 0, 5_000);
+      assert.equal(lastClick(counted.state).bpm, 120);
+    });
+
+    await check("App: the metronome clicks the band's grid, scheduled the speaker delay early", async () => {
+      await sleep(300);
+      const mark = scheduled.length;
+      await sleep(1_600);
+      const session = app.live.joined.session;
+      const grid = lastClick(session.view().state);
+      const clicks = scheduled.slice(mark);
+      assert.ok(clicks.length >= 3, `${clicks.length} clicks in 1.6 s at 120 bpm`);
+      const offBeat = clicks.map((time) => {
+        const heard = session.bandAt(real.performance.timeOrigin + time * 1000) + DELAY;
+        const phase = (((heard - grid.startAt) % BEAT) + BEAT) % BEAT;
+        return Math.min(phase, BEAT - phase);
+      });
+      assert.ok(offBeat.every((ms) => ms < 1), `each click is heard on a band beat (${offBeat.map((ms) => ms.toFixed(2)).join(", ")} ms off)`);
+    });
+
+    await check("App: with Scroll with the leader on, the leader's Start scroll scrolls the chart, and the metronome's Stop stops the band", async () => {
+      app.live.tap({ kind: "scrollStart", version: null, rate: 1, fromSec: 0 });
+      await until("the chart scrolls", async () => scrolled[scrolled.length - 1], (on) => on === true, 8_000);
+      const from = room.sent.length;
+      app.metronome.toggle();
+      const stops = await until("a stop", async () => ops(from).filter((m) => lastClick(m.state) === null), (list) => list.length > 0, 5_000);
+      assert.equal(stops.length, 1, "one stop");
+      await until("the chart stops", async () => scrolled[scrolled.length - 1], (on) => on === false, 5_000);
+    });
+
+    root.unmount();
+    await settle();
+  }
 }
 
 await realTabs();

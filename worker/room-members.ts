@@ -5,7 +5,7 @@ import { displayName } from "./directory-account";
 import { signedIn, who, type Context, type Route, type User } from "./directory-http";
 import { joinInbox, leaveInbox } from "./directory-inbox";
 import { fromRoom, Refused, roomRefused as refused } from "./refused";
-import { guestIn, holdsLivePass, type GuestAccess, type GuestMe } from "./room-guest";
+import { createGuestTables, guestIn, holdsLivePass, type GuestAccess, type GuestMe } from "./room-guest";
 
 type MemberState = "active" | "removed" | "left";
 
@@ -31,6 +31,7 @@ export function createMemberTables(sql: SqlStorage) {
     changed_at INTEGER NOT NULL,
     display_name TEXT NOT NULL
   )`);
+  createGuestTables(sql);
 }
 
 const metaOf = (sql: SqlStorage) => sql.exec<Meta>(`SELECT * FROM meta WHERE id = 1`).toArray()[0];

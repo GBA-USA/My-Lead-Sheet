@@ -71,15 +71,17 @@ export function createGuestIndex(sql: SqlStorage) {
 export const guestGigsOf = (sql: SqlStorage, userId: string) => sql.exec<{ band_id: string; gig_id: string }>(`SELECT band_id, gig_id FROM guest_gigs WHERE user_id = ?`, userId).toArray();
 export const guestBandIdsOf = (sql: SqlStorage, userId: string) => [...new Set(guestGigsOf(sql, userId).map((row) => row.band_id))];
 
-const stateOf = (row: PassRow & { gig_status: string | null }, now: number): PassState =>
-  row.revoked ? "revoked" : row.expires_at <= now || row.gig_status === null || row.gig_status === "ended" ? "ended" : "live";
+const gigStatus = (sql: SqlStorage, gigId: string) => sql.exec<{ status: string }>(`SELECT status FROM gigs WHERE gig_id = ?`, gigId).toArray()[0]?.status;
 
-/** Every pass `userId` holds in this room, each with where it stands. */
+const stateOf = (row: PassRow, gigStatus: string | undefined, now: number): PassState =>
+  row.revoked ? "revoked" : row.expires_at <= now || gigStatus === undefined || gigStatus === "ended" ? "ended" : "live";
+
+/** Every pass `userId` holds in this room, each with where it stands. The gigs are read only for passes held, so a room's member tables alone answer someone with none. */
 export function passesHeld(sql: SqlStorage, userId: string, now: number): { row: PassRow; state: PassState }[] {
   return sql
-    .exec<PassRow & { gig_status: string | null }>(`SELECT p.*, g.status AS gig_status FROM guest_passes p LEFT JOIN gigs g ON g.gig_id = p.gig_id WHERE p.claimed_by = ?`, userId)
+    .exec<PassRow>(`SELECT * FROM guest_passes WHERE claimed_by = ?`, userId)
     .toArray()
-    .map(({ gig_status, ...row }) => ({ row, state: stateOf({ ...row, gig_status }, now) }));
+    .map((row) => ({ row, state: stateOf(row, gigStatus(sql, row.gig_id), now) }));
 }
 
 const grants = (row: PassRow, access: GuestAccess) =>

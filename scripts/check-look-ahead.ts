@@ -379,6 +379,7 @@ async function browserCases(): Promise<number> {
       await pause(700);
       return evaluate<number | null>("window.__landed");
     };
+    const wheel = () => send("Input.dispatchMouseEvent", { type: "mouseWheel", x: X, y: 400, deltaX: 0, deltaY: 300 });
     const near = (a: number | null, b: number, tolerance: number) => a !== null && Math.abs(a - b) <= tolerance;
     /** The frames from the last release to landing on `target`: each one no farther from it than the one before, and at least five in between, so it glides and does not jump. */
     const glide = async (target: number) => {
@@ -487,6 +488,54 @@ async function browserCases(): Promise<number> {
       `a finger that catches the chart mid-glide holds it there, looking ahead, and the next release glides back (caught ${caughtAway.toFixed(1)} px off the band, tag ${JSON.stringify(caughtTag)}, held ${heldCaught}, took ${landed?.toFixed(0)} ms)`,
     );
 
+    await setBand(30);
+    await wheel();
+    await pause(50);
+    await touch("touchStart", 600);
+    await frames(2);
+    s = await seen();
+    const stopped = s.top;
+    const stoppedAway = stopped - bandPlace(s, 30);
+    await pause(500);
+    s = await seen();
+    const heldStill = s.top - stopped;
+    const heldTag = s.tag;
+    landed = await letGo(30);
+    s = await seen();
+    check(
+      stoppedAway > 150 && Math.abs(heldStill) <= 2 && heldTag === "Looking ahead" && landed !== null && landed <= 450 && near(s.top, bandPlace(s, 30), 2),
+      `a finger that lands just after a wheel holds the chart still, looking ahead, until it lifts (ahead ${stoppedAway.toFixed(1)} px, moved ${heldStill.toFixed(1)} px in 500 ms, tag ${JSON.stringify(heldTag)}, took ${landed?.toFixed(0)} ms)`,
+    );
+
+    await dragUp();
+    await touch("touchEnd");
+    await pause(120);
+    const midGlide = (await seen()).top;
+    await evaluate(`(() => {
+      const el = document.getElementById("sheet-scroll");
+      window.__landed = null;
+      window.__wheeled = performance.now();
+      window.__watching = false;
+      const watch = () => {
+        if (window.__watching && Math.abs(el.scrollTop - window.__target) < 2) return (window.__landed = performance.now() - window.__wheeled);
+        requestAnimationFrame(watch);
+      };
+      requestAnimationFrame(watch);
+    })()`);
+    await wheel();
+    await frames(6);
+    s = await seen();
+    const pastGlide = s.top - midGlide;
+    const wheelMidTag = s.tag;
+    await evaluate(`window.__target = ${bandPlace(s, 30)}; window.__watching = true`);
+    await pause(900);
+    landed = await evaluate<number | null>("window.__landed");
+    s = await seen();
+    check(
+      pastGlide >= 150 && wheelMidTag === "Looking ahead" && landed !== null && landed <= 600 && near(s.top, bandPlace(s, 30), 2) && s.tag === null,
+      `a wheel that arrives mid-glide looks ahead from there, then glides back to the band (past the glide by ${pastGlide.toFixed(1)} px, tag ${JSON.stringify(wheelMidTag)}, landed ${landed?.toFixed(0)} ms after the wheel)`,
+    );
+
     await evaluate(`window.__mount(${JSON.stringify(song)}, true, true)`);
     await frames(10);
     await setBand(30);
@@ -527,7 +576,7 @@ async function browserCases(): Promise<number> {
         `a pan that starts on the beat pill in a gig looks back and glides to the band on release (back ${back.toFixed(1)} px, tag ${JSON.stringify(panTag)}, took ${landed?.toFixed(0)} ms, stops ${JSON.stringify(s.stops)})`,
       );
 
-      await send("Input.dispatchMouseEvent", { type: "mouseWheel", x: X, y: 400, deltaX: 0, deltaY: 300 });
+      await wheel();
       await frames(6);
       s = await seen();
       const wheeled = s.top - bandPlace(s, 30);

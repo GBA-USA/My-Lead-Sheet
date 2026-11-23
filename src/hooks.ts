@@ -212,7 +212,7 @@ function lookAhead(el: HTMLElement, bandAt: () => number): { scroller: Parameter
     if (state.mode !== "looking" && Math.abs(el.scrollTop - wrote) >= 2) grab();
     state = dragTo(state, el.scrollTop).state;
     clearTimeout(quiet);
-    if (!down && state.mode === "looking") quiet = setTimeout(letGo, 150);
+    if (!down && state.mode === "looking") quiet = setTimeout(() => down || letGo(), 150);
   };
   const listeners: [string, () => void][] = [
     ["pointerdown", press],

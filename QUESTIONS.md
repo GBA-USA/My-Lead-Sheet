@@ -1,3 +1,30 @@
+# C22 question: one wrong assertion in commit 1's `check:stage` (959b03c). May CoS apply this one-line test patch?
+
+The build (c8c061e) is committed. Under the queue rules I did not edit the commit-1 test after it, and I stopped there.
+
+## "both holds reached the band" counts the Count in its own case sent (fails every run)
+
+`scripts/check-stage.ts:550`, in "two holds in flight: Next, then a section chip before Next lands, and both land". The
+case starts the band's click with `startClick()`, which holds Count in, so the page-side room records three ops from the
+leader: `countIn`, `goTo`, `section`. The assertion asks for exactly two, `[goTo, section]`, so it fails on correct
+behavior. Every other line in the case passes: the pending Next is kept, the chip says "On 4 ▸", and Sam's phone turns
+the section and flips the song each at its own landing.
+
+**Fix (counter only):** count the ops after the click started. No requirement moves.
+
+```diff
+-    const sent = await ops();
++    const sent = (await ops()).filter((op) => op.kind !== "countIn");
+     check(sent.length === 2 && sent[0].kind === "goTo" && sent[1].kind === "section", ...);
+```
+
+**Evidence (Edge on Windows):** the committed check ends with 140 ok and this 1 FAIL (`.verify-logs/stage-2.log` in the
+worktree). A scratch copy with only this line changed passes the case in full, 8 of 8 lines
+(`.verify-logs/stage-probe-fixed-assertion.log`). Five mutations of `src/stage-bar.tsx` each turn their case red
+(`.verify-logs/mutate.log`).
+
+---
+
 # C21 question: three test faults left in commit 1's `check:mirror` (bd432d0). May CoS apply this test-only patch?
 
 The build (fced55e) is committed. Under the queue rules I did not edit the commit-1 test after it. Each fix below is

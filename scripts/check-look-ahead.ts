@@ -468,6 +468,25 @@ async function browserCases(): Promise<number> {
       `after the rescan a drag looks ahead and glides back again (tag ${JSON.stringify(againTag)}, took ${landed?.toFixed(0)} ms)`,
     );
 
+    await dragUp();
+    await touch("touchEnd");
+    await pause(120);
+    await touch("touchStart", 700);
+    await frames(2);
+    s = await seen();
+    const caught = s.top;
+    const caughtTag = s.tag;
+    const caughtAway = caught - bandPlace(s, 70);
+    await pause(300);
+    s = await seen();
+    const heldCaught = near(s.top, caught, 15);
+    landed = await letGo(70);
+    s = await seen();
+    check(
+      caughtAway > 20 && caughtTag === "Looking ahead" && heldCaught && landed !== null && landed <= 450 && near(s.top, bandPlace(s, 70), 2) && s.tag === null,
+      `a finger that catches the chart mid-glide holds it there, looking ahead, and the next release glides back (caught ${caughtAway.toFixed(1)} px off the band, tag ${JSON.stringify(caughtTag)}, held ${heldCaught}, took ${landed?.toFixed(0)} ms)`,
+    );
+
     await evaluate(`window.__mount(${JSON.stringify(song)}, true, true)`);
     await frames(10);
     await setBand(30);
@@ -487,6 +506,37 @@ async function browserCases(): Promise<number> {
       check(
         during.tag === null && s.tag === null && s.prefs === 1 && s.stops.length === 0,
         `tapping the beat pill in a gig changes Sound and Dot and does not look ahead (tag ${JSON.stringify(during.tag)}, taps ${s.prefs}, stops ${JSON.stringify(s.stops)})`,
+      );
+
+      // The pill stops its pointerdown, so a pan that starts on it reaches the sheet only as scrolling.
+      await send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [pill] });
+      for (let dy = 10; dy <= 240; dy += 10) {
+        await send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: pill.x, y: pill.y + dy }] });
+        await frames(1);
+      }
+      await pause(150);
+      await send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: pill.x, y: pill.y + 240 }] });
+      await frames(4);
+      s = await seen();
+      const back = bandPlace(s, 30) - s.top;
+      const panTag = s.tag;
+      landed = await letGo(30);
+      s = await seen();
+      check(
+        panTag === "Looking ahead" && back > 150 && landed !== null && landed <= 450 && near(s.top, bandPlace(s, 30), 2) && s.tag === null && s.stops.length === 0,
+        `a pan that starts on the beat pill in a gig looks back and glides to the band on release (back ${back.toFixed(1)} px, tag ${JSON.stringify(panTag)}, took ${landed?.toFixed(0)} ms, stops ${JSON.stringify(s.stops)})`,
+      );
+
+      await send("Input.dispatchMouseEvent", { type: "mouseWheel", x: X, y: 400, deltaX: 0, deltaY: 300 });
+      await frames(6);
+      s = await seen();
+      const wheeled = s.top - bandPlace(s, 30);
+      const wheelTag = s.tag;
+      await pause(700);
+      s = await seen();
+      check(
+        wheelTag === "Looking ahead" && wheeled > 150 && near(s.top, bandPlace(s, 30), 2) && s.tag === null && s.stops.length === 0,
+        `a wheel in a gig looks ahead, then glides back to the band once the sheet is still (ahead ${wheeled.toFixed(1)} px, tag ${JSON.stringify(wheelTag)}, then top ${s.top.toFixed(1)}, band ${bandPlace(s, 30).toFixed(1)}, tag ${JSON.stringify(s.tag)})`,
       );
     } else check(false, "the beat pill shows while the metronome plays");
 

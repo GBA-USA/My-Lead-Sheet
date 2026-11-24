@@ -2,7 +2,7 @@
  * L1.15: a real WAV through the real file input is heard to the end. Headless Chrome builds the app, opens a song,
  * takes Learn by listen, and hands the sheet's <input type="file"> a WAV on disk with DOM.setFileInputFiles. The
  * browser decodes it and the built module worker analyzes it; the Review must say it heard the whole file, and the
- * mic must never be asked for. Runs at a phone's 390 px and a computer's 1280 px.
+ * mic must never be asked for. Runs at a phone's 360 and 390 px and a computer's 1280 px.
  */
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -103,6 +103,7 @@ try {
   await send("Page.addScriptToEvaluateOnNewDocument", { source: STAND_INS });
   let loads = 0;
   for (const size of [
+    { width: 360, height: 780, deviceScaleFactor: 3, mobile: true },
     { width: 390, height: 844, deviceScaleFactor: 2, mobile: true },
     { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false },
   ]) {
@@ -119,6 +120,22 @@ try {
       await click("[role=dialog] button", "Learn this song");
       await click('[role=dialog] button[aria-label="Learn by listen"]');
       await until(`!!document.querySelector(".learn input[type=file]")`, "the Learn sheet's file input");
+      const spill = await evaluate<string[]>(`(() => {
+        const wide = document.documentElement.clientWidth;
+        const sheet = document.querySelector(".learn");
+        const ways = [...document.querySelectorAll(".learn-way")];
+        const past = [...ways, ...document.querySelectorAll(".learn-actions button")]
+          .filter((el) => {
+            const box = el.getBoundingClientRect();
+            return box.left < 0 || box.right > wide || box.height < 44;
+          })
+          .map((el) => el.textContent.trim().slice(0, 24) + " " + JSON.stringify(el.getBoundingClientRect()));
+        if (ways.length !== 2) past.push(ways.length + " ways in");
+        if (sheet.scrollWidth > sheet.clientWidth) past.push("the sheet scrolls sideways, " + sheet.scrollWidth + " in " + sheet.clientWidth);
+        if (document.documentElement.scrollWidth > wide) past.push("the page scrolls sideways, " + document.documentElement.scrollWidth + " in " + wide);
+        return past;
+      })()`);
+      check(spill.length === 0, `L1 ${at} the two ways in and Cancel fit the screen, each at least 44 px tall (${spill.join("; ") || "nothing past the edge"})`);
       const { root: documentNode } = await send("DOM.getDocument", { depth: 0 });
       const { nodeId } = await send("DOM.querySelector", { nodeId: documentNode.nodeId, selector: ".learn input[type=file]" });
       await send("DOM.setFileInputFiles", { nodeId, files: [file] });

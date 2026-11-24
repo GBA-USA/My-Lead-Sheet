@@ -387,8 +387,11 @@ interface FakeAudio {
   seconds: number;
   channels: number;
   song?: (rate: number) => Float32Array;
-  /** False for a file whose length an <audio> never reads, as iOS may do for a blob: no metadata event and no error. */
-  metadata?: false;
+  /**
+   * False for a file whose length an <audio> never reads, as iOS may do for a blob: no metadata event and no error.
+   * "refused" for a file an <audio> cannot open though the decoder reads it.
+   */
+  metadata?: false | "refused";
 }
 const fakeAudio = new Map<string, FakeAudio>();
 function audioFile(name: string, audio: FakeAudio): File {
@@ -455,7 +458,7 @@ function makeMedia(el: FakeElement) {
     if (!src) return;
     void (blob ? blob.arrayBuffer() : Promise.resolve(new ArrayBuffer(0))).then((bytes) => {
       const audio = audioIn(bytes);
-      if (!audio?.song) {
+      if (!audio?.song || audio.metadata === "refused") {
         media.error = { code: 4, message: "MEDIA_ERR_SRC_NOT_SUPPORTED" };
         fireOn(el, "error");
         return;
@@ -1461,6 +1464,39 @@ await frozen("L1.8 a cancelled file picker lets the wake lock go", null, async (
   check(wakeLocks.length > 0 && wakeLocks.every((lock) => lock.released) && filePicker() && !!buttonNamed(MIC_WORD), `L1.8 closing the file picker with no file lets the wake lock go and leaves the two ways in (${locksText()}; ${text().slice(0, 160)})`);
 });
 
+for (const when of ["while the file is heard", "before the file is decoded"] as const) {
+  await frozen(`L1.8 Cancel ${when} ends the listen`, null, async () => {
+    const early = when === "before the file is decoded";
+    wakeLocks.length = 0;
+    Object.assign(offline, { made: [], decodes: 0 });
+    const sheet = await openSheet(twoHeadings(null));
+    await press(fileWay(), "the file picker");
+    pick(audioFile("Left.wav", { seconds: 60, channels: 1, song: fileSong(60), ...(early ? { metadata: false as const } : {}) }));
+    await until(() => text().includes("Listening to Left.wav.") && (early || posted().length >= 3), "the file listen under way");
+    const sent = posted().length;
+    const underWay = wakeLocks.some((lock) => !lock.released) && (early ? offline.decodes === 0 : sent < 60);
+    await press(button("Cancel"), "Cancel");
+    if (early) await until(() => offline.decodes > 0, "the decode, once the wait for the file's length ran out");
+    for (let i = 0; i < 30; i++) {
+      frame();
+      await settle();
+    }
+    await workerIdle();
+    await settle();
+    const left = `${sent} of 60 s handed over${early ? `, ${offline.decodes} decode(s) since` : ""}`;
+    check(
+      underWay && !elements().some((el) => el.getAttribute("role") === "dialog") && !reviewing() && lastListen() === null && sheet.saved.length === 0,
+      `L1.8 Cancel ${when} closes the sheet with no Review and nothing saved (${left}; ${sheet.saved.length} saved; ${text().slice(0, 160) || "sheet closed"})`,
+    );
+    check(wakeLocks.length > 0 && wakeLocks.every((lock) => lock.released), `L1.8 Cancel ${when} lets the wake lock go (${locksText()})`);
+    const after = `${workerLog.stopped} of ${workerLog.started} worker(s) stopped, ${posted().length - sent} chunk(s) and ${workerLog.toWorker.filter((message) => message.kind === "finish").length} finish after Cancel, ${workerLog.toStopped} message(s) to the stopped worker`;
+    check(
+      workerLog.started === 1 && workerLog.stopped === 1 && workerLog.toWorker.length === sent && workerLog.toStopped === 0 && (!early || offline.decodes === 1),
+      `L1.8 Cancel ${when} stops the worker and hands it nothing more${early ? ", the late decode's samples included" : ""} (${after})`,
+    );
+  });
+}
+
 await frozen("L1.8 a file picker that hides the page asks for the wake lock again on return", null, async () => {
   wakeLocks.length = 0;
   await openSheet(twoHeadings(null));
@@ -1520,6 +1556,11 @@ for (const [from, failOn] of [["mic", "finish"], ["file", "samples"]] as const) 
   check(
     rehearsal.text.includes("That's longer than a song. Pick a file under twenty minutes.") && rehearsal.decodes === 1 && !rehearsal.listen && rehearsal.canPick,
     `L1.12 a 21-minute file whose length is never read is refused after decode, and the file picker stays (${rehearsal.decodes} decode(s); ${rehearsal.error || rehearsal.text.slice(0, 200)})`,
+  );
+  const odd = await listenToFile(audioFile("Odd Header.wav", { seconds: 60, channels: 1, song: fileSong(60), metadata: "refused" }));
+  check(
+    odd.text.includes("From a file · 1:00 · ") && Math.abs((odd.listen?.coverage.heardSeconds ?? 0) - 60) <= 0.5 && odd.decodes === 1,
+    `L1.11 a file an <audio> element refuses but the decoder reads is heard whole (${odd.decodes} decode(s); ${coverageText(odd)}; ${odd.text.slice(0, 120)})`,
   );
   const off = await listenToFile(audioFile("Header Off.mp3", { seconds: 64, channels: 2, song: fileSong(60) }));
   const expected = off.listen?.coverage.expectedSeconds;

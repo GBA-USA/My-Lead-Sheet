@@ -358,8 +358,9 @@ function blockKind(cells: Cell[], texts: string[]): Block["kind"] {
   const pieces = cells.every((cell, k) => cell === "chord" || (cell === "words" && fragment(texts[k])));
   if (!pieces || !cells.some((cell, k) => cell === "chord" && cells[k + 1] === "words")) return "other";
   if (cells.length === 2) return "pair";
-  const chords = cells.filter((cell) => cell === "chord").length;
-  return chords >= 2 || cells.some((cell, k) => cell === "words" && cells[k + 1] === "words") ? "copy" : "other";
+  // Short lines typed one chord each stay lines: a copy shows words that run on in lower case, or words after words.
+  const runsOn = texts.some((text, k) => k > cells.indexOf("words") && cells[k] === "words" && !opensLine(text));
+  return runsOn || cells.some((cell, k) => cell === "words" && cells[k + 1] === "words") ? "copy" : "other";
 }
 
 /** One lyric line from its pieces: the words joined by spaces, each chord over the first letter of the words after it. */

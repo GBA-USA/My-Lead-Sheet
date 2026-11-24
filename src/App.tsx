@@ -295,7 +295,7 @@ export function App() {
           )}
           {activeSong ? <TextSizeButtons index={textIndex} count={TEXT_SCALES.length} onChange={changeText} /> : null}
           {activeSong ? (
-            <OverflowMenu label="More" size="shell" open={menu === "shell"} onToggle={() => toggleMenu("shell")} onClose={closeMenu} onSongData={bandRoute || gigRoute ? undefined : () => setEditing("timing")} {...(route.name === "song" && madeHere(activeSong) ? { onEdit: () => setEditing("chart"), onDelete: () => setEditing("delete") } : {})}>
+            <OverflowMenu label="More" size="shell" open={menu === "shell"} onToggle={() => toggleMenu("shell")} onClose={closeMenu} onSongData={bandRoute || gigRoute ? undefined : () => setEditing("timing")} {...((route.name === "song" || route.name === "live") && madeHere(activeSong) ? { onEdit: () => setEditing("chart"), onDelete: () => setEditing("delete") } : {})}>
               {bandRoute || gigRoute ? null : sendSong.item(activeSong, closeMenu)}
             </OverflowMenu>
           ) : route.name === "settings" ? null : (

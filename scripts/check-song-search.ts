@@ -66,6 +66,7 @@ type Deps = {
   clearTimeout: (handle: unknown) => void;
   online: () => boolean;
   origin: string;
+  floor?: { lastSent: number };
 };
 type Searcher = { search: (query: string, report: (state: SearchState) => void) => void; stop: () => void };
 type SongSearch = { lyricsSearchUrl: (title: string, artist: string) => string; catalogSearcher: (deps: Deps) => Searcher };
@@ -516,6 +517,54 @@ await check("6k. a new query or stop() during a busy wait ends the old search: n
   await stopped.time.advance(10000);
   assert.equal(stopped.calls.length, 1, "no request after stop");
   assert.equal(stopped.states.length, heard, "no report after stop");
+});
+
+await check("6l. a busy reply too late to wait out inside the 8 s limit says failed at once and asks no more", async () => {
+  let release: (response: Response) => void = () => {};
+  const run = harness(() => new Promise<Response>((done) => (release = done)));
+  run.search("fire away");
+  await untilSent(run, 1);
+  await run.time.advance(7000);
+  release(busy(503, "2"));
+  await run.time.advance(10);
+  assert.deepEqual(run.last(), { kind: "failed", query: "fire away" }, "7 s in, a 2 s wait cannot end inside the limit");
+  await run.time.advance(5000);
+  assert.equal(run.calls.length, 1, "no second request");
+});
+
+await check("6m. a retry still keeps the 1 s floor when a second box sharing it asked during the wait", async () => {
+  const time = fakeTime();
+  const floor = { lastSent: -Infinity };
+  const calls: { query: string; at: number }[] = [];
+  const box = (reply: (query: string) => Response) => {
+    const states: SearchState[] = [];
+    const searcher = need().catalogSearcher({
+      fetch: (url) => {
+        const query = new URL(url).searchParams.get("query") ?? "";
+        calls.push({ query, at: time.now() });
+        return Promise.resolve(reply(query));
+      },
+      now: time.now,
+      setTimeout: time.setTimeout,
+      clearTimeout: time.clearTimeout,
+      online: () => true,
+      origin: PREVIEW_ORIGIN,
+      floor,
+    });
+    return { search: (typed: string) => searcher.search(typed, (state) => states.push(state)), states };
+  };
+  const dialog = box(() => (calls.length === 1 ? busy(503, "2") : new Response(js(PAYLOAD), { status: 200 })));
+  const songs = box(() => new Response(js(EMPTY), { status: 200 }));
+  dialog.search("fire away");
+  await time.advance(600);
+  assert.equal(calls.length, 1, "the dialog's box asked and heard busy, 2 s");
+  await time.advance(800);
+  songs.search("kitchen floor");
+  await time.advance(10000);
+  assert.deepEqual(calls.map((call) => (/fire/.test(call.query) ? "fire" : "kitchen")), ["fire", "kitchen", "fire"], "My Songs' box asked during the wait");
+  const gaps = calls.slice(1).map((call, i) => call.at - calls[i].at);
+  assert.ok(gaps.every((gap) => gap >= 1000), `each request left at least 1 s after the one before (gaps ${js(gaps)})`);
+  assert.equal(dialog.states.at(-1)?.kind, "found", "the dialog's retry still found the songs");
 });
 
 await check("7a. rapid typing sends one request, after a 400-800 ms pause", async () => {

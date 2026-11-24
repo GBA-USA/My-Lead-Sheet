@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 import { build } from "esbuild";
 import type { ChartLine, ChartSection, LibraryFile, Song } from "../src/types.ts";
 import { Phone, startApi } from "./api-session.ts";
@@ -103,6 +104,12 @@ const META: Meta = { title: "Kitchen Floor", artist: "Pat Bass", keyRoot: "A", k
 const TWO_SECTIONS = ["VERSE 1", "A               E", "Honey, load up your questions", "", "Chorus:", "[D]Fire a[A]way, [E]fire away"].join("\n");
 /** Hand-read from the text above: the word each chord is typed over, counted across the song, and how far into it. */
 const TWO_SECTION_ANCHORS = ['A on word 1 "Honey," at 0', 'E on word 4 "your" at 1', 'D on word 6 "Fire" at 0', 'A on word 7 "away," at 1', 'E on word 8 "fire" at 0'];
+/**
+ * Lines a player can type that, written back as a chord row over a lyric, would read as something else: a bracket
+ * lyric that is chords, a note, bars or indented chords, and a bracket heading that reads as a note or bars.
+ */
+const ODD_CHART = ["VERSE 1", "[G]A [D]B [C]C", "[G]Note: slow down", "[Am7]Bars: 4", "[D]| hold", "[E]  Em", "", "[Note: slow]", "[G]Honey, load up", "", "[Bars: 2]", "| A | E |"].join("\n");
+const ODD_PIECES = ["[G]", "[Am7]", "[D/F#]", "A", "B", "C", "G", "Em", "N.C.", "hey", "Honey,", "load", "Note:", "note:", "Bars:", "|", "| A |", ":", "-", "(x2)", "VERSE", "HEY", "Chorus", "Chorus:", "Verse 2", "[Note: slow]", "[Bars: 2]", "[Bridge]", "[x]", "[|x]", "[", "]", "]:", "[ ]", "[G][D]", "Hi[G]", "  ", " ", "\t"];
 const pairs = (sections: ChartSection[]) => sections.flatMap((section) => section.lines).filter((line): line is Row & ChartLine => line.chords !== undefined);
 
 /** A bracket line read the way a player means it: the lyric without brackets, and each chord at the letter after its bracket. */
@@ -216,6 +223,26 @@ await check("2a. every library song written as editor text parses back to the sa
   }
   const pasted = app.parseSheet(TWO_SECTIONS).sections;
   assert.deepEqual(app.parseSheet(app.sectionsToText(pasted)).sections, pasted, "an own song opens in the editor as text that saves back unchanged");
+});
+
+await check("2a. an own song with odd lines opens in the editor as text that saves back unchanged, so an untouched Edit rewrites nothing", () => {
+  const app = need();
+  const sections = app.parseSheet(ODD_CHART).sections;
+  const written = app.sectionsToText(sections);
+  assert.deepEqual(app.parseSheet(written).sections, sections, `the odd lines read back as typed (written as ${js(written)})`);
+  // Made-up charts from pieces that read as chords, notes, bars, headings and brackets, the same every run.
+  let state = 1;
+  const next = () => (state = (state * 1103515245 + 12345) % 2147483648) / 2147483648;
+  const piece = () => ODD_PIECES[Math.floor(next() * ODD_PIECES.length)];
+  const line = () => Array.from({ length: 1 + Math.floor(next() * 4) }, piece).join(["", " ", "  "][Math.floor(next() * 3)]);
+  const changed: string[] = [];
+  const runs = 5000;
+  for (let run = 0; run < runs; run += 1) {
+    const text = Array.from({ length: 1 + Math.floor(next() * 4) }, () => (next() < 0.15 ? "" : line())).join("\n");
+    const first = app.parseSheet(text).sections;
+    if (!isDeepStrictEqual(app.parseSheet(app.sectionsToText(first)).sections, first)) changed.push(text);
+  }
+  assert.deepEqual(changed.slice(0, 5), [], `${changed.length} of ${runs} made-up charts read back differently`);
 });
 
 await check("3. only a song the player made counts as made here", () => {
@@ -938,6 +965,58 @@ async function phoneChecks(site: Site, base: string, origin: string) {
     await tapIn(`document.querySelector("[role=alertdialog]")`, "Delete");
     await page.until(`location.hash === "#/songs" && !document.querySelector("[role=alertdialog]")`, "My Songs after the next Delete");
     assert.ok(!(await stored()).some((song) => song.id === doomed), "the next Delete removes it");
+  });
+
+  await check("3. an untouched Edit saves an own song's chart as it was, odd lines included", async () => {
+    await openNewSong();
+    await fill("Title", "Odd Lines");
+    await fill("Chart", ODD_CHART);
+    await tapIn(editor, "Save");
+    await page.until(onSongPage, "the song's page");
+    const odd = (await hashId())!;
+    const typed = (await stored()).find((song) => song.id === odd)?.body;
+    assert.deepEqual(typed, need().parseSheet(ODD_CHART).sections, "the song is stored as typed");
+    await openSong(odd);
+    await openEdit();
+    await tapIn(editor, "Save");
+    await page.until(`!document.querySelector(".song-editor")`, "the editor to close");
+    assert.deepEqual((await stored()).find((song) => song.id === odd)?.body, typed, "Save with nothing touched keeps every line");
+  });
+
+  await check("3. on a live setlist an own song's More menu has Edit and Delete on and Edit saves in place, and a built-in song there says why both are off", async () => {
+    const builtIn = seed.songs[0];
+    const editDelete = (items: { text: string; disabled: boolean }[]) => items.filter((item) => ["Edit", "Delete"].includes(item.text));
+    await openNewSong();
+    await fill("Title", "Live Own Song");
+    await fill("Chart", TWO_SECTIONS);
+    await tapIn(editor, "Save");
+    await page.until(onSongPage, "the song's page");
+    const own = (await hashId())!;
+    await site.evaluate(`(() => {
+      const library = JSON.parse(localStorage.getItem("leadSheetsLibrary"));
+      library.setlists.push({ id: 901, name: "Saturday", songIds: [${own}, ${builtIn.id}] });
+      localStorage.setItem("leadSheetsLibrary", JSON.stringify(library));
+    })()`);
+    await reload("#/setlists");
+    const onLive = (index: number, title: string) =>
+      page.until(`location.hash === "#/live/901/${index}" && document.querySelector(".sheet .sheet-name")?.textContent === ${js(title)}`, `${title} on the live setlist`);
+    await site.evaluate(`location.hash = "#/live/901/0"`);
+    await onLive(0, "Live Own Song");
+    assert.deepEqual(editDelete(await openMore()), [{ text: "Edit", disabled: false }, { text: "Delete", disabled: false }], "the own song: Edit and Delete are on");
+    assert.ok(!(await page.text("[role=menu]")).includes("Only songs you made"), "with no locked note");
+    await tapIn(`document.querySelector("[role=menu]")`, "Edit");
+    await page.until(`!!${editor}`, "the editor on the live song");
+    await fill("Title", "Live Own Song (fixed)");
+    await tapIn(editor, "Save");
+    await page.until(`!document.querySelector(".song-editor")`, "the editor to close");
+    await onLive(0, "Live Own Song (fixed)");
+    assert.equal((await stored()).find((song) => song.id === own)?.title, "Live Own Song (fixed)", "the edit is stored");
+
+    await site.evaluate(`location.hash = "#/live/901/1"`);
+    await onLive(1, builtIn.title);
+    assert.deepEqual(editDelete(await openMore()), [{ text: "Edit", disabled: true }, { text: "Delete", disabled: true }], "the built-in song: Edit and Delete are off");
+    assert.ok((await page.text("[role=menu]")).includes("Only songs you made can be edited."), "the menu says why, which is true for it");
+    await closeMore();
   });
 
   assert.deepEqual(await page.errors(), [], "no page errors");

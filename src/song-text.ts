@@ -19,7 +19,8 @@ export const isChord = (token: string) => CHORD.test(token);
 export const isSectionWord = (text: string) => SECTION_WORD.test(text.trim());
 const NOTE = /^\s*note: ?/i;
 const BARS = /^\s*bars: ?/i;
-const BRACKET = /\[([^\]\s]+)\]/g;
+/** A chord in brackets. A `[` just before it is the lyric's own, so `[[D]` is a bracket and then the chord. */
+const BRACKET = /\[([^[\]\s]+)\]/g;
 
 type Read =
   | { kind: "blank" }
@@ -148,8 +149,24 @@ export function parseSheet(text: string): ParsedSheet {
 
 /** A heading as a line of chart text that `parseSheet` reads back as that heading. */
 export function headingLine(heading: string): string {
-  const line = read(heading);
-  return line.kind === "heading" && line.text === heading ? heading : `${heading}:`;
+  const readsBack = (text: string) => {
+    const line = read(text);
+    return line.kind === "heading" && line.text === heading;
+  };
+  return [heading, `${heading}:`, `[${heading}]`].find(readsBack) ?? `${heading}:`;
+}
+
+/** A chord row over its lyric as one bracket line, each chord in brackets before the letter it sits over. */
+function bracketLine(chords: string, lyrics: string): string {
+  let out = lyrics;
+  for (const chord of [...chords.matchAll(/\S+/g)].reverse()) out = `${out.padEnd(chord.index).slice(0, chord.index)}[${chord[0]}]${out.slice(chord.index)}`;
+  return out;
+}
+
+/** A pair as two lines when its lyric reads back as one, and as one bracket line when it would read as chords, a note or bars. */
+function pairLines(chords: string, lyrics: string): string[] {
+  const below = read(lyrics).kind;
+  return below === "lyric" || below === "heading" ? [chords, lyrics] : [bracketLine(chords, lyrics)];
 }
 
 /** The chart as the editor's text, which `parseSheet` reads back as the same chart. */
@@ -158,7 +175,7 @@ export function sectionsToText(sections: ChartSection[]): string {
     .map((section) => {
       const out = [headingLine(section.heading)];
       section.lines.forEach((line, index) => {
-        if (line.chords !== undefined) out.push(line.chords, ...(line.lyrics === undefined ? [] : [line.lyrics]));
+        if (line.chords !== undefined) out.push(...(line.lyrics === undefined ? [line.chords] : pairLines(line.chords, line.lyrics)));
         else if (line.lyrics !== undefined) out.push(line.lyrics);
         if (line.bars !== undefined) {
           const next = section.lines[index + 1];

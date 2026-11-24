@@ -339,7 +339,7 @@ The search already lists up to 15 recordings. Many of them are the same song on 
 3. Tempo is the median `rhythm.bpm`, rounded, then passed through `fieldBpm` from `src/bpm-detect.ts`, so that it is a value the BPM field accepts.
 4. Key is the `key_key` and `key_scale` pair with the largest sum of `key_strength`. `D#`, `G#`, and `A#` are respelled `Eb`, `Ab`, and `Bb`, because `KEY_ROOTS` in `src/song-text.ts` holds only those spellings, and the stored-song check drops a song with any other root.
 5. The request has a 2.5 second limit and is aborted at the limit, as `catalogSearcher` aborts at 8 seconds. Offline, a non-200 reply, a body in the wrong shape, and a timeout all give empty facts. None of them shows an error. The pick goes on.
-6. Typing in the box, closing the dialog, or leaving the screen during **Building your sheet** aborts the request, adds no song, and leaves the page where it is. The build is dropped, not finished, because a song the player did not wait for is a stray song. `pick` makes one `AbortController` per build and passes its signal to `songFacts`. `change` aborts it, and so does the unmount effect, beside `searcher.stop`. After the await, `pick` calls `addOwnSong` and sets the hash only when that signal is not aborted. A sign-out is the same exit on My Songs, because the box mounts only beside `+ Add a song`, which needs an account (`src/App.tsx:413`, `src/library-lists.tsx:183`). That last point was read from the code and not run.
+6. Typing in the box, closing the dialog, or leaving the screen during **Building your sheet** aborts the request, adds no song, and leaves the page where it is. The build is dropped, not finished, because a song the player did not wait for is a stray song. `pick` makes one `AbortController` per build and passes its signal to `songFacts`. `change` aborts it, and so does the unmount effect, beside `searcher.stop`. After the await, `pick` calls `addOwnSong` and sets the hash only when that signal is not aborted. Every stop clears the second-tap guard and the **Building your sheet** label: an add, an abort, a storage failure. So `pick` sets the guard at its start and clears it and the label in one `finally`, never only after the add, or an aborted build leaves the box ignoring every tap until the player leaves My Songs. A sign-out is the same exit on My Songs, because the box mounts only beside `+ Add a song`, which needs an account (`src/App.tsx:413`, `src/library-lists.tsx:183`). That last point was read from the code and not run.
 
 ```ts
 // src/song-facts.ts
@@ -352,7 +352,7 @@ export function mergeFacts(...sources: SongFacts[]): SongFacts;
 export function songFromFacts(facts: SongFacts): Omit<Song, "ref" | "id">;
 ```
 
-`pick` in `src/song-search.tsx` becomes: guard against a second tap, show **Building your sheet** on the row, await `songFacts`, stop if the build was aborted (step 6), call `addOwnSong(songFromFacts(mergeFacts(found, fromCatalog)))`, then go to the song. `addCatalogSong` goes away. `songFromFacts` is its one replacement.
+`pick` in `src/song-search.tsx` becomes: guard against a second tap, show **Building your sheet** on the row, await `songFacts`, stop if the build was aborted (step 6), call `addOwnSong(songFromFacts(mergeFacts(found, fromCatalog)))`, then go to the song. Every stop clears the second-tap guard and the **Building your sheet** label: an add, an abort, a storage failure. `addCatalogSong` goes away. `songFromFacts` is its one replacement.
 
 #### The config entry
 
@@ -388,7 +388,7 @@ export function songFromFacts(facts: SongFacts): Omit<Song, "ref" | "id">;
 5. A reply with no entry for any id gives empty facts, and the song is saved with a blank BPM and key `C major`.
 6. Offline, a 500 reply, a body that is not the expected shape, and a reply after 2.5 seconds each give empty facts. The request is aborted at the limit. No error text shows.
 7. A second tap during **Building your sheet** adds no second song.
-8. Leaving during **Building your sheet** adds nothing. Screen case at 360 px, with `recordingFacts` stubbed to answer after 2 seconds. (a) Open New song, type a title, tap a row, and close the dialog within 1 second. (b) On My Songs, tap a row, then type in the box within 1 second. (c) On My Songs, tap a row, then go to Setlists within 1 second. In each, 3 seconds after the tap no song is added, the hash is where the player left it, and the facts request was aborted. In (b) the new search runs as usual. Each part fails when the abort in step 6 is removed.
+8. Leaving during **Building your sheet** adds nothing. Screen case at 360 px, with `recordingFacts` stubbed to answer after 2 seconds. (a) Open New song, type a title, tap a row, and close the dialog within 1 second. (b) On My Songs, tap a row, then type in the box within 1 second. (c) On My Songs, tap a row, then go to Setlists within 1 second. In each, 3 seconds after the tap no song is added, the hash is where the player left it, and the facts request was aborted. In (b) the new search runs as usual. Then tap a row of the new search. That song is added and opens, and no row says **Building your sheet**. This part fails when the guard is cleared only after the add. Each part fails when the abort in step 6 is removed.
 9. `mergeFacts` takes each field from the first source that knows it.
 10. `songFromFacts` gives a song that the stored-song check in `src/storage.ts` keeps, for full facts and for empty facts.
 11. Screen case at 360 px and 390 px. A pick with a stubbed service opens a sheet that shows the BPM and the key. A stubbed service that never answers opens the sheet within 3 seconds.
@@ -397,7 +397,7 @@ export function songFromFacts(facts: SongFacts): Omit<Song, "ref" | "id">;
 
 #### Verification
 
-- [ ] Unit. `npm run check:song-facts` prints cases 1 to 10 and 12 as `ok`, and each failed on the tests-only commit.
+- [ ] Unit and screen. `npm run check:song-facts` prints cases 1 to 12 as `ok`, and each failed on the tests-only commit. Cases 8 and 11 are the screen cases. Case 13 is `check:song-search`.
 - [ ] Live. Run `node --experimental-strip-types scripts/song-facts-live.ts` once. Pass when at least 10 of the 15 library songs get an answer. In the built app, search a song from before 2020 and tap it. Pass when the sheet opens with a BPM.
 - [ ] Perf. Metric: the time from the tap on a row to the open sheet. Probe: screen case 11 with the service stubbed at 0 ms, 1 second, and no answer. Baseline: the same tap on trunk, measured first. Fail when the stub with no answer opens the sheet later than 3 seconds, or when the 0 ms stub adds more than 200 ms to the baseline.
 - [ ] The player-facing change, the wait on the row, is reviewed by the owner before merge.
@@ -668,7 +668,7 @@ src/song-text.ts: only the SongFacts type block, placed after SongMeta, exactly 
 Do not touch: src/song-search.ts (import SearchDeps; do not edit), src/search.ts (import fold; do not edit), src/App.tsx, src/song-editor.tsx, worker files.
 
 ## Empty and error states, and the wired flow
-Offline, a reply that is not 200, a body in the wrong shape, and no reply in 2.5 seconds all give empty facts, and the request is aborted. A second tap while a row is building does nothing. Typing in the box, closing the dialog, or leaving the screen while a row is building aborts the request, adds no song, and leaves the page where it is (plan 3.1 Design step 6). A storage failure keeps the landed message. A pick of a song the player already has still asks first, before any request.
+Offline, a reply that is not 200, a body in the wrong shape, and no reply in 2.5 seconds all give empty facts, and the request is aborted. A second tap while a row is building does nothing. Typing in the box, closing the dialog, or leaving the screen while a row is building aborts the request, adds no song, and leaves the page where it is (plan 3.1 Design step 6). Every stop clears the second-tap guard and the Building your sheet label: an add, an abort, a storage failure. A storage failure keeps the landed message. A pick of a song the player already has still asks first, before any request.
 Flow: My Songs, type a title, tap a row, Building your sheet, the sheet opens with BPM and key.
 
 ## Hints

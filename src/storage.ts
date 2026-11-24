@@ -644,17 +644,22 @@ function withHeardCells<T extends { learned?: Learned }>(version: T): T {
   return { ...version, learned: { ...version.learned, sections } };
 }
 
-/** Kept heard chords go to disk as names, with their bands beside them only when one is not likely. */
-function withHeardNames(given: StoredVersion): StoredVersion {
-  const version = withHeardCells(given);
-  if (!version.learned?.sections.some((section) => section.heard)) return version;
-  const sections: StoredSection[] = version.learned.sections.map(({ heard, ...section }) => {
+/**
+ * A learned part in its stored form, which goes to disk and to a friend: kept heard chords as names, with their bands
+ * beside them only when one is not likely. A friend's phone may run a build from before colors, which reads only that.
+ */
+export function storedLearned(given: Learned): Learned {
+  const learned = withHeardCells({ learned: given }).learned!;
+  if (!learned.sections.some((section) => section.heard)) return learned;
+  const sections: StoredSection[] = learned.sections.map(({ heard, ...section }) => {
     if (!heard) return section;
     const likely = heard.every((cell) => cell.band === "likely" && cell.was === undefined);
     return { ...section, heard: heard.map((cell) => cell.chord), ...(likely ? {} : { cells: heard.map(({ chord: _chord, ...cell }) => cell) }) };
   });
-  return { ...version, learned: { ...version.learned, sections } as Learned };
+  return { ...learned, sections } as Learned;
 }
+
+const withHeardNames = (version: StoredVersion): StoredVersion => (version.learned ? { ...version, learned: storedLearned(version.learned) } : version);
 
 const isTempoMap: Check = (value) => {
   if (!listOf(shaped<Tempo>({ at: isTime, bpm: isPositive }))(value)) return false;

@@ -97,11 +97,12 @@ export function degree(note: string, tonic: string): string {
 }
 
 export function parseChord(symbol: string): ParsedChord | null {
+  // The quality keeps its extensions (m7b5, 7#9, 6/9), so a chord the chart stores also transposes.
   const match = symbol.match(
-    /^([A-G](?:#|b)?)((?:maj|min|dim|aug|sus|add|m)\d*|\d+)?(?:\/([A-G](?:#|b)?))?$/,
+    /^([A-G](?:#|b)?)((?:maj|min|dim|aug|sus|add|m)?(?:6\/9|\d+)?(?:(?:sus|add|b|#)\d+)*)(?:\/([A-G](?:#|b)?))?$/,
   );
   if (!match) return null;
-  const quality = match[2] ?? "";
+  const quality = match[2];
   const minor = quality.startsWith("min") || /^m(?!aj)/.test(quality);
   return { root: match[1], quality, bass: match[3], minor };
 }

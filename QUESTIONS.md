@@ -1,3 +1,51 @@
+# song-paste-import fix pass 3: a whole-box paste can be undone, and only a new paste scrolls
+
+1. A paste the app takes now goes into the box as the browser's own edit (`insertText` over the whole box), so one
+   Ctrl+Z brings back the chart it replaced. The fields the paste filled (key, BPM) stay as filled. Owner: say if Undo
+   should put those back too.
+2. The preview scrolls into view after each new paste, not after a capo switch or Use it as pasted. Those taps leave
+   the screen where it was, so the player can tap the switch again to compare. check:song-paste case 29 pins both
+   halves. Owner: say if a switch should scroll to the preview instead.
+
+# song-paste-import fix pass 2: the capo note is a control, and a paste over the whole box is a fresh paste
+
+1. A capo paste's key note (`Capo 2 for guitar`) now shows in the editor, above the box, with a Remove capo note
+   button. Edit song shows it too. It shows only for a note that starts `Capo <n>`, the words a capo paste writes. A
+   saved song's other key note, such as a built-in chart's prose, stays hidden in the editor, as it was before this
+   cook. Owner: say if every key note should be a field the player can edit.
+2. A keyboard paste over a selection that covers the whole box is now taken as a paste into an empty box. It is
+   cleaned, it fills the fields, and it drops a capo note the new chart lacks. Any other paste into a box that holds text
+   is still left to the box, raw.
+3. The paste status line and its buttons, including the Use G major chips, now show only while the box holds what the
+   paste put there. Once the player types in the box, they go. Before, the chips stayed. Owner: say if a chip should
+   outlive an edit.
+
+# song-paste-import fix pass 1: a chord with no room in its word becomes a bracket line
+
+A pasted chord row can respell a chord longer (`CM7` to `Cmaj7`, or `Em` to `F#m` under a capo) with no word gap
+before the next chord, as in `CM7 F` over `Lovely day for it`. No chord row can keep both chords on their letters
+there. The paste now writes that one line in brackets, `[Cmaj7]Love[F]ly day for it`. The box still says which letter
+each chord belongs on, and the editor's warning list says `Chords too close inside 'Lovely'`, as it does for a typed
+bracket line. The other choice was the two-line form plus a warning in the paste status line, but that warning would
+stay up after the player fixed the line. Owner: say if you want the two-line form kept.
+
+# song-paste-import: a chart that needs no cleaning stays as pasted, and two test fixes
+
+1. The plan (section 2, case 3) turns every heading into library style, so `[Intro]` becomes `INTRO`. check:new-song
+   case 2b, which must pass unedited, pastes a clean chart with `[Intro]` and asserts that the box holds it byte for
+   byte, with the preview heading `Intro`. Both cannot hold for every paste. I took this rule: a paste with nothing to
+   clean (no header, directive, tab, site line, odd spelling or row mark) stays as pasted. A paste that needs cleaning
+   gets library-style headings throughout. Case 3 tests its heading forms in a web chart (a `Key:` header comes
+   first), and case 13 asserts both halves. Owner: say if every paste should restyle, and check:new-song 2b needs an edit.
+2. Case 13 also reads every built-in chart back through `readPaste`. Commit 1 asked for the text unchanged. The plan's
+   own spelling table stores `Dsus` as `Dsus4`, and three built-in charts write `Esus` or `Gsus`, so the case now asserts
+   that the chart reads back the same (headings, words, each chord on its letter, notes), with `Xsus` read as `Xsus4`.
+3. Case 21's offline probe fetched `/index.html`, which the service worker answers from its cache, so the probe read
+   "online" with the network off. It now fetches `/api/me`, which the worker never caches. That makes the case stricter.
+
+Seen, not changed (outside this cook's files): after a reload with the network off, My Songs shows no `+ Add a song`,
+and it stays hidden when the network comes back until the next reload.
+
 # L1 questions: frozen L1.2 is open, and the four Chrome checks are answered
 
 L1 is built and its cases pass, except for one seam with code this cook does not own. Frozen L1.2 (item 1) needs a decision from its owner, not from Terry. Item 2 is answered on this branch.

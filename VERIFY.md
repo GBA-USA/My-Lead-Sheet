@@ -1,3 +1,35 @@
+# song-search in-cook self-check fix pass 2 of 2 (on top of self-check 6 below)
+
+Goal: close the self-check 6 findings that sit inside this cook's files. The only blocking finding is the owner's
+keep-or-revert call on the `worker/room-library.ts` edit (85c9c5e), and a cook pass cannot clear it. No decision was
+found in the prompt, QUESTIONS.md or `briefs/BRIEF-*song-search*`. So this pass took the two P3s that are cook work.
+The cases landed first, in their own commit (a5974e3), then the fix (cf46dce). Logs are in `.verify-logs/fix2-p3/`
+(gitignored). Run on the Windows laptop with Edge as `CHROME`.
+
+| Finding | Case | At 89c201b with the case | Under the mutation, on the fix | After |
+|---|---|---|---|---|
+| P3-8, 6e holds only the fetch open, so a limit on the fetch alone would pass | 6f, a 200 whose body stalls after `{"recordings":[` | ok (the code was right, only untested) | M1, the limit bounds only `deps.fetch`: `FAIL 6f ... 10 s after the request left, the box says so` | ok |
+| P3-9, a request that times out is never aborted | 6g, the hung request's signal is aborted at the limit, and a request that answers in time is not | `FAIL 6g ... the request carries an abort signal` (40 ok, 1 FAIL, `head.log`) | M2, report failed with no abort: `FAIL 6g ... the hung request is aborted` | ok |
+
+- The fix is in `src/song-search.ts`. `ask` gives each request an `AbortController`, and the request gets its signal.
+  When the 8 s limit fires, it reports `failed` first and then aborts. A reply that lands in time clears the limit,
+  so nothing aborts it. In the browser the abort also ends a stalled body read.
+- Each mutation fails only its own case (`mutate.log`). The tree was clean after.
+- `check:song-search` 41 ok, "all ok", exit 0 (`after.log`). `npm run build` exit 0. `tsc --noEmit -p .` exit 0.
+  `check:portable` passed ("tree clean").
+- Self-check 6's probe was rerun on the rebuilt App (`probe/probe-360.log`, `probe/probe-390.log`). Steps A to G
+  show the same states at both widths, with no page errors. Only the timestamps differ. Try again showed at 8101 ms
+  (360) and is still 109x48, on top at its center.
+- A copy of the probe also logs each request's signal (`probe/probe-abort-360.log`). Every request carried one. The
+  stalled request 1 was aborted 8002 ms after it left. The slow reply was not aborted. The stall left behind when the
+  player went to Setlists was aborted 8016 ms after it left.
+- P3-10 (a real reply slower than 8 s reads as "didn't answer") is a product trade-off. This pass leaves it as is.
+- Still open for the owner: keep or revert the `worker/room-library.ts` edit (85c9c5e, QUESTIONS.md top entry).
+
+VERDICT: FAIL, on the owner seam only. No P0-P3 from self-check 6 is open inside this cook's files except P3-10.
+
+---
+
 VERDICT: FAIL
 
 # song-search in-cook self-check 6, tier deep, at ddcfb87

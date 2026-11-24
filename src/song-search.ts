@@ -12,7 +12,7 @@ const RECORDING_SEARCH = endpoints.recordingSearch;
 export const DEBOUNCE_MS = 600;
 /** The catalog's rate rule: never more than one request a second from this phone. */
 export const FLOOR_MS = 1000;
-/** How long a request may stay out before the box reports `failed`, so a hung network still shows Try again. */
+/** How long a request may stay out before the box reports `failed` and aborts it, so a hung network still shows Try again. */
 const ANSWER_MS = 8000;
 const LIMIT = 15;
 
@@ -34,7 +34,7 @@ export type SearchState =
 export type Floor = { lastSent: number };
 
 export type SearchDeps = {
-  fetch: (url: string, init: { headers: Record<string, string> }) => Promise<Response>;
+  fetch: (url: string, init: { headers: Record<string, string>; signal: AbortSignal }) => Promise<Response>;
   now: () => number;
   setTimeout: (run: () => void, ms: number) => unknown;
   clearTimeout: (handle: unknown) => void;
@@ -90,15 +90,22 @@ export function catalogSearcher(deps: SearchDeps) {
   function ask(query: string, words: string): Promise<SearchState> {
     if (!deps.online()) return Promise.resolve({ kind: "offline", query });
     floor.lastSent = deps.now();
+    const abort = new AbortController();
     let limit: unknown;
-    const late = new Promise<SearchState>((done) => (limit = deps.setTimeout(() => done({ kind: "failed", query }), ANSWER_MS)));
-    return Promise.race([read(query, words), late]).finally(() => deps.clearTimeout(limit));
+    const late = new Promise<SearchState>((done) => {
+      limit = deps.setTimeout(() => {
+        done({ kind: "failed", query });
+        abort.abort();
+      }, ANSWER_MS);
+    });
+    return Promise.race([read(query, words, abort.signal), late]).finally(() => deps.clearTimeout(limit));
   }
 
-  async function read(query: string, words: string): Promise<SearchState> {
+  async function read(query: string, words: string, signal: AbortSignal): Promise<SearchState> {
     let response: Response;
     try {
-      response = await deps.fetch(requestUrl(words), { headers: { Accept: "application/json", "User-Agent": `MyLeadSheet/1.0 ( ${deps.origin} )` } });
+      const headers = { Accept: "application/json", "User-Agent": `MyLeadSheet/1.0 ( ${deps.origin} )` };
+      response = await deps.fetch(requestUrl(words), { headers, signal });
     } catch {
       return { kind: "offline", query };
     }

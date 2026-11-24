@@ -8,9 +8,9 @@ import type { ChartSection, KeyMode, Song } from "./types";
  * right, with nothing to clean, comes back as pasted.
  */
 
-export type LeftOut = { count: number; what: "tab lines" | "lines above the first section" | "directives" | "site lines" };
-/** The order the status line names what was left out. */
-const LEFT_OUT: LeftOut["what"][] = ["tab lines", "lines above the first section", "directives", "site lines"];
+/** Every kind of line a paste leaves out and counts, in the order the status line names them. */
+export const LEFT_OUT = ["tab lines", "lines above the first section", "directives", "site lines"] as const;
+export type LeftOut = { count: number; what: (typeof LEFT_OUT)[number] };
 export type Pasted = { facts: SongFacts; chart: string; leftOut: LeftOut[] };
 /** A capo chart's chords as they sound, or as the guitar shapes the page wrote. */
 export type CapoView = "sounding" | "shapes";

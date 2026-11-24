@@ -14,6 +14,10 @@ export const DEBOUNCE_MS = 600;
 export const FLOOR_MS = 1000;
 /** How long a request may stay out before the box reports `failed` and aborts it, so a hung network still shows Try again. */
 const ANSWER_MS = 8000;
+/** A catalog that says it is busy (503) or asked too often (429) is asked this many more times before the box says `failed`. */
+const BUSY = [503, 429];
+const BUSY_RETRIES = 2;
+const BUSY_WAIT_MAX_MS = 2000;
 const LIMIT = 15;
 
 /** A general web search for `"<title>" "<artist>" lyrics`, leaving out a blank field. */
@@ -65,6 +69,12 @@ function requestUrl(asked: string): string {
   return `${RECORDING_SEARCH}?${params}`;
 }
 
+/** How long a busy reply asks the phone to wait: its Retry-After in whole seconds, 1 s when missing or unreadable, at most 2 s. */
+function busyWaitMs(retryAfter: string | null): number {
+  const seconds = retryAfter !== null && /^\s*\d+\s*$/.test(retryAfter) ? Number(retryAfter) : 1;
+  return Math.min(seconds * 1000, BUSY_WAIT_MAX_MS);
+}
+
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 const text = (value: unknown) => (typeof value === "string" ? value : "");
 
@@ -84,8 +94,9 @@ function songsOf(body: unknown): CatalogSong[] | null {
 
 /**
  * One search box's link to the catalog. Each `search` replaces the one before: it reports `searching` at once, waits
- * for typing to pause, keeps a second request at least `FLOOR_MS` after the last, and reports what came back. A reply
- * for a search that was replaced, or after `stop`, is dropped.
+ * for typing to pause, keeps a second request at least `FLOOR_MS` after the last, and reports what came back. A busy
+ * catalog is asked again after its Retry-After while the `ANSWER_MS` budget lasts. A reply for a search that was
+ * replaced, or after `stop`, is dropped, and a replaced search asks no more.
  */
 export function catalogSearcher(deps: SearchDeps) {
   const floor = deps.floor ?? { lastSent: -Infinity };
@@ -98,9 +109,12 @@ export function catalogSearcher(deps: SearchDeps) {
     current += 1;
   };
 
-  function ask(query: string, asked: string): Promise<SearchState> {
+  const pause = (ms: number) => new Promise<void>((done) => deps.setTimeout(done, ms));
+
+  /** `live` is false once the search that asked was replaced or stopped. */
+  function ask(query: string, asked: string, live: () => boolean): Promise<SearchState> {
     if (!deps.online()) return Promise.resolve({ kind: "offline", query });
-    floor.lastSent = deps.now();
+    const deadline = deps.now() + ANSWER_MS;
     const abort = new AbortController();
     let limit: unknown;
     const late = new Promise<SearchState>((done) => {
@@ -109,16 +123,26 @@ export function catalogSearcher(deps: SearchDeps) {
         abort.abort();
       }, ANSWER_MS);
     });
-    return Promise.race([read(query, asked, abort.signal), late]).finally(() => deps.clearTimeout(limit));
+    return Promise.race([read(query, asked, abort.signal, deadline, live), late]).finally(() => deps.clearTimeout(limit));
   }
 
-  async function read(query: string, asked: string, signal: AbortSignal): Promise<SearchState> {
+  async function read(query: string, asked: string, signal: AbortSignal, deadline: number, live: () => boolean): Promise<SearchState> {
     let response: Response;
-    try {
-      const headers = { Accept: "application/json", "User-Agent": `MyLeadSheet/1.0 ( ${deps.origin} )` };
-      response = await deps.fetch(requestUrl(asked), { headers, signal });
-    } catch {
-      return { kind: "offline", query };
+    for (let retries = 0; ; retries += 1) {
+      floor.lastSent = deps.now();
+      try {
+        const headers = { Accept: "application/json", "User-Agent": `MyLeadSheet/1.0 ( ${deps.origin} )` };
+        response = await deps.fetch(requestUrl(asked), { headers, signal });
+      } catch {
+        return { kind: "offline", query };
+      }
+      if (!BUSY.includes(response.status) || retries === BUSY_RETRIES) break;
+      const wait = Math.max(busyWaitMs(response.headers.get("Retry-After")), floor.lastSent + FLOOR_MS - deps.now());
+      if (deps.now() + wait >= deadline) break;
+      await pause(wait);
+      // Another searcher sharing the floor may have asked during the wait.
+      for (let gap; (gap = floor.lastSent + FLOOR_MS - deps.now()) > 0; ) await pause(gap);
+      if (signal.aborted || !live()) return { kind: "failed", query };
     }
     if (!response.ok) return { kind: "failed", query };
     let songs: CatalogSong[] | null;
@@ -145,7 +169,7 @@ export function catalogSearcher(deps: SearchDeps) {
         const wait = floor.lastSent + FLOOR_MS - deps.now();
         if (wait > 0) return void (timer = deps.setTimeout(send, wait));
         timer = null;
-        ask(query, asked).then((state) => mine === current && report(state));
+        ask(query, asked, () => mine === current).then((state) => mine === current && report(state));
       };
       timer = deps.setTimeout(send, DEBOUNCE_MS);
     },

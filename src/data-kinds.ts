@@ -161,7 +161,7 @@ export const DATA_KINDS: readonly DataKind[] = [
   {
     key: "mls-phone",
     place: "phone",
-    what: "Copies of the songs in your bands, and the gig packs you downloaded: the setlist for the night with its charts, the band timing for those songs, and the gig secret that proves your phone is on the lineup. Kept so they open with no signal. Removed when you sign out, or when another account signs in on this phone.",
+    what: "Copies of the songs in your bands, and the gig packs you downloaded: the setlist for the night with its charts, the band timing for those songs, and the gig secret that proves your phone is on the lineup. Kept so they open with no signal. Removed when you sign out, or when another account signs in on this phone. A pack that came with a guest pass also holds when the pass ends. It is deleted when the pass ends, even with no signal, and as soon as the phone hears that the band revoked the pass.",
   },
   {
     key: "syncHistory",
@@ -173,6 +173,16 @@ export const DATA_KINDS: readonly DataKind[] = [
     key: "gigs",
     place: "server",
     what: "For each band: every gig and rehearsal planned, with its name and date, start and call times, venue, address and notes, the setlist and its song order at the time, who is playing, the leader and backup leader, the connection the admin picked, whether it is planned, live or over, and a number that changes the gig secret when the lineup changes.",
+  },
+  {
+    key: "guest_passes",
+    place: "server",
+    what: "For each band: every guest pass the admin made for a gig, with the name the admin gave it, who made it, when it ends, whether it was revoked, which code opens it, the account that first opened it, and whether the guest may see the band chat and the other setlists.",
+  },
+  {
+    key: "guest_gigs",
+    place: "server",
+    what: "Which gigs you hold a guest pass for, so your phone can offer Join gig for them, and so the songs of that band are never passed on from your account.",
   },
   { key: "pack_receipts", place: "server", what: "For each gig: who on the lineup downloaded the gig to their phone, which version of it, and when, so the gig card can show Downloaded." },
   { key: "gig_ops", place: "server", what: "For each live gig: the id of each change the leader makes and when, so a change sent twice counts once. Nothing is written here until live gigs are built." },

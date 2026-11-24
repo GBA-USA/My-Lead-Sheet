@@ -58,7 +58,7 @@ export const chatRoom = {
 
   /** The newest messages past `after`, oldest first, so a thread opens on its latest page and a reconnect fills the gap. */
   messages({ sql }: RoomStore, userId: string, after: number): ChatMessage[] {
-    inRoom(sql, userId);
+    inRoom(sql, userId, "chat");
     return sql
       .exec<MessageRow>(`SELECT * FROM (SELECT * FROM messages WHERE seq > ? ORDER BY seq DESC LIMIT ?) ORDER BY seq`, after, MAX_THREAD_PAGE)
       .toArray()
@@ -72,7 +72,7 @@ export const chatRoom = {
    * same author. Words in a band may name its active members with `@`, and their ids are kept with the message.
    */
   post({ sql }: RoomStore, author: Person, msgId: string, text: string, now: number, card: Card | null = null): Posted {
-    const { meta } = inRoom(sql, author.userId);
+    const { meta } = inRoom(sql, author.userId, "chat");
     const kind = card?.kind ?? "text";
     const sameRef = card && ONE_CARD_PER_REF[card.kind] ? card.ref : null;
     const mine = () => sql.exec<MessageRow>(`SELECT * FROM messages WHERE author = ? AND (msg_id = ? OR (ref = ? AND kind = ?)) ORDER BY seq LIMIT 1`, author.userId, msgId, sameRef, kind).toArray()[0];

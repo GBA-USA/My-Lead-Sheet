@@ -1,3 +1,88 @@
+# C21c deep fix: the guest switches now open a screen. I took option b of the 3c4fcdf verify. Owner, please confirm.
+
+The verify left this to the owner: (a) drop "Can see band chat" and "Can see other setlists" from the pass form, or
+(b) give a switched-on guest a way in. The brief's own flow names "the two switches", so dropping them would cut a
+promised feature. I built (b) without waiting, and the change is easy to undo.
+
+- `gig/open` tells a guest what their live passes open (`guest: { canSeeChat, canSeeSetlists }`, from
+  `guestOpens` in `worker/room-guest.ts`, the same rule `inRoom` applies).
+- A guest's gig view gets Band chat (the band thread, inline, through the existing `Room`) and Band setlists (each
+  setlist by name with its songs, read-only), each only when its switch is on. Both live in the new
+  `src/guest-rooms.tsx`. That file is outside the brief's owned list, and so is the one-line mount in `src/gig-view.tsx`.
+- `/api/bands/library` names sharers by first name only for a guest.
+
+One thing for the owner: with setlists on, `/api/bands/library` still sends a guest every band chart's full body,
+not only setlist names and titles. The guest's screen shows titles only, and the share guard still stops a guest
+sending a chart on. Should a setlists-only guest get titles alone from the server?
+
+# C21c fix pass 2: a slow signal no longer hides a guest's pack, and the "no signal" cases now run offline.
+
+`packToShow` waits at most 4 s for `gig/open`, then shows a live guest's pack as it does with no signal. A
+`pass-revoked` or `pass-ended` reply that lands later still deletes the pack, and `dropGigPacks` (now in
+`src/phone-db.ts`) bumps the phone generation, so a screen showing it reads again. The cost is that a revoked pass
+whose answer takes longer than 4 s shows its charts until that answer lands.
+
+One finding for the self-check's record: check:guest never enabled the CDP Network domain, so each
+`Network.setBlockedURLs` in it did nothing. Its "network off" cases, and the self-check's Probe A, ran online. They
+passed for a local reason: an ended pack is dropped on the phone, and a revoked pack was already gone. check:guest
+now enables Network, and `openWithNoSignal` asserts that a fetch gets no answer. The three other checks that block
+URLs (`ux-invite-links`, `ux-sheet-controls-save`, `ux-theme-tokens`) already enable Network.
+
+# C21c fix pass 1 (97443dc): the `check:guest` patch below is applied. One leftover for the owner.
+
+The self-check asked for the test-only patch, so it is in 97443dc, byte-identical to the one the self-check ran.
+No CoS action is needed for it. The leftover: the Room closes an ended guest's socket at the next gig fan-out, but
+the WebRTC signalling relay (`webSocketMessage` `to` messages) does not check the pass, so a guest's open peer
+link to the leader can keep carrying the mirror past the end. The phone hides the charts at the end either way.
+
+# C21c question: three test faults in commit 1's `check:guest` (e232ade). May CoS apply this test-only patch?
+
+The build is committed on `cook/c21c`. Under the queue rules I did not edit the commit-1 test after it. Each fix
+below is to a request the test itself makes. No assertion changes what it requires, and no expected value moves.
+With the patch applied, `check:guest` passes 13 of 13 here (Edge on Windows). Without it, the committed test reads
+6 ok and 7 FAIL, every FAIL caused by the faults below (the first one aborts the case that makes Sam's pass, and
+every later Worker case uses that pass).
+
+## 1. Two signed-out probes send the wrong Origin (lines 200 and 221)
+
+`new Phone(base)` sends `origin: https://app.test`. When Chrome starts, the Worker's `APP_ORIGIN` is the site's
+localhost origin, so `worker/index.ts` answers `403 wrong-origin` before the Directory can say `401 signed-out`.
+The assertions mean "signed out is refused with 401", so the probe must come from the app's origin.
+
+## 2. Pat's second phone sends no Origin after it signs in (line 244)
+
+The same bare `Phone`: its salt and sign-in calls pass `{ origin }`, but its later `claim`, `pack` and socket calls do
+not, so the claim reads `403 wrong-origin`. The fix gives it the app's origin the way `passwordPlayer` does.
+
+## 3. The test's band songs are built-in library charts, so "send them on" can't be refused (line 31)
+
+`chart()` copies `data/library.json` songs and changes only the title. `printOf` hashes the body alone, so every band
+song in the test is a built-in chart that every phone ships with. `guardContent` lets anyone pass on a built-in
+chart (CLAUDE.md rule 5, same content is not the same item), so refusing it would judge by content. The fix makes the
+test's band songs the band's own with one tag line, the way a band's real chart differs from the built-in one.
+
+```diff
+--- a/scripts/check-guest.ts
++++ b/scripts/check-guest.ts
+@@ const chart = (index: number, title: string): SongContent => {
+   const { id: _id, ...song } = seed.songs[index];
+-  return { ...song, title };
++  return { ...song, title, body: [{ heading: "Tag", lines: [{ chords: "G", lyrics: `${title} tag line` }] }, ...song.body] };
+ };
+@@ only the admin makes a guest pass
+-    assert.equal((await new Phone(base).call("/api/bands/guests/create", { bandId, gigId })).status, 401, "a signed-out phone makes no pass");
++    assert.equal((await new Phone(base).call("/api/bands/guests/create", { bandId, gigId }, { origin })).status, 401, "a signed-out phone makes no pass");
+@@ the pass binds to the first account
+-    assert.equal((await new Phone(base).call("/api/guest/claim", { code: samCode })).status, 401, "nobody joins as a guest signed out: there is no name-only path");
++    assert.equal((await new Phone(base).call("/api/guest/claim", { code: samCode }, { origin })).status, 401, "nobody joins as a guest signed out: there is no name-only path");
+@@ a forwarded pass link opened on a second phone
+     const second = new Phone(base);
++    const secondCall = second.call.bind(second);
++    second.call = (path, body, headers = {}) => secondCall(path, body, { origin, ...headers });
+```
+
+---
+
 # song-search fix pass 1: an empty chart no longer counts as a friend's Private chart. This edits a Worker file. Owner, keep it or revert it?
 
 Self-check P2-2. A catalog pick is an own song with an empty chart, and `printOf` hashes only the chart, so every pick

@@ -5,6 +5,7 @@ import { bandSong } from "./band-setlist-view";
 import type { BandView } from "./bands-model";
 import type { GigPack, GigPackSong } from "./gig-pack";
 import { GigSongs, SET_LOCKED } from "./gig-songs";
+import { GuestPasses } from "./guest-pass";
 import {
   againDraft,
   DETAIL_LIMITS,
@@ -270,7 +271,7 @@ export function DraftOffer({ kept, setlistName, onKeep, onStartOver }: { kept: K
 
 /**
  * The gig card on the band screen: who's playing with Downloaded ✓ or Not yet, and Get ready, which downloads the whole
- * pack. Tonight's songs open on the gig-mode sheet once the pack is on this phone; before that each song offers
+ * pack. An admin's Guests makes and revokes guest passes for it. Tonight's songs open on the gig-mode sheet once the pack is on this phone; before that each song offers
  * Download, the same one pack call, for whoever may fetch it. An admin edits the gig's own songs here until it starts,
  * and `onChanged` reloads the band's gigs after a save. A pack on this phone older than the plan says Set changed.
  */
@@ -297,6 +298,7 @@ export function GigCard({
 }) {
   const { gig } = view;
   const [editing, setEditing] = useState(false);
+  const [guests, setGuests] = useState(false);
   const playing = gig.lineup.includes(me);
   const days = daysUntil(gig.date);
   const nameOf = (userId: string) => band.members.find((member) => member.userId === userId)?.name ?? "Not in the band now";
@@ -369,6 +371,10 @@ export function GigCard({
             Edit songs
           </button>
           {locked ? <p className="account-note">{SET_LOCKED}</p> : null}
+          <button type="button" className="account-secondary" aria-expanded={guests} onClick={() => setGuests((open) => !open)}>
+            Guests
+          </button>
+          {guests ? <GuestPasses bandId={band.bandId} gig={gig} /> : null}
         </>
       ) : null}
     </section>

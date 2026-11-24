@@ -108,12 +108,15 @@ export function BandsSheet({
   code,
   onBand,
   onSetlistCopy,
+  onGuestPass,
   onSignedOut,
   onClose,
 }: {
   code?: string;
   onBand: (landing: BandLanding) => void;
   onSetlistCopy: (code: string) => void;
+  /** A guest pass for a gig, scanned here, opens the same sheet a tapped pass link does. */
+  onGuestPass: (code: string) => void;
   onSignedOut: () => void;
   onClose: () => void;
 }) {
@@ -191,6 +194,7 @@ export function BandsSheet({
     const next = codeView(payload, false);
     if (next) go(next);
     else if (readPayload(payload)?.kind === "my-setlist") onSetlistCopy(payload);
+    else if (readPayload(payload)?.kind === "guest") onGuestPass(payload);
     else setError("That isn't a band, gig or setlist code.");
   };
 

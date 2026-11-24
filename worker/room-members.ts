@@ -5,6 +5,7 @@ import { displayName } from "./directory-account";
 import { signedIn, who, type Context, type Route, type User } from "./directory-http";
 import { joinInbox, leaveInbox } from "./directory-inbox";
 import { fromRoom, Refused, roomRefused as refused } from "./refused";
+import { createGuestTables, guestIn, holdsLivePass, type GuestAccess, type GuestMe } from "./room-guest";
 
 type MemberState = "active" | "removed" | "left";
 
@@ -30,22 +31,42 @@ export function createMemberTables(sql: SqlStorage) {
     changed_at INTEGER NOT NULL,
     display_name TEXT NOT NULL
   )`);
+  createGuestTables(sql);
 }
 
 const metaOf = (sql: SqlStorage) => sql.exec<Meta>(`SELECT * FROM meta WHERE id = 1`).toArray()[0];
 const memberOf = (sql: SqlStorage, userId: string) => sql.exec<MemberRow>(`SELECT * FROM members WHERE user_id = ?`, userId).toArray()[0];
 const activeAdmins = (sql: SqlStorage) => sql.exec<{ n: number }>(`SELECT count(*) AS n FROM members WHERE state = 'active' AND role = 'admin'`).one().n;
 
-/** Whether this room is a band that `userId` may not enter. Rooms that are not bands stay open to any signed-in player. */
-export const shutOut = (sql: SqlStorage, userId: string) => metaOf(sql) !== undefined && memberOf(sql, userId)?.state !== "active";
+/**
+ * Whether this room is a band that `userId` may not enter. Rooms that are not bands stay open to any signed-in player.
+ * With `guests`, for the room's socket only, a live guest pass lets its holder in; what they hear there is gated by gig.
+ */
+export const shutOut = (sql: SqlStorage, userId: string, guests = false) =>
+  metaOf(sql) !== undefined && memberOf(sql, userId)?.state !== "active" && !(guests && holdsLivePass(sql, userId));
 
-/** The room and the caller's active membership in it, for a band or a DM alike. */
-export function inRoom(sql: SqlStorage, userId: string): { meta: Meta; me: MemberRow } {
+/**
+ * The room and the caller's active membership in it, for a band or a DM alike. A guest is never a member, so they are
+ * let in only where the caller names an `access` their pass gives (worker/room-guest.ts). Everywhere else they hear `guest`.
+ */
+export function inRoom(sql: SqlStorage, userId: string): { meta: Meta; me: MemberRow };
+export function inRoom(sql: SqlStorage, userId: string, access: GuestAccess): { meta: Meta; me: MemberRow | GuestMe };
+export function inRoom(sql: SqlStorage, userId: string, access?: GuestAccess): { meta: Meta; me: MemberRow | GuestMe } {
   const meta = metaOf(sql);
   if (!meta) throw refused("no-band");
   const me = memberOf(sql, userId);
-  if (me?.state !== "active") throw refused("not-a-member");
-  return { meta, me };
+  if (me?.state === "active") return { meta, me };
+  return { meta, me: guestIn(sql, userId, access, Date.now()) };
+}
+
+/** Whether `userId` may read this room's chat: a member, or a guest whose pass has the chat switched on. */
+export function readsChat(sql: SqlStorage, userId: string): boolean {
+  try {
+    inRoom(sql, userId, "chat");
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function asAdmin(sql: SqlStorage, userId: string) {
@@ -149,6 +170,10 @@ export const bandRoom = {
     asAdmin(band.sql, adminId);
     band.sql.exec(`UPDATE meta SET scroll_with_leader = ? WHERE id = 1`, on ? 1 : 0);
     return view(band, adminId);
+  },
+
+  nameOf({ sql }: Band): string {
+    return metaOf(sql)?.name ?? "";
   },
 
   pack({ sql, bandId }: Band, userId: string): BandPack {

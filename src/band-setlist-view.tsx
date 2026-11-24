@@ -40,7 +40,9 @@ export function useBandPlay(route: Route, userId: string | null): BandPlay {
   const [found, setFound] = useState<{ key: string; song?: Song } | null>(null);
 
   useEffect(() => {
-    if (!key || !bandId || !songId || !userId || !heldFor(userId)) return setFound(null);
+    if (!key || !bandId || !songId || !userId) return setFound(null);
+    // Nothing on this phone is this account's (a guest, or a member who hasn't opened the band here): it has looked.
+    if (!heldFor(userId)) return setFound({ key });
     let live = true;
     getFromPhone("bandSongs", key).then(
       (cached) => live && setFound({ key, song: cached && bandSong(bandId, songId, cached.song) }),

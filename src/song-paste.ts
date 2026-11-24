@@ -269,11 +269,12 @@ function write(lines: string[], reads: Read[], raise: number, key: Key): { out: 
       continue;
     }
     if (read.kind === "blank") {
-      // A blank in a played part before more playing would start a section the page never named, so the part keeps it.
-      // Any other blank ends the part, as the chart reads it.
+      // A blank in a played part before more playing, or before more words to the player, would start a section the
+      // page never named, so the part keeps it. Any other blank ends the part, as the chart reads it.
       const next = reads.findIndex((each, k) => k > i && !["blank", "gone", "counted", "site"].includes(each.kind));
       const playing = next >= 0 && (reads[next].kind === "bars" || (reads[next].kind === "chords" && reads[next + 1]?.kind !== "text"));
-      if (PLAYED.test(part) && playing) changed = true;
+      const told = next >= 0 && reads[next].kind === "text" && !headingRead(lines[next]);
+      if (PLAYED.test(part) && (playing || told)) changed = true;
       else {
         out.push("");
         part = "";
@@ -358,9 +359,12 @@ function blockKind(cells: Cell[], texts: string[]): Block["kind"] {
   const pieces = cells.every((cell, k) => cell === "chord" || (cell === "words" && fragment(texts[k])));
   if (!pieces || !cells.some((cell, k) => cell === "chord" && cells[k + 1] === "words")) return "other";
   if (cells.length === 2) return "pair";
-  // Short lines typed one chord each stay lines: a copy shows words that run on in lower case, or words after words.
-  const runsOn = texts.some((text, k) => k > cells.indexOf("words") && cells[k] === "words" && !opensLine(text));
-  return runsOn || cells.some((cell, k) => cell === "words" && cells[k + 1] === "words") ? "copy" : "other";
+  // Lines typed one chord each, or one chord over a line and the next line, stay lines. A copy shows words that run
+  // on in lower case, under two chords or more, or under one chord when its words already start mid-line.
+  const first = cells.indexOf("words");
+  const runsOn = texts.some((text, k) => k > first && cells[k] === "words" && !opensLine(text));
+  const chords = cells.filter((cell) => cell === "chord").length;
+  return runsOn && (chords >= 2 || !opensLine(texts[first])) ? "copy" : "other";
 }
 
 /** One lyric line from its pieces: the words joined by spaces, each chord over the first letter of the words after it. */

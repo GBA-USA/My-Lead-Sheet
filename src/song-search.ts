@@ -46,11 +46,22 @@ export type SearchDeps = {
 
 export const lengthText = (sec: number) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
 
-/** The typed words with the catalog's query operators turned to spaces, so any title is a plain search. */
-const plainWords = (text: string) => text.replace(/[+\-&|!(){}[\]^"~*?:\\/]/g, " ").trim().replace(/\s+/g, " ");
+/**
+ * What the catalog is asked for one typed line, or null when the line holds no words. Words left loose inside a field
+ * list titles that repeat one of them, so the line is asked as one phrase (a title typed alone) or as every word (a
+ * title typed with its artist). Nothing typed is read as a query operator, capitals included.
+ * `scripts/song-search-live.ts` measures a shape against the live catalog.
+ */
+function catalogQuery(typed: string): string | null {
+  const words = typed.toLowerCase().replace(/[+\-&|!(){}[\]^"~*?:\\/]/g, " ").split(/\s+/).filter(Boolean);
+  if (!words.length) return null;
+  const phrase = `"${words.join(" ")}"`;
+  const everyWord = words.map((word) => `(recording:${word} OR artist:${word})`).join(" AND ");
+  return `recording:${phrase} OR artist:${phrase} OR (${everyWord})`;
+}
 
-function requestUrl(words: string): string {
-  const params = new URLSearchParams({ query: `recording:(${words}) OR artist:(${words})`, fmt: "json", limit: String(LIMIT) });
+function requestUrl(asked: string): string {
+  const params = new URLSearchParams({ query: asked, fmt: "json", limit: String(LIMIT) });
   return `${RECORDING_SEARCH}?${params}`;
 }
 
@@ -87,7 +98,7 @@ export function catalogSearcher(deps: SearchDeps) {
     current += 1;
   };
 
-  function ask(query: string, words: string): Promise<SearchState> {
+  function ask(query: string, asked: string): Promise<SearchState> {
     if (!deps.online()) return Promise.resolve({ kind: "offline", query });
     floor.lastSent = deps.now();
     const abort = new AbortController();
@@ -98,14 +109,14 @@ export function catalogSearcher(deps: SearchDeps) {
         abort.abort();
       }, ANSWER_MS);
     });
-    return Promise.race([read(query, words, abort.signal), late]).finally(() => deps.clearTimeout(limit));
+    return Promise.race([read(query, asked, abort.signal), late]).finally(() => deps.clearTimeout(limit));
   }
 
-  async function read(query: string, words: string, signal: AbortSignal): Promise<SearchState> {
+  async function read(query: string, asked: string, signal: AbortSignal): Promise<SearchState> {
     let response: Response;
     try {
       const headers = { Accept: "application/json", "User-Agent": `MyLeadSheet/1.0 ( ${deps.origin} )` };
-      response = await deps.fetch(requestUrl(words), { headers, signal });
+      response = await deps.fetch(requestUrl(asked), { headers, signal });
     } catch {
       return { kind: "offline", query };
     }
@@ -126,15 +137,15 @@ export function catalogSearcher(deps: SearchDeps) {
       const mine = current;
       const query = typed.trim();
       if (!query) return report({ kind: "idle" });
-      const words = plainWords(query);
-      if (!words) return report({ kind: "none", query });
+      const asked = catalogQuery(query);
+      if (asked === null) return report({ kind: "none", query });
       report({ kind: "searching", query });
       // The floor is read again when the wait ends, since another searcher sharing it may have asked meanwhile.
       const send = () => {
         const wait = floor.lastSent + FLOOR_MS - deps.now();
         if (wait > 0) return void (timer = deps.setTimeout(send, wait));
         timer = null;
-        ask(query, words).then((state) => mine === current && report(state));
+        ask(query, asked).then((state) => mine === current && report(state));
       };
       timer = deps.setTimeout(send, DEBOUNCE_MS);
     },

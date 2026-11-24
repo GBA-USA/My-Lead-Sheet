@@ -1,3 +1,114 @@
+# song-search laptop verify fix round, on f8081d0 (on top of fix pass 2 below)
+
+Goal: a player who types a song's title alone, or its title and artist, sees that song in the rows. The laptop verify
+of f8081d0 found that a title alone often listed none of the song (P1-1) and that the query cleaning had no test
+(P2-2). The cases and a live catalog script landed first (2d307fa), then the fix. Logs are in
+`.verify-logs/fix-pr108/` (gitignored). Run on the Windows laptop with Edge as `CHROME`.
+
+## What changed
+
+`src/song-search.ts` has one function, `catalogQuery`, that turns a typed line into the catalog query or into null.
+For `wagon wheel` it now asks:
+
+```
+recording:"wagon wheel" OR artist:"wagon wheel" OR ((recording:wagon OR artist:wagon) AND (recording:wheel OR artist:wheel))
+```
+
+- The quoted phrase lists a title typed alone. At f8081d0 the words sat loose inside each field, the catalog joined
+  them with OR, and a title that repeats one word ranked first.
+- The every-word clause lists a title typed with its artist, where the whole line is in neither field.
+- The typed words are lowercased. With the new shape, `YOU AND ME` in capitals put `AND` where the catalog reads an
+  operator, and the live catalog answered with 15 rows titled "OR" (`shapes.log`). Lowercase `and` is a plain word.
+- A line with no words left after the cleaning returns null, so `search` cannot build a request for it.
+
+## Each finding, before and after
+
+| Finding | Case | At f8081d0 with the case | After |
+|---|---|---|---|
+| P1-1, a two-word title | 3f pins the query for `wagon wheel` | `FAIL 3f`, the catalog was asked `recording:(wagon wheel) OR artist:(wagon wheel)` | ok |
+| P1-1, title plus artist | 3g pins the query for `wagon wheel old crow medicine show` | `FAIL 3g` | ok |
+| P2-2, the cleaning | 3h, `"Heroes" (live` and three more lines ask what their plain words ask | ok at f8081d0, since the code was right and only untested. `FAIL 3h` with the cleaning removed (H1) | ok, and `FAIL 3h` under F1 |
+| P2-2, nothing left | 3i, a line of only punctuation says No songs found and sends nothing | ok at f8081d0. `FAIL 3i` with the stop removed (H2) | ok, and `FAIL 3i` under F2 |
+| New with this shape | 3j, AND, OR and NOT in capitals ask what the lowercase words ask | `FAIL 3j` | ok |
+
+`check:song-search` at f8081d0 with the five cases: exit 1, 43 ok, 3 FAIL (`before-head-f8081d0.log`). After the fix:
+exit 0, 46 ok (`after-fix.log`), and the same through `npm run --silent check:song-search` with no path shim
+(`unshimmed.log`). `npm run build` exit 0. `check:one-copy`, `check:portable`, `check:privacy` and `check:screens`
+exit 0.
+
+Mutations of the fixed `catalogQuery`, one run of the check each (`mutate.mjs fixed`, `mutate-fixed.log`). The tree
+was clean after.
+
+| Mutation | Cases that fail |
+|---|---|
+| F1, operators are not cleaned | 3h, 3i |
+| F2, a line with no words is still sent | 3i |
+| F3, capitals are kept | 3j |
+| F4, the shape f8081d0 sent | 3f, 3g |
+| F5, every word only, no phrase | 3f, 3g |
+| F6, the phrase only, no every-word clause | 3f, 3g |
+
+## The live catalog
+
+A stub cannot judge which songs a query lists, so 3f and 3g pin the string and the live catalog judges it.
+`scripts/song-search-live.ts` sends ten typed lines through the app's own `catalogSearcher` to the live catalog and
+counts the rows that are the song. A line passes when the song is in the first three rows. It is run by hand and is
+not a `check:*` script, so `npm run verify` never waits on the catalog. Run it again after any change to the query.
+
+One run each, from Node on this laptop, Nov 23 2026. 15 rows asked each time.
+
+| Typed | f8081d0 (`live-before-f8081d0.log`) | After the fix (`live-after-fix.log`) |
+|---|---|---|
+| wagon wheel | 0 of 15, FAIL | 15 of 15, row 1 is the Old Crow Medicine Show recording |
+| mustang sally | 0 of 15, FAIL | 15 of 15 |
+| fire away | not run with the script. 0 of 15 with the same shape in `shapes.log` | 15 of 15 |
+| tennessee whiskey | not run | 15 of 15 |
+| the weight | not run | 4 of 15, first at row 1 |
+| chris stapleton (artist) | not run | 14 of 15 |
+| wagon wheel old crow medicine show | 7 of 15, first at row 1 | 7 of 8, first at row 2 |
+| tennessee whiskey chris stapleton | not run | 4 of 5, first at row 1 |
+| `"Heroes" (live` | not run | 13 of 15, first at row 3 |
+| YOU AND ME | not run | 1 of 15, first at row 1 |
+
+How to read these numbers.
+
+- Each cell is one run. The count is the rows whose title starts with the typed title, and whose artist holds the
+  typed artist when one was typed. The catalog's ranking can move between runs. The f8081d0 zeros match the verify's
+  15 runs of the same shape.
+- The every-word clause is strict. `wagon wheel old crow medicine show` matched 8 recordings in all, where f8081d0
+  listed 15 rows with 7 of the song. A misspelled artist now reads No songs found instead of loose rows.
+- `the weight` and `YOU AND ME` are also the names of artists (The Weight Band, You+Me, You And Me). The rows after
+  the first few are that artist's other songs. The box says "title or artist", so both are answers. Ranking titles
+  above artists is a product call, as P3-12 is.
+- The shape was chosen from 18 Node queries across three candidates (`shapes.mjs`, `shapes.log`). A bare line with no
+  field listed 15 of 15 for a title alone and 0 of 15 for title plus artist, so it lost.
+
+## The built App in Edge, live catalog, 360 px
+
+The verify's `probe-live.ts`, copied unchanged and run twice on this tree in its short form
+(`probe-live-360-run1.log`, `probe-live-360-run2.log`).
+
+| Step | Run 1 | Run 2 |
+|---|---|---|
+| A. type `wagon wheel` | 15 rows, 15 are the song | 15 rows, 15 are the song |
+| C. title plus artist | five 503 replies in a row, no list | 8 rows, all 8 titled Wagon Wheel. Row 1 is a cover named after the band |
+| D. pick Wagon Wheel by Old Crow Medicine Show | skipped, no rows | stored title, artist, 244 s, empty chart. The sheet shows the title, No words yet and the link |
+| E, F. Scroll on the empty chart, then reload | skipped | runs and stops, the song is still on My Songs |
+| H. page errors | none | none |
+
+## P3, for the owner
+
+- P3-11 again, with one more number. The catalog answered 503 to 14 of the App's 17 requests from Edge in these two
+  runs, with requests at least 2.3 s apart. From Node on the same laptop in the same half hour, with a named client,
+  it answered 503 to 4 of 22 shape queries. I did not find out why the two differ. P3-14 (Edge may send its own
+  User-Agent in place of the app's) would explain it and is still not measured. The confound from the verify stands:
+  this laptop sent the catalog about 60 requests in this round. Check once on preview from another network before
+  Live.
+- Still open for the owner: keep or revert the `worker/room-library.ts` edit (85c9c5e, QUESTIONS.md top entry). This
+  round did not touch it.
+
+---
+
 # song-search in-cook self-check fix pass 2 of 2 (on top of self-check 6 below)
 
 Goal: close the self-check 6 findings that sit inside this cook's files. The only blocking finding is the owner's

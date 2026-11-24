@@ -852,6 +852,115 @@ try {
       assert.ok(!/Elks (Opener|Closer)/.test(await bodyText()), "no chart of the ended pass is still on the sheet");
       assert.equal(await packsFor(), 0, "and the gigPacks row is gone");
     });
+
+    // __rooms holds every band-room socket the page opened. __dropRooms loses them the way a dead signal does: the app hears close 1006 and nothing more from the room.
+    await site.send("Page.addScriptToEvaluateOnNewDocument", {
+      source: `window.__rooms = []; { const W = window.WebSocket; window.WebSocket = class extends W { constructor(...a) { super(...a); if (String(a[0]).includes("/api/rooms/")) window.__rooms.push(this); } }; } window.__dropRooms = () => { for (const ws of window.__rooms) { const closed = ws.onclose; if (ws.readyState > 1 || !closed) continue; ws.onclose = null; ws.onmessage = null; ws.close(); closed.call(ws, new CloseEvent("close", { code: 1006 })); } };`,
+    });
+    const roomSockets = () => site.evaluate<number>("window.__rooms.length");
+    const guestView = `document.querySelector(${js(`.gig-view[data-gig="${gigId}"]`)})`;
+    const bandChat = `document.querySelector(${js(`.room[data-room="${bandId}"]`)})`;
+    /**
+     * A new guest signed in on this phone, and a post of Mike's in the band chat. Their pass for tonight has Band chat on
+     * unless `chatFrom` names another gig, whose pass then carries the switch. Tonight's pass is made once the phone is
+     * signed in, so a short one starts its clock late.
+     */
+    const chatGuest = async (name: string, handle: string, lasts: number, chatFrom = gigId) => {
+      const guest = await passwordPlayer(base, origin, name, handle);
+      const post = `Load in at 5 ${newMsgId()}`;
+      ok(await mike.call("/api/chat/send", { roomId: bandId, msgId: newMsgId(), text: post }), "Mike posts in the band chat");
+      await signedInAs(guest);
+      const expiresAt = Date.now() + lasts;
+      let chatPassId = "";
+      for (const gig of new Set([gigId, chatFrom])) {
+        const made = ok(await makePass(terry, { name, gig, canSeeChat: gig === chatFrom, expiresAt: gig === gigId ? expiresAt : undefined }), `a pass for ${name}`);
+        if (made.pass.canSeeChat) chatPassId = made.pass.passId;
+        ok(await guest.call("/api/guest/claim", { code: made.code }), `${name} joins as a guest`);
+      }
+      return { guest, chatPassId, expiresAt, post };
+    };
+    /** That guest with their gig view on this phone and Band chat open on Mike's post. */
+    const guestInBandChat = async (name: string, handle: string, lasts: number, chatFrom = gigId) => {
+      const made = await chatGuest(name, handle, lasts, chatFrom);
+      await site.send("Page.navigate", { url: `${origin}/?chat=${handle}#/gig/${bandId}/${gigId}` });
+      await waitFor(`[...(${guestView}?.querySelectorAll("button") ?? [])].some((b) => b.textContent.trim() === "Band chat")`, `Band chat on ${name}'s gig view`);
+      await tap("Band chat", guestView);
+      await waitFor(`(${bandChat}?.textContent ?? "").includes(${js(made.post)})`, `Mike's post in ${name}'s Band chat`);
+      return made;
+    };
+    /** The band chat is off the guest's screen with `words` in its place, and the phone has stopped asking the room for a socket. */
+    const bandChatClosed = async (words: string, post: string) => {
+      await waitFor(`!${bandChat} && document.body.textContent.includes(${js(words)})`, `the band chat closed and ${js(words)}`, 12_000).catch(async (error: Error) => {
+        const seen = await site.evaluate<string>(`JSON.stringify({ chatOpen: !!${bandChat}, alerts: [...document.querySelectorAll("[role=alert], [role=status]")].map((el) => el.textContent), roomSockets: window.__rooms.length })`);
+        throw new Error(`${error.message}: ${seen}`);
+      });
+      const text = await bodyText();
+      assert.ok(!text.includes(post), "the band's posts are off the guest's screen");
+      assert.ok(!text.includes("Something went wrong"), `nothing says "Something went wrong"`);
+      const sockets = await roomSockets();
+      await settle(7000);
+      assert.equal(await roomSockets(), sockets, "the phone asks the room for no more sockets, where it used to ask every 3 s");
+      assert.ok(!(await site.evaluate<boolean>(`!!${bandChat}`)), "and the band chat stays closed");
+      assert.ok((await bodyText()).includes(words), "with the reason still on screen");
+    };
+
+    await check("a guest's pass revoked while their Band chat is open closes the chat, says the band ended the pass, stops reconnecting and takes tonight's charts off the phone", async () => {
+      const { chatPassId, post } = await guestInBandChat("Pia Moss", "piamoss", DAY_MS);
+      await tap("Get ready", guestView);
+      for (const end = Date.now() + 10_000; (await packsFor()) === 0 && Date.now() < end; ) await settle(250);
+      assert.equal(await packsFor(), 1, "tonight's pack is on the guest's phone");
+      const sockets = await roomSockets();
+      ok(await terry.call("/api/bands/guests/revoke", { bandId, passId: chatPassId }), "Terry revokes the pass");
+      await bandChatClosed(ENDED_BY_BAND, post);
+      assert.equal(await roomSockets(), sockets, "the room's close was the end of it: the phone never asked for another socket");
+      assert.equal(await packsFor(), 0, "the pack left the phone when the gig view heard the pass was ended, with no reload");
+      await site.evaluate(`location.hash = ${js(`#/gig/${bandId}/${gigId}/0`)}`);
+      await settle(1500);
+      assert.ok(!(await site.evaluate<boolean>(charts)), "and the sheet for tonight's first song shows no chart");
+    });
+
+    await check("a guest's pass that ends while their Band chat is open, with no pack downloaded, closes the chat then, says the pass has ended and stops reconnecting", async () => {
+      const { guest, expiresAt, post } = await guestInBandChat("Rue Fox", "ruefox", 20_000);
+      assert.ok(Date.now() < expiresAt, "Band chat is open before the pass ends");
+      assert.ok(await hasButton("Get ready", guestView), "the guest downloaded no pack: Get ready is still offered");
+      assert.equal(await packsFor(), 0, "and the phone holds none");
+      const opened = ok(await guest.call("/api/bands/gig/open", { bandId, gigId }), "the guest's gig view from the server");
+      for (; Date.now() < expiresAt + 1500; ) await settle(250);
+      await bandChatClosed(PASS_ENDED, post);
+      assert.equal(opened.guest.expiresAt, expiresAt, "gig/open told the guest's phone when the pass ends, with no pack to carry it");
+    });
+
+    await check("a guest whose signal was down when the band revoked the pass has Band chat closed on the next try, not retried forever", async () => {
+      const { chatPassId, post } = await guestInBandChat("Pip Dale", "pipdale", DAY_MS);
+      await site.evaluate("window.__dropRooms()");
+      ok(await terry.call("/api/bands/guests/revoke", { bandId, passId: chatPassId }), "Terry revokes the pass while the phone has no socket");
+      await bandChatClosed(ENDED_BY_BAND, post);
+    });
+
+    await check("a guest who posts in Band chat after the pass that opened it was revoked, while another pass still opens tonight's gig, sees the chat close with the reason", async () => {
+      const { chatPassId, post } = await guestInBandChat("Val Reed", "valreed", DAY_MS, brunchGig);
+      ok(await terry.call("/api/bands/guests/revoke", { bandId, passId: chatPassId }), "Terry revokes the brunch pass, the one with Band chat on");
+      await settle(1500);
+      assert.ok(await site.evaluate<boolean>(`!!${bandChat}`), "the room keeps the socket of a guest who still holds a live pass, so Band chat is still open");
+      const composer = `${bandChat}?.querySelector(".chat-composer")`;
+      await site.evaluate(`(() => { const t = (${composer}).querySelector("textarea"); t.focus(); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(t, "Val here, running late"); t.dispatchEvent(new Event("input", { bubbles: true })); })()`);
+      await settle(200);
+      await tap("Send", composer);
+      await bandChatClosed("Your guest pass doesn't open that any more.", post);
+      assert.equal(await site.evaluate<string>(`${guestView}?.querySelector("h2")?.textContent ?? ""`), "Friday at the Elks", "tonight's gig stays open on the pass that still stands");
+      assert.ok(!(await hasButton("Band chat", guestView)), "and Band chat is no longer offered");
+      const band = ok(await mike.call("/api/chat/open", { roomId: bandId }), "Mike reads the band chat").messages as { text: string }[];
+      assert.ok(!band.some((m) => m.text === "Val here, running late"), "the post never reached the band");
+    });
+
+    await check("a guest who opened the band chat by its own link is taken to Messages with the band's words when the pass is revoked, and the phone stops reconnecting", async () => {
+      const { chatPassId, post } = await chatGuest("Zoe Finch", "zoefinch", DAY_MS);
+      await site.send("Page.navigate", { url: `${origin}/?chat=zoefinch#/messages/${bandId}` });
+      await waitFor(`(${bandChat}?.textContent ?? "").includes(${js(post)})`, "Mike's post in the band chat, opened by its link");
+      ok(await terry.call("/api/bands/guests/revoke", { bandId, passId: chatPassId }), "Terry revokes the pass");
+      await bandChatClosed(ENDED_BY_BAND, post);
+      assert.equal(await site.evaluate<string>("location.hash"), "#/messages", "the guest is on Messages");
+    });
   }
 } catch (error) {
   failed += 1;

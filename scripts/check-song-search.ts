@@ -612,7 +612,7 @@ if (site) {
         "every other field at the New song defaults, and no copy mark",
       );
       for (const field of ["keyNote", "tempoNote", "feel", "sourceNote", "atAGlance", "howToPlay", "practiceTip"]) assert.equal(song[field], "", `${field} is empty`);
-      await app.until(`document.querySelector(".shell-title")?.textContent.includes("Fire Away") || document.body.innerText.includes("Fire Away")`, "the title on the page");
+      await app.until(`document.querySelector(".sheet .sheet-name")?.textContent === "Fire Away"`, "the title on the page");
     });
 
     await check(SCREEN_CASES[8], async () => {

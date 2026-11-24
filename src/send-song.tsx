@@ -8,8 +8,7 @@ import { YouHaveIt } from "./search-box";
 import { applyUpdate, canSend, cardLine, received, songMessageIn, type Received, type SendPick, type SongSend, type UpdateChoice } from "./send-song-model";
 import type { ShareChoice } from "./share-rule";
 import { ApiError, api, type Account } from "./sign-in-methods";
-import type { ScrollVersion } from "./scroll-timing";
-import { loadSongVersions, locked } from "./song-version";
+import { locked, timingVersions } from "./song-version";
 import { addOwnSong, loadLibrary, loadSongData, localRef, replaceOwnSong, saveScrollVersions, saveSongData, songByRef, storageChanged } from "./storage";
 import type { Song } from "./types";
 import "./friends.css";
@@ -69,11 +68,6 @@ function keepReceived(kept: Received, replaceId: number | null): boolean {
   return true;
 }
 
-/** The song's versions with taught or learned timing, as the send route takes them. A version holding only settings has no timing to send. */
-function timingVersions(song: Song): ScrollVersion[] {
-  return loadSongVersions(song.ref).versions.flatMap(({ name, plan, learned }) => (plan ? [{ name, ...plan, ...(learned ? { learned } : {}) }] : []));
-}
-
 /**
  * Send to a friend…: pick a friend, tick timing versions and My song data (the chart always goes), then Private or
  * Public. The send waits in the chat queue like a message, so with no signal it goes later, once. `song` is the song as
@@ -86,7 +80,7 @@ export function SendSongSheet({ account, song, onFriends, onSent, onClose }: { a
   const [pick, setPick] = useState<SendPick>({ versions: [], data: false, choice: null });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const versions = timingVersions(song);
+  const versions = timingVersions(song.ref);
   const data = loadSongData(song.ref);
   const hasData = Object.keys(data).length > 0;
 

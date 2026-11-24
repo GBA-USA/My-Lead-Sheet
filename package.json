@@ -16,6 +16,7 @@
     "check:bpm": "node --experimental-strip-types scripts/check-bpm.ts",
     "check:learn": "node --experimental-strip-types scripts/check-learn.ts",
     "check:learn-songs": "node --experimental-strip-types scripts/check-learn-songs.ts",
+    "check:learn-words": "node --experimental-strip-types scripts/check-learn-words.ts",
     "check:learn-local": "node --experimental-strip-types scripts/check-learn-local.ts",
     "check:learned": "node --experimental-strip-types scripts/check-learned.ts",
     "check:learn-file": "node --experimental-strip-types scripts/check-learn-file.ts",

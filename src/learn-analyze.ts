@@ -1,6 +1,8 @@
 import { CANDIDATE_FASTEST, CANDIDATE_SLOWEST, TempoDetector, smoothed, tempoCandidates, tempoOf } from "./bpm-detect";
-import { Chroma } from "./learn-chords";
+import { Chroma, LowView, hearChords } from "./learn-chords";
 import type { Analysis, Heard, TempoGuess } from "./learn-result";
+import { type Bands, type BeatFeatures, beatTexture, hearSections, novelty } from "./learn-sections";
+import { hearLines, splitLyrics } from "./learn-words";
 import type { Learned, ScrollVersion, Span } from "./scroll-timing";
 
 /** A song is heard only when a steady beat holds for this many bars. */
@@ -38,13 +40,6 @@ const BEAT_WIDTH = 0.05;
 const BACKBEAT_WEIGHT = 20;
 /** A runner-up scoring at least this share of the best is a close call. */
 const CLOSE_CALL = 0.9;
-
-interface Bands {
-  total: number;
-  low: number;
-  voice: number;
-  high: number;
-}
 
 /** A second-order filter from the RBJ cookbook, Q = 0.707. */
 class Biquad {
@@ -86,6 +81,7 @@ export class SongListener {
   private readonly frames: Bands[] = [];
   private readonly chroma: Chroma;
   private readonly chromaFrames: number[][] = [];
+  private readonly lowView: LowView;
   private readonly frameSize: number;
   private readonly frameRate: number;
   private readonly low: Biquad;
@@ -110,6 +106,7 @@ export class SongListener {
     this.voiceHigh = new Biquad("low", 3400, sampleRate);
     this.high = new Biquad("high", 5000, sampleRate);
     this.chroma = new Chroma(sampleRate);
+    this.lowView = new LowView(sampleRate);
   }
 
   get seconds(): number {
@@ -137,6 +134,7 @@ export class SongListener {
         this.levelFilled = 0;
       }
       this.chroma.push(x);
+      this.lowView.push(x);
       if (++this.filled < this.frameSize) continue;
       this.frames.push(this.sum);
       this.chromaFrames.push(this.chroma.now());
@@ -145,8 +143,8 @@ export class SongListener {
     }
   }
 
-  /** Everything the samples alone give; null when no song with a steady beat was heard. */
-  analyze(beatsPerBar: number): Heard | null {
+  /** Everything the samples and the player's words give; null when no song with a steady beat was heard. */
+  analyze(beatsPerBar: number, lyrics: string | null = null): Heard | null {
     const sound = soundSpan(this.frames.map((frame) => frame.total), this.frameRate);
     if (!sound) return null;
     const envelope = this.detector.envelope;
@@ -167,17 +165,12 @@ export class SongListener {
       voiceOnsets: new Float32Array(0),
       novelty: novelty(features.map((beat) => beat.texture), 2 * beatsPerBar),
     };
-    return { analysis, tempo: tempoOfSong(heard, tempos[0].bpm), changes: [], sections: [], lines: [] };
+    const blocks = lyrics ? splitLyrics(lyrics) : [];
+    const changes = hearChords(chroma, this.lowView, beats, analysis.downbeatPhase, beatsPerBar);
+    const sections = hearSections(features, beats, analysis.downbeatPhase, beatsPerBar, blocks.length ? blocks : null);
+    const lines = hearLines(analysis.voiceOnsets, beats, sections, changes, lyrics);
+    return { analysis, tempo: tempoOfSong(heard, tempos[0].bpm), changes, sections, lines };
   }
-}
-
-/**
- * Where a chart's headings after the first fall on the heard song: the novelty picks for that many headings. Null when
- * the song is too short to hold them two bars apart. The chart is placed on what was heard, never the other way.
- */
-export function placeHeadings(analysis: Analysis, headingCount: number, beatsPerBar: number): number[] | null {
-  const gap = 2 * beatsPerBar;
-  return analysis.beats.length < headingCount * gap ? null : sectionBoundaries(analysis.novelty, headingCount, gap);
 }
 
 function percentile(values: number[], fraction: number): number {
@@ -465,13 +458,6 @@ function tempoChanges(beats: number[], beatsPerBar: number): Tempo[] {
   return kept.map((start, k) => ({ at: beats[start], bpm: bpm(start, kept[k + 1] ?? gaps.length) }));
 }
 
-interface BeatFeatures {
-  /** Loudness, brightness, low and voice shares, and onset strength, before scaling. */
-  texture: number[];
-  voiceShare: number;
-  chroma: number[];
-}
-
 function beatFeatures(
   beats: number[],
   end: number,
@@ -489,71 +475,12 @@ function beatFeatures(
     const next = beats[i + 1] ?? Math.min(end, 2 * beat - beats[i - 1]);
     const from = Math.floor(beat * frameRate);
     const to = Math.ceil(next * frameRate);
-    const part = frames.slice(from, Math.max(from + 1, to));
     const tones = chroma.slice(from, Math.max(from + 1, to));
-    const band = (name: keyof Bands) => part.reduce((sum, frame) => sum + frame[name], 0) / part.length + 1e-12;
-    const total = band("total");
     return {
-      texture: [
-        10 * Math.log10(total),
-        band("high") / total,
-        band("low") / total,
-        band("voice") / total,
-        Math.log(1e-6 + mean(envelope, Math.floor(beat * rate), Math.floor(next * rate))),
-      ],
-      voiceShare: band("voice") / total,
+      ...beatTexture(frames.slice(from, Math.max(from + 1, to)), mean(envelope, Math.floor(beat * rate), Math.floor(next * rate))),
       chroma: Array.from({ length: 12 }, (_, pc) => tones.reduce((sum, frame) => sum + frame[pc], 0)),
     };
   });
-}
-
-/** How different the 2 bars after each beat sound from the 2 bars before, with every feature scaled alike. */
-function novelty(features: number[][], width: number): number[] {
-  const columns = features[0]?.length ?? 0;
-  const scaled = features.map((row) => [...row]);
-  for (let c = 0; c < columns; c++) {
-    const values = features.map((row) => row[c]);
-    const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
-    const spread = Math.sqrt(values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length) || 1;
-    scaled.forEach((row) => (row[c] = (row[c] - mean) / spread));
-  }
-  const average = (from: number, to: number) =>
-    Array.from({ length: columns }, (_, c) => scaled.slice(from, to).reduce((sum, row) => sum + row[c], 0) / (to - from));
-  return scaled.map((_, i) => {
-    if (i === 0) return 0;
-    const before = average(Math.max(0, i - width), i);
-    const after = average(i, Math.min(scaled.length, i + width));
-    return Math.hypot(...before.map((value, c) => value - after[c]));
-  });
-}
-
-/**
- * One boundary per heading after the first, in order: the beats with the most novelty in total,
- * at least `gap` beats apart and from either end. Needs `headingCount * gap` beats.
- */
-function sectionBoundaries(novelty: number[], headingCount: number, gap: number): number[] {
-  const needed = headingCount - 1;
-  if (needed <= 0) return [];
-  const spacing = gap;
-  const last = novelty.length - spacing;
-  let best = novelty.map((value, i) => (i >= spacing && i <= last ? value : -Infinity));
-  const picks: Int32Array[] = [];
-  for (let k = 1; k < needed; k++) {
-    const pick = new Int32Array(novelty.length).fill(-1);
-    const next = novelty.map(() => -Infinity);
-    let top = -Infinity;
-    let topAt = -1;
-    for (let i = spacing; i <= last; i++) {
-      if (best[i - spacing] > top) [top, topAt] = [best[i - spacing], i - spacing];
-      if (topAt >= 0) [next[i], pick[i]] = [top + novelty[i], topAt];
-    }
-    picks.push(pick);
-    best = next;
-  }
-  let at = best.indexOf(Math.max(...best));
-  const boundaries = [at];
-  for (let k = picks.length - 1; k >= 0; k--) boundaries.unshift((at = picks[k][at]));
-  return boundaries;
 }
 
 /** Runs of at least two bars where the voice band's share of the sound is in the song's upper group. */
@@ -595,7 +522,12 @@ export function shortHeading(heading: string): string {
 interface LearnChoice {
   boundaries: number[];
   vocals: Span[];
+  /** Per section, the heard bars the player kept, null where Learn was not sure. */
   heard: ((string | null)[] | undefined)[];
+  /** Each time a section of the chart plays, in seconds into the audio. */
+  plays?: Required<Learned>["plays"];
+  /** When each lyric line starts, in seconds into the audio. */
+  lines?: Required<Learned>["lines"];
 }
 
 /**
@@ -610,13 +542,15 @@ export function learnedVersion(analysis: Analysis, choice: LearnChoice, headings
   const sections = headings.map((heading, i) => ({
     heading,
     at: clock(i === 0 ? analysis.sound.start : analysis.beats[choice.boundaries[i - 1]]),
-    ...(choice.heard[i] ? { heard: choice.heard[i] } : {}),
+    ...(choice.heard[i] ? { heard: choice.heard[i].map((chord) => ({ chord, band: "likely" as const })) } : {}),
   }));
   const learned: Learned = {
     beatsPerBar: bar,
     downbeat: clock(downbeat),
     beats: analysis.beats.map(clock),
     sections,
+    ...(choice.plays ? { plays: choice.plays.map((play) => ({ ...play, at: clock(play.at) })) } : {}),
+    ...(choice.lines ? { lines: choice.lines.map((line) => ({ ...line, at: clock(line.at) })) } : {}),
     vocals: choice.vocals.map((span) => ({ start: clock(span.start), end: clock(span.end) })),
   };
   return { bpm, marks: [{ at: 0, progress: 0 }, { at: clock(analysis.sound.end), progress: 1 }], learned };

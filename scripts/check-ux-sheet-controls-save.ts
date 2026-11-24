@@ -311,7 +311,9 @@ try {
     const old = loadSongVersions("local/13");
     expect(old.selected === 2 && old.versions.map((version) => version.name).join() === "V1,Slow intro,V2", `names or selection lost: ${js(old)}`);
     expect(old.versions.every((version) => version.semitones === null && version.bpm === null && version.scrollPercent === null && version.notation === null), "an old row has attributes set");
-    expect(js(old.versions[1].plan) === js({ bpm: 78, marks: TAUGHT.marks, tempo: TEMPO_MAPPED.tempo }) && js(old.versions[2].learned) === js(LEARNED_V2.learned), "an old row's timing or learned part changed");
+    const likely = (chords: (string | null)[]) => chords.map((chord) => ({ chord, band: "likely" }));
+    const learnedV2 = { ...LEARNED_V2.learned, sections: [{ heading: "VERSE 1", at: 0, heard: likely(["G", null, "C"]) }, { heading: "CHORUS", at: 42.1 }] };
+    expect(js(old.versions[1].plan) === js({ bpm: 78, marks: TAUGHT.marks, tempo: TEMPO_MAPPED.tempo }) && js(old.versions[2].learned) === js(learnedV2), `an old row's timing or learned part changed: ${js(old.versions[2].learned)}`);
     expect(store.get("leadSheetsScrollVersions.13") === js({ versions: [TAUGHT, TEMPO_MAPPED, LEARNED_V2], selected: 2 }), "reading rewrote the old rows");
     await freshPhone(`#/song/${CHAIN_BREAKER}`, `localStorage.setItem(${js(VERSIONS)}, ${js(js({ versions: [LEARNED], selected: 0 }))})`);
     expect((await chip()) === "V1 · learned ▾", `the chip reads ${await chip()}`);
@@ -321,6 +323,24 @@ try {
     expect((await scrollOn()) && top > 0, `the old learned version does not scroll (on ${await scrollOn()}, top ${top})`);
     await evaluate(`document.querySelector(".scroll-pill").click()`);
     expect(!(await saveShown()), "playing an old version shows Save");
+    const oldHeard = { ...LEARNED.learned, sections: [{ heading: "VERSE 1", at: 3, heard: ["C", null] }] };
+    const heardRow = async () => {
+      await evaluate(`document.querySelector(".scroll-pill")?.click()`);
+      await settle(800);
+      const shown = await evaluate<boolean>(`!!document.getElementById("chord-section")?.textContent.includes("Heard")`);
+      await evaluate(`document.querySelector(".scroll-pill")?.click()`);
+      return shown;
+    };
+    await freshPhone(`#/song/${CHAIN_BREAKER}`, `localStorage.setItem(${js(VERSIONS)}, ${js(js({ versions: [{ ...LEARNED, learned: oldHeard }], selected: 0 }))})`);
+    expect(await heardRow(), "an old version's heard bars, a not-sure bar included, draw no Heard row");
+    const draft = { semitones: 0, bpm: null, scrollPercent: 100, notation: "chords", plan: { bpm: LEARNED.bpm, marks: LEARNED.marks }, learned: oldHeard };
+    await freshPhone(`#/song/${CHAIN_BREAKER}`, `localStorage.setItem(${js(DRAFT)}, ${js(js(draft))})`);
+    const opened = { save: await saveShown(), heard: await heardRow(), broken: await evaluate<string>(`document.querySelector(".missing")?.textContent ?? ""`) };
+    expect(opened.save && opened.heard && opened.broken === "", `an old build's unsaved learned draft does not open with Save and play its Heard row: ${js(opened)}`);
+    await freshPhone(`#/song/${CHAIN_BREAKER}`, `localStorage.setItem(${js(DRAFT)}, ${js(js(draft))})`);
+    await saveAs("Old draft");
+    const kept = JSON.parse((await stored(VERSIONS)) ?? "{}").versions?.[0]?.learned?.sections?.[0]?.heard;
+    expect(js(kept) === js(["C", null]), `Save of the old draft stored heard bars ${js(kept)}, not the names a build from before colors reads`);
   });
 
   await test("the draft is per account on a shared phone", async () => {

@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import type { Learned, ScrollVersion } from "../src/scroll-timing.ts";
 import type { Library, LibraryFile, Song, SongRef } from "../src/types.ts";
@@ -19,7 +20,7 @@ function check(ok: boolean, message: string) {
 
 async function loadApp(seedFile: LibraryFile): Promise<Storage> {
   const result = await build({
-    entryPoints: [new URL("../src/storage.ts", import.meta.url).pathname],
+    entryPoints: [fileURLToPath(new URL("../src/storage.ts", import.meta.url))],
     bundle: true,
     write: false,
     format: "esm",
@@ -204,6 +205,27 @@ for (const [what, heard] of [["not chord names", ["A7", 7]], ["in a band there i
   storage.map.set(`${app.SCROLL_VERSIONS_KEY}.13`, JSON.stringify({ versions: [version([{ heading: "VERSE 1", at: 0, heard }])], selected: 0 }));
   check(app.loadScrollVersions("local/13").versions.length === 0, `a version whose heard bars are ${what} is dropped`);
 }
+const asNames = [{ heading: "VERSE 1", at: 0, heard: ["G", null] }];
+const asCells = [{ heading: "VERSE 1", at: 0, heard: [{ chord: "G", band: "likely" }, { chord: null, band: "likely" }] }];
+const attempt = (save: () => boolean) => {
+  try {
+    return String(save());
+  } catch (error) {
+    return String(error);
+  }
+};
+freshStorage();
+const sent = attempt(() => app.saveScrollVersions("local/13", { versions: [version(asNames)], selected: 0 }));
+check(
+  sent === "true" && JSON.stringify(onDisk()) === JSON.stringify(asNames) && loadedSections() === JSON.stringify(asCells),
+  `a version whose heard bars are still chord names, as a friend's build from before colors sends it, saves as names and loads as likely chords (save ${sent})`,
+);
+const oldDraft = { semitones: 0, bpm: null, scrollPercent: 100, notation: "chords", plan: { bpm: 100, marks: [{ at: 0, progress: 0 }, { at: 5, progress: 1 }] }, learned: { ...learned, sections: asNames } };
+storage.map.set(`${app.SONG_DRAFT_KEY}.13`, JSON.stringify(oldDraft));
+const draftSections = JSON.stringify((app.loadSongDraft(null, "local/13") as { learned?: Learned } | undefined)?.learned?.sections);
+check(draftSections === JSON.stringify(asCells), `a draft from a build before colors loads its heard bars as likely chords, so the sheet and Save read cells (${draftSections})`);
+const draftSaved = attempt(() => app.saveScrollVersions("local/13", { versions: [{ ...version(asNames), learned: (app.loadSongDraft(null, "local/13") as { learned: Learned }).learned }], selected: 0 }));
+check(draftSaved === "true" && JSON.stringify(onDisk()) === JSON.stringify(asNames), `Save of that old draft stores its heard bars as names (save ${draftSaved})`);
 const timed = { ...version(learned.sections), learned: { ...learned, plays: [{ section: 0, at: 2.4 }, { section: 1, at: 3.6 }, { section: 0, at: 4.2 }], lines: [{ section: 1, line: 0, at: 3.7 }], offset: -1.5 } } as ScrollVersion;
 app.saveScrollVersions("local/13", { versions: [timed], selected: 0 });
 check(JSON.stringify(app.loadScrollVersions("local/13").versions[0]) === JSON.stringify(timed), "a learned version's play order, line starts and recording offset load back as saved");

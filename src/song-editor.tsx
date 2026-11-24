@@ -8,7 +8,7 @@ import { YouHaveIt } from "./search-box";
 import { LeadSheet } from "./sheet";
 import { BpmField, parseBpm, SongDataEditor } from "./song-data-editor";
 // @ts-expect-error TS5097: song-search.ts holds the same stem, so only ".tsx" names this file in tsc, Vite and esbuild.
-import { FindLyrics, SongSearch } from "./song-search.tsx";
+import { FindChords, SongSearch } from "./song-search.tsx";
 import { CAPO_VIEW, capoNote, readPaste, type CapoView, type LeftOut, type Pasted } from "./song-paste";
 import { KEY_ROOTS, ownSong, parseSheet, sectionsToText, sheetProblem, type SongFacts, type SongMeta } from "./song-text";
 import { addOwnSong, removeOwnSong, replaceOwnSong, saveSongData, songByRef, withSongData } from "./storage";
@@ -40,7 +40,7 @@ type Paste = { raw: string; before: string; view: CapoView | "raw"; pasted: Past
 const NOTHING = "Nothing here looks like a chart. It is in the box as pasted.";
 /** A key note a capo paste wrote, in either view. */
 const CAPO_NOTE = /^Capo \d+/;
-const LEFT_OUT: Record<LeftOut["what"], string> = { "tab lines": "tab line", "lines above the first section": "line above the first section", directives: "directive" };
+const LEFT_OUT: Record<LeftOut["what"], string> = { "tab lines": "tab line", "lines above the first section": "line above the first section", directives: "directive", "site lines": "site line" };
 
 const after = (before: string, text: string) => (before.trim() ? `${before.trimEnd()}\n\n${text}` : text);
 const shown = (paste: Paste) => after(paste.before, paste.view === "raw" ? paste.raw : paste.pasted.chart);
@@ -278,7 +278,7 @@ function SongEditor({ song, songs, onTempo, onClose }: { song?: Song; songs: Son
           <p className="song-editor-hint" id={ids.hint}>
             A blank line starts a section, and a line like VERSE 1 or Chorus: names it. Put chords on the line above the words, or in brackets: [A]Honey, load [E]up.
           </p>
-          {form.title.trim() || form.artist.trim() ? <FindLyrics title={form.title} artist={form.artist} /> : null}
+          {form.title.trim() || form.artist.trim() ? <FindChords title={form.title} artist={form.artist} /> : null}
           <div className="song-editor-tools">
             {SECTION_BUTTONS.map((name) => (
               <button key={name} type="button" onClick={() => addSection(name)}>

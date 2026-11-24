@@ -1,62 +1,76 @@
-# song-search-busy-retry self-check
+# song-paste-format-fix self-check
 
-Goal: when the public song list is briefly busy (HTTP 503 or 429), search waits and retries instead of showing "The
-song list didn't answer." at once.
+Goal: a chart pasted from a typical chord-site page becomes a correct lead sheet (title, artist, real sections, chords
+over the right words, no site junk), and the web-search link looks for a chord chart, not lyrics.
 
-Verdict: PASS. No open P0, P1 or P2. Two P3 items are listed below.
+Verdict: PASS. No open P0, P1 or P2. Three P3 items are listed below.
 
-The runs used headless Edge on Windows. The box verify uses Chrome on Linux. Logs are in `.verify-logs/` (gitignored).
+The runs used headless Edge on Windows with the path shim. The box verify uses Chrome on Linux. Logs are in
+`.verify-logs/` (gitignored).
 
 ## What changed
 
-`read()` in `src/song-search.ts` now loops. A 503 or 429 reply waits, then asks the same URL again, at most twice.
+`readPaste` in `src/song-paste.ts` has a new first pass, `rejoin`. A phone that copies a chord page puts each chord, and
+the words under it, on lines of their own, with a blank line where the page broke a lyric line. That gave one Verse per
+fragment. `rejoin` puts each run back together as a chord row over one whole lyric line, each chord over the first letter
+of the words it sat on. The reader then runs as before, so capo, respelling and `placeChords` are unchanged.
 
-- The wait is the longer of two values. One is the Retry-After header in whole seconds, 1 s when the header is
-  missing or unreadable, and 2 s at most. The other is what is left of the 1 s floor.
-- A retry whose wait would reach the 8 s answer limit is not started. The box says `failed` at once.
-- After the wait, the shared floor is read again. A second box may have asked during the wait.
-- A search that was replaced or stopped asks no more. The check is `live()`, which is `mine === current`.
-- Every other non-OK status still fails at once. `ANSWER_MS` and `FLOOR_MS` keep their values.
+- A block is a page copy only when its words run on in lower case or come two lines in a row. Typed short lines with
+  one chord each stay as typed (12f).
+- Site lines are matched by shape, never by a site's name: a `n/5` rating, `n votes`, sign-in and songbook prompts,
+  `Tabbed by`, and lone buttons such as Print. Above the chart they count as lines above the first section, as before.
+  Below it they count as the new `LeftOut` value `site lines`. The editor's status map gains its singular,
+  `site line`. The existing values are unchanged.
+- A `<title> chords` line above the chart gives `facts.title`. `by <artist>`, or the line under it, gives
+  `facts.artist`. A ChordPro `{title:}` or `{artist:}` wins.
+- Words in a played part (Intro, Solo, Interlude, Instrumental, Riff, Break) become notes. A blank line before more
+  playing stays inside the part, and any other blank ends it as before.
+- Single lines of words with a blank after each make one section per stanza. Two blanks end a stanza.
+- A bare `[Verse]` is numbered like `{start_of_verse}`, so two of them are VERSE 1 and VERSE 2.
+
+The link is "Find chords on the web" and searches `"title" "artist" chords`: `chartSearchUrl`, `FindChords`,
+`.find-chords`, data key `chartSearch`. The retry code, `ANSWER_MS` and `FLOOR_MS` are not touched.
 
 ## Fail before, pass after
 
-The base is `8bc74ff` (origin/mls-int-20261113). The base run used the base source with the check from test commit
-`4916706`. The HEAD run used the HEAD check, which adds 6l and 6m.
+Base `23afabf` (origin/mls-int-20261113). The base run used a `git archive` of the base with the head's check files.
 
-| Case | Base source (`before.txt`) | HEAD (`final-check.txt`) |
+| Case | Base source | HEAD `fe88b59` |
 |---|---|---|
-| 6h. a 503, then a 200, shows the songs and never says failed | FAIL, "a busy reply keeps the box searching" | ok |
-| 6i. three 503s say failed after three requests, inside 8 s | FAIL, "three tries in all" | ok |
-| 6j. a 429 waits its Retry-After (cap 2 s, default 1 s, floor 1 s) | FAIL, "Retry-After 5: still searching during the wait" | ok |
-| 6k. a new query or `stop()` during the wait ends the old search | FAIL, "the busy reply started a wait" | ok |
-| 6a. a persistent 503 says failed (now 5 s on the clock), and a 500 fails at once | ok | ok |
+| 12b. chord page with site lines: title, artist, Intro notes, Verse and Chorus with chords on their syllables | FAIL, title and artist from the header | ok |
+| 12c. chord-over-words stanza, typed or as a page copy, is one section | FAIL, page copy: one section | ok |
+| 12d. ChordPro among site lines | FAIL, the two sections and no other | ok |
+| 12e. words with site lines and a blank after every line | FAIL, no site line in the chart | ok |
+| 12f. short lines typed one chord each stay as typed | ok on base, FAIL on `b500820` | ok |
+| check:song-search 1a, 1b, 2a, 1c, 9b, 1d | FAIL, chartSearchUrl missing and old label | ok |
 
-The base run read 46 ok and 4 FAIL. HEAD reads 52 ok and 0 FAIL. `npm run build` exits 0.
-`check:one-copy` (18 ok, run with the Windows path shim) and `check:portable` also pass.
+Final HEAD run: `npm run build` exit 0. check:song-paste 36 ok, check:song-search 52 ok, check:new-song 31 ok,
+check:chords, check:one-copy (18 ok) and check:portable all pass. The library charts read back the same in case 13.
 
 ## Mutation proof
 
-`.verify-logs/mutate.mjs` runs the whole check against one-line mutations of `src/song-search.ts` and restores the file
-from memory. The unmutated baseline read 52 ok. Each mutation failed its own case (`mutate.txt`).
+`.verify-logs/mutate.mjs` runs the unit cases against one-line mutations of `src/song-paste.ts` and restores the file
+from memory. Baseline 19 ok (before 12f). All 10 were killed: site lines (12d, 12e), header facts (12b), rejoin
+(12b, 12c, 12e), played-part notes (12b), lower-case join (12b), blank-per-line rule (12e), played-part blanks (12b),
+bare Verse numbering (12b), artist line (12b), chord column (12b, 12c).
 
-| Mutation | Fails |
-|---|---|
-| M1 `BUSY_RETRIES = 1` | 6i |
-| M2 `BUSY_RETRIES = 3` | 6i |
-| M3 drop `!live()` | 6k |
-| M4 cap 5 s | 6j |
-| M5 drop the deadline check | 6l |
-| M6 drop the floor recheck | 6m |
-| M7 503 only | 6j |
-| M8 ignore the header value | 6j, 6m |
+## Runs that failed and why
 
-M5 and M6 survived the first four cases. 6l and 6m were added in a later commit for them. The tests-only commit is
-unchanged.
+- check:chords (Fire Away @320px, 3 rows) and check:new-song case 5 each failed once on the first HEAD run. One rerun
+  passed both, and the final run passed both. The base passed both. My notes already list check:chords as unsteady on
+  this laptop.
+- Case P (perf, paste within 100 ms of typed at 4x CPU) failed twice in a row at 153 and 155 ms. HEAD has also given
+  50, 40, 64, 42 and 43 ms, and the base gave 50 and 119 ms. In Node, readPaste on that 300-line chart takes a median
+  of 1.29 ms on HEAD against 0.93 ms on base (measured). An instrumented copy of the check, with Title filled, showed
+  one layout and 46 ms of task time for the tap. So I read P as bimodal on this laptop, not slowed by this change.
+  This is inferred: the slow mode's cause was not found.
 
-## Open items
+## P3
 
-- P3, inferred. `Retry-After` is not a CORS-safelisted response header. The browser hides it unless the catalog lists it
-  in `Access-Control-Expose-Headers`. Then `headers.get` returns null and the phone waits the 1 s default. That value
-  matches the `retry-after: 1` the catalog sent in the report. The live catalog was not asked, as the brief says.
-- P3. A search replaced during a wait leaves its wait timer and its 8 s limit timer scheduled. Both fire later, see that
-  the search was replaced, and do nothing. Nothing is reported and nothing is sent.
+1. The exact text of Terry's paste is not known. The fixtures follow the screenshot's shape. Terry's Preview kept the
+   header lines, which readPaste on the base drops, so that paste may not have gone through Paste a sheet at all
+   (inferred). A paste with no section markers still drops the intro instructions above the first chord row as lines
+   above the first section. It no longer turns them into verses.
+2. Fragment words lose the spacing the page had: `miss` `'ole'` `'` `bamy` joins as `miss'ole' ' bamy`. A lone `A`
+   word in a page copy reads as the chord A.
+3. Site-line patterns could drop a lyric line that is only "Share" or "Print", or one that holds the word "songbook".

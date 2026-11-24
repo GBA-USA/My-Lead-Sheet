@@ -10,12 +10,12 @@ import { appPage, PASSWORD_PEPPER, passwordPlayer } from "./app-page.ts";
 import { openSite, type Site } from "./chrome.ts";
 
 /**
- * Song search: start a new sheet from a public song catalog, and Find lyrics on the web. One case per pass condition,
+ * Song search: start a new sheet from a public song catalog, and Find chords on the web. One case per pass condition,
  * numbered by it. The cases fix this contract:
  *
  * `src/song-search.ts` is pure (no DOM), so other screens can import it:
- * - `lyricsSearchUrl(title, artist)` is `https://www.google.com/search?q=` plus encodeURIComponent of
- *   `"<title>" "<artist>" lyrics`, leaving out a field that is blank.
+ * - `chartSearchUrl(title, artist)` is `https://www.google.com/search?q=` plus encodeURIComponent of
+ *   `"<title>" "<artist>" chords`, leaving out a field that is blank.
  * - `catalogSearcher(deps)` gives `{ search(query, report), stop() }`. `deps` is `{ fetch, now, setTimeout,
  *   clearTimeout, online, origin }`. `search` debounces the query (400 to 800 ms) and never sends a second request
  *   within 1000 ms of the last one. `report` hears `{ kind: "idle" }` for a blank query, then `searching`, then one of
@@ -26,7 +26,7 @@ import { openSite, type Site } from "./chrome.ts";
  * On the phone, signed in (the same rule as + Add a song), My Songs and the New song dialog have a search box labelled
  * "Find a song to add". While a request is out it says "Searching". Each result is a button showing title, artist, year and m:ss length. Tapping one adds an own
  * song with that title, artist and length, every other field at the New song defaults, and opens it. The new sheet and
- * the New song dialog (once it has a title or artist) offer "Find lyrics on the web".
+ * the New song dialog (once it has a title or artist) offer "Find chords on the web".
  *
  * The unit cases run anywhere. The screen cases build the app and drive headless Chrome (`CHROME`) against a stub
  * `/api/me` and a stub catalog in the page, so nothing here reaches the live catalog or any lyrics site. The last case
@@ -52,7 +52,7 @@ async function check(name: string, run: () => Promise<void> | void) {
 const GOOGLE = "https://www.google.com/search?q=";
 const RECORDING_SEARCH = "https://musicbrainz.org/ws/2/recording";
 const PREVIEW_ORIGIN = "https://my-lead-sheet-preview.pages.dev";
-const lyricsUrl = (words: string) => GOOGLE + encodeURIComponent(words);
+const chartUrl = (words: string) => GOOGLE + encodeURIComponent(words);
 
 type CatalogSong = { id: string; title: string; artist: string; year: string | null; lengthSec: number | null };
 type SearchState =
@@ -69,7 +69,7 @@ type Deps = {
   floor?: { lastSent: number };
 };
 type Searcher = { search: (query: string, report: (state: SearchState) => void) => void; stop: () => void };
-type SongSearch = { lyricsSearchUrl: (title: string, artist: string) => string; catalogSearcher: (deps: Deps) => Searcher };
+type SongSearch = { chartSearchUrl: (title: string, artist: string) => string; catalogSearcher: (deps: Deps) => Searcher };
 
 /** A recording search reply as the catalog sends it, with a decoy field the phone must never keep. */
 const PAYLOAD = {
@@ -176,23 +176,23 @@ function harness(reply: (url: string) => Reply = () => new Response(js(PAYLOAD),
 
 // ---------------------------------------------------------------------------------------------- unit cases
 
-await check("1a. Find lyrics on the web is a general search for the quoted title and artist plus lyrics", () => {
-  const { lyricsSearchUrl } = need();
-  assert.equal(lyricsSearchUrl("Fire Away", "Pat Bass"), lyricsUrl('"Fire Away" "Pat Bass" lyrics'));
-  assert.equal(lyricsSearchUrl("Rock & Roll / Part 2?", "AC/DC"), GOOGLE + encodeURIComponent('"Rock & Roll / Part 2?" "AC/DC" lyrics'), "every special character is encoded");
-  assert.ok(!/site(:|%3A)/i.test(lyricsSearchUrl("Fire Away", "Pat Bass")), "no site-restricted search");
+await check("1a. Find chords on the web is a general search for the quoted title and artist plus chords", () => {
+  const { chartSearchUrl } = need();
+  assert.equal(chartSearchUrl("Fire Away", "Pat Bass"), chartUrl('"Fire Away" "Pat Bass" chords'));
+  assert.equal(chartSearchUrl("Rock & Roll / Part 2?", "AC/DC"), GOOGLE + encodeURIComponent('"Rock & Roll / Part 2?" "AC/DC" chords'), "every special character is encoded");
+  assert.ok(!/site(:|%3A)/i.test(chartSearchUrl("Fire Away", "Pat Bass")), "no site-restricted search");
 });
 
-await check("1b. a missing title or artist still searches with what is there, plus lyrics", () => {
-  const { lyricsSearchUrl } = need();
-  assert.equal(lyricsSearchUrl("Fire Away", ""), lyricsUrl('"Fire Away" lyrics'), "no artist");
-  assert.equal(lyricsSearchUrl("", "Pat Bass"), lyricsUrl('"Pat Bass" lyrics'), "no title");
-  assert.equal(lyricsSearchUrl("  Fire Away ", "   "), lyricsUrl('"Fire Away" lyrics'), "blank space is no field");
-  assert.equal(lyricsSearchUrl("", ""), lyricsUrl("lyrics"), "neither");
+await check("1b. a missing title or artist still searches with what is there, plus chords", () => {
+  const { chartSearchUrl } = need();
+  assert.equal(chartSearchUrl("Fire Away", ""), chartUrl('"Fire Away" chords'), "no artist");
+  assert.equal(chartSearchUrl("", "Pat Bass"), chartUrl('"Pat Bass" chords'), "no title");
+  assert.equal(chartSearchUrl("  Fire Away ", "   "), chartUrl('"Fire Away" chords'), "blank space is no field");
+  assert.equal(chartSearchUrl("", ""), chartUrl("chords"), "neither");
 });
 
-await check("2a. building the lyrics search asks no network at all", () => {
-  const { lyricsSearchUrl } = need();
+await check("2a. building the chords search asks no network at all", () => {
+  const { chartSearchUrl } = need();
   const real = globalThis.fetch;
   let asked = 0;
   globalThis.fetch = (() => {
@@ -200,7 +200,7 @@ await check("2a. building the lyrics search asks no network at all", () => {
     return Promise.reject(new Error("no fetch allowed"));
   }) as typeof fetch;
   try {
-    lyricsSearchUrl("Fire Away", "Pat Bass");
+    chartSearchUrl("Fire Away", "Pat Bass");
   } finally {
     globalThis.fetch = real;
   }
@@ -657,10 +657,10 @@ const SCREEN_CASES = [
   "3e. clearing the box clears the list",
   "9a. at 360 px and 390 px the search box and result rows fit and are glove-sized",
   "8a. tapping a result on My Songs opens a new own song with title, artist and length",
-  "1c. the new sheet offers Find lyrics on the web for its title and artist, and Learn this song",
-  "9b. at 360 px and 390 px Find lyrics on the web on the new sheet fits and is glove-sized",
+  "1c. the new sheet offers Find chords on the web for its title and artist, and Learn this song",
+  "9b. at 360 px and 390 px Find chords on the web on the new sheet fits and is glove-sized",
   "8b. in Add a song, the same search starts the new song from a pick",
-  "1d. in Add a song, Find lyrics on the web follows the typed title and artist, and fits at 360 px and 390 px",
+  "1d. in Add a song, Find chords on the web follows the typed title and artist, and fits at 360 px and 390 px",
   "7e. My Songs' box under the open Add a song still waits 1 s after the dialog's box asked, so the phone asks once a second",
   "8c. a second tap on a result before the new sheet opens adds no second song",
   "1e. once the player pastes a chart in, the sheet no longer says No words yet",
@@ -702,7 +702,7 @@ if (site) {
     const DIALOG_BOX = `document.querySelector('[role=dialog] input[aria-label="Find a song to add"]')`;
     const ROWS = (box: string) => `[...(${box}?.closest(".song-search")?.querySelectorAll("li button") ?? [])]`;
     const NOTE = (box: string) => `(${box}?.closest(".song-search")?.textContent ?? "")`;
-    const lyricsLink = (scope: string) => `[...(${scope}?.querySelectorAll("a, button") ?? [])].find((el) => el.textContent.trim() === "Find lyrics on the web")`;
+    const chordsLink = (scope: string) => `[...(${scope}?.querySelectorAll("a, button") ?? [])].find((el) => el.textContent.trim() === "Find chords on the web")`;
     const typeInto = async (box: string, text: string) => {
       await s.evaluate(`(() => { const field = ${box}; Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field), "value").set.call(field, ${js(text)}); field.dispatchEvent(new Event("input", { bubbles: true })); })()`);
     };
@@ -861,15 +861,15 @@ if (site) {
     await check(SCREEN_CASES[8], async () => {
       assert.ok(pickedId !== null, "a song was picked");
       const link = await s.evaluate<{ tag: string; href: string; target: string } | null>(
-        `(() => { const el = ${lyricsLink("document.querySelector('#sheet-scroll')")}; return el ? { tag: el.tagName, href: el.href ?? "", target: el.target ?? "" } : null; })()`,
+        `(() => { const el = ${chordsLink("document.querySelector('#sheet-scroll')")}; return el ? { tag: el.tagName, href: el.href ?? "", target: el.target ?? "" } : null; })()`,
       );
-      assert.ok(link, "Find lyrics on the web is on the new sheet");
-      const expected = lyricsUrl('"Fire Away" "Pat Bass & The Low End" lyrics');
+      assert.ok(link, "Find chords on the web is on the new sheet");
+      const expected = chartUrl('"Fire Away" "Pat Bass & The Low End" chords');
       if (link.tag === "A") {
         assert.equal(link.href, expected, "it links to the general search");
         assert.equal(link.target, "_blank", "in the player's browser, not over the app");
       } else {
-        await s.evaluate(`${lyricsLink("document.querySelector('#sheet-scroll')")}.click()`);
+        await s.evaluate(`${chordsLink("document.querySelector('#sheet-scroll')")}.click()`);
         assert.deepEqual(await s.evaluate<string[]>(`window.__mb.opened`), [expected], "it opens the general search");
       }
       await s.evaluate(`document.querySelector('[aria-label="Scroll settings"]').click()`);
@@ -884,10 +884,10 @@ if (site) {
       const add = await measure(addButton);
       assert.ok(add, "+ Add a song is there to compare with");
       await s.evaluate(`location.hash = "#/song/${pickedId}"`);
-      await app.until(`!!${lyricsLink("document.querySelector('#sheet-scroll')")}`, "the new sheet");
+      await app.until(`!!${chordsLink("document.querySelector('#sheet-scroll')")}`, "the new sheet");
       for (const width of [360, 390]) {
         await phone(width);
-        await glove(lyricsLink("document.querySelector('#sheet-scroll')"), "Find lyrics on the web", width, Math.max(44, add.h - 0.5));
+        await glove(chordsLink("document.querySelector('#sheet-scroll')"), "Find chords on the web", width, Math.max(44, add.h - 0.5));
       }
       await phone(390);
     });
@@ -918,24 +918,24 @@ if (site) {
       await app.until(`!!document.querySelector("[role=dialog]")`, "the New song dialog");
       await typeLabel("Title", "Kitchen Floor");
       await typeLabel("Artist", "Sam Rivera");
-      await app.until(`!!${lyricsLink(`document.querySelector("[role=dialog]")`)}`, "Find lyrics on the web in the dialog");
+      await app.until(`!!${chordsLink(`document.querySelector("[role=dialog]")`)}`, "Find chords on the web in the dialog");
       const read = () =>
-        s.evaluate<{ tag: string; href: string; target: string }>(`(() => { const el = ${lyricsLink(`document.querySelector("[role=dialog]")`)}; return { tag: el.tagName, href: el.href ?? "", target: el.target ?? "" }; })()`);
+        s.evaluate<{ tag: string; href: string; target: string }>(`(() => { const el = ${chordsLink(`document.querySelector("[role=dialog]")`)}; return { tag: el.tagName, href: el.href ?? "", target: el.target ?? "" }; })()`);
       const link = await read();
       if (link.tag === "A") {
-        assert.equal(link.href, lyricsUrl('"Kitchen Floor" "Sam Rivera" lyrics'));
+        assert.equal(link.href, chartUrl('"Kitchen Floor" "Sam Rivera" chords'));
         assert.equal(link.target, "_blank");
       } else {
-        await s.evaluate(`${lyricsLink(`document.querySelector("[role=dialog]")`)}.click()`);
-        assert.equal((await s.evaluate<string[]>(`window.__mb.opened`)).at(-1), lyricsUrl('"Kitchen Floor" "Sam Rivera" lyrics'));
+        await s.evaluate(`${chordsLink(`document.querySelector("[role=dialog]")`)}.click()`);
+        assert.equal((await s.evaluate<string[]>(`window.__mb.opened`)).at(-1), chartUrl('"Kitchen Floor" "Sam Rivera" chords'));
       }
       await typeLabel("Artist", "");
       await sleep(150);
       const titleOnly = await read();
-      if (titleOnly.tag === "A") assert.equal(titleOnly.href, lyricsUrl('"Kitchen Floor" lyrics'), "with no artist, the title alone");
+      if (titleOnly.tag === "A") assert.equal(titleOnly.href, chartUrl('"Kitchen Floor" chords'), "with no artist, the title alone");
       for (const width of [360, 390]) {
         await phone(width);
-        await glove(lyricsLink(`document.querySelector("[role=dialog]")`), "Find lyrics on the web in Add a song", width);
+        await glove(chordsLink(`document.querySelector("[role=dialog]")`), "Find chords on the web in Add a song", width);
       }
       await phone(390);
       await app.click("Cancel", `document.querySelector("[role=dialog]")`);

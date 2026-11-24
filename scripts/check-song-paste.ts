@@ -43,6 +43,7 @@ type PasteModule = {
   keyFromChords: (sections: Section[]) => { keyRoot: string; keyMode: string } | null;
   capoNote: (capo: number, view?: "sounding" | "shapes") => string;
   SPELLINGS: readonly (readonly [string, string])[];
+  LEFT_OUT: readonly string[];
 };
 type TextModule = {
   parseSheet: (text: string) => { sections: Section[]; warnings: { line: number; message: string }[] };
@@ -284,6 +285,37 @@ await check("9. lines above the first section are left out of a chart, kept in w
   assert.deepEqual(tokens(sections(bare.chart)[0]?.lines[0]), ["G", "C"], "and the first chord row starts the first section");
 });
 
+/** For each kind of line a paste leaves out: two such lines, where they sit in the paste, and the status line's word for one. */
+const LEFT_OUT_PASTES: Record<string, { lines: [string, string]; above?: true; one: string }> = {
+  "tab lines": { lines: ["G|-----5-----7-----|", "D|--5-----5-----5--|"], one: "tab line" },
+  "lines above the first section": { lines: ["Difficulty: novice", "Tuning: E A D G B E"], above: true, one: "line above the first section" },
+  directives: { lines: ["{new_song_page}", "{column_break}"], one: "directive" },
+  "site lines": { lines: ["Login to add to songbook", "Tabbed by Nobody Real"], one: "site line" },
+};
+const leftOutKinds = () => {
+  const kinds = paste().LEFT_OUT;
+  assert.ok(Array.isArray(kinds) && kinds.length > 0, "src/song-paste.ts exports LEFT_OUT, every kind of line a paste leaves out");
+  return kinds;
+};
+const leavingOut = (what: string, count: 1 | 2) => {
+  const row = LEFT_OUT_PASTES[what];
+  assert.ok(row, `LEFT_OUT_PASTES has a paste that leaves out ${js(what)}`);
+  const left = row.lines.slice(0, count);
+  return { left, pasted: (row.above ? [...left, "", VERSE] : [VERSE, "", ...left]).join("\n") };
+};
+
+await check("9b. every kind of left-out line is counted under its own name, for one line and for two, and leaves the chart", () => {
+  for (const what of leftOutKinds()) {
+    for (const count of [1, 2] as const) {
+      const { left, pasted } = leavingOut(what, count);
+      const got = read(pasted);
+      assert.deepEqual(got.leftOut, [{ count, what }], `${count} of ${js(what)} counted and nothing else (${js(got.leftOut)})`);
+      assert.deepEqual(headings(got.chart), ["VERSE 1"], `${count} of ${js(what)}: the verse stays (${js(got.chart)})`);
+      for (const line of left) assert.ok(!got.chart.includes(line), `${js(line)} leaves the chart (${js(got.chart)})`);
+    }
+  }
+});
+
 await check("10. a capo raises every chord by default, sets the note, and the switch gives the shapes back", () => {
   const body = ["[Verse 1]", "G      C       D", "Paper boats on the river"].join("\n");
   const sounding = read(`Capo: 2nd fret\n${body}`);
@@ -317,6 +349,207 @@ await check("12. a paste of words alone gives sections split at blank lines, and
   const parts = sections(pasted.chart);
   assert.equal(parts.length, 2, "two sections");
   assert.deepEqual(parts.map((section) => section.lines.map((line) => line.lyrics)), [["Paper boats on the river", "Float away, float away"], ["Rain on the window pane", "Into the morning light"]]);
+});
+
+// A phone that copies a chord page puts each chord and the words under it on lines of their own, with a blank line
+// where the page broke a lyric line, so these charts come as a page copy and as the same chart typed with columns.
+const CHROME_WORDS = /\bvotes?\b|\d\s*\/\s*5\b|log\s?in|songbook|tabbed by|\bchords\b/i;
+/** The lines of a section that are chord rows over words, and the words of each. */
+const sung = (section: Section | undefined) => (section?.lines ?? []).filter((line) => line.lyrics !== undefined);
+const rowsOf = (section: Section | undefined): Row[] => sung(section).flatMap((line) => (line.chords === undefined ? [] : [{ chords: line.chords, lyrics: line.lyrics }]));
+
+await check("12b. a chord page with site lines gives its title and artist, Intro with its instructions as notes, and Verse and Chorus with each chord over its syllable", () => {
+  const page = [
+    "3.4/5 · 2 votes",
+    "Login to add to songbook",
+    "Paper Lanterns chords",
+    "The Hollow Pines",
+    "Tabbed by Nobody Real",
+    "",
+    "[Intro]",
+    "Form a D chord, then pick the single strings D D B/G",
+    "Form a C chord, then pick the single strings A A B/G",
+    "Play four times.",
+    "",
+    "D",
+    "",
+    "C",
+    "",
+    "G",
+    "",
+    "[Verse]",
+    "D",
+    "Tall",
+    "",
+    "C",
+    "lanterns",
+    "over the",
+    "G",
+    "water",
+    "",
+    "D",
+    "Carry",
+    "my",
+    "C",
+    "boat",
+    "along the",
+    "G",
+    "shore.",
+    "",
+    "[Chorus]",
+    chordRow([["G", 0], ["C", 6], ["D", 17]]),
+    "Paper lights are falling",
+    chordRow([["G", 0], ["C", 5], ["D", 14]]),
+    "Down upon the harbor",
+  ].join("\n");
+  const pasted = read(page);
+  assert.deepEqual([pasted.facts.title, pasted.facts.artist], ["Paper Lanterns", "The Hollow Pines"], `title and artist from the header (${js(pasted.facts)})`);
+  assert.ok(!CHROME_WORDS.test(pasted.chart), `no rating, vote, login, songbook, credit or "chords" title line in the chart (${js(pasted.chart)})`);
+  assert.ok(!/Paper Lanterns|Hollow Pines/.test(pasted.chart), "the title and artist lines leave the chart");
+  assert.equal(leftOut(pasted, "lines above the first section"), 5, `the five header lines are left out (${js(pasted.leftOut)})`);
+  const [intro, verse, chorus, ...more] = sections(pasted.chart);
+  assert.deepEqual(headings(pasted.chart), ["INTRO", "VERSE 1", "CHORUS"], `the page's three sections and no other (${js(pasted.chart)})`);
+  assert.equal(more.length, 0, "no section per line");
+  assert.deepEqual(
+    intro.lines.flatMap((line) => (line.note === undefined ? [] : [line.note])),
+    ["Form a D chord, then pick the single strings D D B/G", "Form a C chord, then pick the single strings A A B/G", "Play four times."],
+    `the instructions are notes on the intro (${js(intro.lines)})`,
+  );
+  assert.ok(intro.lines.every((line) => line.lyrics === undefined), "the intro has no sung words");
+  assert.deepEqual(intro.lines.flatMap(tokens), ["D", "C", "G"], "the intro's chords in order");
+  const typed: Row[] = [
+    { chords: chordRow([["D", 0], ["C", 5], ["G", 23]]), lyrics: "Tall lanterns over the water" },
+    { chords: chordRow([["D", 0], ["C", 9], ["G", 24]]), lyrics: "Carry my boat along the shore." },
+  ];
+  assert.deepEqual(sung(verse).map((line) => line.lyrics?.replace(/\s+/g, " ")), typed.map((row) => row.lyrics), `each lyric line whole (${js(verse.lines)})`);
+  assert.ok(verse.lines.every((line) => line.lyrics !== undefined && line.chords !== undefined), "the verse is chord rows over words, nothing else");
+  assert.deepEqual(places(rowsOf(verse)), places(typed), "each chord over the syllable the page put it on");
+  assert.deepEqual(sung(chorus).map((line) => line.lyrics), ["Paper lights are falling", "Down upon the harbor"], "the chorus as pasted");
+  assert.deepEqual(places(rowsOf(chorus)), places([{ chords: chordRow([["G", 0], ["C", 6], ["D", 17]]), lyrics: "Paper lights are falling" }, { chords: chordRow([["G", 0], ["C", 5], ["D", 14]]), lyrics: "Down upon the harbor" }]), "and its chords where they were");
+});
+
+await check("12c. a chord-over-words stanza gives one section with every chord over its letter, typed with columns or as a page copy", () => {
+  const typed = [chordRow([["G", 0], ["C", 13]]), "Morning tide on the harbor", chordRow([["D", 0], ["G", 13]]), "Sails go out and come back"].join("\n");
+  const copy = ["G", "Morning tide", "C", "on the harbor", "", "D", "Sails go out", "G", "and come back"].join("\n");
+  const want = pairs(typed);
+  for (const [form, chart] of [["typed", typed], ["page copy", copy]] as const) {
+    const parts = sections(read(chart).chart);
+    assert.equal(parts.length, 1, `${form}: one section (${js(parts)})`);
+    assert.deepEqual(sung(parts[0]).map((line) => line.lyrics?.replace(/\s+/g, " ")), ["Morning tide on the harbor", "Sails go out and come back"], `${form}: two whole lyric lines`);
+    assert.deepEqual(places(pairs(read(chart).chart)), places(want), `${form}: each chord over its letter`);
+    assert.deepEqual(lyricWords(pairs(read(chart).chart)), lyricWords(want), `${form}: the same words`);
+  }
+  const stanzas = sections(read(`${typed}\n\n${typed}`).chart);
+  assert.equal(stanzas.length, 2, "two stanzas are two sections");
+});
+
+await check("12d. a ChordPro paste among site lines keeps its title, artist, sections and inline chords, and leaves the site lines out", () => {
+  const pasted = read(
+    [
+      "4.1/5 · 9 votes",
+      "{title: Lantern Song}",
+      "{artist: The Hollow Pines}",
+      "{start_of_verse}",
+      "[G]Lanterns on the [C]water",
+      "[D]Carry me a[G]long",
+      "{end_of_verse}",
+      "",
+      "{start_of_chorus}",
+      "[C]Light the [G]harbor",
+      "{end_of_chorus}",
+      "",
+      "Login to add to songbook",
+      "Tabbed by Nobody Real",
+    ].join("\n"),
+  );
+  assert.deepEqual([pasted.facts.title, pasted.facts.artist], ["Lantern Song", "The Hollow Pines"], "title and artist from the directives");
+  assert.deepEqual(headings(pasted.chart), ["VERSE 1", "CHORUS"], `the two sections and no other (${js(pasted.chart)})`);
+  assert.ok(!CHROME_WORDS.test(pasted.chart), `no site line in the chart (${js(pasted.chart)})`);
+  const [verse, chorus] = sections(pasted.chart);
+  assert.deepEqual([sung(verse).map((line) => line.lyrics), sung(chorus).map((line) => line.lyrics)], [["Lanterns on the water", "Carry me along"], ["Light the harbor"]], "the words of each line whole");
+  assert.deepEqual(places(pairs(pasted.chart)), places(pairs("[G]Lanterns on the [C]water\n[D]Carry me a[G]long\n\n[C]Light the [G]harbor")), "each inline chord on its syllable");
+});
+
+await check("12e. a paste of words with site lines and a blank line after every line gives its stanzas, whole lines and no facts", () => {
+  const words = ["Lanterns on the water", "Carry me along the shore", "Light the harbor, light the bay", "Bring the paper boats back home"];
+  const pasted = read(["3.9/5 · 7 votes", "Login to add to songbook", "", words[0], "", words[1], "", "", words[2], "", words[3]].join("\n"));
+  assert.deepEqual(pasted.facts, {}, "no facts");
+  assert.ok(!CHROME_WORDS.test(pasted.chart), `no site line in the chart (${js(pasted.chart)})`);
+  assert.deepEqual(sections(pasted.chart).map((section) => section.lines.map((line) => line.lyrics)), [words.slice(0, 2), words.slice(2)], `two stanzas of two whole lines (${js(pasted.chart)})`);
+  const plain = read([words[0], words[1], "", words[2], words[3]].join("\n"));
+  assert.deepEqual([plain.chart, plain.facts], [[words[0], words[1], "", words[2], words[3]].join("\n"), {}], "the same words typed plainly stay as pasted");
+});
+
+await check("12f. short lines typed with one chord each stay lines; only words that run on are a page copy", () => {
+  const typed = ["G", "Oh yeah", "C", "Oh no", "", "D", "Hey there", "G", "Go now"].join("\n");
+  assert.equal(read(typed).chart, typed, "a chart the app already reads stays as pasted");
+  assert.deepEqual(sections(read(typed).chart).map((section) => section.lines.map((line) => line.lyrics)), [["Oh yeah", "Oh no"], ["Hey there", "Go now"]], "each line its own");
+});
+
+const notes = (section: Section | undefined) => (section?.lines ?? []).flatMap((line) => (line.note === undefined ? [] : [line.note]));
+
+await check("12g. blank lines inside an intro keep its instructions as notes on the intro, with no verse the page never named", () => {
+  const steps = ["Form a D chord, then pick the single strings D D B/G", "Form a C chord, then pick the single strings A A B/G"];
+  const verse = ["D", "Big", "", "C", "lanterns", "keep on", "G", "burning", "", "D", "Carry", "me", "C", "home", "to see my", "G", "kin."];
+  const pages = [
+    ["the smallest", ["[Intro]", "Form a D chord, then pick", "", "Play four times.", "", "D", "", "C", "", "[Verse]", "D", "Big"], ["Form a D chord, then pick", "Play four times."], ["D", "C"]],
+    ["the reporter's page", ["2.3/5 · 1 vote", "Login to add to songbook", "Paper Lanterns chords", "The Hollow Pines", "", "[Intro]", ...steps, "", "Play four times.", "", "D", "", "C", "", "G", "", "[Verse]", ...verse], [...steps, "Play four times."], ["D", "C", "G"]],
+    ["a name line under the marker", ["[Intro]", "Opening", "", ...steps, "", "Play four times.", "", "D", "", "C", "", "G", "", "[Verse]", ...verse], ["Opening", ...steps, "Play four times."], ["D", "C", "G"]],
+  ] as const;
+  for (const [form, page, said, chords] of pages) {
+    const pasted = read(page.join("\n"));
+    assert.deepEqual(headings(pasted.chart), ["INTRO", "VERSE 1"], `${form}: the page's two sections and no other (${js(pasted.chart)})`);
+    const [intro] = sections(pasted.chart);
+    assert.deepEqual(notes(intro), said, `${form}: every instruction is a note on the intro (${js(intro.lines)})`);
+    assert.ok(intro.lines.every((line) => line.lyrics === undefined), `${form}: the intro has no sung words`);
+    assert.deepEqual(intro.lines.flatMap(tokens), chords, `${form}: the intro's chords in order`);
+  }
+});
+
+await check("12h. a typed chart with a lone chord over a line and no chord over the next stays as pasted", () => {
+  for (const typed of [
+    ["VERSE 1", "G", "Amazing grace", "how sweet the sound"],
+    ["VERSE 1", "G", "Hello my friend", "Nice to see you", "", "C", "Goodbye my friend", "See you soon"],
+  ]) {
+    const chart = typed.join("\n");
+    assert.equal(read(chart).chart, chart, `stays as pasted (${js(read(chart).chart)})`);
+  }
+  const copy = read(["G", "Lanterns", "", "C", "over the", "water"].join("\n")).chart;
+  assert.deepEqual(sections(copy).map((section) => sung(section).map((line) => line.lyrics?.replace(/\s+/g, " "))), [["Lanterns over the water"]], `a page copy's one-chord block that starts mid-line still joins its line (${js(copy)})`);
+  assert.deepEqual(places(pairs(copy)), places([{ chords: chordRow([["G", 0], ["C", 9]]), lyrics: "Lanterns over the water" }]), "with each chord over its word");
+});
+
+await check("12i. a header's one-line by, an Artist: line, ChordPro facts over the header, and every played part's instructions", () => {
+  const chart = ["", "[Verse]", chordRow([["G", 0], ["C", 12]]), "Paper boats on the river"];
+  const oneLine = read(["Paper Lanterns Chords by The Hollow Pines", "Learn this one slowly.", ...chart].join("\n"));
+  assert.deepEqual([oneLine.facts.title, oneLine.facts.artist], ["Paper Lanterns", "The Hollow Pines"], `title and artist from one line (${js(oneLine.facts)})`);
+  const labeled = read(["Paper Lanterns chords", "Artist: The Hollow Pines", ...chart].join("\n"));
+  assert.deepEqual([labeled.facts.title, labeled.facts.artist], ["Paper Lanterns", "The Hollow Pines"], `the artist from an Artist: line (${js(labeled.facts)})`);
+  const chordPro = read(["{title: Lantern Song}", "{artist: The Hollow Pines}", "Lantern Song Live chords", "Some Uploader", ...chart].join("\n"));
+  assert.deepEqual([chordPro.facts.title, chordPro.facts.artist], ["Lantern Song", "The Hollow Pines"], `the ChordPro title and artist win (${js(chordPro.facts)})`);
+  for (const part of ["Solo", "Interlude", "Instrumental", "Riff", "Break"]) {
+    const pasted = read([`[${part}]`, "Let it ring out.", "| G | C |", ...chart].join("\n"));
+    const [played] = sections(pasted.chart);
+    assert.deepEqual(notes(played), ["Let it ring out."], `${part}: the words are a note (${js(played?.lines)})`);
+    assert.ok(played.lines.every((line) => line.lyrics === undefined), `${part}: no sung words`);
+  }
+});
+
+await check("12j. a blank after an intro or solo of chords alone ends it, so the next unmarked verse stays sung", () => {
+  const typed = ["INTRO", "| G | C |", "", "Hello there my friend", "Nice to see you", "", "CHORUS", "G        C", "Sing along now"].join("\n");
+  assert.equal(read(typed).chart, typed, `a chart the app already reads stays as pasted (${js(read(typed).chart)})`);
+  const pages = [
+    ["a typed INTRO of bars", typed.split("\n"), ["Hello there my friend", "Nice to see you", "Sing along now"]],
+    ["an [Intro] of bars", ["[Intro]", "| G | C | D |", "", "Words of the song go here", "And more of them", "", "[Chorus]", "G        C", "Sing along now"], ["Words of the song go here", "And more of them", "Sing along now"]],
+    ["an Intro: line of chords", ["Intro: G C D", "", "Well I woke up early", "G        C", "And the sun was out"], ["Well I woke up early", "And the sun was out"]],
+    ["a [Solo] then a pickup line", ["[Verse]", "G        C", "Paper boats on the river", "", "[Solo]", "| Em | C |", "", "And so we sail", "G        C", "Paper boats on the river"], ["Paper boats on the river", "And so we sail", "Paper boats on the river"]],
+  ] as const;
+  for (const [form, page, words] of pages) {
+    const all = sections(read(page.join("\n")).chart);
+    assert.deepEqual(all.flatMap(notes), [], `${form}: no words made into a note (${js(all)})`);
+    assert.deepEqual(all.flatMap((section) => sung(section).map((line) => line.lyrics?.trim())), words, `${form}: every sung line stays sung`);
+    assert.ok(all.filter((section) => /^(intro|solo)$/i.test(section.heading)).every((section) => sung(section).length === 0), `${form}: the intro or solo holds no sung words (${js(all.map((section) => section.heading))})`);
+  }
 });
 
 await check("13. readPaste is stable: its own output reads back as the same chart, and a chart the app already reads stays as pasted", () => {
@@ -400,6 +633,7 @@ const SCREEN_CASES = [
   "27. a typed chart, then Select all and Paste the app takes, comes back with one Ctrl+Z, and the paste status goes",
   "28. a paste with the caret at the top of a chart, or over part of its first line, is left to the box and the chart stays as typed",
   "29. a paste scrolls the preview into view, and a capo switch or Use it as pasted leaves the screen where the player tapped",
+  "30. the status line says how many lines of each kind were left out, in the word for one line and for two",
 ];
 
 const api = createServer((request, response) => {
@@ -847,6 +1081,21 @@ if (site) {
         await tap(label);
         await sleep(300);
         assert.ok(await s.evaluate<boolean>(onScreen(pasteBox)), `after ${label} the paste controls stay on screen (top ${await s.evaluate<number>(`${pasteBox}.getBoundingClientRect().top`)})`);
+      }
+    });
+
+    await check(SCREEN_CASES[16], async () => {
+      const status = `document.querySelector(".song-editor-paste [role=status]")`;
+      await phone(390);
+      for (const what of leftOutKinds()) {
+        for (const count of [1, 2] as const) {
+          await openNew();
+          await pasteTap(leavingOut(what, count).pasted);
+          await app.until(`!!${status}`, `the status line after a paste that leaves out ${count} of ${what}`);
+          const words = await s.evaluate<string>(`${status}.textContent.trim()`);
+          const want = `Left out ${count} ${count === 1 ? LEFT_OUT_PASTES[what].one : what}.`;
+          assert.ok(words.includes(want), `the status line says ${js(want)} (${js(words)})`);
+        }
       }
     });
   } finally {

@@ -1,12 +1,12 @@
 /**
- * Song search, the half with no screen: the general web search a player opens to find a song's words, and the public
+ * Song search, the half with no screen: the general web search a player opens to find a song's chord chart, and the public
  * song catalog's recording search. The app never asks for, keeps or shows lyrics. The player opens the web search in
  * their own browser and pastes what they find. The catalog gives title, artist, year and length only.
  */
 
 import endpoints from "../data/song-search.json";
 
-const LYRICS_SEARCH = endpoints.lyricsSearch;
+const CHART_SEARCH = endpoints.chartSearch;
 const RECORDING_SEARCH = endpoints.recordingSearch;
 /** Quiet time after the last key before the box asks the catalog. */
 export const DEBOUNCE_MS = 600;
@@ -20,10 +20,10 @@ const BUSY_RETRIES = 2;
 const BUSY_WAIT_MAX_MS = 2000;
 const LIMIT = 15;
 
-/** A general web search for `"<title>" "<artist>" lyrics`, leaving out a blank field. */
-export function lyricsSearchUrl(title: string, artist: string): string {
+/** A general web search for `"<title>" "<artist>" chords`, leaving out a blank field. */
+export function chartSearchUrl(title: string, artist: string): string {
   const quoted = [title, artist].map((field) => field.trim()).filter(Boolean).map((field) => `"${field}"`);
-  return LYRICS_SEARCH + encodeURIComponent([...quoted, "lyrics"].join(" "));
+  return CHART_SEARCH + encodeURIComponent([...quoted, "chords"].join(" "));
 }
 
 /** One recording from the catalog, as much as a new sheet uses. */

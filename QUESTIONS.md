@@ -1,3 +1,20 @@
+# song-paste-import: a chart that needs no cleaning stays as pasted, and two test fixes
+
+1. The plan (section 2, case 3) turns every heading into library style, so `[Intro]` becomes `INTRO`. check:new-song
+   case 2b, which must pass unedited, pastes a clean chart with `[Intro]` and asserts that the box holds it byte for
+   byte, with the preview heading `Intro`. Both cannot hold for every paste. I took this rule: a paste with nothing to
+   clean (no header, directive, tab, site line, odd spelling or row mark) stays as pasted. A paste that needs cleaning
+   gets library-style headings throughout. Case 3 tests its heading forms in a web chart (a `Key:` header comes
+   first), and case 13 asserts both halves. Owner: say if every paste should restyle, and check:new-song 2b needs an edit.
+2. Case 13 also reads every built-in chart back through `readPaste`. Commit 1 asked for the text unchanged. The plan's
+   own spelling table stores `Dsus` as `Dsus4`, and three built-in charts write `Esus` or `Gsus`, so the case now asserts
+   that the chart reads back the same (headings, words, each chord on its letter, notes), with `Xsus` read as `Xsus4`.
+3. Case 21's offline probe fetched `/index.html`, which the service worker answers from its cache, so the probe read
+   "online" with the network off. It now fetches `/api/me`, which the worker never caches. That makes the case stricter.
+
+Seen, not changed (outside this cook's files): after a reload with the network off, My Songs shows no `+ Add a song`,
+and it stays hidden when the network comes back until the next reload.
+
 # C21c deep fix: the guest switches now open a screen. I took option b of the 3c4fcdf verify. Owner, please confirm.
 
 The verify left this to the owner: (a) drop "Can see band chat" and "Can see other setlists" from the pass form, or

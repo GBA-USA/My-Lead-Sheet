@@ -10,8 +10,13 @@ import type { ChartLine, ChartSection, KeyMode, Song } from "./types";
 export type SheetWarning = { line: number; message: string };
 export type ParsedSheet = { sections: ChartSection[]; warnings: SheetWarning[] };
 
-const CHORD = /^(?:[A-G][#b]?(?:maj|min|m|dim|aug|sus|add)?\d*(?:(?:sus|add|b|#)\d+)*(?:\/[A-G][#b]?)?|N\.C\.)$/;
+const CHORD = /^(?:[A-G][#b]?(?:maj|min|m|dim|aug|sus|add)?(?:6\/9|\d*)(?:(?:sus|add|b|#)\d+)*(?:\/[A-G][#b]?)?|N\.C\.)$/;
 const SECTION_WORD = /^(?:intro|verse|pre-?chorus|chorus|bridge|middle 8|outro|solo|interlude|instrumental|tag|ending|hook|refrain|coda|break)(?:\s+\d+)?(?:\s*\(.*\))?:?$/i;
+
+/** Whether a token is a chord as the chart stores it. */
+export const isChord = (token: string) => CHORD.test(token);
+/** Whether a line names a section by its usual word, such as Verse 2 or Chorus:. */
+export const isSectionWord = (text: string) => SECTION_WORD.test(text.trim());
 const NOTE = /^\s*note: ?/i;
 const BARS = /^\s*bars: ?/i;
 const BRACKET = /\[([^\]\s]+)\]/g;
@@ -44,20 +49,18 @@ function read(raw: string): Read {
   return { kind: "lyric", text };
 }
 
+export type PlacedChord = { name: string; at: number };
+
 /** Puts each chord name at its column, one space at least after the one before. */
-function chordRow(chords: { name: string; at: number }[]): string {
+function chordRow(chords: PlacedChord[]): string {
   let row = "";
   for (const { name, at } of chords) row = row.padEnd(at) + name;
   return row;
 }
 
-/**
- * One bracket line as a two-line pair. A chord sits on the letter after its bracket. When a name would run into the
- * next chord, spaces go into the lyric at a word gap between the two, which moves the later words right and keeps
- * every chord on its syllable. With no gap (two chords inside one word) the lyric stays and the line is warned.
- */
+/** One bracket line as a two-line pair. A chord sits on the letter after its bracket. */
 function fromBrackets(text: string): { line: ChartLine; warning?: string } {
-  const chords: { name: string; at: number }[] = [];
+  const chords: PlacedChord[] = [];
   let lyrics = "";
   let cursor = 0;
   for (const match of text.matchAll(BRACKET)) {
@@ -68,6 +71,17 @@ function fromBrackets(text: string): { line: ChartLine; warning?: string } {
   }
   lyrics = (lyrics + text.slice(cursor)).trimEnd();
   if (lyrics.trim() === "") return { line: { bars: chords.map((chord) => chord.name).join(" ") } };
+  return placeChords(chords, lyrics);
+}
+
+/**
+ * Chords at their lyric columns as a chord row over the lyric. When a name would run into the next chord, spaces go
+ * into the lyric at a word gap between the two, which moves the later words right and keeps every chord on its
+ * syllable. With no gap (two chords inside one word) the lyric stays and the line is warned.
+ */
+export function placeChords(placed: PlacedChord[], text: string): { line: { chords: string; lyrics: string }; warning?: string } {
+  const chords = placed.map((chord) => ({ ...chord }));
+  let lyrics = text;
   let warning: string | undefined;
   for (let k = 1; k < chords.length; k += 1) {
     const before = chords[k - 1];
@@ -91,7 +105,7 @@ function fromBrackets(text: string): { line: ChartLine; warning?: string } {
 }
 
 /** Tabs to spaces at the 8-column stops a text box draws them at, so a pasted chord keeps its column. */
-function untab(line: string): string {
+export function untab(line: string): string {
   let out = "";
   for (const char of line) out += char === "\t" ? " ".repeat(8 - (out.length % 8)) : char;
   return out;
@@ -132,12 +146,17 @@ export function parseSheet(text: string): ParsedSheet {
   return { sections, warnings };
 }
 
+/** A heading as a line of chart text that `parseSheet` reads back as that heading. */
+export function headingLine(heading: string): string {
+  const line = read(heading);
+  return line.kind === "heading" && line.text === heading ? heading : `${heading}:`;
+}
+
 /** The chart as the editor's text, which `parseSheet` reads back as the same chart. */
 export function sectionsToText(sections: ChartSection[]): string {
   return sections
     .map((section) => {
-      const heading = read(section.heading);
-      const out = [heading.kind === "heading" && heading.text === section.heading ? section.heading : `${section.heading}:`];
+      const out = [headingLine(section.heading)];
       section.lines.forEach((line, index) => {
         if (line.chords !== undefined) out.push(line.chords, ...(line.lyrics === undefined ? [] : [line.lyrics]));
         else if (line.lyrics !== undefined) out.push(line.lyrics);
@@ -158,6 +177,21 @@ export function sectionsToText(sections: ChartSection[]): string {
 export const KEY_ROOTS = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"] as const;
 
 export type SongMeta = { title: string; artist: string; keyRoot: string; keyMode: KeyMode; tempo: number | null; timeSignature: string };
+
+/** What one source knows about a song. A missing field means the source does not know. */
+export type SongFacts = {
+  title?: string;
+  artist?: string;
+  keyRoot?: string;
+  keyMode?: KeyMode;
+  tempo?: number;
+  timeSignature?: string;
+  lengthSec?: number;
+  capo?: number;
+  sections?: ChartSection[];
+  /** A credit the license asks for. It is stored in `Song.sourceNote`, which the sheet already draws. */
+  credit?: string;
+};
 
 /** The song as stored: what the editor asked for, and every other field empty, so the stored-song check keeps it. */
 export function ownSong(meta: SongMeta, sections: ChartSection[], before?: Omit<Song, "ref" | "id">): Omit<Song, "ref" | "id"> {

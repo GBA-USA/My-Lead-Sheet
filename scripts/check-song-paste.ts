@@ -239,8 +239,8 @@ await check("6. in a chord row over a lyric row, every chord starts over the sam
 });
 
 await check("7. tabs, no-break spaces, zero-width characters, sharps, flats and CRLF are cleaned", () => {
-  const pasted = read("[Verse 1]\r\nF♯m\tB♭   C\r\nPa​per boats\ton the river﻿\r\n");
-  for (const bad of ["\r", "\t", " ", "​", "﻿", "♯", "♭"]) assert.ok(!pasted.chart.includes(bad), `no ${js(bad)} left (${js(pasted.chart)})`);
+  const pasted = read("[Verse 1]\r\nF♯m\tB♭\u00a0\u00a0 C\r\nPa\u200bper\u00a0boats\ton the river\ufeff\r\n");
+  for (const bad of ["\r", "\t", "\u00a0", "\u200b", "\ufeff", "♯", "♭"]) assert.ok(!pasted.chart.includes(bad), `no ${js(bad)} left (${js(pasted.chart)})`);
   const line = sections(pasted.chart)[0]?.lines[0];
   assert.deepEqual([line?.chords, line?.lyrics], ["F#m     Bb   C", "Paper boats     on the river"], "columns kept at the 8-column tab stops");
 });
@@ -313,9 +313,17 @@ await check("13. readPaste is stable: its own output reads back as the same char
   const typed = ["[Intro]", "| A | E |", "", "[A]Honey, load up your ques[Am7]ti[E]ons", "", "CHORUS", "D        A", "Fire away, fire away"].join("\n");
   assert.equal(paste().readPaste(typed).chart, typed, "a chart with nothing to clean is kept as pasted");
   const library = JSON.parse(readFileSync(join(root, "data", "library.json"), "utf8")) as { songs: { title: string; body: Section[] }[] };
+  // A chart as the app writes it reads back the same. The one change allowed is the plan's own: Esus is stored as Esus4.
+  const sus4 = (token: string) => token.replace(/^([A-G][#b]?)sus$/, "$1sus4");
+  const meaning = (chart: string) => ({
+    headings: headings(chart),
+    places: places(pairs(chart)),
+    words: lyricWords(pairs(chart)),
+    lines: sections(chart).map((section) => section.lines.map((line) => [line.lyrics, line.note, ...`${line.chords ?? ""} ${line.bars ?? ""}`.trim().split(/\s+/).map(sus4)])),
+  });
   for (const song of library.songs) {
     const own = text().sectionsToText(song.body);
-    assert.equal(paste().readPaste(own).chart, own, `${song.title}: a chart as the app writes it comes back unchanged`);
+    assert.deepEqual(meaning(paste().readPaste(own).chart), meaning(own), `${song.title}: a chart as the app writes it reads back the same`);
   }
 });
 
@@ -588,12 +596,17 @@ if (site) {
       await s.send("Network.enable");
       await s.send("Network.emulateNetworkConditions", { offline: true, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
       try {
-        assert.equal(await s.evaluate<string>(`fetch("/index.html?probe=" + Date.now(), { cache: "no-store" }).then(() => "online", () => "offline")`), "offline", "the network is off");
+        assert.equal(await s.evaluate<string>(`fetch("/api/me?probe=" + Date.now(), { cache: "no-store" }).then(() => "online", () => "offline")`), "offline", "the network is off");
         await s.send("Page.reload");
         await sleep(500);
         await shows("after a reload with the network off");
       } finally {
         await s.send("Network.emulateNetworkConditions", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+        // An offline start reads the account as unknown, so the next cases start from an online reload.
+        await s.evaluate(`location.hash = "#/songs"`);
+        await s.send("Page.reload");
+        await app.library();
+        await app.until(`!!${addButton}`, "+ Add a song, back online", 15000);
       }
     });
 

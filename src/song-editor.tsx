@@ -40,7 +40,7 @@ type Paste = { raw: string; before: string; view: CapoView | "raw"; pasted: Past
 const NOTHING = "Nothing here looks like a chart. It is in the box as pasted.";
 /** A key note a capo paste wrote, in either view. */
 const CAPO_NOTE = /^Capo \d+/;
-const LEFT_OUT: Record<LeftOut["what"], string> = { "tab lines": "tab line", "lines above the first section": "line above the first section", directives: "directive" };
+const LEFT_OUT: Record<LeftOut["what"], string> = { "tab lines": "tab line", "lines above the first section": "line above the first section", directives: "directive", "site lines": "site line" };
 
 const after = (before: string, text: string) => (before.trim() ? `${before.trimEnd()}\n\n${text}` : text);
 const shown = (paste: Paste) => after(paste.before, paste.view === "raw" ? paste.raw : paste.pasted.chart);

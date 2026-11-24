@@ -8,9 +8,9 @@ import type { ChartSection, KeyMode, Song } from "./types";
  * right, with nothing to clean, comes back as pasted.
  */
 
-export type LeftOut = { count: number; what: "tab lines" | "lines above the first section" | "directives" };
+export type LeftOut = { count: number; what: "tab lines" | "lines above the first section" | "directives" | "site lines" };
 /** The order the status line names what was left out. */
-const LEFT_OUT: LeftOut["what"][] = ["tab lines", "lines above the first section", "directives"];
+const LEFT_OUT: LeftOut["what"][] = ["tab lines", "lines above the first section", "directives", "site lines"];
 export type Pasted = { facts: SongFacts; chart: string; leftOut: LeftOut[] };
 /** A capo chart's chords as they sound, or as the guitar shapes the page wrote. */
 export type CapoView = "sounding" | "shapes";
@@ -142,6 +142,22 @@ const HEADER = {
   noCapo: /^(?:no capo|capo\s*[:=-]?\s*(?:none|no|off|0))$/i,
   time: /^(?:time(?:\s*signature)?|meter)\s*[:=-]?\s*(\d{1,2}\/\d{1,2})$/i,
 };
+/** What a chord page prints around a chart: a rating, a sign-in prompt, a credit, a button. Matched by shape, never by a site's name. */
+const SITE_LINES = [
+  /^\d(?:[.,]\d+)?\s*\/\s*5\b/,
+  /^[\d,.]+\s*(?:votes?|ratings?|views|reviews|favou?rites|comments)\b/i,
+  /^(?:log\s?in|sign\s?in|sign\s?up|register)\b.*\b(?:to|for)\b/i,
+  /\bsongbook\b/i,
+  /^(?:tabbed|transcribed|submitted|arranged|uploaded|corrected)\s+by\b/i,
+  /^(?:last\s+(?:edit(?:ed)?|updated?)|author|contributors?)\b/i,
+  /^(?:advertisement|sponsored|print|share|embed|transpose|autoscroll|report (?:bad )?(?:tab|chords|this)|rate this(?: tab| song)?|download (?:pdf|tab))$/i,
+];
+/** The title line a chord page prints: "Paper Boats chords", "Paper Boats Chords by The Made Up Band". */
+const TITLE_LINE = /^(.+?)\s+(?:(?:guitar|ukulele|uke|bass|piano)\s+)?(?:chords?|tabs?|chord chart|lyrics)(?:\s+\(.*\))?(?:\s+(?:by|[-–—])\s+(.+))?$/i;
+/** The artist line under it: "The Made Up Band", "by The Made Up Band" or "Artist: The Made Up Band". */
+const ARTIST_LINE = /^(?:by\s+|artist\s*:\s*)?([^:]+?)$/i;
+/** The parts a band plays and nobody sings, where a line of words is an instruction to the player. */
+const PLAYED = /^(?:intro|solo|interlude|instrumental|riff|break)\b/i;
 const TAB_LINE = /^\s*[A-Ga-g][#b]?\s*[|:][-0-9|hpbrsvx/\\~^.()<>=*\s]*$/;
 const DIRECTIVE = /^\{\s*([a-z_]+)\s*(?::\s*(.*?))?\s*\}$/i;
 const STARTS: Record<string, string> = { soc: "Chorus", start_of_chorus: "Chorus", sov: "Verse", start_of_verse: "Verse", sob: "Bridge", start_of_bridge: "Bridge" };
@@ -158,6 +174,7 @@ type Read =
   | { kind: "bracket" }
   | { kind: "note"; text: string }
   | { kind: "end" }
+  | { kind: "site" }
   | { kind: "text" };
 
 type Found = { facts: SongFacts; headerKey?: Key };
@@ -204,6 +221,7 @@ function readLine(line: string, found: Found, state: { tab: boolean }): Read {
   if (TAB_LINE.test(text) && text.includes("--")) return { kind: "counted", what: "tab lines" };
   if (text.startsWith("|")) return { kind: "bars" };
   if ([...text.matchAll(BRACKET)].some((match) => storedChord(match[1]))) return { kind: "bracket" };
+  if (SITE_LINES.some((pattern) => pattern.test(text))) return { kind: "site" };
   const heading = headingOf(text);
   // A heading the chart already reads keeps its whole name, BRIDGE (x2) included, and only takes the library's style.
   const already = heading && !heading.rest ? headingRead(line) : null;
@@ -228,10 +246,11 @@ function write(lines: string[], reads: Read[], raise: number, key: Key): { out: 
   const brackets = (text: string) => text.replace(BRACKET, (whole, token: string) => (chord(token) ? `[${chord(token)}]` : whole));
   const leftOut = new Map<LeftOut["what"], number>();
   const count = (what: LeftOut["what"]) => leftOut.set(what, (leftOut.get(what) ?? 0) + 1);
-  const first = reads.findIndex((read) => ["heading", "chords", "bars", "bracket"].includes(read.kind));
+  const first = firstSection(reads);
   const out: string[] = [];
   let changed = false;
   let verses = 0;
+  let part = "";
   const row = ({ chords, notes }: ChordRow, lyric = "") => {
     const named = chords.map((chord) => ({ ...chord, name: sound(chord.name) }));
     const { line, warning } = placeChords(named, lyric);
@@ -244,22 +263,41 @@ function write(lines: string[], reads: Read[], raise: number, key: Key): { out: 
     const read = reads[i];
     const line = lines[i];
     const start = out.length;
-    if (first >= 0 && i < first && (read.kind === "text" || read.kind === "note")) {
+    if (first >= 0 && i < first && (read.kind === "text" || read.kind === "note" || read.kind === "site")) {
       count("lines above the first section");
       changed = true;
       continue;
     }
-    if (read.kind === "blank") out.push("");
-    else if (read.kind === "end") out.push("");
+    if (read.kind === "blank") {
+      // A blank in a played part before more playing would start a section the page never named, so the part keeps it.
+      // Any other blank ends the part, as the chart reads it.
+      const next = reads.findIndex((each, k) => k > i && !["blank", "gone", "counted", "site"].includes(each.kind));
+      const playing = next >= 0 && (reads[next].kind === "bars" || (reads[next].kind === "chords" && reads[next + 1]?.kind !== "text"));
+      if (PLAYED.test(part) && playing) changed = true;
+      else {
+        out.push("");
+        part = "";
+      }
+    } else if (read.kind === "end") out.push("");
     else if (read.kind === "counted") count(read.what);
-    else if (read.kind === "note") out.push(`Note: ${read.text}`);
-    else if (read.kind === "text") out.push(line);
+    else if (read.kind === "site") {
+      count("site lines");
+      changed = true;
+    } else if (read.kind === "note") out.push(`Note: ${read.text}`);
+    else if (read.kind === "text") {
+      // A line the chart reads as a heading starts its own part; in a played part, words are an instruction.
+      const own = headingRead(line);
+      if (own) part = own;
+      out.push(!own && PLAYED.test(part) && !/^\s*(?:note|bars):/i.test(line) ? `Note: ${line.trim()}` : line);
+    }
     else if (read.kind === "bars") out.push(bars(line));
     else if (read.kind === "bracket") out.push(brackets(line));
     else if (read.kind === "heading") {
       const { heading } = read;
+      part = heading.name;
       if (/^verse\b/i.test(heading.name)) verses += 1;
-      const name = read.made && /^verse$/i.test(heading.name) ? `Verse ${verses}` : heading.name;
+      // A bare Verse is numbered, so two pasted [Verse] markers are two verses the player can tell apart.
+      const name = /^verse$/i.test(heading.name) ? `Verse ${verses}` : heading.name;
       // A name that is no section word stays boxed, so a second read still takes it for a heading.
       out.push(sectionName(name) ? headingLine(styled(name)) : `[${styled(name)}]`);
       if (heading.note) out.push(`Note: ${heading.note}`);
@@ -268,7 +306,7 @@ function write(lines: string[], reads: Read[], raise: number, key: Key): { out: 
       if (rest.startsWith("|")) out.push(bars(rest));
       else if (chords) row(chords);
       else if (rest) out.push(rest);
-      if (read.made) changed = true;
+      if (read.made || name !== heading.name) changed = true;
       continue;
     } else if (read.kind === "chords") {
       const below = reads[i + 1]?.kind === "text" ? lines[i + 1] : undefined;
@@ -284,12 +322,142 @@ function write(lines: string[], reads: Read[], raise: number, key: Key): { out: 
   return { out, changed, leftOut };
 }
 
+/** The first line that starts the chart: a heading, a chord row, a bar line or a line with chords in brackets. */
+const firstSection = (reads: Read[]) => reads.findIndex((read) => ["heading", "chords", "bars", "bracket"].includes(read.kind));
+
+/** The title and artist a chord page prints above its chart. A ChordPro title or artist wins. */
+function headerFacts(lines: string[], reads: Read[], found: Found) {
+  const texts = lines.flatMap((line, i) => (reads[i].kind === "text" ? [line.trim()] : []));
+  const at = texts.findIndex((text) => TITLE_LINE.test(text));
+  if (at < 0) return;
+  const [, title, by] = texts[at].match(TITLE_LINE)!;
+  const next = texts[at + 1]?.match(ARTIST_LINE)?.[1].trim();
+  const artist = by ?? (next && next.split(/\s+/).length <= 6 && !/[.!?,;]$/.test(next) ? next : undefined);
+  found.facts.title ??= title.trim();
+  if (artist) found.facts.artist ??= artist.trim();
+}
+
+/** What a line is to `rejoin`. A lone chord is a chord row of one chord at the line's start. */
+type Cell = "blank" | "heading" | "chord" | "words" | "site" | "other";
+/**
+ * A run of lines with no blank or heading inside, and the blank lines before it. A phone that copies a chord page
+ * gives each chord, and the words under it, a line of its own (`copy`), and a blank line where the page broke a lyric
+ * line, so one lyric line can come as a `pair` (a lone chord over a word), a lone `chord`, or a whole `copy` block.
+ */
+type Block = { from: number; to: number; gap: number; kind: "copy" | "pair" | "chord" | "line" | "site" | "other" };
+type Piece = { chord: string } | { words: string };
+
+/** Words that start a lyric line: a capital or a digit first. */
+const opensLine = (text: string) => /^[\p{Lu}\d]/u.test(text.trim());
+/** Words a page copy breaks a lyric line into: a few words, or a run that goes on from the words before it. */
+const fragment = (text: string) => text.trim().split(/\s+/).length <= 4 || !opensLine(text);
+
+function blockKind(cells: Cell[], texts: string[]): Block["kind"] {
+  if (cells.every((cell) => cell === "site")) return "site";
+  if (cells.length === 1 && (cells[0] === "chord" || cells[0] === "words")) return cells[0] === "chord" ? "chord" : "line";
+  const pieces = cells.every((cell, k) => cell === "chord" || (cell === "words" && fragment(texts[k])));
+  if (!pieces || !cells.some((cell, k) => cell === "chord" && cells[k + 1] === "words")) return "other";
+  if (cells.length === 2) return "pair";
+  const chords = cells.filter((cell) => cell === "chord").length;
+  return chords >= 2 || cells.some((cell, k) => cell === "words" && cells[k + 1] === "words") ? "copy" : "other";
+}
+
+/** One lyric line from its pieces: the words joined by spaces, each chord over the first letter of the words after it. */
+function pieceRow(pieces: Piece[]): string[] {
+  let lyric = "";
+  let waiting: string[] = [];
+  const placed: PlacedChord[] = [];
+  for (const piece of pieces) {
+    if ("chord" in piece) {
+      waiting.push(piece.chord);
+      continue;
+    }
+    const at = lyric ? lyric.length + 1 : 0;
+    lyric = lyric ? `${lyric} ${piece.words}` : piece.words;
+    placed.push(...waiting.map((name) => ({ name, at })));
+    waiting = [];
+  }
+  placed.push(...waiting.map((name) => ({ name, at: lyric ? lyric.length + 1 : 0 })));
+  const { line } = placeChords(placed, lyric);
+  return lyric ? [line.chords, line.lyrics] : [line.chords];
+}
+
+/**
+ * The lines of a page copy put back together as the page showed them: each run of pieces becomes a chord row over its
+ * lyric line, and the blank lines inside a run go. A run takes a block that goes on in lower case into the line
+ * before it. In a part of single lines of words with a blank after each, one blank is a line break and two end a
+ * stanza. Anything else stays as pasted.
+ */
+function rejoin(lines: string[]): string[] {
+  const scratch: Found = { facts: {} };
+  const state = { tab: false };
+  const reads = lines.map((line) => readLine(line, scratch, state));
+  const cells: Cell[] = reads.map((read) => {
+    if (read.kind === "blank") return "blank";
+    if (read.kind === "heading" || read.kind === "end") return "heading";
+    if (read.kind === "chords" && read.row.chords.length === 1 && read.row.notes.length === 0 && read.row.chords[0].at === 0) return "chord";
+    return read.kind === "text" ? "words" : read.kind === "site" ? "site" : "other";
+  });
+  const skip = new Set<number>();
+  const put = new Map<number, string[]>();
+  const runOf = (run: Block[]) => {
+    const rows: Piece[][] = [];
+    for (const block of run) {
+      const pieces: Piece[] = [];
+      for (let i = block.from; i <= block.to; i += 1) {
+        const read = reads[i];
+        pieces.push(read.kind === "chords" ? { chord: read.row.chords[0].name } : { words: lines[i].trim() });
+      }
+      const last = rows[rows.length - 1];
+      const words = (each: Piece[]) => each.find((piece): piece is { words: string } => "words" in piece);
+      const said = words(pieces)?.words;
+      const goesOn = last && (words(last) ? said !== undefined && !opensLine(said) : said === undefined);
+      if (goesOn) last.push(...pieces);
+      else rows.push(pieces);
+    }
+    for (let i = run[0].from; i <= run[run.length - 1].to; i += 1) skip.add(i);
+    put.set(run[0].from, rows.flatMap(pieceRow));
+  };
+  const mend = (blocks: Block[]) => {
+    const solid = blocks.filter((block) => block.kind !== "site");
+    if (solid.length >= 3 && solid.every((block) => block.kind === "line")) {
+      for (const [k, block] of blocks.entries()) if (k > 0 && block.gap === 1 && block.kind === "line" && blocks[k - 1].kind === "line") skip.add(block.from - 1);
+    }
+    const pieces = (block: Block) => block.kind === "copy" || block.kind === "pair" || block.kind === "chord";
+    for (let k = 0; k < blocks.length; ) {
+      let end = k;
+      while (pieces(blocks[k]) && end + 1 < blocks.length && pieces(blocks[end + 1]) && blocks[end + 1].gap === 1) end += 1;
+      const run = blocks.slice(k, end + 1);
+      if (run.some((block) => block.kind === "copy") || (run.length >= 2 && run.every((block) => block.kind === "chord"))) runOf(run);
+      k = end + 1;
+    }
+  };
+  let blocks: Block[] = [];
+  let gap = 0;
+  for (let i = 0; i <= lines.length; i += 1) {
+    const cell = cells[i];
+    if (cell === undefined || cell === "heading") {
+      mend(blocks);
+      blocks = [];
+      gap = 0;
+    } else if (cell === "blank") gap += 1;
+    else {
+      let to = i;
+      while (cells[to + 1] !== undefined && !["blank", "heading"].includes(cells[to + 1])) to += 1;
+      blocks.push({ from: i, to, gap, kind: blockKind(cells.slice(i, to + 1), lines.slice(i, to + 1)) });
+      gap = 0;
+      i = to;
+    }
+  }
+  return lines.flatMap((line, i) => [...(put.get(i) ?? []), ...(skip.has(i) ? [] : [line])]);
+}
+
 /** Blank runs fold to one blank line, and the chart starts and ends on a line with something on it. */
 const tidy = (out: string[]) => out.join("\n").replace(/\n{3,}/g, "\n\n").replace(/^\n+|\n+$/g, "");
 
 /** A pasted text as chart text, with the facts it held and a count of what it left out. Run on a paste, not on each key. */
 export function readPaste(text: string, view: CapoView = CAPO_VIEW): Pasted {
-  const lines = text
+  const cleaned = text
     .replace(/\r\n?/g, "\n")
     .replace(/[\u200b-\u200d\u2060\ufeff]/g, "")
     .replace(/[\u00a0\u2007\u202f]/g, " ")
@@ -297,9 +465,12 @@ export function readPaste(text: string, view: CapoView = CAPO_VIEW): Pasted {
     .replace(/♭/g, "b")
     .split("\n")
     .map(untab);
+  const lines = rejoin(cleaned);
   const found: Found = { facts: {} };
   const state = { tab: false };
   const reads = lines.map((line) => readLine(line, found, state));
+  const first = firstSection(reads);
+  if (first > 0) headerFacts(lines.slice(0, first), reads, found);
   const shapes = write(lines, reads, 0, { keyRoot: "C", keyMode: "major" });
   const capo = found.facts.capo ?? 0;
   const fromChords = keyFromChords(parseSheet(tidy(shapes.out)).sections);
@@ -311,7 +482,8 @@ export function readPaste(text: string, view: CapoView = CAPO_VIEW): Pasted {
   const key = shapesKey && sounding ? { keyRoot: KEY_ROOTS[(pitchClass(shapesKey.keyRoot) + capo) % 12], keyMode: shapesKey.keyMode } : shapesKey;
   const facts: SongFacts = { ...found.facts, ...(key ?? {}) };
   const leftOut = LEFT_OUT.flatMap((what) => (written.leftOut.has(what) ? [{ count: written.leftOut.get(what)!, what }] : []));
-  return { facts, chart: written.changed ? tidy(written.out) : lines.join("\n"), leftOut };
+  const rejoined = lines.length !== cleaned.length || lines.some((line, i) => line !== cleaned[i]);
+  return { facts, chart: written.changed || rejoined ? tidy(written.out) : cleaned.join("\n"), leftOut };
 }
 
 /** The words `Song.keyNote` takes for a capo chart. */

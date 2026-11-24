@@ -45,7 +45,7 @@ type PasteModule = {
   SPELLINGS: readonly (readonly [string, string])[];
 };
 type TextModule = {
-  parseSheet: (text: string) => { sections: Section[] };
+  parseSheet: (text: string) => { sections: Section[]; warnings: { line: number; message: string }[] };
   sectionsToText: (sections: Section[]) => string;
   transposeChordSymbol: (symbol: string, semitones: number, flats: boolean) => string;
 };
@@ -238,6 +238,21 @@ await check("6. in a chord row over a lyric row, every chord starts over the sam
   assert.deepEqual(lyricWords(after), lyricWords(before), "and the words are the same words");
 });
 
+await check("6b. a chord that grows into its neighbour inside one word is warned in the editor, not moved in silence", () => {
+  const tight: [string, string, string[], string][] = [
+    ["Key: C", "CM7 F\nLovely day for it", ["Cmaj7", "F"], "Lovely"],
+    ["Capo 2", "Em D C G\nPaper boats on the water", ["F#m", "E", "D", "A"], "Paper"],
+  ];
+  for (const [header, row, chords, word] of tight) {
+    const chart = read(`${header}\n[Verse 1]\n${row}`).chart;
+    const verse = sections(chart)[0];
+    assert.deepEqual(tokens(verse?.lines[0]), chords, `${header}: the chords respelled (${js(chart)})`);
+    assert.deepEqual(verse?.lines[0]?.lyrics?.split(/\s+/), row.split("\n")[1].split(/\s+/), `${header}: over the same words`);
+    const warnings = text().parseSheet(chart).warnings;
+    assert.ok(warnings.some((warning) => warning.message.includes(`'${word}'`)), `${header}: the editor warns about '${word}' (${js(warnings)}, ${js(chart)})`);
+  }
+});
+
 await check("7. tabs, no-break spaces, zero-width characters, sharps, flats and CRLF are cleaned", () => {
   const pasted = read("[Verse 1]\r\nF♯m\tB♭\u00a0\u00a0 C\r\nPa\u200bper\u00a0boats\ton the river\ufeff\r\n");
   for (const bad of ["\r", "\t", "\u00a0", "\u200b", "\ufeff", "♯", "♭"]) assert.ok(!pasted.chart.includes(bad), `no ${js(bad)} left (${js(pasted.chart)})`);
@@ -378,6 +393,8 @@ const SCREEN_CASES = [
   "21. after Save the sheet shows the chart, and after a reload with the network off it still does",
   "22. every new control is at least 44 px tall and not clipped at 360 px and 390 px",
   "P. perf: at 4x CPU slowdown, the tap on Paste a sheet draws a 300-line chart within 100 ms of drawing the same text typed in",
+  "23. a capo note leaves with its chart: a chart with no capo pasted into the emptied box saves with no capo note",
+  "24. a paste that leaves nothing after cleaning stays in the box as pasted, says so, and changes no field",
 ];
 
 const api = createServer((request, response) => {
@@ -479,6 +496,9 @@ if (site) {
       assert.ok(box.page <= box.inner + 0.5, `the page scrolls sideways at ${width} px`);
     };
     const button = (label: string) => `[...${editor}.querySelectorAll("button")].find((b) => b.textContent.trim() === ${js(label)})`;
+    /** A keyboard paste into the box. True when the app took it. */
+    const keyboard = (pasted: string) =>
+      s.evaluate<boolean>(`(() => { const data = new DataTransfer(); data.setData("text/plain", ${js(pasted)}); return !${field("Chart")}.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true })); })()`);
 
     await phone(390);
     await s.send("Page.navigate", { url: `${s.origin}/#/songs` });
@@ -562,8 +582,6 @@ if (site) {
       await pasteTap(null);
       await app.until(`${editor}.textContent.includes("Paste your sheet into the box.")`, "the fallback words");
       assert.ok(await s.evaluate<boolean>(`document.activeElement === ${field("Chart")}`), "with the cursor in the box");
-      const keyboard = (pasted: string) =>
-        s.evaluate<boolean>(`(() => { const data = new DataTransfer(); data.setData("text/plain", ${js(pasted)}); return !${field("Chart")}.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true })); })()`);
       assert.equal(await keyboard(WEB), true, "the app takes a keyboard paste into the empty box");
       await app.until(`${field("Chart")}.value.includes("VERSE 1")`, "the cleaned chart in the box");
       const box = await value("Chart");
@@ -649,6 +667,57 @@ if (site) {
       } finally {
         await s.send("Emulation.setCPUThrottlingRate", { rate: 1 });
       }
+    });
+
+    await check(SCREEN_CASES[9], async () => {
+      const capo = ["Capo: 2nd fret", "", "[Verse 1]", "G      C       D", "Paper boats on the river"].join("\n");
+      const plain = ["[Chorus]", "G           C", "Float away into the light"].join("\n");
+      const preview = () => s.evaluate<string>(`document.querySelector(".song-editor-preview")?.textContent ?? ""`);
+      const pastePlain = async () => {
+        await fill("Chart", "");
+        assert.equal(await keyboard(plain), true, "the app takes a keyboard paste into the emptied box");
+        await app.until(`${field("Chart")}.value.includes("Float away")`, "the plain chart in the box");
+      };
+      const savedNote = async (title: string) => (await stored()).find((song) => song.title === title)?.keyNote ?? "";
+      await phone(390);
+      await openNew();
+      await pasteTap(capo);
+      await app.until(`!!${button("Show guitar shapes")}`, "the capo switch");
+      await tap("Show guitar shapes");
+      await app.until(`document.querySelector(".song-editor-preview")?.textContent.includes("Capo 2. The chords are guitar shapes.")`, "the shapes note in the preview");
+      await pastePlain();
+      assert.ok(!(await preview()).includes("Capo 2"), `new song: the preview drops the capo note (${js(await preview())})`);
+      await fill("Title", "Float Away Plain");
+      await tap("Save");
+      await app.until(`/^#\\/song\\/\\d+/.test(location.hash) && !document.querySelector(".song-editor")`, "the saved song's page");
+      assert.equal(await savedNote("Float Away Plain"), "", "new song: no capo note is stored");
+      assert.ok(!(await app.text(".sheet")).includes("Capo 2"), "new song: the saved sheet names no capo");
+
+      await openNew();
+      await pasteTap(capo);
+      await app.until(`!!${button("Show guitar shapes")}`, "the capo switch");
+      await fill("Title", "River Boats");
+      await tap("Save");
+      await app.until(`/^#\\/song\\/\\d+/.test(location.hash) && !document.querySelector(".song-editor")`, "the capo song's page");
+      assert.equal(await savedNote("River Boats"), "Capo 2 for guitar", "the capo song is stored with its note");
+      await s.evaluate(`document.querySelector('.shell-header [aria-label="More"]').click()`);
+      await app.until(`!!document.querySelector("[role=menu]")`, "the More menu");
+      await app.click("Edit", `document.querySelector("[role=menu]")`);
+      await app.until(`!!${editor}`, "Edit song");
+      await pastePlain();
+      assert.ok(!(await preview()).includes("Capo 2"), `Edit song: the preview drops the capo note (${js(await preview())})`);
+      await tap("Save");
+      await app.until(`!document.querySelector(".song-editor")`, "Edit song closed");
+      assert.equal(await savedNote("River Boats"), "", "Edit song: the capo note is gone from the stored song");
+    });
+
+    await check(SCREEN_CASES[10], async () => {
+      const headers = "Key: G\nTempo: 120 bpm";
+      await openNew();
+      await pasteTap(headers);
+      await app.until(`${editor}.textContent.includes("Nothing here looks like a chart. It is in the box as pasted.")`, "the nothing-here words");
+      assert.equal(await value("Chart"), headers, "the box holds the paste as pasted");
+      assert.deepEqual([await value("Key"), await s.evaluate<string>(`${mode}.value`), await value("BPM")], ["C", "major", ""], "Key and BPM are left alone");
     });
   } finally {
     await s.close();

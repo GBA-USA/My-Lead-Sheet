@@ -631,8 +631,12 @@ const isLearned: Check = (value) => {
   return [...plays, ...lines].every((each) => each.section < sections.length);
 };
 
-/** Kept heard chords stored as names come back as cells, each in its stored band, or likely when it has none. */
-function withHeardCells(version: StoredVersion): StoredVersion {
+/**
+ * Kept heard chords stored as names come back as cells, each in its stored band, or likely when it has none. Names
+ * also reach this phone in a draft or a friend's send from a build before colors, so every learned part read in goes
+ * through here.
+ */
+function withHeardCells<T extends { learned?: Learned }>(version: T): T {
   if (!version.learned?.sections.some((section) => section.heard)) return version;
   const sections = (version.learned.sections as StoredSection[]).map(({ heard, cells, ...section }) =>
     heard ? { ...section, heard: heard.map((each, i): HeardCell => (typeof each === "object" && each !== null ? each : { chord: each, ...(cells?.[i] ?? { band: "likely" as const }) })) } : section,
@@ -641,7 +645,8 @@ function withHeardCells(version: StoredVersion): StoredVersion {
 }
 
 /** Kept heard chords go to disk as names, with their bands beside them only when one is not likely. */
-function withHeardNames(version: StoredVersion): StoredVersion {
+function withHeardNames(given: StoredVersion): StoredVersion {
+  const version = withHeardCells(given);
   if (!version.learned?.sections.some((section) => section.heard)) return version;
   const sections: StoredSection[] = version.learned.sections.map(({ heard, ...section }) => {
     if (!heard) return section;
@@ -744,7 +749,8 @@ export function loadSongDraft(owner: string | null, ref: SongRef): unknown {
   const raw = readRaw(draftKey(owner, ref));
   if (raw === null) return undefined;
   try {
-    return JSON.parse(raw);
+    const draft = JSON.parse(raw);
+    return isLearned(draft?.learned) ? withHeardCells(draft) : draft;
   } catch {
     return undefined;
   }

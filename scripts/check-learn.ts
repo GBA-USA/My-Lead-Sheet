@@ -1403,14 +1403,16 @@ check(!fourNineteen.error && !!fourNineteen.listen && fourNineteen.busyMs <= bud
 
 /** A share of the time the recorded baseline takes for `seconds` of audio, on this machine. */
 const baselineShare = (share: number, seconds: number) => (share * budgetMs(seconds)) / 1.2;
+/** Real milliseconds since `started`, a process.hrtime.bigint(); performance.now is this check's frame clock. */
+const realMs = (started: bigint) => Number(process.hrtime.bigint() - started) / 1e6;
 {
   const heard = fourNineteen.listen?.analysis;
   const samples = fileSong(259)(FILE_RATE);
-  const started = performance.now();
+  const started = process.hrtime.bigint();
   const low = new learn.LowView(FILE_RATE);
   for (const sample of samples) low.push(sample);
   const changes = heard ? learn.hearChords(heard.chroma, low, heard.beats, heard.downbeatPhase, 4) : [];
-  const ms = performance.now() - started;
+  const ms = realMs(started);
   check(
     !!heard && changes.length > 0 && ms <= baselineShare(1.5, 259),
     `L3.12 the whole-song chord pass runs inside the speed budget: the low view and the chords of a 4:19 file in ${ms.toFixed(0)} ms, budget ${baselineShare(1.5, 259).toFixed(0)} ms (the recorded baseline times 1.5)`,
@@ -1426,10 +1428,10 @@ const baselineShare = (share: number, seconds: number) => (share * budgetMs(seco
     stopped: "finished",
   });
   const seconds = gather.samples.length / L0_RATE;
-  const started = performance.now();
+  const started = process.hrtime.bigint();
   const lines = listen ? learn.hearLines(listen.analysis.voiceOnsets, listen.analysis.beats, listen.sections, listen.changes, gather.lyrics) : [];
   if (listen) learn.buildChart(listen.sections, listen.changes, lines, gather.lyrics);
-  const ms = performance.now() - started;
+  const ms = realMs(started);
   check(
     !!listen && ms <= baselineShare(0.5, seconds),
     `L8.10 the whole-song words pass runs inside the budget: the lines and the chart of a ${Math.round(seconds)} s sung song in ${ms.toFixed(0)} ms, budget ${baselineShare(0.5, seconds).toFixed(0)} ms (the recorded baseline times 0.5)`,

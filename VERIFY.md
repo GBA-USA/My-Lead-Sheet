@@ -1,5 +1,92 @@
 VERDICT: FAIL
 
+# song-search in-cook self-check 6, tier deep, at ddcfb87
+
+Goal: from My Songs or Add a song, a player searches the public song catalog and starts a new sheet with title, artist
+and length filled in, and can tap Find lyrics on the web to paste the words in. This pass verifies the diff
+da2ce97..ddcfb87. Since self-check 5 (9864cf8), the changes are case 6e (8f8c6a7), the 8 s answer limit in
+`src/song-search.ts` (e192409) and VERIFY.md (ddcfb87). Run on the Windows laptop with Edge as `CHROME`. The probe and
+its logs are in `.verify-logs/self-check6/` (gitignored).
+
+Verdict: FAIL, on the owner seam only. P2-7 is closed, measured at 360 and 390 px. No P0-P2 is open inside this cook's
+owned files. The diff still edits `worker/room-library.ts` (85c9c5e), which the brief rejects ("edits outside the owned
+files", "Do not touch ... worker files"). No keep-or-revert decision was found in the prompt, QUESTIONS.md or any brief.
+A cook pass cannot clear this. Reverting the edit brings back P2-2, and the other fix needs `src/send-song.tsx` and the
+share screens, which this cook does not own either.
+
+## Owner seam (blocks the verdict, not a cook fix)
+
+**The Worker edit has no owner decision.** CLASS=other. Repro: `git diff da2ce97..ddcfb87 --stat -- worker` shows
+`worker/room-library.ts | 19 +-`. QUESTIONS.md's top entry asks to keep or revert it. `check:song-search` case 10
+covers the edit both ways (Pat's own empty pick passes, and Bea's Private words are still refused). P3-6 below
+(self-check 2) is part of the same decision.
+
+## Checks
+
+- `check:song-search` was not rerun. Fix pass 1 ran it at this code: 39 ok, "all ok", in `.verify-logs/fix-p27/final.log`,
+  written at 19:21, after e192409 (19:20). 6e failed at 9864cf8 with the case in place (`fix-p27/head.log`).
+- No other check's script or fixtures changed since self-check 5.
+
+## Pass conditions at ddcfb87
+
+The only product change since self-check 5 is `ask` in `src/song-search.ts:90-96`. It races the whole `read` (the fetch
+and the body) against an 8 s limit set with `deps.setTimeout`, and the limit reports `failed`.
+
+| # | Condition | Result |
+|---|---|---|
+| 1, 2 | Find lyrics URL, no lyrics fetch | Holds. Unchanged since self-check 5. |
+| 3 | Recording search, fmt=json, User-Agent, rows | Holds. The User-Agent names `location.origin`, as before (CLAUDE.md rule 3 and the brief's literal host disagree, and the code follows CLAUDE.md). |
+| 4 | No results | Holds (4, 4b). |
+| 5 | Offline, a clear message, no crash, no fake rows | Holds. A refused fetch says offline (5a-5c). A hung request now says failed with Try again at 8 s (6e, probe B). |
+| 6 | API error or malformed reply | Holds (6a-6d). A body that stalls after a 200 also ends in failed (probe B, untested, see P3-8). |
+| 7 | At most one request a second, 400-800 ms debounce | Holds (7a-7e). Try again after the limit goes out at 8.7 s, well past the floor (probe F). |
+| 8 | A pick goes through the existing add-own-song path and opens the sheet prefilled | Holds (8a-8f). Unchanged. |
+| 9 | 360 and 390 px, 44 px targets | Holds. Try again is 109x48, on top at its center, with no sideways scroll at both widths (probe B, `failed-360.png`). |
+
+## Hands-on run: a reply that stalls, then a slow reply
+
+`.verify-logs/self-check6/probe.ts` runs the real App, built from this tree by `openSite`, in Edge with a stub `/api/me`
+and a stub catalog. Request 1 sends a 200 with headers and the first bytes of a body that never ends. Request 2 answers
+after 5 s. Request 3 stalls while the player leaves My Songs. Run with `PROBE_WIDTH=360` and `PROBE_WIDTH=390`. Both widths gave
+the same result (`probe-360.log`, `probe-390.log`).
+
+| Step | Result at 360 and 390 |
+|---|---|
+| A. 3 s after request 1 | `Searching…`, no Try again, 1 request |
+| B. Wait for Try again | It shows 8066 ms (360) and 8018 ms (390) after request 1, with "The song list didn't answer. Try again in a moment." and 1 request |
+| C. Two taps on Try again 80 ms apart, 3 s into the 5 s reply | `Searching…`, 2 requests. The first tap removes the button, so the second tap finds nothing to press |
+| D. 6 s into the 5 s reply | the Wagon Wheel row shows. The limit does not cut off a slow reply that arrives in time |
+| E. Type, request 3 stalls, go to Setlists, come back after 9 s | an empty box, no message, no rows, no stray report from the stalled request |
+| F, G | 3 requests in all, no page errors |
+
+## Wrong-but-passing read
+
+- State machine: the limit's handle is set inside the Promise executor, which runs at once, so `.finally` always clears
+  the right timer. After the race settles, a late reply from the abandoned `read` goes nowhere. A newer search or `stop`
+  still drops a settled result through `mine === current` (6e, probe E).
+- Stale UI: Try again calls `change(query)`, the same path as typing, so it clears the offer and the problem line.
+- Offline and second phone: `online()` is read only when the request leaves, as before. The limit holds no stored
+  state, so an account switch or a second phone does not affect it.
+- Data loss: none. The limit only changes what the box shows.
+
+## Untested new behavior
+
+- None at P2. 6e pins the limit to between 3 s and 10 s, no second request by itself, the floor on Try again, and the
+  dropped late reply.
+
+## P3, new this pass
+
+- P3-8. 6e holds the fetch promise itself open. A later change that limits only `deps.fetch` and leaves
+  `response.json()` unlimited would keep 6e green and hang again on a stalled body. Probe B shows the head handles that
+  case. Inferred, not run as a mutation.
+- P3-9. A request that times out is never aborted, so its connection stays open until the network gives up. Each Try
+  again on a hung network adds one more. Over HTTP/1.1, enough of them could queue a later request behind the open
+  ones. The limit would still report `failed`, so the player is never stuck. Inferred.
+- P3-10. A real reply slower than 8 s is dropped and reads as "didn't answer". Try again recovers. This is a product
+  trade-off. Not measured against the live catalog.
+
+---
+
 # song-search in-cook self-check fix pass 1 of 2 (on top of self-check 5 below)
 
 Goal: a catalog request that never answers must end in a clear message and Try again, not "Searching…" with no end.

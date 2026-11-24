@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type Dispatch, type SetStateAction } from "react";
+import { dragTo, initialLook, release, showBandLine, startDrag, tagText, tick, touchAction } from "./look-ahead";
 import { parseHash } from "./route";
 import { READING_LINE, atSpeed, chordCount, runScroll, type LaidSection, type Motion, type Section, type TimeSource } from "./scroll-timing";
 import { onStorageChange, storageGeneration } from "./storage";
@@ -64,12 +65,32 @@ export function onPlayhead(listener: (at: number) => void): () => void {
   return () => void playheads.delete(listener);
 }
 
+/** What this phone shows while it looks ahead in a gig: the tag, and the band's place in px down the chart. Null while locked. */
+export type LookAhead = { tag: string; bandAt: number } | null;
+
+let look: LookAhead = null;
+const lookListeners = new Set<() => void>();
+const onLook = (listener: () => void) => {
+  lookListeners.add(listener);
+  return () => void lookListeners.delete(listener);
+};
+const lookNow = () => look;
+function setLook(next: LookAhead) {
+  if (next?.tag === look?.tag && next?.bandAt === look?.bandAt) return;
+  look = next;
+  lookListeners.forEach((listener) => listener());
+}
+
+export function useLookAhead(): LookAhead {
+  return useSyncExternalStore(onLook, lookNow, lookNow);
+}
+
 /**
  * Scrolls #sheet-scroll by `motion`. A timed motion moves #chord-section only: from its top at the top of the
  * view to its bottom at the bottom. A learned one brings each heading, then the chart's end, to the reading line.
- * Grabbing or a manual scroll pauses. A new `plan` re-syncs from where the sheet is. The live speed scales the motion
- * from the next frame on. Returns the timed clock, in seconds at the plan's BPM. `time` is band time in a gig; solo
- * leaves it out.
+ * Grabbing or a manual scroll pauses; in a gig it looks ahead instead (`lookAhead`). A new `plan` re-syncs from where
+ * the sheet is. The live speed scales the motion from the next frame on. Returns the timed clock, in seconds at the
+ * plan's BPM. `time` is band time in a gig; solo leaves it out.
  */
 export function useAutoScroll(
   active: boolean,
@@ -144,16 +165,100 @@ export function scrollChart(
     }
   };
   el.addEventListener("scroll", relaid, { passive: true });
+  let songAt: number | null = null;
+  const bandAt = () => songAt ?? scroller.scrollTop + READING_LINE - (last?.start ?? 0);
+  const { scroller, unlook } = touchAction(time !== undefined) === "look-ahead" ? lookAhead(el, bandAt) : { scroller: el, unlook: () => {} };
   const playhead = (progress: number) => {
     const found = chart();
-    if (!found || !last || !onPlayhead) return;
-    onPlayhead(motion.current.kind === "learned" ? el.scrollTop + READING_LINE - last.start : progress * found.offsetHeight);
+    if (!found || !last) return;
+    songAt = motion.current.kind === "learned" ? scroller.scrollTop + READING_LINE - last.start : progress * found.offsetHeight;
+    onPlayhead?.(songAt);
   };
-  const stop = runScroll(el, motion, section, clock, onStop, time, playhead);
+  const stop = runScroll(scroller, motion, section, clock, onStop, time, playhead);
   return () => {
     stop();
+    unlook();
     el.removeEventListener("scroll", relaid);
   };
+}
+
+/**
+ * In a gig a touch reads ahead instead of stopping the band's scroll. `runScroll` drives the returned scroller, whose
+ * scrollTop is the band's place and which hears no touch. The sheet follows it while locked, stays where the finger
+ * leaves it while looking, and glides back on release (`src/look-ahead.ts`). Only this phone moves; nothing goes to the
+ * band. A look starts only when the player moves the sheet: a finger down (a pan from the beat pill, which stops its
+ * pointerdown, reaches here only as touchstart), a wheel or key just before, or the fling after a look's release. A tap
+ * that leaves the sheet still is no look, but it catches a glide. A scroll other code writes, such as the app's reset
+ * to the top on a new route, is put back on the band. With no finger down, the look ends once the sheet is still.
+ */
+function lookAhead(el: HTMLElement, bandAt: () => number): { scroller: Parameters<typeof runScroll>[0]; unlook: () => void } {
+  const QUIET_MS = 150;
+  let band = el.scrollTop;
+  let state = initialLook(band);
+  let wrote = el.scrollTop;
+  let down = false;
+  let steeredAt = -Infinity;
+  let quiet: ReturnType<typeof setTimeout> | undefined;
+  const show = () => setLook(showBandLine(state) ? { tag: tagText(state), bandAt: bandAt() } : null);
+  const grab = () => {
+    state = startDrag(state, true).state;
+    show();
+  };
+  const steer = () => void (steeredAt = performance.now());
+  const movedByPlayer = () => Math.abs(el.scrollTop - wrote) >= 2 && (down || performance.now() - steeredAt < QUIET_MS);
+  const press = () => {
+    down = true;
+    if (state.mode === "gliding") grab();
+  };
+  const letGo = () => {
+    down = false;
+    if (state.mode === "looking") steer();
+    state = release(state, performance.now()).state;
+  };
+  const drag = () => {
+    if (state.mode !== "looking" && movedByPlayer()) grab();
+    state = dragTo(state, el.scrollTop).state;
+    clearTimeout(quiet);
+    if (!down && state.mode === "looking") quiet = setTimeout(() => down || letGo(), QUIET_MS);
+  };
+  const listeners: [EventTarget, string, () => void][] = [
+    [el, "pointerdown", press],
+    [el, "touchstart", press],
+    [el, "wheel", steer],
+    [window, "keydown", steer],
+    [el, "scroll", drag],
+    [el, "pointerup", letGo],
+    [el, "touchend", letGo],
+    [el, "touchcancel", letGo],
+  ];
+  listeners.forEach(([target, type, listener]) => target.addEventListener(type, listener, { passive: true }));
+  const scroller = {
+    get scrollTop() {
+      return band;
+    },
+    set scrollTop(px: number) {
+      band = px;
+      state = tick(state, performance.now(), px);
+      if (state.mode !== "looking") el.scrollTop = wrote = state.px;
+      show();
+    },
+    get scrollHeight() {
+      return el.scrollHeight;
+    },
+    get clientHeight() {
+      return el.clientHeight;
+    },
+    addEventListener() {},
+    removeEventListener() {},
+  };
+  const unlook = () => {
+    listeners.forEach(([target, type, listener]) => target.removeEventListener(type, listener));
+    clearTimeout(quiet);
+    // A restarted scroll re-syncs from where the sheet is, so it must be the band's place, not this phone's look.
+    if (state.mode !== "locked") el.scrollTop = band;
+    setLook(null);
+  };
+  return { scroller, unlook };
 }
 
 /** Screen Wake Lock, held while the app is open. Missing support and rejected requests are silent. The OS drops the lock when the page hides, so it is requested again on return. */

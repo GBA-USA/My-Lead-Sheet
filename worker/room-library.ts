@@ -394,12 +394,15 @@ export async function printOf(song: SongContent): Promise<string> {
 
 export const selfRoom = (c: Context, userId: string) => c.env.ROOM.getByName(selfRoomId(userId));
 
-let builtInPrints: Promise<Set<string>> | undefined;
+let commonPrints: Promise<Set<string>> | undefined;
 
-/** Every phone ships the built-in library, so holding one of its charts says nothing about where a player got it. */
-async function isBuiltIn(print: string) {
-  builtInPrints ??= Promise.all(seedLibrary.songs.map((song) => printOf(song as SongContent))).then((prints) => new Set(prints));
-  return (await builtInPrints).has(print);
+/**
+ * Every phone ships the built-in library, and every chart with nothing shown yet (a sheet started from the song catalog)
+ * prints the same, so holding one of these says nothing about where a player got it.
+ */
+async function isCommon(print: string) {
+  commonPrints ??= Promise.all([...seedLibrary.songs, { body: [] }].map((song) => printOf(song as SongContent))).then((prints) => new Set(prints));
+  return (await commonPrints).has(print);
 }
 
 /**
@@ -407,15 +410,15 @@ async function isBuiltIn(print: string) {
  * the phone names must allow it, and vouches for the chart it was made of. Otherwise the caller's copies of this chart
  * and the band songs they shared or took a copy from that show it must include one that allows it; a chart the caller
  * holds none of is their own original. A named copy sent with another chart vouches for nothing more, so every band song
- * the caller can see with that chart counts. A built-in chart is only ever judged by a named copy. Returns the chain the
- * new copy comes from, or null for the caller's own original.
+ * the caller can see with that chart counts. A built-in or empty chart is only ever judged by a named copy. Returns the
+ * chain the new copy comes from, or null for the caller's own original.
  */
 export async function guardContent(c: Context, userId: string, print: string, choice: ShareChoice, copyId: string | null, except: string | null): Promise<Chain | null> {
   const mine = await fromRoom(selfRoom(c, userId).copyChains(copyId, print));
   const verdict = (chain: Chain) => allowed(chain, userId, choice);
   if (copyId !== null && !mine.named) throw new Refused("not_found", 404);
   if (mine.named) mustAllow(mine.named.chain, userId, choice);
-  if (mine.named?.print === print || (await isBuiltIn(print))) return mine.named?.chain ?? null;
+  if (mine.named?.print === print || (await isCommon(print))) return mine.named?.chain ?? null;
   const takenFrom = mine.named ? null : mine.takenFrom;
   const inBands = await Promise.all([...bandIdsOf(c.sql, userId), ...guestBandIdsOf(c.sql, userId)].map((bandId) => fromRoom(roomOf(c, bandId).heldByPrint(userId, print, except, takenFrom))));
   const held = [...mine.byPrint, ...inBands.flat()];

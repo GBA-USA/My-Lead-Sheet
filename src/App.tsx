@@ -36,7 +36,7 @@ import { FOLDS, SongChromeRoom, SongChromeSlot, useSongChrome } from "./song-chr
 import { SongEditors, type SongEdit } from "./song-editor";
 import { BandSongNotes } from "./song-notes";
 import { useSongVersion } from "./song-version";
-import { StageBar, stageSetOf } from "./stage-bar";
+import { GigStageBar, stageSetOf } from "./stage-bar";
 import { TEXT_SCALES, loadLibrary, loadPersonal, loadSongData, loadTextScaleIndex, localRef, madeHere, savePersonal, saveSongData, saveTextScaleIndex, songByRef, tempoText, withSongData } from "./storage";
 import { SongLine, TakeBar, taughtPlan, useFollowTempo, type LineMenu } from "./teach";
 import type { Library, Setlist, Song, SongData, SongRef } from "./types";
@@ -482,7 +482,8 @@ export function App() {
       </div>
 
       {stage && stage.count > 0 && (activeSong || stageCanMove) ? (
-        <StageBar set={stage} canMove={stageCanMove} scroll={activeSong ? { on: performance.scrolling, toggle: () => (take ? stopTake(take) : performance.setScrolling((on) => !on)) } : undefined} />
+        <GigStageBar gig={following && owner ? { session: following.session, me: owner, names: live.names } : null} set={stage} canMove={stageCanMove} bpm={metronome.bpm} song={activeSong ?? null}
+          scroll={activeSong ? { on: performance.scrolling, toggle: () => (take ? stopTake(take) : performance.setScrolling((on) => !on)) } : undefined} />
       ) : null}
     </div>
   );

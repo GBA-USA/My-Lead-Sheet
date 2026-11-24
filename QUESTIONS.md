@@ -1,3 +1,55 @@
+# song-search fix pass 1: an empty chart no longer counts as a friend's Private chart. This edits a Worker file. Owner, keep it or revert it?
+
+Self-check P2-2. A catalog pick is an own song with an empty chart, and `printOf` hashes only the chart, so every pick
+prints the same. Once a friend sent a player a Private pick, `guardContent` refused every pick the player made with
+`403 private_copy`. The fix is in `worker/room-library.ts`, which this cook does not own. `isBuiltIn` became
+`isCommon`, and its print set now holds the empty chart's print beside the built-in library's. An empty or built-in
+chart is judged only by a named copy, so a Private copy the phone names is still refused through its lineage.
+`check:song-search` case 10 fails at 1cedda1 with `403 {"error":"private_copy"}` on Pat's own pick and passes after
+the fix. The same case confirms that Bea's Private words, sent on as Pat's own song, still get `403 private_copy`.
+The other way to fix it is in the phone: hold a pick back from sending until it has words. That needs
+`src/send-song.tsx`, the band share and the copy-code screens, which this cook does not own either.
+
+Items 1 and 2 below are still open. This pass left both alone.
+
+---
+
+# song-search: two test fixes before this cook is green. May CoS apply them?
+
+The feature is built and committed (f8c6a76). `check:song-search` is 30 of 31 ok, and `npm run build` is green. Two checks
+stay red, and neither can be fixed inside this cook's files without editing a test, so under the rules I stopped here.
+
+**1. `check:song-search` case 8a has a commit-1 test bug.** Its last line waits for
+`document.querySelector(".shell-title")?.textContent.includes("Fire Away") || document.body.innerText.includes("Fire Away")`.
+The new sheet does show the title, in `.sheet .sheet-name`. But `.sheet-name` has `text-transform: uppercase`, and
+`innerText` returns the drawn case, so it holds `FIRE AWAY`. `.shell-title` holds the app name. Probe on the new sheet
+in Edge: `{"textContent":"Fire Away","transform":"uppercase","innerTextHasMixedCase":false,"innerTextHasUpper":true,"shellTitle":"Groovist"}`.
+Every assertion before that line passes: one song added, title, artist, length 232 s, and the New song defaults.
+Patch (the selector `check:new-song` already uses):
+
+```diff
+-      await app.until(`document.querySelector(".shell-title")?.textContent.includes("Fire Away") || document.body.innerText.includes("Fire Away")`, "the title on the page");
++      await app.until(`document.querySelector(".sheet .sheet-name")?.textContent === "Fire Away"`, "the title on the page");
+```
+
+**2. `check:portable` flags the two URLs the brief requires.** `src/song-search.ts:7` holds
+`https://www.google.com/search?q=` (pass condition 1) and `:8` holds `https://musicbrainz.org/ws/2/recording`
+(condition 3). Its `literal-origin` rule catches any `https://` in `src/`. These are fixed public endpoints, not this
+deploy's identity. The one deploy-specific part, the User-Agent's contact URL, comes from `location.origin`, so preview
+sends `MyLeadSheet/1.0 ( https://my-lead-sheet-preview.pages.dev )` and production sends its own host. Writing the URLs
+so the regex misses them would only hide them from the check, so I left them plain. Proposed patch, beside the existing
+`www.w3.org` exception. A scratch copy with it passes on this tree, planted fixtures included:
+
+```diff
+-  { name: "literal-origin", pattern: /\bhttps?:\/\/(?!(?:localhost|127\.0\.0\.1)(?![\w.-])|www\.w3\.org\/)[^\s"'`<>)]+/gi, allowedInVars: true },
++  { name: "literal-origin", pattern: /\bhttps?:\/\/(?!(?:localhost|127\.0\.0\.1)(?![\w.-])|www\.w3\.org\/|www\.google\.com\/search\?|musicbrainz\.org\/ws\/2\/)[^\s"'`<>)]+/gi, allowedInVars: true },
+```
+
+The other way is to serve both URLs from Worker config, the way `GOOGLE_ISSUER` is served. That needs worker files,
+which this cook does not own.
+
+---
+
 # C22 self-check 4 fix pass 1: the font patch below is applied, with two additions. Owner, say if commit 1's case should stay as it was.
 
 The fix-pass brief asked this pass to fix self-check 4's one P2. That P2 is the condition-12 case's 98 px bar, so this

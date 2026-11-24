@@ -93,7 +93,8 @@
     "check:routes": "tsc -p worker && node --experimental-strip-types scripts/check-routes.ts",
     "check:fanout": "tsc -p worker && node --experimental-strip-types scripts/check-fanout.ts",
     "check:sync-check": "tsc -p worker && node --experimental-strip-types scripts/check-sync-check.ts",
-    "check:mirror": "tsc -p worker && node --experimental-strip-types scripts/check-mirror.ts"
+    "check:mirror": "tsc -p worker && node --experimental-strip-types scripts/check-mirror.ts",
+    "check:song-search": "node --experimental-strip-types scripts/check-song-search.ts"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.5",

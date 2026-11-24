@@ -164,8 +164,8 @@ const TITLE_LINE = /^(.+?)\s+(?:(?:guitar|ukulele|uke|bass|piano)\s+)?(?:chords?
 const ARTIST_LINE = /^(?:by\s+|artist\s*:\s*)?([^:]+?)$/i;
 /** The parts a band plays and nobody sings, where a line of words is an instruction to the player. */
 const PLAYED = /^(?:intro|solo|interlude|instrumental|riff|break)\b/i;
-/** A rule a page draws under a heading or between parts. */
-const DIVIDER = /^[-–—_=*~]{3,}$/;
+/** A rule a page draws under a heading or between parts. A line of underscores is a blank to fill in, so it stays. */
+const DIVIDER = /^[-–—=*~]{3,}$/;
 /** A fretboard shape such as 032010 or xx2010. */
 const FRETS = /(?<![\w-])[xX\d]{6}(?![\w-])/;
 /** Words to the player, not sung: they name a fretboard shape, or a chord by more than its letter, such as C/E or G#dim. */
@@ -485,6 +485,8 @@ function rejoin(lines: string[]): string[] {
 /** A chord on a line of its own with no space around it, the way a phone copies one from a chord page. */
 const loneChord = (line: string | undefined) => (line !== undefined && /^\S+$/.test(line) ? storedChord(line) : null);
 const blank = (line: string | undefined) => line !== undefined && line.trim() === "";
+/** The one word a page box holds: no chord, no section name. A typed chart puts a heading or a chord row there instead. */
+const piece = (line: string | undefined) => line !== undefined && /^\S+$/.test(line) && !storedChord(line) && headingOf(line) === null;
 
 /** One line of the page while its pieces come in: the words so far, the spaces since, and the chords that wait for their word. */
 type PageRow = { lyric: string; gap: number; placed: PlacedChord[]; waiting: string[] };
@@ -524,12 +526,19 @@ function rowLines(row: PageRow): string[] {
  * starts a new line of the page. A gap of two spaces or more before a chord starts a new row. A line with no box that
  * speaks to the player is a note, and a chord row set apart from its words by such lines takes the words, with the
  * notes under the pair. On a page that names its sections a blank line starts none. A copy that kept none of the
- * page's spaces is no such copy, and `rejoin` reads it.
+ * page's spaces is no such copy, and `rejoin` reads it. A lone chord is a sign of such a copy when the words before
+ * it have spaces on both sides, or when a line of spaces under it leads to the next box: a word, or a chord that is
+ * itself a sign. A typed chart that ends a stanza on a lone chord over a line of spaces has a heading, a chord row or
+ * a sung line there instead.
  */
 function pageCopy(lines: string[]): string[] | null {
   const spaced = (line: string | undefined) => line !== undefined && line.trim() !== "" && /^\s/.test(line) && /\s$/.test(line);
-  const signs = lines.filter((line, i) => loneChord(line) && (spaced(lines[i - 1]) || (lines[i + 1] !== "" && blank(lines[i + 1]))));
-  if (signs.length < 2) return null;
+  const sign: boolean[] = [];
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    const leads = lines[i + 1] !== "" && blank(lines[i + 1]) && (piece(lines[i + 2]) || sign[i + 2] === true);
+    sign[i] = loneChord(lines[i]) !== null && (spaced(lines[i - 1]) || leads);
+  }
+  if (sign.filter(Boolean).length < 2) return null;
   const out: { text: string; loose?: true }[] = [];
   const indents: number[] = [];
   let row: PageRow | null = null;

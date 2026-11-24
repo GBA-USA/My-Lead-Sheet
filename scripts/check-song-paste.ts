@@ -397,6 +397,9 @@ const SCREEN_CASES = [
   "24. a paste that leaves nothing after cleaning stays in the box as pasted, says so, and changes no field",
   "25. Select all, then Paste over a capo chart, is a fresh paste: it is cleaned, the capo note and its status go, and Save stores no capo note",
   "26. a capo note the player can see and remove: typed over, the paste status goes, the note shows with Remove capo note, and Edit song shows it too",
+  "27. a typed chart, then Select all and Paste the app takes, comes back with one Ctrl+Z, and the paste status goes",
+  "28. a paste with the caret at the top of a chart, or over part of its first line, is left to the box and the chart stays as typed",
+  "29. a paste scrolls the preview into view, and a capo switch or Use it as pasted leaves the screen where the player tapped",
 ];
 
 const api = createServer((request, response) => {
@@ -779,6 +782,72 @@ if (site) {
       await tap("Save");
       await app.until(`!document.querySelector(".song-editor")`, "Edit song closed");
       assert.equal(await savedNote("Harbor Lights"), "", "Edit song: the capo note is gone from the stored song");
+    });
+
+    const TYPED_CHART = ["VERSE 1", "A               E", "Honey, load up your questions"].join("\n");
+    const realKey = async (key: string, code: string, keyCode: number, commands: string[]) => {
+      await s.send("Input.dispatchKeyEvent", { type: "rawKeyDown", key, code, windowsVirtualKeyCode: keyCode, modifiers: 2, commands });
+      await s.send("Input.dispatchKeyEvent", { type: "keyUp", key, code, windowsVirtualKeyCode: keyCode, modifiers: 2 });
+      await sleep(200);
+    };
+    const typeChart = async () => {
+      await s.evaluate(`${field("Chart")}.focus()`);
+      await s.send("Input.insertText", { text: TYPED_CHART });
+      await sleep(200);
+      assert.equal(await value("Chart"), TYPED_CHART, "the chart is typed in");
+    };
+
+    await check(SCREEN_CASES[13], async () => {
+      await phone(390);
+      await openNew();
+      await typeChart();
+      await realKey("a", "KeyA", 65, ["selectAll"]);
+      assert.equal(await keyboard(`Tuning: E A D G B E\n${PLAIN_CHART}`), true, "the app takes the paste over the whole box");
+      await app.until(`${field("Chart")}.value.includes("Float away")`, "the pasted chart in the box");
+      assert.ok(!(await value("Chart")).includes("Tuning:"), `the paste is cleaned (${js(await value("Chart"))})`);
+      await realKey("z", "KeyZ", 90, ["undo"]);
+      assert.equal(await value("Chart"), TYPED_CHART, "one Ctrl+Z brings back the typed chart");
+      assert.equal(await pasteStatus(), "", "the paste status goes with the paste");
+      assert.ok((await preview()).includes("Honey, load up your questions"), `the preview draws the typed chart again (${js(await preview())})`);
+    });
+
+    await check(SCREEN_CASES[14], async () => {
+      await phone(390);
+      await openNew();
+      await typeChart();
+      for (const [from, to, where] of [
+        [0, 0, "the caret at the top"],
+        [0, 5, "part of the first line selected"],
+      ] as const) {
+        await s.evaluate(`${field("Chart")}.setSelectionRange(${from}, ${to})`);
+        assert.equal(await keyboard(PLAIN_CHART), false, `a paste with ${where} is left to the box`);
+        await sleep(150);
+        assert.equal(await value("Chart"), TYPED_CHART, `with ${where} the chart stays as typed`);
+      }
+    });
+
+    await check(SCREEN_CASES[15], async () => {
+      const backdrop = `document.querySelector(".song-editor-backdrop")`;
+      const onScreen = (expression: string) => `(() => { const r = ${expression}.getBoundingClientRect(); return r.top >= 0 && r.top < ${HEIGHT}; })()`;
+      const previewBox = `document.querySelector(".song-editor-preview")`;
+      const pasteBox = `document.querySelector(".song-editor-paste")`;
+      await phone(390);
+      await openNew();
+      await fill("Title", "Scroll To The Preview");
+      await s.evaluate(`${backdrop}.scrollTop = 0`);
+      await sleep(100);
+      assert.equal(await s.evaluate<boolean>(onScreen(previewBox)), false, "the preview starts below the screen");
+      await pasteTap(CAPO_CHART);
+      await app.until(`!!${button("Show guitar shapes")}`, "the capo switch");
+      await app.until(onScreen(previewBox), "the preview scrolled into view after the paste");
+      for (const label of ["Show guitar shapes", "Use it as pasted"]) {
+        await s.evaluate(`${button(label)}.scrollIntoView({ block: "center" })`);
+        await sleep(150);
+        assert.ok(await s.evaluate<boolean>(onScreen(pasteBox)), `the paste controls are on screen before ${label}`);
+        await tap(label);
+        await sleep(300);
+        assert.ok(await s.evaluate<boolean>(onScreen(pasteBox)), `after ${label} the paste controls stay on screen (top ${await s.evaluate<number>(`${pasteBox}.getBoundingClientRect().top`)})`);
+      }
     });
   } finally {
     await s.close();

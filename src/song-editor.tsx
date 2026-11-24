@@ -132,6 +132,8 @@ function SongEditor({ song, songs, onTempo, onClose }: { song?: Song; songs: Son
   const [pasteNote, setPasteNote] = useState("");
   const [have, setHave] = useState<Song | null>(null);
   const [pasting, setPasting] = useState<Paste | null>(null);
+  /** How many pastes the editor has taken. Each one brings the preview into view; a switch of the same paste does not. */
+  const [taken, setTaken] = useState(0);
   const touched = useRef(new Set<keyof Form>());
   const chartRef = useRef<HTMLTextAreaElement>(null);
   const previewRef = useRef<HTMLElement>(null);
@@ -146,8 +148,8 @@ function SongEditor({ song, songs, onTempo, onClose }: { song?: Song; songs: Son
 
   useEscape(onClose);
   useEffect(() => {
-    if (pasting) previewRef.current?.scrollIntoView({ block: "start" });
-  }, [pasting]);
+    if (taken) previewRef.current?.scrollIntoView({ block: "start" });
+  }, [taken]);
 
   const set = <K extends keyof Form>(field: K) => (next: Form[K]) => {
     touched.current.add(field);
@@ -167,11 +169,16 @@ function SongEditor({ song, songs, onTempo, onClose }: { song?: Song; songs: Son
     setForm((current) => formWithPaste(current, next, open));
   };
 
-  /** Cleans a pasted text into the box after `before`. A paste that leaves nothing goes in as pasted and fills no field. */
+  /**
+   * Cleans a pasted text into the box after `before`, and gives back what the box now shows. A paste that leaves nothing
+   * goes in as pasted and fills no field.
+   */
   const takePaste = (raw: string, before: string) => {
     const pasted = readPaste(raw);
-    if (!pasted.chart.trim()) return show({ raw, before, view: "raw", pasted: { facts: {}, chart: "", leftOut: [] } });
-    show({ raw, before, view: CAPO_VIEW, pasted });
+    const next: Paste = pasted.chart.trim() ? { raw, before, view: CAPO_VIEW, pasted } : { raw, before, view: "raw", pasted: { facts: {}, chart: "", leftOut: [] } };
+    show(next);
+    setTaken((count) => count + 1);
+    return shown(next);
   };
 
   const takeChip = (take: Partial<Form>) => {
@@ -334,7 +341,10 @@ function SongEditor({ song, songs, onTempo, onClose }: { song?: Song; songs: Son
               const whole = box.selectionStart === 0 && box.selectionEnd === box.value.length;
               if (!text.trim() || (form.chart.trim() && !whole)) return;
               event.preventDefault();
-              takePaste(text, "");
+              const chart = takePaste(text, "");
+              // The browser's own edit, so Ctrl+Z brings back what the box held. Where insertText is gone, the state above still shows the chart.
+              box.setSelectionRange(0, box.value.length);
+              document.execCommand("insertText", false, chart);
             }}
           />
           {parsed.warnings.length > 0 ? (

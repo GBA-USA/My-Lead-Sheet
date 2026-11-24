@@ -1,3 +1,12 @@
+# song-paste-import fix pass 3: a whole-box paste can be undone, and only a new paste scrolls
+
+1. A paste the app takes now goes into the box as the browser's own edit (`insertText` over the whole box), so one
+   Ctrl+Z brings back the chart it replaced. The fields the paste filled (key, BPM) stay as filled. Owner: say if Undo
+   should put those back too.
+2. The preview scrolls into view after each new paste, not after a capo switch or Use it as pasted. Those taps leave
+   the screen where it was, so the player can tap the switch again to compare. check:song-paste case 29 pins both
+   halves. Owner: say if a switch should scroll to the preview instead.
+
 # song-paste-import fix pass 2: the capo note is a control, and a paste over the whole box is a fresh paste
 
 1. A capo paste's key note (`Capo 2 for guitar`) now shows in the editor, above the box, with a Remove capo note

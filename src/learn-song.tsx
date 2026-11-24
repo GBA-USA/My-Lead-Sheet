@@ -1,69 +1,49 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { type FieldBpm, addTap, fieldBpm, tapBpm } from "./bpm-detect";
-import { RAW_MIC } from "./bpm-finder";
-import { SongListener, beatsPerBar, learnedVersion, placeHeadings, shortHeading } from "./learn-analyze";
+import { beatsPerBar, learnedVersion, placeHeadings, shortHeading } from "./learn-analyze";
 import { chartChords, chartForm, heardBars, type HeardBar } from "./learn-chords";
-import type { Analysis, Band, Heard } from "./learn-result";
+import { FileRefused, type Mic, type MicStop, type WorkerListen, fromFile, fromMic, holdScreen, listenInWorker } from "./learn-input";
+import type { Analysis, Band, Coverage, Listen, Source } from "./learn-result";
 import type { ScrollVersion, Span } from "./scroll-timing";
 import { formatRuntime, songDataFromForm } from "./song-data-editor";
 import type { Song, SongData } from "./types";
 import "./learn.css";
 
-const NO_MIC = "The mic isn't available.";
-const NOT_HEARD = "No song with a steady beat heard. Try again closer to the phone.";
+/** Why the sheet is back at its two ways in, in the words the player sees. */
+const NOTES = {
+  "no-mic": "The mic isn't available.",
+  "not-heard": "No song with a steady beat heard. Try again closer to the phone.",
+  "file-not-heard": "No song with a steady beat heard. Try another file.",
+  unreadable: "Can't read this file. Try an MP3, M4A or WAV. Protected music can't be read.",
+  "too-long": "That's longer than a song. Pick a file under twenty minutes.",
+  failed: "Listening failed. Try again.",
+};
+type Note = keyof typeof NOTES;
 
-/**
- * Asks for the mic and feeds it to a SongListener until the returned stop() is called. stop() stops every
- * mic track and gives back what was heard, or null if the mic never opened. Audio is never kept or sent.
- */
-export function listenToSong(on: { heard: (seconds: number) => void; noMic: () => void }): () => SongListener | null {
-  let audio: AudioContext | undefined;
-  let mic: MediaStream | undefined;
-  let listener: SongListener | null = null;
-  let stopped = false;
-  const stop = () => {
-    stopped = true;
-    mic?.getTracks().forEach((track) => track.stop());
-    if (audio && audio.state !== "closed") void audio.close();
-    return listener;
-  };
-  new Promise<MediaStream>((resolve) => {
-    audio = new AudioContext();
-    resolve(navigator.mediaDevices.getUserMedia({ audio: RAW_MIC }));
-  })
-    .then((stream) => {
-      mic = stream;
-      if (stopped || !audio) return void stop();
-      const song = new SongListener(audio.sampleRate);
-      listener = song;
-      const processor = audio.createScriptProcessor(4096, 1, 1);
-      processor.onaudioprocess = (event) => {
-        if (stopped) return;
-        song.push(event.inputBuffer.getChannelData(0));
-        on.heard(song.seconds);
-      };
-      audio.createMediaStreamSource(stream).connect(processor);
-      processor.connect(audio.destination);
-      void audio.resume();
-    })
-    .catch(() => {
-      if (stopped) return;
-      stop();
-      on.noMic();
-    });
-  return stop;
-}
+const SPEAKER = "Play the song from a speaker or another device and stay on this screen.";
+
+/** Why the mic stopped: in the stopped message, and in the Review's coverage line. */
+const STOPPED: Record<MicStop, { said: string; line: string }> = {
+  "page-hidden": { said: "This app was left while listening.", line: "the app was left" },
+  "mic-ended": { said: "The mic was turned off.", line: "the mic was turned off" },
+  "mic-muted": { said: "The mic went quiet, maybe for a call or another app.", line: "the mic went quiet" },
+  "audio-suspended": { said: "The phone paused the sound.", line: "the sound was paused" },
+};
+
+const FROM: Record<Source["kind"], string> = { file: "From a file", mic: "From the mic", tab: "From a tab" };
 
 /** The opening tempo the Review would save: as the listen heard it, in its band, or as the player set it, drawn black. */
 type TempoPick = { bpm: number; band: Band } | { bpm: FieldBpm; band: "set" };
 
 type Step =
-  | { kind: "listening"; heard: number }
-  | { kind: "note"; text: string }
+  | { kind: "choose"; note: Note | null }
+  | { kind: "listening"; from: Source["kind"]; name: string | null; heard: number; expected: number | null }
+  | { kind: "stopped"; heard: number; why: MicStop; refused: boolean }
+  | { kind: "working"; from: Source["kind"] }
   | {
       kind: "review";
-      heard: Heard;
+      heard: Listen;
       boundaries: number[];
       vocals: boolean[];
       keepHeard: boolean[];
@@ -72,7 +52,24 @@ type Step =
       taps: number[];
     };
 
+/** The listen under way: its worker, where its sound comes from, and the mic while one is open. */
+interface Session {
+  worker: WorkerListen;
+  source: Source;
+  expectedSeconds: number | null;
+  mic: Mic | null;
+}
+
 const clockText = (seconds: number) => formatRuntime(Math.max(0, Math.floor(seconds)));
+
+/** The Review's first line: where the sound came from, how much of it was heard and why it ended, and how clean it was. */
+function coverageLine({ source, coverage }: Listen): string {
+  const { heardSeconds, expectedSeconds, stopped, quality } = coverage;
+  const whole = expectedSeconds === null ? source.kind === "file" : heardSeconds >= expectedSeconds - 0.5;
+  const heard = whole ? clockText(heardSeconds) : `heard ${clockText(heardSeconds)}${expectedSeconds ? ` of ${clockText(expectedSeconds)}` : ""}`;
+  const why = stopped === "finished" || stopped === "player" ? [] : [STOPPED[stopped].line];
+  return [FROM[source.kind], heard, ...why, quality].join(" · ");
+}
 
 function barText(beat: number, bar: number): string {
   const inBar = beat % bar;
@@ -96,8 +93,9 @@ function barGroups(cells: string[], width: number): string[] {
 }
 
 /**
- * The Learn this song sheet: listen to the whole song while it is open, then review the length, tempo,
- * sections, heard chords and suggested vocals, and save them as a new timing version.
+ * The Learn this song sheet: hear the whole song from a picked file or the mic, then review the length, tempo,
+ * sections, heard chords and suggested vocals, and save them as a new timing version. The analysis runs in its own
+ * worker; this sheet only decodes, taps the mic and shows how much was heard.
  */
 export function LearnSong({
   song,
@@ -112,62 +110,141 @@ export function LearnSong({
   onSave: (version: Omit<ScrollVersion, "name">, data: SongData | null) => void;
   onClose: () => void;
 }) {
-  const [step, setStep] = useState<Step>({ kind: "listening", heard: 0 });
-  const stopListening = useRef<() => SongListener | null>(() => null);
+  const [step, setStep] = useState<Step>({ kind: "choose", note: null });
+  const session = useRef<Session | null>(null);
+  const screen = useRef<(() => void) | null>(null);
   const titleId = useId();
   const headings = song.body.map((section) => section.heading);
   const bar = beatsPerBar(song.timeSignature);
+  const runtime = song.officialRuntimeSec ?? null;
 
-  const listen = () => {
-    setStep({ kind: "listening", heard: 0 });
-    stopListening.current = listenToSong({
-      heard: (heard) => setStep({ kind: "listening", heard }),
-      noMic: () => setStep({ kind: "note", text: NO_MIC }),
-    });
+  /** Asked for inside the tap that starts listening, let go when the listen ends or the sheet closes. */
+  const keepScreenOn = () => void (screen.current ??= holdScreen());
+  const letScreenOff = () => {
+    screen.current?.();
+    screen.current = null;
   };
-  useEffect(() => {
-    listen();
-    return () => void stopListening.current();
-  }, []);
+  const end = () => {
+    session.current?.mic?.stop();
+    session.current?.worker.close();
+    session.current = null;
+    letScreenOff();
+  };
+  useEffect(() => end, []);
   const cancel = () => {
-    stopListening.current();
+    end();
     onClose();
   };
-  const finish = () => {
-    const heard = stopListening.current()?.analyze(bar);
+  const choose = (note: Note) => {
+    end();
+    setStep({ kind: "choose", note });
+  };
+
+  const finish = async (stopped: Coverage["stopped"]) => {
+    const mine = session.current;
+    if (!mine) return;
+    mine.mic?.stop();
+    setStep({ kind: "working", from: mine.source.kind });
+    const heard = await mine.worker.finish({ beatsPerBar: bar, lyrics: null, source: mine.source, expectedSeconds: mine.expectedSeconds, stopped }).catch(() => undefined);
+    if (session.current !== mine) return;
+    if (heard === undefined) return choose("failed");
     const boundaries = heard && placeHeadings(heard.analysis, headings.length, bar);
-    setStep(
-      heard && boundaries
-        ? {
-            kind: "review",
-            heard,
-            boundaries,
-            vocals: heard.analysis.vocals.map(() => true),
-            keepHeard: headings.map(() => false),
-            useForSong: false,
-            tempo: { bpm: heard.tempo.bpm, band: heard.tempo.band },
-            taps: [],
-          }
-        : { kind: "note", text: NOT_HEARD },
-    );
+    if (!heard || !boundaries) return choose(mine.source.kind === "file" ? "file-not-heard" : "not-heard");
+    session.current = null;
+    letScreenOff();
+    setStep({
+      kind: "review",
+      heard,
+      boundaries,
+      vocals: heard.analysis.vocals.map(() => true),
+      keepHeard: headings.map(() => false),
+      useForSong: false,
+      tempo: { bpm: heard.tempo.bpm, band: heard.tempo.band },
+      taps: [],
+    });
+  };
+
+  /**
+   * Opens the mic inside this tap. Keep listening opens it again into the same listen, passing why it stopped, so a mic
+   * refused then goes back to that stop with what was heard still there to use.
+   */
+  const listenWithMic = (again?: MicStop) => {
+    keepScreenOn();
+    const worker = session.current?.worker ?? listenInWorker();
+    const stop = (why: MicStop, refused: boolean) => {
+      letScreenOff();
+      setStep({ kind: "stopped", heard: worker.seconds, why, refused });
+    };
+    const mic = fromMic({
+      chunk: (samples) => {
+        void worker.send(samples, mic.source.sampleRate).catch(() => {
+          if (session.current?.worker === worker) choose("failed");
+        });
+        setStep((now) => (now.kind === "listening" ? { ...now, heard: worker.seconds } : now));
+      },
+      stopped: (why) => stop(why, false),
+      failed: () => (again ? stop(again, true) : choose("no-mic")),
+    });
+    session.current = { worker, source: mic.source, expectedSeconds: runtime, mic };
+    setStep({ kind: "listening", from: "mic", name: null, heard: worker.seconds, expected: runtime });
+  };
+
+  /** Picked from the sheet's two ways in, where no listen is under way; the screen is held from the tap on the picker. */
+  const listenToFile = async (file: File) => {
+    keepScreenOn();
+    const mine: Session = { worker: listenInWorker(), source: { kind: "file", name: file.name, stereo: false, sampleRate: 0 }, expectedSeconds: null, mic: null };
+    session.current = mine;
+    setStep({ kind: "listening", from: "file", name: file.name, heard: 0, expected: null });
+    const sound = await fromFile(file).catch((error: unknown) => (error instanceof FileRefused ? error.reason : "unreadable"));
+    if (session.current !== mine) return;
+    if (typeof sound === "string") return choose(sound);
+    Object.assign(mine, { source: sound.source, expectedSeconds: sound.expectedSeconds });
+    for (const chunk of sound.chunks) {
+      const heard = await mine.worker.send(chunk, sound.source.sampleRate).then(() => true, () => false);
+      if (session.current !== mine) return;
+      if (!heard) return choose("failed");
+      setStep({ kind: "listening", from: "file", name: file.name, heard: mine.worker.seconds, expected: sound.expectedSeconds });
+    }
+    await finish("finished");
   };
 
   return createPortal(
     <div className="learn-backdrop">
       <div className="learn" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <h2 id={titleId}>Learn this song</h2>
-        {step.kind === "listening" ? (
-          <Listening heard={step.heard} runtime={song.officialRuntimeSec} onStop={finish} onCancel={cancel} />
+        {step.kind === "choose" ? (
+          <WaysIn note={step.note} onFile={listenToFile} onFileTap={keepScreenOn} onFileCancel={letScreenOff} onMic={() => listenWithMic()} onCancel={cancel} />
         ) : null}
-        {step.kind === "note" ? (
+        {step.kind === "listening" ? <Listening step={step} onStop={() => void finish("player")} onCancel={cancel} /> : null}
+        {step.kind === "stopped" ? (
           <>
-            <p role="status">{step.text}</p>
+            <p role="status">
+              Listening stopped at {clockText(step.heard)}. {step.refused ? NOTES["no-mic"] : STOPPED[step.why].said} {SPEAKER}
+            </p>
             <div className="learn-actions">
               <button type="button" onClick={cancel}>
                 Cancel
               </button>
-              <button type="button" className="is-primary" onClick={listen}>
-                Try again
+              <button type="button" onClick={() => void finish(step.why)}>
+                Use what was heard
+              </button>
+              <button type="button" className="is-primary" onClick={() => listenWithMic(step.why)}>
+                Keep listening
+              </button>
+            </div>
+          </>
+        ) : null}
+        {step.kind === "working" ? (
+          <>
+            <p role="status">Working out the beat and the chords…</p>
+            {step.from === "file" ? (
+              <div className="learn-progress">
+                <progress aria-label="Song heard" max={1} value={1} />
+              </div>
+            ) : null}
+            <div className="learn-actions">
+              <button type="button" onClick={cancel}>
+                Cancel
               </button>
             </div>
           </>
@@ -202,31 +279,90 @@ export function LearnSong({
   );
 }
 
-function Listening({
-  heard,
-  runtime,
-  onStop,
+/** The two ways in, the file first because it hears the song best, and why the last try ended, if it did. */
+function WaysIn({
+  note,
+  onFile,
+  onFileTap,
+  onFileCancel,
+  onMic,
   onCancel,
 }: {
-  heard: number;
-  runtime: number | null;
-  onStop: () => void;
+  note: Note | null;
+  onFile: (file: File) => void;
+  onFileTap: () => void;
+  onFileCancel: () => void;
+  onMic: () => void;
   onCancel: () => void;
 }) {
+  const fileLine = useId();
+  const micLine = useId();
+  /** React binds `cancel` only on a dialog, so the picker closed with no file is heard here. */
+  const picker = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const input = picker.current;
+    input?.addEventListener("cancel", onFileCancel);
+    return () => input?.removeEventListener("cancel", onFileCancel);
+  }, [onFileCancel]);
   return (
     <>
-      <p>Play the whole song near the phone, then tap Stop.</p>
-      <div className="learn-progress">
-        {runtime ? <progress aria-label="Song heard" max={1} value={Math.min(1, heard / runtime)} /> : null}
-        <span>{clockText(heard)}</span>
+      {note ? <p role="alert">{NOTES[note]}</p> : null}
+      <p>Pick the song's file for the best result, or play it from a speaker near the phone.</p>
+      <div className="learn-ways">
+        <label className="learn-way is-primary" onClick={onFileTap}>
+          <input
+            ref={picker}
+            type="file"
+            accept="audio/*"
+            className="learn-file"
+            aria-label="Pick the song's file"
+            aria-describedby={fileLine}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (file) onFile(file);
+            }}
+          />
+          <span className="learn-way-title">Pick the song's file</span>{" "}
+          <span className="learn-way-line" id={fileLine}>
+            Best result. From Files, Downloads or a Voice Memos share.
+          </span>
+        </label>
+        <button type="button" className="learn-way" aria-label="Listen with the mic" aria-describedby={micLine} onClick={onMic}>
+          <span className="learn-way-title">Listen with the mic</span>{" "}
+          <span className="learn-way-line" id={micLine}>
+            Play it from a speaker or another device, and stay on this screen.
+          </span>
+        </button>
       </div>
       <div className="learn-actions">
         <button type="button" onClick={onCancel}>
           Cancel
         </button>
-        <button type="button" className="is-primary" onClick={onStop}>
-          Stop
+      </div>
+    </>
+  );
+}
+
+function Listening({ step, onStop, onCancel }: { step: Extract<Step, { kind: "listening" }>; onStop: () => void; onCancel: () => void }) {
+  const { from, name, heard, expected } = step;
+  return (
+    <>
+      <p>{from === "file" ? `Listening to ${name}.` : "Play the whole song near the phone from a speaker or another device, and stay on this screen. Tap Stop when it ends."}</p>
+      {"wakeLock" in navigator ? null : <p>Keep this screen on while it listens.</p>}
+      <div className="learn-progress">
+        {expected ? <progress aria-label="Song heard" max={1} value={Math.min(1, heard / expected)} /> : from === "file" ? <progress aria-label="Song heard" /> : null}
+        <span>{expected ? `${clockText(heard)} of ${clockText(expected)}` : clockText(heard)}</span>
+      </div>
+      <div className="learn-actions">
+        <button type="button" onClick={onCancel}>
+          Cancel
         </button>
+        {from === "mic" ? (
+          <button type="button" className="is-primary" onClick={onStop}>
+            Stop
+          </button>
+        ) : null}
       </div>
     </>
   );
@@ -283,6 +419,7 @@ function Review({
 
   return (
     <>
+      <p className="learn-coverage">{coverageLine(step.heard)}</p>
       <p>
         {formatRuntime(length)} · <span data-band={step.tempo.band}>{tempo} BPM</span>
         {other ? (

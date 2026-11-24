@@ -1,101 +1,119 @@
-# song-paste-format-fix-2 self-check
+VERDICT: FAIL
 
-Goal: a phone copy from a chord-site page (one chord or lyric fragment per line, blanks between) becomes a real lead
-sheet, with lyric lines under the right chords, real section names, title and artist when present, comments as notes
-and no divider junk.
+# song-paste-format-fix-2 self-check at ff8f5a9, tier deep
 
-Verdict: PASS. No open P0, P1 or P2. Nine P3 items are listed at the end.
+Goal: a phone copy from a chord-site page becomes a real lead sheet. Lyric lines sit under the right chords, the
+page's section names become sections, title and artist are filled when present, comments become notes and dividers
+are dropped.
 
-The runs used headless Edge on Windows with the path shim. The box verify uses Chrome on Linux. Logs, the probe, the
-mutation list and six screenshots are in `C:\Users\order\cooks\reports\song-paste-format-fix-2\`.
+One P2 is open. The new `pageCopy` pass also fires on an ordinary typed chart whose blank lines hold a space. That
+chart loses a section heading and moves chords off their syllables. The base kept the same chart exactly as pasted.
 
-## What the copy looks like
+Diff checked: `95432ec..ff8f5a9`, which touches `src/song-paste.ts`, `scripts/check-song-paste.ts`, two fixtures and
+VERIFY.md. Runs used headless Edge on Windows with the path shim. Probes are in `.verify-logs/self-check-opus/`.
 
-The reported paste shows how the page is built (inferred from that one paste and the earlier Sweet Home screenshot).
-The page holds each chord in a box of its own, and the first word after a chord in a second box. The phone gives every
-box a line. The text between two boxes arrives as it stands, with one line for each page line it covers. So:
+## Pass conditions from the brief
 
-- `C`, ` `, `Blue`, ` jean `, `F`, `baby,` is one page line. The one-space line is the page's own space.
-- An empty line is a page line break. So is the break between two lines of one text run, as in ` me,` then `   `.
-- A run with no chord box, such as the comment lines before `CHORUS:`, arrives as ordinary lines.
-
-## What changed
-
-`readPaste` in `src/song-paste.ts` runs a new first pass, `pageCopy`. It returns null unless two lone chords stand next
-to a line of spaces or a piece with a space on both ends. For any other paste `rejoin` from PR #114 runs as before.
-
-- Page lines are rebuilt from the pieces. Each chord sits over the first letter of the next piece. A chord inside a
-  word stays over its syllable, and the word stays whole (`auditorium`, `hums`).
-- A gap of two spaces or more before a chord starts a new row, which gives `Blue jean baby,` and `L.A. lady,` their
-  own rows. One space does not. The brief's rule said any whitespace-only line ends a lyric line. Read that way, the
-  one-space line between `L.A.` and `F` would split `L.A. lady,`, which the brief also rules out.
-- A line with no chord box that names a fretboard shape, or a chord by more than its letter, is a note. A chord row
-  set apart from its words by such lines takes the words. `G/B G/B` sits over `softly,` and `slowly`, as on the page.
-- On a page that names its sections, a blank line starts no section. On a page that names none, it parts stanzas.
-- A word that reads as a chord (`A`) stays a word when the rest of its line follows it.
-
-Two rules apply to every paste. A line of only dashes or other rule characters leaves the chart. A heading right under
-a row of chords alone gets a blank line above it, because `parseSheet` reads a heading under a chord row as that row's
-words. `Pasted`, `SongFacts` and `LeftOut` are unchanged, and no `LeftOut` value was added.
-
-## Fail before, pass after
-
-Base source is 95432ec (origin/mls-int-20261113). The base runs used a `git archive` of d963e70, which is the base
-source plus the new cases.
-
-| Case | Base source | HEAD `4025d8c` |
+| Condition | Result | Evidence |
 |---|---|---|
-| 12k. the reported paste (`tiny-dancer-ug-phone.txt`, sha256 pinned) | FAIL, 65 sections | ok |
-| 12l. a made-up page copy with site lines, intro instructions and a tab | FAIL, lines joined and `Caro lina` split | ok |
-| 12m. a rule of dashes and a heading under chords alone, typed | FAIL, CHORUS read as words | ok |
-| 12n. a page copy with no section names (added after the fix) | FAIL | ok |
-| 12o. a typed chart with one stray line of spaces; a clean chart with a heading under chords (added after the fix) | FAIL | ok |
+| tiny-dancer fixture fails on base, passes on head | met | cook log `before-d963e70.log` FAIL 12k, 12l, 12m; head log 47 ok |
+| fixture is the t300u paste, verbatim | met | sha256 `37f328d9…1d18` for the brief's ref, the worktree file and `HEAD:` blob (measured) |
+| "C F" over "Blue jean baby," style rows | met | 12k asserts the rows and chord columns |
+| Verse 2, Pre-Chorus, Chorus recognized, no verse per fragment | met | 12k asserts 4 sections, each line 2+ words |
+| dividers dropped | met | 12k, 12m |
+| voicing and comment prose are notes | met | 12k asserts each prose line is a note on the pre-chorus |
+| Sweet Home shaped fixture passes (chrome out, title and artist, intro notes, stanzas, chords) | met | 12l |
+| existing check:song-paste and check:song-search pass, build green | met | cook logs: 47 ok, 52 ok, `built in 1.94s`. I did not rerun them because the diff after those runs is docs only |
+| committed on the branch, REPORT starts with filled HANDOFF | met | `reports/REPORT-song-paste-format-fix-2.md` opens with it |
+| HANDOFF in the last commit message body | not met | `git log -1 ff8f5a9` and `4025d8c` bodies hold no `GOAL:` line. P3, a process slip |
+| VERIFY.md has no open P0-P2 | not met | P2-1 below |
 
-12n and 12o pass on the fix commit 6452184, so they have no fail-before commit of their own. The mutation run below is
-their proof.
+## P2-1. A typed chart with space-filled blank lines is read as a phone copy
 
-Final HEAD run: `npm run build` exit 0. check:song-paste 47 ok. check:song-search 52 ok. check:new-song 31 ok.
-check:one-copy 18 ok. check:portable, check:privacy and check:screens exit 0. check:chords passed 2 of 3 runs, see
-below. The 15 built-in charts read back the same in case 13.
+CLASS=data-shape
 
-## Proof beyond the cases
+`pageCopy` (src/song-paste.ts:529-531) takes a paste as a page copy when two lone-chord lines are each followed by a line
+of only spaces. That is also how a common typed chart looks. Many charts end a stanza on a lone chord, and copies from
+notes apps, email and web pages often leave a space or a no-break space on a blank line. In such a chart, the state
+after a chord and its spaces is `lead`. The next line with no space in it is then taken as "the one word after the
+chord" (src/song-paste.ts:575-590). A one-word heading such as `Chorus` or `[Chorus]` is glued onto the chord row. The
+column-spaced chord row under it is joined into the words with its spaces folded, so each chord loses its column.
 
-- Mutation run. `unit.mjs <tree> mutations.json` runs the 30 unit cases against one-line changes of
-  `src/song-paste.ts`, held in memory. 27 of 27 are killed. The first run left six alive. Four got cases (12n, 12o).
-  The code behind the other two was removed in 4025d8c, with one more test the scanner never needed.
-- Real app. `probe.ts` pastes each fixture through **Paste a sheet** in New song at 360 px and 390 px, then saves at
-  360 px. 22 of 22 checks pass. The preview and the saved sheet show Verse 1, VERSE 2, PRE-CHORUS and CHORUS, the
-  first chords sit over `Blue`, `baby,`, `L.A.` and `lady,`, no page scrolls sideways, and no error boundary shows.
-  The second fixture fills Title, Artist and Key. Copy the probe into a tree's `.verify-logs/self-check/` to rerun it.
-- Fuzz. `fuzz.mjs` cuts, drops, repeats and trims lines of both fixtures, 20,000 variants. None throws.
+Smallest repro (also `.verify-logs/self-check-opus/probe.mjs` case A, at both trees):
 
-## Runs that failed and why
+```
+Verse 1
+G           C
+Amazing grace how sweet
+D
+␠
+Verse 2
+G           C
+That saved a wretch
+D
+␠
+Chorus
+C        G
+I once was lost
+```
 
-- check:song-paste case 21 timed out once waiting for the service worker, in the run right after `npm run build` and
-  seven other checks. The rerun passed, and so did the final run. My notes list that timeout from two earlier cooks.
-- check:chords fails three Fire Away rows at 320 px on this laptop. Interleaved runs gave 4 fails of 6 on this branch
-  and 5 fails of 6 on the base tree, with the FAIL lines byte for byte the same. The check never calls `readPaste`.
+(`␠` is a line holding one space.)
 
-## A rule I tried and removed
+- Base 95432ec gives the chart back unchanged, with 3 sections.
+- Head gives `D` over `ChorusC G` as a sung line, then `I once was lost` with no chords. That is 2 sections, and the
+  chorus heading and its chords are gone.
+- With `[Chorus]` in place of `Chorus` (case D), the heading survives, but `C        G` becomes `C G`. The G moves
+  from column 9 to column 2, over a different word. That breaks top rule 1.
+- With no headings (case B), the three stanzas fold into one Verse 1, because the space lines are read as gaps inside
+  a row, not as stanza breaks.
 
-A general rule made any pasted line that names a chord a note. Case 13 caught it. Two built-in charts hold sung lines
-that name a chord (`... slow down on the last E7 ...`, `... (end on Bb)`). The rule now applies only inside a page
-copy, to lines with no chord box.
+Hands-on run in the real app (`.verify-logs/self-check-opus/app.ts`, New song, Paste a sheet, 360 and 390 px).
+Measured, the same at both widths:
+
+- The preview shows headings `VERSE 1, VERSE 2` and a row `D` over `ChorusC G`.
+- The status line reads only `Found key G major.`, so nothing tells the player that a section was lost.
+- `Use it as pasted` brings back all three sections. A player who saves without comparing keeps the broken chart.
+- No sideways scroll and no error boundary at either width.
+
+Untested. 12o covers a single stray space line, which stays below the two-sign threshold. No case has two lone
+chords followed by space lines in a typed chart.
+
+Possible fix, a guess and not tried. A sign could require the line after the space line to be a word piece. In a real
+page copy that is a fragment, not a heading or a column-spaced chord row. Or `pageCopy` could refuse to fold any line
+that `headingOf` or `chordRowOf` reads, wherever the state machine is. A 12p case with the repro above should fail
+before the fix and pass after it.
+
+## Other paths
+
+- Sign-out, offline, second phone. Not reached. `readPaste` is pure text to text with no storage or network, and the
+  editor calls it only on a paste or a view switch (src/song-editor.tsx:177, 189).
+- Stale state. None found. `switchTo` reruns `readPaste` on the raw text, so a view switch cannot show an old result.
+- Widths. No CSS or layout in the diff. My probe and the cook's 22-check probe show no sideways scroll at 360 and 390.
+- Error paths. The cook's fuzz ran 20,000 variants of both fixtures with no throw. I did not repeat it.
 
 ## P3
 
-1. The row split follows the brief. The page itself held `Blue jean baby,  L.A. lady,` on one line. A page that puts
-   two spaces before every inline chord would get one row for each chord. The reported chorus uses one space.
-2. The app's own output, pasted again, can read differently. 477 of 20,000 fuzz variants did, against 587 on the base
-   source. `rejoin` takes rows of one chord over lower-case words for a PR #114 style copy. The app reads only the
-   raw paste, so this needs a player to copy the box and paste it back.
-3. A line break the copy does not show can join two lines. It needs a page with no indent, a line that ends in a
-   letter with no chord on its last word, and a next line that starts in lower case under a chord.
-4. Words after the last chord of a line, then more chords, put those chords on a row of their own.
-5. One real paste is the evidence for the page model. A copy that lost its spaces-only lines is read by `rejoin`, as
-   before this cook.
-6. A row with no chord box keeps one leading space when the page had it (` Ballerina,`), and a chord played before a
-   line indents its words (`Dm7 E7` over `    dancing in the sand`).
-7. `We had a busy day {So` and `today` are the page's own text and stay as they are.
-8. With no heading above them, intro instructions are still left out as lines above the first section.
-9. A row of chord boxes with no words is written with one space between chords, not the page's columns.
+1. The HANDOFF block is in REPORT but not in the last commit body, as the brief asks.
+2. `DIVIDER` applies to every paste and drops a line of `___`, `===`, `***` or `~~~` with no LeftOut count. Only
+   dashes are tested (12k, 12m). A `____` fill-in line in a worksheet-style chart would vanish silently.
+3. The cook's nine P3 items in the previous VERIFY.md (row split on two spaces, re-paste drift, hidden line breaks,
+   and so on) still stand. I did not re-derive them.
+
+## Fix pass 1, at 2d2c5d4
+
+- P2-1, fixed. A lone chord over a line of spaces is a page-copy sign only when the line after the spaces is the next
+  box: one word that is no chord and no heading, or a lone chord that is itself a sign. Case 12p pastes five typed
+  charts of the repro's shape, including a one-sign chart, plus a page's chord-only intro. At ff8f5a9 source 12p fails
+  and the other unit cases pass. Here all 31 pass. Each repro form reads the same as at base 95432ec (measured with
+  `.verify-logs/fix1-cases.mjs`). The real-app probe `.verify-logs/fix1/app.ts` at 360 and 390 px shows all three
+  headings, every row in its columns, the box equal to the paste and no sideways scroll.
+- P3-1, no change. `git log -1 --format=%B ff8f5a9` holds the HANDOFF block with one `GOAL:` line. 2d2c5d4 carries an
+  updated one.
+- P3-2, fixed for underscores. A line of underscores stays as a fill-in blank. Rules of `-`, `=`, `*` and `~` still
+  leave the chart. 12m now asserts both and fails at ff8f5a9.
+- P3-3, not re-derived.
+
+Runs: check:song-paste 48 ok with Edge, check:song-search 52 ok, build exit 0. 33 one-line mutations all fail a case
+(`.verify-logs/fix1/mutations.log`). The seeded 20,000-variant fuzz has 0 throws, 475 unstable here and 468 at ff8f5a9.
+The churn is 33 variants that turned unstable and 26 that turned stable, all cut fragments, such as two space lines in
+a row between chords (`.verify-logs/fix1/fuzz-diff.log`).

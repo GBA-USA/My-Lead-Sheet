@@ -646,7 +646,7 @@ await check("12l. a phone's copy of a chord page with site lines gives its title
   assert.deepEqual(places(rowsOf(chorus).slice(3)), places([{ chords: chordRow([["C", 0], ["G", 13], ["D", 25]]), lyrics: "Porch light, porch light on" }]), "the last row's chords over their words");
 });
 
-await check("12m. a rule of dashes under a heading leaves the chart, and a heading right under a row of chords alone still starts its section", () => {
+await check("12m. a rule of dashes, equals, stars or tildes leaves the chart, a line of underscores stays, and a heading right under a row of chords alone still starts its section", () => {
   const typed = ["[Verse 1]", chordRow([["G", 0], ["C", 12]]), "Paper boats on the river", "G D", "CHORUS:", "--------", chordRow([["C", 0], ["G", 12]]), "Float away, float away"].join("\n");
   const pasted = read(typed);
   assert.deepEqual(headings(pasted.chart), ["VERSE 1", "CHORUS"], `both sections (${js(pasted.chart)})`);
@@ -654,6 +654,9 @@ await check("12m. a rule of dashes under a heading leaves the chart, and a headi
   const [verse, chorus] = sections(pasted.chart);
   assert.deepEqual([said(verse), tokens(verse.lines[verse.lines.length - 1])], [["Paper boats on the river"], ["G", "D"]], `the verse keeps its words and ends on its row of chords (${js(verse.lines)})`);
   assert.deepEqual(said(chorus), ["Float away, float away"], `the chorus holds its words (${js(chorus?.lines)})`);
+  for (const rule of ["========", "********", "~~~~~~~~"]) assert.ok(!read(typed.replace("--------", rule)).chart.includes(rule), `a rule of ${rule[0]} is gone too`);
+  const blanks = ["[Verse 1]", chordRow([["G", 0], ["C", 12]]), "Paper boats on the river", chordRow([["G", 0], ["C", 12]]), "__________"].join("\n");
+  assert.deepEqual(said(sections(read(blanks).chart)[0]), ["Paper boats on the river", "__________"], `a line of underscores is a blank to fill in, kept under its chords (${js(read(blanks).chart)})`);
 });
 
 await check("12n. a phone's copy of a page with no section names keeps its stanzas, its title, a sung line that starts with A, and each line's own chords, less the page's indent", () => {
@@ -714,6 +717,25 @@ await check("12o. a typed chart with one line of spaces under a lone chord is no
   const tight = ["VERSE 1", chordRow([["G", 0], ["C", 12]]), "Paper boats on the river", "G D", "CHORUS", chordRow([["C", 0], ["G", 12]]), "Float away, float away"].join("\n");
   assert.deepEqual(headings(read(tight).chart), ["VERSE 1", "CHORUS"], `both sections (${js(read(tight).chart)})`);
   assert.deepEqual(sections(read(tight).chart).map(said), [["Paper boats on the river"], ["Float away, float away"]], "each with its own words");
+});
+
+await check("12p. a typed chart whose stanzas end on a lone chord over a line of spaces is no page copy, so its headings, stanzas and chord columns stay as typed, while a copy of a page's chords alone still is one", () => {
+  const intro = read(["[Intro]", "D", "    ", "C", "    ", "G", "  ", "x4", "", "[Verse 1]", chordRow([["G", 0], ["C", 9]]), "Porch light burning"].join("\n"));
+  const [played] = sections(intro.chart);
+  assert.deepEqual([played.lines.flatMap(tokens), notes(played), sung(played)], [["D", "C", "G"], ["x4"], []], `a page's row of chords alone stays one row with its repeat mark as a note (${js(intro.chart)})`);
+  const row = chordRow([["G", 0], ["C", 12]]);
+  const charts = [
+    ["a one-word heading", ["Verse 1", row, "Amazing grace how sweet", "D", " ", "Verse 2", row, "That saved a wretch", "D", " ", "Chorus", chordRow([["C", 0], ["G", 9]]), "I once was lost"]],
+    ["no headings", [row, "Amazing grace how sweet", "D", " ", row, "That saved a wretch", "D", " ", chordRow([["C", 0], ["G", 9]]), "I once was lost"]],
+    ["boxed headings", ["[Verse]", row, "Amazing grace how sweet", "D", " ", "[Bridge]", row, "That saved a wretch", "D", " ", "[Chorus]", chordRow([["C", 0], ["G", 9]]), "I once was lost"]],
+    ["stanzas that open on a lone chord", ["Verse 1", row, "Amazing grace how sweet", "D", " ", "G", "Was blind but now I see", "D", " ", "G", "Was lost but now am found"]],
+    ["one lone chord over a line of spaces before a one-word line", ["[Verse]", row, "Amazing grace how sweet", "D", " ", "Amen", "", "[Chorus]", chordRow([["C", 0], ["G", 9]]), "I once was lost"]],
+  ] as const;
+  for (const [form, typed] of charts) {
+    const chart = typed.join("\n");
+    const stanzas = (text: string) => sections(text).map((section) => section.lines);
+    assert.deepEqual(stanzas(read(chart).chart), stanzas(chart),`${form}: every section keeps its lines and each chord its column (${js(read(chart).chart)})`);
+  }
 });
 
 await check("13. readPaste is stable: its own output reads back as the same chart, and a chart the app already reads stays as pasted", () => {

@@ -11,6 +11,8 @@ import { SearchBox, SearchChips } from "./search-box";
 import { CodeOfferButton } from "./setlist-code";
 import { codeOffer } from "./setlist-code-model";
 import { LeadSheet } from "./sheet";
+// @ts-expect-error TS5097: song-search.ts holds the same stem, so only ".tsx" names this file in tsc, Vite and esbuild.
+import { NoWordsYet, SongSearch } from "./song-search.tsx";
 import { hasTiming } from "./song-version";
 import { songByRef, tempoText } from "./storage";
 import type { Library, Setlist, Song, SongRef } from "./types";
@@ -99,6 +101,7 @@ export function SongBody({
   return (
     <>
       <CopyNote song={song} />
+      <NoWordsYet song={song} />
       <LeadSheet song={song} scale={scale} semitones={semitones} notation={notation} metronome={metronome} />
     </>
   );
@@ -178,9 +181,12 @@ export function SongList({ songs, userId, onAdd }: { songs: Song[]; userId: stri
     <>
       <SearchBox label="Search songs" value={query} onChange={setQuery} />
       {onAdd && !searching ? (
-        <button type="button" className="song-list-add" onClick={onAdd}>
-          + Add a song
-        </button>
+        <>
+          <button type="button" className="song-list-add" onClick={onAdd}>
+            + Add a song
+          </button>
+          <SongSearch songs={songs} />
+        </>
       ) : null}
       {searching ? <SearchChips keys={keys} bands={bands} chips={chips} onChange={setChips} /> : null}
       {!searching ? (

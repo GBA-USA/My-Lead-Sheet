@@ -251,6 +251,7 @@ function write(lines: string[], reads: Read[], raise: number, key: Key): { out: 
   let changed = false;
   let verses = 0;
   let part = "";
+  let instructed = false;
   const row = ({ chords, notes }: ChordRow, lyric = "") => {
     const named = chords.map((chord) => ({ ...chord, name: sound(chord.name) }));
     const { line, warning } = placeChords(named, lyric);
@@ -269,11 +270,11 @@ function write(lines: string[], reads: Read[], raise: number, key: Key): { out: 
       continue;
     }
     if (read.kind === "blank") {
-      // A blank in a played part before more playing, or before more words to the player, would start a section the
-      // page never named, so the part keeps it. Any other blank ends the part, as the chart reads it.
+      // A blank in a played part before more playing, or before more words once the part holds words to the
+      // player, would start a section the page never named, so the part keeps it. Any other blank ends the part.
       const next = reads.findIndex((each, k) => k > i && !["blank", "gone", "counted", "site"].includes(each.kind));
       const playing = next >= 0 && (reads[next].kind === "bars" || (reads[next].kind === "chords" && reads[next + 1]?.kind !== "text"));
-      const told = next >= 0 && reads[next].kind === "text" && !headingRead(lines[next]);
+      const told = instructed && next >= 0 && reads[next].kind === "text" && !headingRead(lines[next]);
       if (PLAYED.test(part) && (playing || told)) changed = true;
       else {
         out.push("");
@@ -288,7 +289,10 @@ function write(lines: string[], reads: Read[], raise: number, key: Key): { out: 
     else if (read.kind === "text") {
       // A line the chart reads as a heading starts its own part; in a played part, words are an instruction.
       const own = headingRead(line);
-      if (own) part = own;
+      if (own) {
+        part = own;
+        instructed = false;
+      } else if (PLAYED.test(part)) instructed = true;
       out.push(!own && PLAYED.test(part) && !/^\s*(?:note|bars):/i.test(line) ? `Note: ${line.trim()}` : line);
     }
     else if (read.kind === "bars") out.push(bars(line));
@@ -296,6 +300,7 @@ function write(lines: string[], reads: Read[], raise: number, key: Key): { out: 
     else if (read.kind === "heading") {
       const { heading } = read;
       part = heading.name;
+      instructed = false;
       if (/^verse\b/i.test(heading.name)) verses += 1;
       // A bare Verse is numbered, so two pasted [Verse] markers are two verses the player can tell apart.
       const name = /^verse$/i.test(heading.name) ? `Verse ${verses}` : heading.name;

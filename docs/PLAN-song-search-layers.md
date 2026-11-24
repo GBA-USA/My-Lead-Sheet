@@ -51,7 +51,7 @@ I ran `parseSheet` from `src/song-text.ts` on eight pasted charts. These inputs 
 | A chord row with one odd token, such as `x2`, `C(add9)`, `G*`, `(D)`, or `F♯m` | The whole row becomes words, so every chord on the row is lost. |
 | `G - D - Em - C (x2)` | Words. |
 | Tab lines such as `B\|---0---3---\|` | A capital string name becomes a section heading. |
-| `(Bridge)` | Words inside the section above. |
+| `(Bridge)` | With no blank line before it, words inside the section above. After a blank line, the first word line of a made-up `Verse 2`. It is never a heading. |
 
 These inputs already work: `[Verse 1]`, `Verse 1:`, a chord row over a lyric row, inline `[G]` brackets, and bar rows that start with `|`.
 
@@ -138,7 +138,7 @@ D1 and D2 are the two answers the queue needs. Cook 1 and cook 3 can start with 
 There is one way to add a song by search. It starts in the **Find a song to add** box, which already sits on My Songs and in the New song editor.
 
 1. **Type.** The box lists recordings from the song catalog, as it does today. A row whose song is in the shipped chord collection shows the words **Chords included**.
-2. **Tap a row.** The row shows **Building your sheet** for at most 2.5 seconds. In that time the app does the three legal lookups:
+2. **Tap a row.** The row shows **Building your sheet** for at most 2.5 seconds, while the app does the three legal lookups. Typing again or leaving in that time drops the build, and no song is added. The lookups are:
    - The catalog row gives title, artist, and length. This is already built.
    - The shipped chord collection gives sections, chords, key, meter, and tempo, when it holds the song. The collection is inside the app, so this step uses no network.
    - The open database gives BPM and key for the recording, in one request.
@@ -239,7 +239,7 @@ export function keyFromChords(sections: ChartSection[]): Pick<SongFacts, "keyRoo
 | Chord spelling | See the next table | The stored spelling, at the same start column. |
 | Chord row marks | `G - D - Em - C (x2)`, `G D Em C x2`, `G  D  (hold)` | The chord row, with the mark as a `Note:` line under it. |
 | Tab blocks | `e\|--3--\|`, `B\|--0--\|`, and the lines that follow | Left out and counted. Never a heading. |
-| Lines above the first section | A site's title line, `Tuning:`, a difficulty line | Left out and counted when the paste has chords or headings. A paste of words alone keeps every line. |
+| Lines above the first section | A site's title line, `Tuning:`, a difficulty line | Left out and counted when the paste has chords or headings. A paste of words alone keeps every line. In a chart with no heading, the first chord row starts the first section. |
 
 A chord row is a line where every token is a chord in any spelling below, or a row mark. One odd token no longer turns the row into words.
 
@@ -290,7 +290,7 @@ Unit cases, in node with no browser. Every chart in the check is written for the
 6. In a chord row over a lyric row, every chord starts over the same letter after the paste as before it. The case covers a spelling that shrinks, one that grows, and one that grows into its neighbor.
 7. Tabs, no-break spaces, zero-width characters, `♯`, `♭`, and `\r\n` are cleaned.
 8. A four-line bass tab and a six-line guitar tab are left out and counted. No tab line becomes a heading.
-9. Lines above the first section are left out of a chart with chords, and kept in a paste of words alone.
+9. Lines above the first section are left out of a chart with chords, and kept in a paste of words alone. In a chart with no heading, the lines above the first chord row are the ones left out.
 10. A capo raises every chord by default, sets the note, and the switch gives the shapes back.
 11. `keyFromChords` gives G major for `G D Em C`, A minor for `Am F C G`, E major for `E A B7`, and null for no chords.
 12. A paste of words alone gives sections split at blank lines, and no facts.
@@ -339,19 +339,20 @@ The search already lists up to 15 recordings. Many of them are the same song on 
 3. Tempo is the median `rhythm.bpm`, rounded, then passed through `fieldBpm` from `src/bpm-detect.ts`, so that it is a value the BPM field accepts.
 4. Key is the `key_key` and `key_scale` pair with the largest sum of `key_strength`. `D#`, `G#`, and `A#` are respelled `Eb`, `Ab`, and `Bb`, because `KEY_ROOTS` in `src/song-text.ts` holds only those spellings, and the stored-song check drops a song with any other root.
 5. The request has a 2.5 second limit and is aborted at the limit, as `catalogSearcher` aborts at 8 seconds. Offline, a non-200 reply, a body in the wrong shape, and a timeout all give empty facts. None of them shows an error. The pick goes on.
+6. Typing in the box, closing the dialog, or leaving the screen during **Building your sheet** aborts the request, adds no song, and leaves the page where it is. The build is dropped, not finished, because a song the player did not wait for is a stray song. `pick` makes one `AbortController` per build and passes its signal to `songFacts`. `change` aborts it, and so does the unmount effect, beside `searcher.stop`. After the await, `pick` calls `addOwnSong` and sets the hash only when that signal is not aborted. A sign-out is the same exit on My Songs, because the box mounts only beside `+ Add a song`, which needs an account (`src/App.tsx:413`, `src/library-lists.tsx:183`). That last point was read from the code and not run.
 
 ```ts
 // src/song-facts.ts
 export type FactsDeps = Pick<SearchDeps, "fetch" | "setTimeout" | "clearTimeout" | "online">;
-/** BPM and key for the first recordings that have them. Empty when nothing is known or the service does not answer in time. */
-export function songFacts(deps: FactsDeps, recordingIds: string[]): Promise<SongFacts>;
+/** BPM and key for the first recordings that have them. Empty when nothing is known, the service does not answer in time, or `signal` aborts. */
+export function songFacts(deps: FactsDeps, recordingIds: string[], signal: AbortSignal): Promise<SongFacts>;
 
 // src/song-build.ts
 export function mergeFacts(...sources: SongFacts[]): SongFacts;
 export function songFromFacts(facts: SongFacts): Omit<Song, "ref" | "id">;
 ```
 
-`pick` in `src/song-search.tsx` becomes: guard against a second tap, show **Building your sheet** on the row, await `songFacts`, call `addOwnSong(songFromFacts(mergeFacts(found, fromCatalog)))`, then go to the song. `addCatalogSong` goes away. `songFromFacts` is its one replacement.
+`pick` in `src/song-search.tsx` becomes: guard against a second tap, show **Building your sheet** on the row, await `songFacts`, stop if the build was aborted (step 6), call `addOwnSong(songFromFacts(mergeFacts(found, fromCatalog)))`, then go to the song. `addCatalogSong` goes away. `songFromFacts` is its one replacement.
 
 #### The config entry
 
@@ -387,17 +388,18 @@ export function songFromFacts(facts: SongFacts): Omit<Song, "ref" | "id">;
 5. A reply with no entry for any id gives empty facts, and the song is saved with a blank BPM and key `C major`.
 6. Offline, a 500 reply, a body that is not the expected shape, and a reply after 2.5 seconds each give empty facts. The request is aborted at the limit. No error text shows.
 7. A second tap during **Building your sheet** adds no second song.
-8. `mergeFacts` takes each field from the first source that knows it.
-9. `songFromFacts` gives a song that the stored-song check in `src/storage.ts` keeps, for full facts and for empty facts.
-10. Screen case at 360 px and 390 px. A pick with a stubbed service opens a sheet that shows the BPM and the key. A stubbed service that never answers opens the sheet within 3 seconds.
-11. A scan shows no outside address in `src/song-facts.ts` or `src/song-build.ts`, and `npm run check:portable` passes.
-12. `check:song-search` passes. Its case 8 expects a pick to open the sheet with title, artist, and length, and that stays true. The page stub in that check refuses and logs every host except the catalog, so the facts request fails at once there and gives empty facts. If a case that counts logged requests fails for that reason alone, the cook filters that count by address, changes nothing else in the script, and says so in the report.
+8. Leaving during **Building your sheet** adds nothing. Screen case at 360 px, with `recordingFacts` stubbed to answer after 2 seconds. (a) Open New song, type a title, tap a row, and close the dialog within 1 second. (b) On My Songs, tap a row, then type in the box within 1 second. (c) On My Songs, tap a row, then go to Setlists within 1 second. In each, 3 seconds after the tap no song is added, the hash is where the player left it, and the facts request was aborted. In (b) the new search runs as usual. Each part fails when the abort in step 6 is removed.
+9. `mergeFacts` takes each field from the first source that knows it.
+10. `songFromFacts` gives a song that the stored-song check in `src/storage.ts` keeps, for full facts and for empty facts.
+11. Screen case at 360 px and 390 px. A pick with a stubbed service opens a sheet that shows the BPM and the key. A stubbed service that never answers opens the sheet within 3 seconds.
+12. A scan shows no outside address in `src/song-facts.ts` or `src/song-build.ts`, and `npm run check:portable` passes.
+13. `check:song-search` passes. Its case 8 expects a pick to open the sheet with title, artist, and length, and that stays true. The page stub in that check refuses and logs every host except the catalog, so the facts request fails at once there and gives empty facts. Its case 2d, "across the whole flow the page asked only the catalog search", will fail on every run, because the stub logs each pick's facts request before it refuses it, and 2d expects every logged call outside the catalog search to be none. The cook lets 2d's filter also pass calls that start with the `recordingFacts` address, keeps 2d's "no request named lyrics" and "nothing opened" asserts as they are, changes nothing else in the script, and says so in the report.
 
 #### Verification
 
-- [ ] Unit. `npm run check:song-facts` prints cases 1 to 9 and 11 as `ok`, and each failed on the tests-only commit.
+- [ ] Unit. `npm run check:song-facts` prints cases 1 to 10 and 12 as `ok`, and each failed on the tests-only commit.
 - [ ] Live. Run `node --experimental-strip-types scripts/song-facts-live.ts` once. Pass when at least 10 of the 15 library songs get an answer. In the built app, search a song from before 2020 and tap it. Pass when the sheet opens with a BPM.
-- [ ] Perf. Metric: the time from the tap on a row to the open sheet. Probe: screen case 10 with the service stubbed at 0 ms, 1 second, and no answer. Baseline: the same tap on trunk, measured first. Fail when the stub with no answer opens the sheet later than 3 seconds, or when the 0 ms stub adds more than 200 ms to the baseline.
+- [ ] Perf. Metric: the time from the tap on a row to the open sheet. Probe: screen case 11 with the service stubbed at 0 ms, 1 second, and no answer. Baseline: the same tap on trunk, measured first. Fail when the stub with no answer opens the sheet later than 3 seconds, or when the 0 ms stub adds more than 200 ms to the baseline.
 - [ ] The player-facing change, the wait on the row, is reviewed by the owner before merge.
 
 ### 3.2 Open chord-only datasets (`song-open-chords`)
@@ -456,7 +458,7 @@ export function openChart(title: string, artist: string): Promise<SongFacts | nu
 - **Match.** `fold` from `src/search.ts` on title and on artist, after a leading `the` and any text in parentheses are dropped. This is a lookup in public data. It is not a sharing or privacy decision, so top rule 5 of `CLAUDE.md` does not apply.
 - **Rows.** Each phrase becomes one `bars` line such as `| D C | G | D C | G |`, in the style of the bar rows in `data/library.json`. Sections are written out in song order with no repeat signs, because the sheet scrolls in song order.
 - **Billboard chords.** `A:min7/b3` becomes `Am7/C`. The bass after the slash is a scale degree in the source and a note name in the app. A bass player needs that note.
-- **Billboard key and tempo.** `# tonic:` gives the root. The mode is minor when the tonic chord is minor more often than major. Tempo is bars times beats, divided by the time between the first and the last phrase.
+- **Billboard key and tempo.** `# tonic:` gives the root. The mode is minor when the tonic chord is minor more often than major. Tempo is bars times beats, divided by the time between the first and the last phrase, times 60, because that time is in seconds.
 - **Rock Corpus chords.** The source is a small grammar of Roman numerals with a key, such as `S: [G] $In $Vr`. The script expands the grammar and turns each numeral into a chord in that key. The names `In`, `Vr`, `Ch`, `Br`, and `Solo` become `INTRO`, `VERSE`, `CHORUS`, `BRIDGE`, and `SOLO`.
 - **Credit.** A Rock Corpus song gets `credit: "Chords from the Rock Corpus by Trevor de Clercq and David Temperley, CC BY 4.0."`. A Billboard song gets `credit: "Chords from the McGill Billboard collection."`. The sheet already draws `Song.sourceNote`. A paste that replaces the whole chart clears the credit.
 - **Where the files live.** `data/open-charts.json` stays in `data/`. `check:portable` scans `src/` and `public/` for owner names, and a title or an artist in this file could match that scan one day.
@@ -646,7 +648,7 @@ Flow: My Songs, + Add a song or More then Edit, Paste a sheet, read the preview,
 GOAL: When a player taps a search result, the new sheet opens with the song's BPM and key already filled in, found in one request to an open music database, and the tap never waits more than 2.5 seconds for it.
 DECIDED: one cook, one branch, cook/song-facts-lookup off mls-int-20261113; AcousticBrainz is the source (plan decision D1); the recording ids come from the rows the search already listed, with no second catalog request; the song is written once, after the lookup; the limit is one constant (plan decision D7).
 REJECTED: GetSongBPM and any source that needs a key; a Worker route; a second catalog client; a lookup that changes a saved song later; an error message for a failed lookup; a retry button; new libraries; edits outside the owned files.
-DONE MEANS: cases 1 to 12 of plan section 3.1 each have a named check line that failed on the tests-only commit and passes now; the four boxes under "Verification" in section 3.1 are ticked with their evidence in the report; scripts/song-facts-live.ts was run once and its table is in the report; npm run build and npm run check:portable are green.
+DONE MEANS: cases 1 to 13 of plan section 3.1 each have a named check line that failed on the tests-only commit and passes now; the four boxes under "Verification" in section 3.1 are ticked with their evidence in the report; scripts/song-facts-live.ts was run once and its table is in the report; npm run build and npm run check:portable are green.
 SOURCE: docs/PLAN-song-search-layers.md sections 1 and 3.1, and the measurements in "What was measured for this plan".
 NEEDS OWNER: D1 must be yes before this cook starts. D5 (a privacy page sentence) is open; if it is yes, src/data-kinds.ts or the file that holds the privacy text joins the owned files.
 
@@ -659,14 +661,14 @@ NEEDS OWNER: D1 must be yes before this cook starts. D5 (a privacy page sentence
 
 ## Owned files
 src/song-facts.ts (new: the request, the reply reader, the limit; injected fetch and timers), src/song-build.ts (new: mergeFacts, songFromFacts), src/song-search.tsx and src/song-search.css (pick awaits the facts; the Building your sheet state on the row; addCatalogSong is replaced by songFromFacts), data/song-search.json (the recordingFacts key), scripts/check-song-facts.ts (new), scripts/song-facts-live.ts (new, a script a person runs), package.json (one line).
-scripts/check-song-search.ts: only to filter a request count by address, and only if a count case fails because its page stub logs the new host. Say so in the report.
+scripts/check-song-search.ts: only case 2d's filter, which must also pass calls that start with the recordingFacts address, because its page stub logs each pick's facts request. Keep 2d's "no request named lyrics" and "nothing opened" asserts. Say so in the report.
 
 src/song-text.ts: only the SongFacts type block, placed after SongMeta, exactly as plan section 1 gives it. Cook 1 adds the same block. The cook that merges second merges mls-int first and keeps one copy.
 
 Do not touch: src/song-search.ts (import SearchDeps; do not edit), src/search.ts (import fold; do not edit), src/App.tsx, src/song-editor.tsx, worker files.
 
 ## Empty and error states, and the wired flow
-Offline, a reply that is not 200, a body in the wrong shape, and no reply in 2.5 seconds all give empty facts, and the request is aborted. A second tap while a row is building does nothing. A storage failure keeps the landed message. A pick of a song the player already has still asks first, before any request.
+Offline, a reply that is not 200, a body in the wrong shape, and no reply in 2.5 seconds all give empty facts, and the request is aborted. A second tap while a row is building does nothing. Typing in the box, closing the dialog, or leaving the screen while a row is building aborts the request, adds no song, and leaves the page where it is (plan 3.1 Design step 6). A storage failure keeps the landed message. A pick of a song the player already has still asks first, before any request.
 Flow: My Songs, type a title, tap a row, Building your sheet, the sheet opens with BPM and key.
 
 ## Hints

@@ -1,3 +1,139 @@
+# song-search-layers-plan-fable self-check fix pass 1 of 2 (on top of the self-check below)
+
+Goal: the plan tells cook 2 what happens when a player types, closes the dialog or leaves while a pick waits for BPM,
+so a cook who follows the plan word for word cannot ship a song that appears on a sheet the player left. The change is
+in `docs/PLAN-song-search-layers.md` only. No app code, check script or fixture changed, so no `check:*` was rerun.
+Logs are in `.verify-logs/fix1-plan/` (gitignored).
+
+The product here is a plan, so the reproducing case is a probe over the plan text. `plan-probe.mjs` asserts one line
+per finding. Run against the plan at 6166203 (`plan-6166203.md`, from `git show`), it gives 9 FAIL and exit 1
+(`before-6166203.log`). After the edits it gives all ok and exit 0 (`after.log`). During the run, the 5.2 brief lines
+failed at first because of a bug in the probe, not the plan: the brief's code block holds `## HANDOFF`, which ended the
+slice early. Both logs come from the fixed probe.
+
+| Finding | Plan change | 6166203 | After |
+|---|---|---|---|
+| P2-1, no exit rule for type, close or leave during Building your sheet | 3.1 Design step 6. Each of the three aborts the request, adds no song, and leaves the page where it is. One `AbortController` per build. `change` and the unmount effect abort it. After the await, the add and the hash run only when the signal is not aborted. `songFacts` takes `signal: AbortSignal`. The flow in section 1 and brief 5.2's error states say the same. | FAIL x4 | ok x4 |
+| P2-1, no case | New 3.1 case 8. A screen case at 360 px with the facts stubbed at 2 s. It closes the dialog, types, and goes to Setlists, and each part must fail with the abort removed. Old cases 8 to 12 are now 9 to 13. The Verification line ("1 to 10 and 12"), the Perf probe ("screen case 11") and brief 5.2's DONE MEANS ("1 to 13") follow. | FAIL | ok |
+| P3-1, the count case that will fail | Case 13 and brief 5.2 name `check:song-search` 2d. The cook lets its filter also pass the `recordingFacts` prefix and keeps the lyric and opened asserts. I read 2d at `scripts/check-song-search.ts:1013`. Case 1's filter at `:639` runs before any pick, so it does not change. | FAIL x2 | ok x2 |
+| P3-2, `(Bridge)` row | It now covers both cases, measured (`bridge-probe.log`). With no blank line before it, the line is words in the section above. After a blank line, it is the first word line of a new section. | FAIL | ok |
+| P3-3, a chart with no heading | The paste table and case 9 say that in a chart with no heading, the first chord row starts the first section. | FAIL | ok |
+| P3-4, Billboard tempo units | "times 60, because that time is in seconds". | FAIL | ok |
+| P3-5, key spelling | No change. Case 4 covers sharps and flats either way, as the self-check says. | n/a | n/a |
+
+- Choice made for the owner: abort, not finish-the-add-but-stay-put, as the self-check recommends. A song the player
+  did not wait for would be a stray song on My Songs.
+- Inferred, not run: a sign-out unmounts the My Songs box, because it mounts only beside `+ Add a song`, which needs an
+  account (`src/App.tsx:413`, `src/library-lists.tsx:183`). Whether a player can switch accounts while the New song
+  dialog is open and building was not measured. Closing the dialog is an exit either way.
+
+VERDICT: PASS for the plan findings, pending the next self-check. P2-1 and P3-1 to P3-4 are closed in the plan text. D1 to D7 are still open for the
+owner.
+
+---
+
+VERDICT: FAIL
+
+# song-search-layers-plan-fable self-check, deep, on 6166203
+
+Goal: one build-ready plan at `docs/PLAN-song-search-layers.md` for the path from a typed search to a playable lead
+sheet, saved offline, with no app code changed. The diff is that one file (818 lines). No check script or fixture
+changed, so no check was rerun. Probes and logs are in `.verify-logs/self-check-plan/`.
+
+## P2-1. A pick that waits for BPM has no rule for a player who leaves or types again (CLASS=state-machine)
+
+Cook 2 (`song-facts-lookup`) turns `pick` in `src/song-search.tsx` from a synchronous add into an add after a wait of
+up to 2.5 s (plan 3.1 Design, line 354). The plan gives the new **Building your sheet** state one exit rule: a second
+tap adds nothing (case 7). It says nothing about the other two exits. The player can type a new query, which `change`
+handles today with no build to cancel. The player can also close the New song dialog or leave My Songs, which unmounts
+`SongSearch`. In both cases the awaited `songFacts` still resolves, `addOwnSong` writes the song, and
+`window.location.hash = songHref(id, "songs")` pulls the player back to a sheet they left. Today's
+`useEffect(() => searcher.stop, [searcher])` stops only the catalog search, and the plan adds no stop for the facts
+request. The same window can write the song under a second account if the player switches accounts inside the
+2.5 s. A cook who follows the plan word for word passes cases 1 to 12 and ships this.
+
+Smallest repro, once cook 2 has built what the plan says: stub `recordingFacts` to answer after 2 s. Open New song,
+type a title, tap a row, and close the dialog within 2 s. At 2 s an own song is added and the hash moves to
+`#/song/<id>`.
+
+Fix, in the plan only. Add one rule to 3.1 Design step 5 and one case to 3.1:
+"Typing in the box, closing the dialog, or leaving the screen during Building your sheet aborts the request, adds no
+song, and leaves the page where it is." The cook picks between abort-and-add-nothing and finish-the-add-but-stay-put.
+The plan should name one, and I recommend abort.
+
+## P3 notes (do not block)
+
+- P3-1. Plan 3.1 case 12 says a request-count case in `check:song-search` may fail. One will fail every time.
+  `SCREEN_CASES[18]`, "2d. across the whole flow the page asked only the catalog search, opened nothing, and stored no
+  reply text", asserts that `calls` other than `RECORDING_SEARCH` deep-equal `[]` (`scripts/check-song-search.ts`
+  around line 1013). The stub logs the call before it refuses it, so every pick logs one AcousticBrainz call. The
+  allowed fix is right. Allow the `recordingFacts` prefix and keep the "no lyric request" and "nothing opened"
+  asserts. Naming case 2d in the brief would keep a careful cook from stopping to ask.
+- P3-2. The "paste reader today" row for `(Bridge)` says "words inside the section above". The probe shows it
+  depends on the blank line before it. After a blank line, `(Bridge)` becomes the first word line of a made-up
+  `Verse 2`. Either way it is wrong, so cook 1's failing case still holds.
+- P3-3. Plan 2, "Lines above the first section", does not say what "first section" means for a chord chart with no
+  headings, which is a common web form. The fallback "nothing left keeps the raw text" stops data loss. A one-line
+  rule would still help, such as "with no heading, the first chord row starts the first section".
+- P3-4. Plan 3.2 Billboard tempo, "bars times beats, divided by the time between the first and the last phrase",
+  gives beats a second unless the time is in minutes. Say "times 60 when the time is in seconds".
+- P3-5. AcousticBrainz key spelling. The plan respells `D#`, `G#` and `A#`. My one live reply was `G` and could not
+  show whether the service sends sharps or flats. Case 4 ("every root ... is in KEY_ROOTS") covers both, so the map
+  is safe either way.
+
+## Brief pass conditions
+
+| Brief condition | Result |
+|---|---|
+| Only `docs/PLAN-song-search-layers.md` added, no app code | Met. `git show --stat HEAD` lists one file. |
+| 1. End-to-end UX, one Add-a-Song flow | Met, plan section 1. It covers the flow, one `SongFacts` shape, a merge order, a table of missing-data cases including offline, signed out and a second account, and a file map. |
+| 2. Smart paste, formats, files, unit and UI tests | Met, plan section 2. 14 unit and 8 screen cases at 360 and 390 px. The plan swaps Playwright for `scripts/chrome.ts` because CLAUDE.md allows no new libraries, and it says so (change 5). |
+| 3. BPM and key sources compared; open chord datasets with license, size, coverage; files, portable config, tests, owner decisions | Met, plan 3.1 and 3.2. The plan splits the brief's `song-open-chords-bpm` into two cooks and gives its reason (change 2). Decisions D1 to D7 are listed. |
+| 4. Handoff to learn-by-listen with no second copy of a helper | Met, plan section 4. Four seams, and cook 3 adds `check:one-copy` rows. |
+| 5. Priority order and copy-ready briefs with files and tests | Met, plan section 5. Five briefs, each with owned files, do-not-touch files and numbered cases. |
+| Legal: no lyrics or chord-site pages fetched | Met in the design. Words and web charts enter by paste only. Chordonomicon is rejected because it was taken from a chord site. Rock Corpus melody files and its lyrics page are excluded. |
+| Portability: outside addresses in config | Met. `recordingFacts` goes in `data/song-search.json`. `check:portable` scans `src worker functions public .github/workflows` (`SCANNED_DIRS`), not `data/`. |
+| Offline on stage | Met. A song is saved before the sheet opens. I confirmed the chunk claim: built `dist/sw.js` `BUILD.files` lists both JS chunks, the lazy `jsQR` chunk included, so an `import()` chunk is cached. |
+| Build and `check:portable` | Already run at this commit, not repeated. |
+
+## Plan claims tested against the tree at 6166203 (code identical to 6e95630)
+
+- Every file and symbol the plan places is where it says. `parseSheet`, `SongMeta`, `CHORD`, `KEY_ROOTS` and
+  `fromBrackets` are in `src/song-text.ts`. `transposeChordSymbol` is in `src/music.ts` and `fold` in `src/search.ts`.
+  `fieldBpm` and `tempoChoices` are in `src/bpm-detect.ts`. `lyricsSearchUrl`, `SearchDeps` (with `fetch`,
+  `setTimeout`, `clearTimeout` and `online`) and `ANSWER_MS = 8000` are in `src/song-search.ts`. `addCatalogSong` and
+  `NoWordsYet` are in `src/song-search.tsx`. `heardBars` and `chartChords` are in `src/learn-chords.ts`, and
+  `placeHeadings` in `src/learn-analyze.ts`. `LearnChooser` is used by `ScrollSheet` only. `madeHere`,
+  `addOwnSong` and `replaceOwnSong` are in `src/storage.ts`. `content` in `src/band-library.tsx` sends `body`, which
+  confirms the D4 flag. `Song` has `keyNote` and `sourceNote` and no catalog id.
+- `src/App.tsx` has 487 lines, and `check:one-copy` caps it at 500 (line 55). `scrollSheet` is a boolean state.
+- `CatalogSong` keeps the recording `id`, and the listed rows are in `state.songs` inside `SongSearch`, so cook 2
+  needs no edit to `src/song-search.ts`, as its brief requires.
+- `data/library.json` holds 15 songs. `legal/TERMS-DRAFT.md` is absent from every ref. `src/learn-new-song.tsx` is
+  absent, as expected before L9.
+- `check:song-search` 1e reads "No words yet", and 1c and 9b find "Find lyrics on the web" by its exact text, so the
+  cook 3 panel can keep them green with no edit, as S11 requires.
+- The main bundle's gzip is 213,778 bytes by `gzip -c`, against the plan's 214.43 kB from Vite. That is close enough.
+
+## Hands-on run (riskiest path)
+
+The riskiest input is the "paste reader today" table, because cook 1's first commit has to fail on every row.
+`paste-probe.ts` ran today's `parseSheet` on each listed input and on the four "already work" forms
+(`paste-probe.log`). Every failure reproduced: header lines as words under `Verse 1`, ChordPro directives as words,
+`Intro: G D Em C` as words, each odd token (`x2`, `C(add9)`, `G*`, `(D)`, `F♯m`) turning the whole chord row into
+words, the dash row as words, and each tab line as its own heading. All four working forms parse correctly.
+
+Second, one live catalog query and one AcousticBrainz request in exactly the shape the plan gives, for Brown Eyed
+Girl, with 8 ids: `200`, `Access-Control-Allow-Origin: *`, `X-RateLimit-Limit: 100`, `X-RateLimit-Reset-In: 2`. The
+`features` filter worked. The reply was 590 bytes with only `rhythm` and `tonal` beside `metadata`. 1 of 8 ids had
+data: G major, 162.06 BPM. These match the D1 facts in the plan.
+
+## Owner decisions
+
+None in the self-check brief. D1 to D7 in the plan are open owner questions, not findings.
+
+---
+
 # song-search laptop verify fix round, on f8081d0 (on top of fix pass 2 below)
 
 Goal: a player who types a song's title alone, or its title and artist, sees that song in the rows. The laptop verify

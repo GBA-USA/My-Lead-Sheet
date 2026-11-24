@@ -1,4 +1,7 @@
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import type { Learned, ScrollVersion } from "../src/scroll-timing.ts";
@@ -6,6 +9,9 @@ import type { Library, LibraryFile, Song, SongRef } from "../src/types.ts";
 import { displayChordLine, displayKeyLabel } from "../src/music.ts";
 
 type Storage = typeof import("../src/storage.ts");
+type VersionModel = typeof import("../src/song-version.ts");
+
+const root = fileURLToPath(new URL("..", import.meta.url));
 
 const seed = JSON.parse(readFileSync(new URL("../data/library.json", import.meta.url), "utf8")) as LibraryFile;
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
@@ -36,6 +42,26 @@ async function loadApp(seedFile: LibraryFile): Promise<Storage> {
   });
   const code = Buffer.from(result.outputFiles[0].text).toString("base64");
   return import(`data:text/javascript;base64,${code}#${Math.random()}`);
+}
+
+/** A tree's `src/storage.ts`, as that build's phone reads and writes this phone's storage. */
+async function loadTree(tree: string): Promise<Storage> {
+  const result = await build({ entryPoints: [join(tree, "src/storage.ts")], bundle: true, write: false, format: "esm", platform: "neutral", logLevel: "silent" });
+  return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString("base64")}#${Math.random()}`);
+}
+
+/** This build's version model, which builds the version list the send sheet sends. */
+async function loadVersionModel(): Promise<VersionModel> {
+  const result = await build({
+    stdin: { contents: `export * from "./src/song-version.ts";`, resolveDir: root, loader: "ts" },
+    nodePaths: [join(root, "node_modules")],
+    bundle: true,
+    write: false,
+    format: "esm",
+    platform: "node",
+    logLevel: "silent",
+  });
+  return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString("base64")}#${Math.random()}`);
 }
 
 class FakeStorage {
@@ -237,6 +263,35 @@ for (const [what, extra] of [
 ] as const) {
   storage.map.set(`${app.SCROLL_VERSIONS_KEY}.13`, JSON.stringify({ versions: [{ ...version(learned.sections), learned: { ...learned, ...extra } }], selected: 0 }));
   check(app.loadScrollVersions("local/13").versions.length === 0, `a version with ${what} is dropped`);
+}
+
+/** The build this one starts from, the last before heard chords had colors. Its `isLearned` takes heard chords as names only. */
+const BEFORE_COLORS = "5987ec7";
+const beforeColorsTree = mkdtempSync(join(tmpdir(), "mls-before-colors-"));
+try {
+  execFileSync("tar", ["-x"], { cwd: beforeColorsTree, input: execFileSync("git", ["archive", "--format=tar", BEFORE_COLORS, "src", "data"], { cwd: root, maxBuffer: 1 << 28 }) });
+  const beforeColors = await loadTree(beforeColorsTree);
+  const sender = await loadVersionModel();
+  if (typeof sender.timingVersions !== "function") check(false, "src/song-version.ts exports timingVersions, the version list the send sheet sends");
+  else {
+    freshStorage();
+    app.saveScrollVersions("local/13", { versions: [version(colored)], selected: 0 });
+    const wire = JSON.parse(JSON.stringify(sender.timingVersions("local/13"))) as ScrollVersion[];
+    freshStorage();
+    beforeColors.saveScrollVersions("local/13", { versions: wire, selected: null });
+    const kept = beforeColors.loadScrollVersions("local/13");
+    check(
+      kept.versions.length === 1 && JSON.stringify(kept.versions[0].learned?.sections[0].heard) === JSON.stringify(["A7", null, "C", "D7"]),
+      `a learned version sent from this build is kept by a phone on the build before colors, its heard bars as chord names (kept ${kept.versions.length} of 1, sent ${JSON.stringify(wire[0]?.learned?.sections[0].heard)})`,
+    );
+    beforeColors.updateScrollVersions("local/13", (now) => ({ ...now, selected: 0 }));
+    check(loadedSections() === JSON.stringify(colored), `after that phone's next write of the song and an update to this build, the version is there with its bands (${loadedSections()})`);
+    freshStorage();
+    app.saveScrollVersions("local/13", { versions: wire, selected: null });
+    check(loadedSections() === JSON.stringify(colored), `a phone on this build keeps the sent version with its bands (${loadedSections()})`);
+  }
+} finally {
+  rmSync(beforeColorsTree, { recursive: true, force: true });
 }
 
 freshStorage();

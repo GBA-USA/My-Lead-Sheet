@@ -271,6 +271,65 @@ await check("3c. a blank query sends nothing and clears the list", async () => {
   assert.deepEqual(run.last(), { kind: "idle" }, "a cleared box is idle, with no rows");
 });
 
+/** The query the catalog is sent for one typed line, or null when no request leaves. */
+async function sentQuery(typed: string): Promise<string | null> {
+  const run = harness();
+  run.search(typed);
+  await run.time.advance(2000);
+  assert.ok(run.calls.length <= 1, `at most one request for ${js(typed)}`);
+  return run.calls.length ? new URL(run.calls[0].url).searchParams.get("query") : null;
+}
+
+// 3f and 3g pin the one query shape measured against the live catalog (scripts/song-search-live.ts, VERIFY.md). A stub
+// cannot judge which songs a shape lists, so a new shape needs a new live run before these two lines change.
+await check("3f. a title alone asks for the whole title as one phrase, so a title that only repeats one of its words is not listed first", async () => {
+  const sent = await sentQuery("wagon wheel");
+  const want = 'recording:"wagon wheel" OR artist:"wagon wheel" OR ((recording:wagon OR artist:wagon) AND (recording:wheel OR artist:wheel))';
+  assert.equal(sent, want, `the catalog was asked ${sent}`);
+});
+
+await check("3g. title plus artist in one box asks for every typed word, each in the title or the artist", async () => {
+  const each = ["wagon", "wheel", "old", "crow", "medicine", "show"].map((word) => `(recording:${word} OR artist:${word})`).join(" AND ");
+  const sent = await sentQuery("wagon wheel old crow medicine show");
+  const want = `recording:"wagon wheel old crow medicine show" OR artist:"wagon wheel old crow medicine show" OR (${each})`;
+  assert.equal(sent, want, `the catalog was asked ${sent}`);
+});
+
+await check("3h. punctuation the catalog reads as a query operator is searched as a space", async () => {
+  for (const [typed, plain] of [
+    ['"Heroes" (live', "Heroes live"],
+    ["AC/DC: Back in Black!", "AC DC Back in Black"],
+    ["  rock & roll [take 2]~ *?  ", "rock roll take 2"],
+    ["title:fire^2 +away -home || {a} \\b", "title fire 2 away home a b"],
+  ]) {
+    const sent = await sentQuery(typed);
+    assert.ok(sent, `${js(typed)} is searched`);
+    assert.equal(sent, await sentQuery(plain), `${js(typed)} asks what ${js(plain)} asks`);
+  }
+});
+
+await check("3i. a line with nothing but punctuation is No songs found, and no request leaves", async () => {
+  for (const typed of ['"(-)" ?!', "***", "&& ||"]) {
+    const run = harness();
+    run.search(typed);
+    await run.time.advance(2000);
+    assert.equal(run.calls.length, 0, `no request for ${js(typed)}`);
+    assert.deepEqual(run.last(), { kind: "none", query: typed }, `for ${js(typed)}`);
+  }
+});
+
+await check("3j. AND, OR and NOT typed in capitals are searched as words, not read as operators", async () => {
+  for (const [typed, plain] of [
+    ["YOU AND ME", "you and me"],
+    ["DO OR DIE", "do or die"],
+    ["NOT FADE AWAY", "not fade away"],
+  ]) {
+    const sent = await sentQuery(typed);
+    assert.ok(sent, `${js(typed)} is searched`);
+    assert.equal(sent, await sentQuery(plain), `${js(typed)} asks what ${js(plain)} asks`);
+  }
+});
+
 await check("4. no recordings is its own state, not an error and not a blank", async () => {
   const run = harness(() => new Response(js(EMPTY), { status: 200 }));
   run.search("zzzz qqqq");

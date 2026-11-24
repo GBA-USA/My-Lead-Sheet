@@ -319,6 +319,135 @@ await check("12. a paste of words alone gives sections split at blank lines, and
   assert.deepEqual(parts.map((section) => section.lines.map((line) => line.lyrics)), [["Paper boats on the river", "Float away, float away"], ["Rain on the window pane", "Into the morning light"]]);
 });
 
+// A phone that copies a chord page puts each chord and the words under it on lines of their own, with a blank line
+// where the page broke a lyric line, so these charts come as a page copy and as the same chart typed with columns.
+const CHROME_WORDS = /\bvotes?\b|\d\s*\/\s*5\b|log\s?in|songbook|tabbed by|\bchords\b/i;
+/** The lines of a section that are chord rows over words, and the words of each. */
+const sung = (section: Section | undefined) => (section?.lines ?? []).filter((line) => line.lyrics !== undefined);
+const rowsOf = (section: Section | undefined): Row[] => sung(section).flatMap((line) => (line.chords === undefined ? [] : [{ chords: line.chords, lyrics: line.lyrics }]));
+
+await check("12b. a chord page with site lines gives its title and artist, Intro with its instructions as notes, and Verse and Chorus with each chord over its syllable", () => {
+  const page = [
+    "3.4/5 · 2 votes",
+    "Login to add to songbook",
+    "Paper Lanterns chords",
+    "The Hollow Pines",
+    "Tabbed by Nobody Real",
+    "",
+    "[Intro]",
+    "Form a D chord, then pick the single strings D D B/G",
+    "Form a C chord, then pick the single strings A A B/G",
+    "Play four times.",
+    "",
+    "D",
+    "",
+    "C",
+    "",
+    "G",
+    "",
+    "[Verse]",
+    "D",
+    "Tall",
+    "",
+    "C",
+    "lanterns",
+    "over the",
+    "G",
+    "water",
+    "",
+    "D",
+    "Carry",
+    "my",
+    "C",
+    "boat",
+    "along the",
+    "G",
+    "shore.",
+    "",
+    "[Chorus]",
+    chordRow([["G", 0], ["C", 6], ["D", 17]]),
+    "Paper lights are falling",
+    chordRow([["G", 0], ["C", 5], ["D", 14]]),
+    "Down upon the harbor",
+  ].join("\n");
+  const pasted = read(page);
+  assert.deepEqual([pasted.facts.title, pasted.facts.artist], ["Paper Lanterns", "The Hollow Pines"], `title and artist from the header (${js(pasted.facts)})`);
+  assert.ok(!CHROME_WORDS.test(pasted.chart), `no rating, vote, login, songbook, credit or "chords" title line in the chart (${js(pasted.chart)})`);
+  assert.ok(!/Paper Lanterns|Hollow Pines/.test(pasted.chart), "the title and artist lines leave the chart");
+  assert.equal(leftOut(pasted, "lines above the first section"), 5, `the five header lines are left out (${js(pasted.leftOut)})`);
+  const [intro, verse, chorus, ...more] = sections(pasted.chart);
+  assert.deepEqual(headings(pasted.chart), ["INTRO", "VERSE 1", "CHORUS"], `the page's three sections and no other (${js(pasted.chart)})`);
+  assert.equal(more.length, 0, "no section per line");
+  assert.deepEqual(
+    intro.lines.flatMap((line) => (line.note === undefined ? [] : [line.note])),
+    ["Form a D chord, then pick the single strings D D B/G", "Form a C chord, then pick the single strings A A B/G", "Play four times."],
+    `the instructions are notes on the intro (${js(intro.lines)})`,
+  );
+  assert.ok(intro.lines.every((line) => line.lyrics === undefined), "the intro has no sung words");
+  assert.deepEqual(intro.lines.flatMap(tokens), ["D", "C", "G"], "the intro's chords in order");
+  const typed: Row[] = [
+    { chords: chordRow([["D", 0], ["C", 5], ["G", 23]]), lyrics: "Tall lanterns over the water" },
+    { chords: chordRow([["D", 0], ["C", 9], ["G", 24]]), lyrics: "Carry my boat along the shore." },
+  ];
+  assert.deepEqual(sung(verse).map((line) => line.lyrics?.replace(/\s+/g, " ")), typed.map((row) => row.lyrics), `each lyric line whole (${js(verse.lines)})`);
+  assert.ok(verse.lines.every((line) => line.lyrics !== undefined && line.chords !== undefined), "the verse is chord rows over words, nothing else");
+  assert.deepEqual(places(rowsOf(verse)), places(typed), "each chord over the syllable the page put it on");
+  assert.deepEqual(sung(chorus).map((line) => line.lyrics), ["Paper lights are falling", "Down upon the harbor"], "the chorus as pasted");
+  assert.deepEqual(places(rowsOf(chorus)), places([{ chords: chordRow([["G", 0], ["C", 6], ["D", 17]]), lyrics: "Paper lights are falling" }, { chords: chordRow([["G", 0], ["C", 5], ["D", 14]]), lyrics: "Down upon the harbor" }]), "and its chords where they were");
+});
+
+await check("12c. a chord-over-words stanza gives one section with every chord over its letter, typed with columns or as a page copy", () => {
+  const typed = [chordRow([["G", 0], ["C", 13]]), "Morning tide on the harbor", chordRow([["D", 0], ["G", 13]]), "Sails go out and come back"].join("\n");
+  const copy = ["G", "Morning tide", "C", "on the harbor", "", "D", "Sails go out", "G", "and come back"].join("\n");
+  const want = pairs(typed);
+  for (const [form, chart] of [["typed", typed], ["page copy", copy]] as const) {
+    const parts = sections(read(chart).chart);
+    assert.equal(parts.length, 1, `${form}: one section (${js(parts)})`);
+    assert.deepEqual(sung(parts[0]).map((line) => line.lyrics?.replace(/\s+/g, " ")), ["Morning tide on the harbor", "Sails go out and come back"], `${form}: two whole lyric lines`);
+    assert.deepEqual(places(pairs(read(chart).chart)), places(want), `${form}: each chord over its letter`);
+    assert.deepEqual(lyricWords(pairs(read(chart).chart)), lyricWords(want), `${form}: the same words`);
+  }
+  const stanzas = sections(read(`${typed}\n\n${typed}`).chart);
+  assert.equal(stanzas.length, 2, "two stanzas are two sections");
+});
+
+await check("12d. a ChordPro paste among site lines keeps its title, artist, sections and inline chords, and leaves the site lines out", () => {
+  const pasted = read(
+    [
+      "4.1/5 · 9 votes",
+      "{title: Lantern Song}",
+      "{artist: The Hollow Pines}",
+      "{start_of_verse}",
+      "[G]Lanterns on the [C]water",
+      "[D]Carry me a[G]long",
+      "{end_of_verse}",
+      "",
+      "{start_of_chorus}",
+      "[C]Light the [G]harbor",
+      "{end_of_chorus}",
+      "",
+      "Login to add to songbook",
+      "Tabbed by Nobody Real",
+    ].join("\n"),
+  );
+  assert.deepEqual([pasted.facts.title, pasted.facts.artist], ["Lantern Song", "The Hollow Pines"], "title and artist from the directives");
+  assert.deepEqual(headings(pasted.chart), ["VERSE 1", "CHORUS"], `the two sections and no other (${js(pasted.chart)})`);
+  assert.ok(!CHROME_WORDS.test(pasted.chart), `no site line in the chart (${js(pasted.chart)})`);
+  const [verse, chorus] = sections(pasted.chart);
+  assert.deepEqual([sung(verse).map((line) => line.lyrics), sung(chorus).map((line) => line.lyrics)], [["Lanterns on the water", "Carry me along"], ["Light the harbor"]], "the words of each line whole");
+  assert.deepEqual(places(pairs(pasted.chart)), places(pairs("[G]Lanterns on the [C]water\n[D]Carry me a[G]long\n\n[C]Light the [G]harbor")), "each inline chord on its syllable");
+});
+
+await check("12e. a paste of words with site lines and a blank line after every line gives its stanzas, whole lines and no facts", () => {
+  const words = ["Lanterns on the water", "Carry me along the shore", "Light the harbor, light the bay", "Bring the paper boats back home"];
+  const pasted = read(["3.9/5 · 7 votes", "Login to add to songbook", "", words[0], "", words[1], "", "", words[2], "", words[3]].join("\n"));
+  assert.deepEqual(pasted.facts, {}, "no facts");
+  assert.ok(!CHROME_WORDS.test(pasted.chart), `no site line in the chart (${js(pasted.chart)})`);
+  assert.deepEqual(sections(pasted.chart).map((section) => section.lines.map((line) => line.lyrics)), [words.slice(0, 2), words.slice(2)], `two stanzas of two whole lines (${js(pasted.chart)})`);
+  const plain = read([words[0], words[1], "", words[2], words[3]].join("\n"));
+  assert.deepEqual([plain.chart, plain.facts], [[words[0], words[1], "", words[2], words[3]].join("\n"), {}], "the same words typed plainly stay as pasted");
+});
+
 await check("13. readPaste is stable: its own output reads back as the same chart, and a chart the app already reads stays as pasted", () => {
   assert.ok(FIXTURES.length > 20, "the fixtures above ran");
   for (const fixture of FIXTURES) {

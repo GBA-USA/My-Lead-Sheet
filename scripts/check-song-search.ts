@@ -92,6 +92,10 @@ const PAYLOAD = {
   ],
 };
 const EMPTY = { created: "2026-11-23T00:00:00.000Z", count: 0, offset: 0, recordings: [] };
+/** What the catalog's rate limiter sends when it is busy for a moment. */
+const BUSY_BODY = js({ error: "The MusicBrainz web server is currently busy. Please try again later." });
+const busy = (status: 503 | 429, retryAfter?: string) =>
+  new Response(BUSY_BODY, { status, headers: retryAfter === undefined ? {} : { "retry-after": retryAfter } });
 
 let mod: SongSearch | null = null;
 try {
@@ -353,10 +357,17 @@ await check("5b. a failed network (fetch rejects) says offline, with no rows", a
 });
 
 await check("6a. a 5xx from the catalog says failed, with no rows", async () => {
-  const run = harness(() => new Response(js({ error: "The MusicBrainz web server is currently busy. Please try again later." }), { status: 503 }));
+  // A 503 that stays busy is asked twice more, 1 s apart (no Retry-After), so it says failed about 2 s after the
+  // first request: 5 s on the clock is past that and still inside the 8 s answer limit.
+  const run = harness(() => new Response(BUSY_BODY, { status: 503 }));
   run.search("fire away");
-  await run.time.advance(2000);
-  assert.deepEqual(run.last(), { kind: "failed", query: "fire away" });
+  await run.time.advance(5000);
+  assert.deepEqual(run.last(), { kind: "failed", query: "fire away" }, "a 503 that stays busy");
+  const broken = harness(() => new Response("oops", { status: 500 }));
+  broken.search("fire away");
+  await broken.time.advance(2000);
+  assert.deepEqual(broken.last(), { kind: "failed", query: "fire away" }, "a 500");
+  assert.equal(broken.calls.length, 1, "a 500 is not asked again");
 });
 
 await check("6b. a malformed reply (not JSON, or no recordings list) says failed, with no rows", async () => {
@@ -434,6 +445,77 @@ await check("6g. a request still out at the limit is aborted, so a hung network 
   await run.time.advance(10000);
   assert.deepEqual(run.last(), { kind: "none", query: "wagon wheel" }, "Try again gets the catalog's answer");
   assert.equal(run.calls[1].signal?.aborted, false, "a request that answered in time is never aborted");
+});
+
+await check("6h. a busy catalog (503) that answers on the next try shows the songs and never says failed", async () => {
+  const run = harness(() => (run.calls.length === 1 ? busy(503, "1") : new Response(js(PAYLOAD), { status: 200 })));
+  run.search("fire away");
+  await untilSent(run, 1);
+  await run.time.advance(100);
+  assert.deepEqual(run.last(), { kind: "searching", query: "fire away" }, "a busy reply keeps the box searching");
+  await run.time.advance(5000);
+  assert.equal(run.calls.length, 2, "asked once more");
+  assert.equal(run.calls[1].url, run.calls[0].url, "the same request");
+  assert.ok(run.calls[1].at - run.calls[0].at >= 1000, `the second try left ${run.calls[1].at - run.calls[0].at} ms after the first`);
+  const found = run.last();
+  assert.ok(found.kind === "found" && found.query === "fire away", `found (${js(found)})`);
+  assert.equal(found.songs.length, 2, "the catalog's rows");
+  assert.ok(!run.states.some((state) => state.kind === "failed"), "failed was never said");
+});
+
+await check("6i. a catalog busy three times in a row says failed, with no rows, after three requests and inside the 8 s limit", async () => {
+  const run = harness(() => busy(503, "1"));
+  run.search("fire away");
+  await untilSent(run, 1);
+  await run.time.advance(4000);
+  assert.deepEqual(run.last(), { kind: "failed", query: "fire away" }, "4 s after the first request, well before the 8 s limit");
+  assert.equal(run.calls.length, 3, "three tries in all");
+  const gaps = run.calls.slice(1).map((call, i) => call.at - run.calls[i].at);
+  assert.ok(gaps.every((gap) => gap >= 1000), `each try left at least 1 s after the one before (gaps ${js(gaps)})`);
+  await run.time.advance(10000);
+  assert.equal(run.calls.length, 3, "no fourth request");
+  assert.deepEqual(run.states.filter((state) => state.kind !== "searching"), [{ kind: "failed", query: "fire away" }], "failed said once, and nothing else");
+});
+
+await check("6j. a 429 waits its Retry-After (2 s at most, 1 s when missing or unreadable, never under the 1 s floor), then asks again", async () => {
+  for (const [header, wait] of [["5", 2000], ["2", 2000], [undefined, 1000], ["soon", 1000], ["0", 1000]] as const) {
+    const what = `Retry-After ${header ?? "missing"}`;
+    const run = harness(() => (run.calls.length === 1 ? busy(429, header) : new Response(js(PAYLOAD), { status: 200 })));
+    run.search("fire away");
+    await untilSent(run, 1);
+    await run.time.advance(run.calls[0].at + wait - 1 - run.time.now());
+    assert.equal(run.calls.length, 1, `${what}: nothing before ${wait} ms`);
+    assert.deepEqual(run.last(), { kind: "searching", query: "fire away" }, `${what}: still searching during the wait`);
+    await run.time.advance(1);
+    assert.equal(run.calls.length, 2, `${what}: asked again at ${wait} ms`);
+    assert.equal(run.calls[1].at - run.calls[0].at, wait, `${what}: the second try left ${run.calls[1].at - run.calls[0].at} ms after the first`);
+    await run.time.advance(100);
+    assert.equal(run.last().kind, "found", `${what}: the retry's rows show`);
+  }
+});
+
+await check("6k. a new query or stop() during a busy wait ends the old search: no report and no request for it", async () => {
+  const run = harness((url) => (new URL(url).searchParams.get("query")?.includes("old") ? busy(503, "2") : new Response(js(EMPTY), { status: 200 })));
+  run.search("old song");
+  await untilSent(run, 1);
+  await run.time.advance(500);
+  assert.deepEqual(run.last(), { kind: "searching", query: "old song" }, "the busy reply started a wait");
+  run.search("new song");
+  await run.time.advance(10000);
+  const old = run.calls.filter((call) => new URL(call.url).searchParams.get("query")?.includes("old"));
+  assert.equal(old.length, 1, "no request for the old query after it changed");
+  assert.ok(!run.states.some((state) => state.kind !== "searching" && "query" in state && state.query === "old song"), `nothing but searching was said for the old query (${js(run.states)})`);
+  assert.deepEqual(run.last(), { kind: "none", query: "new song" }, "the new query's answer");
+
+  const stopped = harness(() => busy(503, "2"));
+  stopped.search("fire away");
+  await untilSent(stopped, 1);
+  await stopped.time.advance(500);
+  const heard = stopped.states.length;
+  stopped.searcher.stop();
+  await stopped.time.advance(10000);
+  assert.equal(stopped.calls.length, 1, "no request after stop");
+  assert.equal(stopped.states.length, heard, "no report after stop");
 });
 
 await check("7a. rapid typing sends one request, after a 400-800 ms pause", async () => {

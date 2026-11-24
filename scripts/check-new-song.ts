@@ -106,9 +106,10 @@ const TWO_SECTIONS = ["VERSE 1", "A               E", "Honey, load up your quest
 const TWO_SECTION_ANCHORS = ['A on word 1 "Honey," at 0', 'E on word 4 "your" at 1', 'D on word 6 "Fire" at 0', 'A on word 7 "away," at 1', 'E on word 8 "fire" at 0'];
 /**
  * Lines a player can type that, written back as a chord row over a lyric, would read as something else: a bracket
- * lyric that is chords, a note, bars or indented chords, and a bracket heading that reads as a note or bars.
+ * lyric that is chords, a note, bars or indented chords, two chords on one letter with the later one pushed just past
+ * a `[` of the lyric, and a bracket heading that reads as a note or bars.
  */
-const ODD_CHART = ["VERSE 1", "[G]A [D]B [C]C", "[G]Note: slow down", "[Am7]Bars: 4", "[D]| hold", "[E]  Em", "", "[Note: slow]", "[G]Honey, load up", "", "[Bars: 2]", "| A | E |"].join("\n");
+const ODD_CHART = ["VERSE 1", "[G]A [D]B [C]C", "[G]Note: slow down", "[Am7]Bars: 4", "[D]| hold", "[E]  Em", "[G][D]|[ hold", "", "[Note: slow]", "[G]Honey, load up", "", "[Bars: 2]", "| A | E |"].join("\n");
 const ODD_PIECES = ["[G]", "[Am7]", "[D/F#]", "A", "B", "C", "G", "Em", "N.C.", "hey", "Honey,", "load", "Note:", "note:", "Bars:", "|", "| A |", ":", "-", "(x2)", "VERSE", "HEY", "Chorus", "Chorus:", "Verse 2", "[Note: slow]", "[Bars: 2]", "[Bridge]", "[x]", "[|x]", "[", "]", "]:", "[ ]", "[G][D]", "Hi[G]", "  ", " ", "\t"];
 const pairs = (sections: ChartSection[]) => sections.flatMap((section) => section.lines).filter((line): line is Row & ChartLine => line.chords !== undefined);
 
@@ -232,7 +233,7 @@ await check("2a. an own song with odd lines opens in the editor as text that sav
   assert.deepEqual(app.parseSheet(written).sections, sections, `the odd lines read back as typed (written as ${js(written)})`);
   // Made-up charts from pieces that read as chords, notes, bars, headings and brackets, the same every run.
   let state = 1;
-  const next = () => (state = (state * 1103515245 + 12345) % 2147483648) / 2147483648;
+  const next = () => (state = (Math.imul(state, 1103515245) + 12345) >>> 0) / 4294967296;
   const piece = () => ODD_PIECES[Math.floor(next() * ODD_PIECES.length)];
   const line = () => Array.from({ length: 1 + Math.floor(next() * 4) }, piece).join(["", " ", "  "][Math.floor(next() * 3)]);
   const changed: string[] = [];

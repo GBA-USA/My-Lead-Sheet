@@ -656,6 +656,66 @@ await check("12m. a rule of dashes under a heading leaves the chart, and a headi
   assert.deepEqual(said(chorus), ["Float away, float away"], `the chorus holds its words (${js(chorus?.lines)})`);
 });
 
+await check("12n. a phone's copy of a page with no section names keeps its stanzas, its title, a sung line that starts with A, and each line's own chords, less the page's indent", () => {
+  const copy = [
+    "B52 Motel chords",
+    "The Hollow Pines",
+    "",
+    "   ",
+    "D",
+    "Porch",
+    " light ",
+    "G",
+    "on",
+    "C",
+    "  ",
+    "   and no chord here",
+    "   ",
+    "D",
+    "Leave",
+    " it ",
+    "G",
+    "burning",
+    "",
+    "   G        D",
+    "    A light to bring me home",
+    "",
+    "   ",
+    "D",
+    "Carry",
+    " me ",
+    "G",
+    "home",
+  ].join("\n");
+  const pasted = read(copy);
+  assert.deepEqual([pasted.facts.title, pasted.facts.artist], ["B52 Motel", "The Hollow Pines"], `a title with a word that reads as a chord is still the title (${js(pasted.facts)})`);
+  const all = sections(pasted.chart);
+  assert.deepEqual(all.map(said), [["Porch light on", "and no chord here", "Leave it burning", "A light to bring me home"], ["Carry me home"]], `the page's blank line parts its two stanzas, and each line is whole and sung (${js(pasted.chart)})`);
+  assert.deepEqual(all.flatMap(notes), [], "no sung line is made a note");
+  assert.deepEqual(all.map((section) => sung(section).map(tokens)), [[["D", "G", "C"], [], ["D", "G"], ["G", "D"]], [["D", "G"]]], "a chord after the last word stays on its line, a line with no chord stays its own line, and the next line starts with its own chord");
+  const typed: Row[] = [
+    { chords: chordRow([["D", 0], ["G", 12], ["C", 15]]), lyrics: "Porch light on" },
+    { chords: chordRow([["D", 0], ["G", 9]]), lyrics: "Leave it burning" },
+    { chords: chordRow([["G", 3], ["D", 12]]), lyrics: "    A light to bring me home" },
+  ];
+  assert.deepEqual(places(rowsOf(all[0])), places(typed), `each chord over the word the page put it on (${js(rowsOf(all[0]))})`);
+  for (const line of all.flatMap(sung)) assert.ok((line.lyrics?.search(/\S/) ?? 0) <= 1, `the indent the page gives every line is gone (${js(line.lyrics)})`);
+
+  const ending = read(["D", "Porch", " light ", "G", "on", "", "G/B  G/B*", "or G#dim (020130)", "[Chorus]", "D", "Carry", " me ", "G", "home"].join("\n"));
+  const [verse, chorus] = sections(ending.chart);
+  assert.deepEqual(headings(ending.chart).map((heading) => heading.toUpperCase()), ["VERSE 1", "CHORUS"], `a verse and the page's chorus (${js(ending.chart)})`);
+  assert.deepEqual([notes(verse), notes(chorus)], [["or G#dim (020130)"], []], "a comment under a part's last row of chords stays a note on that part, not on the section after it");
+  assert.deepEqual([said(verse), tokens(verse.lines[1]), said(chorus)], [["Porch light on"], ["G/B", "G/B"], ["Carry me home"]], "and the heading after it is taken for no row's words");
+});
+
+await check("12o. a typed chart with one line of spaces under a lone chord is no page copy, and a heading under a row of chords alone starts its section with nothing else to clean", () => {
+  const stray = ["INTRO", "G", " ", "VERSE 1", chordRow([["G", 0], ["C", 12]]), "Paper boats on the river"].join("\n");
+  assert.equal(read(stray).chart, stray, `stays as pasted (${js(read(stray).chart)})`);
+  const tight = ["VERSE 1", chordRow([["G", 0], ["C", 12]]), "Paper boats on the river", "G D", "CHORUS", chordRow([["C", 0], ["G", 12]]), "Float away, float away"].join("\n");
+  assert.deepEqual(headings(read(tight).chart), ["VERSE 1", "CHORUS"], `both sections (${js(read(tight).chart)})`);
+  assert.deepEqual(sections(read(tight).chart).map(said), [["Paper boats on the river"], ["Float away, float away"]], "each with its own words");
+});
+
 await check("13. readPaste is stable: its own output reads back as the same chart, and a chart the app already reads stays as pasted", () => {
   assert.ok(FIXTURES.length > 20, "the fixtures above ran");
   for (const fixture of FIXTURES) {

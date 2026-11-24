@@ -12,6 +12,8 @@ const RECORDING_SEARCH = endpoints.recordingSearch;
 export const DEBOUNCE_MS = 600;
 /** The catalog's rate rule: never more than one request a second from this phone. */
 export const FLOOR_MS = 1000;
+/** How long a request may stay out before the box reports `failed`, so a hung network still shows Try again. */
+const ANSWER_MS = 8000;
 const LIMIT = 15;
 
 /** A general web search for `"<title>" "<artist>" lyrics`, leaving out a blank field. */
@@ -85,9 +87,15 @@ export function catalogSearcher(deps: SearchDeps) {
     current += 1;
   };
 
-  async function ask(query: string, words: string): Promise<SearchState> {
-    if (!deps.online()) return { kind: "offline", query };
+  function ask(query: string, words: string): Promise<SearchState> {
+    if (!deps.online()) return Promise.resolve({ kind: "offline", query });
     floor.lastSent = deps.now();
+    let limit: unknown;
+    const late = new Promise<SearchState>((done) => (limit = deps.setTimeout(() => done({ kind: "failed", query }), ANSWER_MS)));
+    return Promise.race([read(query, words), late]).finally(() => deps.clearTimeout(limit));
+  }
+
+  async function read(query: string, words: string): Promise<SearchState> {
     let response: Response;
     try {
       response = await deps.fetch(requestUrl(words), { headers: { Accept: "application/json", "User-Agent": `MyLeadSheet/1.0 ( ${deps.origin} )` } });

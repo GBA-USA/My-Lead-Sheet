@@ -125,6 +125,10 @@
   white-space: normal;
 }
 
+.song-editor-capo {
+  align-items: center;
+}
+
 .song-editor-paste-actions button[aria-pressed="true"] {
   background: var(--accent);
   color: var(--on-accent);

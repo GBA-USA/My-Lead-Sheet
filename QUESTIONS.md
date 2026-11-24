@@ -1,3 +1,16 @@
+# song-paste-import fix pass 2: the capo note is a control, and a paste over the whole box is a fresh paste
+
+1. A capo paste's key note (`Capo 2 for guitar`) now shows in the editor, above the box, with a Remove capo note
+   button. Edit song shows it too. It shows only for a note that starts `Capo <n>`, the words a capo paste writes. A
+   saved song's other key note, such as a built-in chart's prose, stays hidden in the editor, as it was before this
+   cook. Owner: say if every key note should be a field the player can edit.
+2. A keyboard paste over a selection that covers the whole box is now taken as a paste into an empty box. It is
+   cleaned, it fills the fields, and it drops a capo note the new chart lacks. Any other paste into a box that holds text
+   is still left to the box, raw.
+3. The paste status line and its buttons, including the Use G major chips, now show only while the box holds what the
+   paste put there. Once the player types in the box, they go. Before, the chips stayed. Owner: say if a chip should
+   outlive an edit.
+
 # song-paste-import fix pass 1: a chord with no room in its word becomes a bracket line
 
 A pasted chord row can respell a chord longer (`CM7` to `Cmaj7`, or `Em` to `F#m` under a capo) with no word gap

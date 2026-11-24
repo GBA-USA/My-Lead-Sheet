@@ -1,126 +1,116 @@
-# song-paste-import self-check fix pass 1 of 2 (on top of the self-check below)
+# song-paste-import self-check fix pass 2 of 2 (on top of the self-check below)
 
-Goal: the three P2 findings below are closed. Each one got a check case first, and the case failed on 917a834's
-source. Then the code was fixed, and the same case passes. Logs are in `.verify-logs/fix1/` and `.verify-logs/paste/fix1*`
+Goal: a capo note made by a paste goes with its chart however the player replaces the chart, or the player can see it
+and remove it. The self-check's P2-1 rests on one premise: that the editor can tell from text events when the capo
+chart has left the box. That premise is false. Select all then type, cut, and undo all look like edits. So the root
+fix makes the note a control, and a paste over the whole box counts as a fresh paste. Logs are in `.verify-logs/fix2/`
 (gitignored). The runs used headless Edge on Windows with the path shim, not Chrome on Linux.
 
-| Finding | New case in `scripts/check-song-paste.ts` | 917a834 source | Fix | After |
+| Path | Case in `scripts/check-song-paste.ts` | 4d10cab source (`before.log`) | Fix (`src/song-editor.tsx`) | After |
 |---|---|---|---|---|
-| P2-1, a stale capo note | 23: New song (capo paste, Show guitar shapes, empty the box, keyboard paste of a chart with no capo, Save), then Edit song on a saved capo song, the same steps | FAIL, "new song: the preview drops the capo note" (`before2.log`). M2 runs the Edit song half alone and it fails too (`mutate.log`) | `formWithPaste` clears a `Capo N` note when a paste fills the whole box and finds no capo (`src/song-editor.tsx`) | ok |
-| P2-2, a respelled chord slides off its letter in silence | 6b: `CM7 F` over `Lovely day for it`, and `Capo 2` with `Em D C G` over `Paper boats on the water`. The editor's warnings must name the word | FAIL, warnings `[]` (`before2.log`). M1 runs the capo row alone and it fails too | `write` keeps `placeChords`' warning. A row that warns goes into the box as a bracket line, `[Cmaj7]Love[F]ly day for it`, which `parseSheet` warns about (`src/song-paste.ts`). See QUESTIONS.md | ok |
-| P2-3, "Nothing here" untested | 24: `Key: G` / `Tempo: 120 bpm` stays in the box as pasted, with the words, and Key and BPM unchanged | ok, because the behavior already worked. M3 removes `takePaste`'s nothing-left branch and 24 fails ("timed out waiting for the nothing-here words") | none | ok |
+| Repro D: Select all, then Paste a chart with no capo | 25: the paste is taken, cleaned (`Tuning:` left out), replaces the box, the preview and status name no capo, Save stores `""` | FAIL, "the app takes a paste over the whole box" | `onPaste` takes a paste whose selection covers the whole box as a paste into an empty box (`takePaste(text, "")`) | ok |
+| Repro E: empty the box and type a chart | 26: the paste status goes, Remove capo note shows, one tap drops the note from the preview, Save stores `""`. Then Edit song on a saved capo song shows the row, and Remove plus Save stores `""` | FAIL, "the paste status goes once the box no longer holds the paste" | The paste panel renders on `fresh`, not `pasting`. A `Capo <n>` key note shows above the box with Remove capo note | ok |
+| The new button at 360 and 390 px | 22 now also measures Remove capo note | FAIL, "Remove capo note is visible at 360 px" | Reuses `.song-editor-paste-actions` (44 px buttons) | ok |
 
-- Two of my first test lines were wrong and I fixed them before the fail-before run that counts. Case 23 matched
-  "Capo" in a song titled "Capo Boats". Case 6b compared the lyric byte for byte, but `placeChords` widens a real word
-  gap later in the capo row, which case 6 already allows. `before.log` and `after.log` are those first runs.
-- After the fix: `check:song-paste` 26 ok, `check:new-song` 28 ok, `check:song-search` 46 ok, `check:music`,
-  `check:portable` and `check:one-copy` pass, and `npm run build` and `tsc --noEmit` are green.
-- `check:chords` has 3 FAIL lines (Fire Away @320px x1), identical to the cook's `fin-chords.log`. These are the
-  known Windows font rows.
-- Case 21, which this pass did not touch, timed out "waiting for the service worker" in 2 runs back to back (33 s
-  each, right after the build and the other checks). It passed in 3 other runs (18 to 19 s), one through the same
-  runner. I read this as load (inferred), not proven.
-- Not done (P3): single-dash tab lines and chips that follow `pasting` rather than `fresh`.
+- Case 26 failed on its first line at 4d10cab, so the mutations in `mutate.log` and `mutate-m6.log` prove its later
+  lines. Each one makes its case fail. M1 sets `fresh = pasting`, and 26 fails on the status. M2 removes the row, and 22
+  and 26 fail. M3 makes Remove do nothing, and 26 fails on the preview. M4 drops the whole-box rule, and 25 fails on the
+  take. M5 keeps what the box held, and 25 fails on the replace. M6 hides the row in Edit song only, and 26 fails on
+  Edit song.
+- After the fix: `check:song-paste` 28 ok (`after.log`). `check:new-song` 28 ok, `check:song-search` 46 ok, and
+  `check:music`, `check:screens`, `check:portable`, `check:one-copy` and `check:ux-theme-tokens` pass. `tsc --noEmit`
+  and `vite build` are green.
+- `check:chords` has the same 3 FAIL lines twice (Fire Away @320px x1, `chords.log` and `chords-2.log`). They are
+  identical to the base runs in `.verify-logs/paste/base-chords*.log`, which are the known Windows font rows.
+- P3 probe F: `takePaste`'s comment now says a paste that leaves nothing "fills no field". The capo note clear is
+  `formWithPaste`'s documented whole-box rule. No case was added for it.
+- Not done (P3): single-dash tab lines. Owner questions are in QUESTIONS.md, fix pass 2.
 
-VERDICT: PASS for P2-1, P2-2 and P2-3, pending the next self-check.
+VERDICT: PASS for P2-1, pending the next self-check.
 
 ---
 
 VERDICT: FAIL
 
-# song-paste-import self-check at 917a834, tier deep
+# song-paste-import self-check at 4d10cab, tier deep
 
 Goal: a player pastes a chart copied from the web and gets a correct lead sheet, with sections, chords over their
-words, key, BPM and capo, shown as the real sheet before Save. This check reads the diff `1e95d14..917a834` (8 files),
-walks the brief's pass conditions, and runs the riskiest paths in the built app. No code was changed. The cook's own
-check runs were not repeated, because the diff did not touch any earlier check or its fixtures.
+words, key, BPM and capo, shown as the real sheet before Save. This self-check reads the whole diff `1e95d14..4d10cab`
+and, more closely, the fix pass `917a834..4d10cab`, which closed the three P2 findings of the 917a834 self-check. No
+code was changed. The cook's check runs were not repeated. The fix pass changed only `scripts/check-song-paste.ts`
+among the checks, and its fail-before and pass-after logs are already in `.verify-logs/fix1/`.
 
-Evidence is in `.verify-logs/self-check/` (gitignored). `unit.mjs` and `unit.log` hold the `readPaste` probes in node.
-`probe.ts` and `probe.log` hold the screen probe (headless Edge on Windows with the path shim, at 360 and 390 px, against
-a stub `/api/me`).
+Evidence is in `.verify-logs/self-check2/` (gitignored). `probe.ts` and `probe.log` hold the screen probe. It ran in
+headless Edge on Windows with the path shim, at 360 and 390 px, against a stub `/api/me`. `openSite` built the app from
+this head's source. `window.__errors` stayed empty.
 
 ## Pass conditions
 
 | Condition | Result | Evidence |
 |---|---|---|
-| Cases 1 to 22 each have a named line that failed on the tests-only commit | Met | `.verify-logs/paste/commit1.log` has 24 FAIL lines (1 to 22, perf, module load) at 5458580 |
-| They pass now, and `npm run build` is green | Met (the cook's run, not repeated) | |
-| Unit box: cases 1 to 14 print `ok` | Met (the cook's run) | |
-| Live box: Capo, `[Chorus]`, `C(add9)`, Save, headings, capo note, chords over their words | Met by case 21 (`LIVE` chart, real clipboard, offline reload) | |
-| Perf box | Met, with a stricter baseline | The cook compares against the same text typed in. Trunk's tap was 87 ms against 33 ms typed on commit 1, so typed + 100 ms is the tighter bar |
-| `check:new-song`, `check:song-search`, `check:chords`, `check:music` unedited | Met | No earlier check script is in the diff |
-| Owned files only, one package.json line | Met | The diff touches only the owned files, plus a QUESTIONS.md entry, which the rules allow |
-| `SongFacts`, `Pasted`, `LeftOut` as in the plan; one apply function | Met | `formWithPaste` in `src/song-editor.tsx:54`. `readPaste` has an extra optional `view` argument, which leaves the frozen shape alone |
-| Empty or refused clipboard says "Paste your sheet into the box." and focuses the box | Met (case 20) | |
-| A paste that leaves nothing keeps the raw text and says "Nothing here looks like a chart…" | Works, but untested (P2-3) | probe B |
-| Storage failure on Save keeps the editor open | Met | The Save path now goes through `stored()`. `check:new-song` lines 882 and 902 cover `NOT_SAVED` and ran unedited |
-| Signed out, second account, offline | No change | Same `addOwnSong` path, no network call (case 14), offline reload (case 21) |
+| Cases 1 to 22 each have a named line that failed on the tests-only commit | Met | `.verify-logs/paste/commit1.log`, 24 FAIL lines at 5458580 (checked at 917a834, the cases are unchanged since) |
+| The fix pass cases fail before and pass after | Met | `fix1/before2.log` has FAIL 6b and FAIL 23 at 917a834's source. 24 passed there because the behavior already worked, and mutation M3 makes it fail. `fix1/after3.log` has 26 ok and no FAIL |
+| No earlier case weakened | Met | The fix pass removes only the old `keyboard` helper, which moved up the file, and one narrower type line |
+| Unit, live and perf boxes, `npm run build` green | Met (the cook's runs, not repeated) | |
+| Owned files only, one package.json line | Met | `VERIFY.md` and `QUESTIONS.md` are the shared report files |
+| One apply function | Met | `formWithPaste`, `src/song-editor.tsx:54` |
+| The 917a834 P2-2 (a squeezed chord moved in silence) | Closed | Probe G: `CM7 F` over `Lovely day for it` goes in as `[Cmaj7]Love[F]ly day for it`, and the editor lists `Line 2: Chords too close inside 'Lovely'`. Probe H: the capo row warns about `'Paper'`. Show guitar shapes gives back the plain two-line row with no warning, and the switch back restores the bracket line and its warning. Nothing overflows at 360 or 390. The box scrolls sideways because it has `wrap="off"`, which was already true before this diff |
+| The 917a834 P2-3 ("Nothing here" untested) | Closed | Case 24, proven by mutation M3 |
+| The 917a834 P2-1 (a stale capo note) | Closed for one path only, see P2-1 below | |
+| Signed out, second account, offline | No change | The save still goes through `addOwnSong`, and the paste makes no network call |
 
 ## Findings
 
-### P2-1. The capo note outlives its chart and is saved on a song that has no capo
+### P2-1. The capo note still outlives its chart when the player replaces the chart another way
 
 CLASS=state-machine
 
-`formWithPaste` (`src/song-editor.tsx:62`) writes `keyNote` only when the new paste has a capo. Nothing clears it when
-the capo chart leaves the box. The editor has no field for `keyNote`, so the player cannot remove it. The saved sheet
-can then say "The chords are guitar shapes." over chords that are not shapes. A bass player who believes that note
-plays the whole song in the wrong key.
+The fix clears a `Capo N` note only when `formWithPaste` runs with an empty `before`. That happens on a paste into an
+emptied box, or on a Paste a sheet tap with an empty box. It assumes the capo chart can leave the box only that way.
+That premise is false. A box that holds text gives a keyboard paste to the browser (`onPaste` returns early when
+`form.chart.trim()` is not empty), so Select all then Paste never reaches `formWithPaste`. Typing a chart into the
+emptied box also never reaches it. On both paths the note stays. It is saved and drawn on the song sheet. The editor
+has no `keyNote` field, so the player cannot remove it. The status line also keeps saying `Found key A major, capo 2.`
+over a chart with no capo, because it reads `pasting`, which only the next paste replaces.
 
-Smallest repro (probe A, the same at 360 and 390 px):
-1. New song. **Paste a sheet** with `Capo: 2nd fret` / `[Verse 1]` / `G      C       D` / `Paper boats on the river`.
-2. Tap **Show guitar shapes**. The preview note reads `Capo 2. The chords are guitar shapes.`
-3. Empty the box. Paste `[Chorus]` / `G           C` / `Float away into the light` with the keyboard. It is cleaned, and the status reads `Found key C major.`
-4. The preview still shows `Capo 2. The chords are guitar shapes.` Save. The stored `keyNote` and the saved sheet both say it.
+Before this diff a new song never had a key note, so this is new behavior. Case 23 covers only the emptied-box paste.
 
-The same happens in Edit song for a song saved with a capo note. Likely fix: when a paste replaces the whole box
-(`before` is empty) and has no capo, clear a note that matches `/^Capo \d+/`. Add a screen case for this repro.
+Smallest repro (probe D, the same at 360 and 390 px):
+1. New song. Paste a sheet with `Capo: 2nd fret` / `[Verse 1]` / `G      C       D` / `Paper boats on the river`.
+2. In the box, Select all, then Paste `[Chorus]` / `G           C` / `Float away into the light`.
+3. The preview still shows `Capo 2 for guitar`, and the status still says `Found key A major, capo 2.`
+4. Save. The stored `keyNote` is `Capo 2 for guitar`, and the saved sheet shows it.
 
-### P2-2. A respelled chord that grows into its neighbour inside one word moves off its syllable, with no warning
+Probe E gives the same result when the player empties the box and types the second chart.
 
-CLASS=data-shape
-
-`write` in `src/song-paste.ts:236` takes `placeChords(...).line` and drops its `warning`. When two chords sit inside one
-word and the first one grows (`CM7` to `Cmaj7`, or `Em` to `F#m` under a capo), `placeChords` finds no word gap and
-pushes the second chord right. The box then holds a plain chord row over a lyric, so `parseSheet` raises no warning
-either. The chord moves off its letter and no one is told. That breaks top rule 1. Case 6 covers growth only when there
-is a word gap to widen.
-
-Smallest repro (probe C): **Paste a sheet** with `Key: C` / `[Verse 1]` / `CM7 F` / `Lovely day for it`. `F` was over
-the `l` of `Lovely` (column 4). The box becomes `Cmaj7 F`, which puts `F` over the gap before `day` (column 6). The
-warnings list is empty, and the status says only `Found key C major.` The same in node: `Capo 2` / `Em D C G` /
-`Paper boats on the water` gives `F#m E D A`, with `E` moved from the `e` of `Paper` to its `r`.
-
-Likely fix: keep the warning and show it in the status line, or keep the pasted chord's column. Add the no-gap case to
-case 6.
-
-### P2-3. The brief's "nothing left after cleaning" state has no check line
-
-CLASS=other
-
-The brief names this state and its words: "Nothing here looks like a chart. It is in the box as pasted." It works
-(probe B: `Key: G` / `Tempo: 120 bpm` stays in the box as pasted, with that message, and Key and BPM unchanged). No case
-in `scripts/check-song-paste.ts` reaches it, so a regression would pass every check.
+Suggested fix, at the root: the note is form state the player can neither see as a control nor remove. Show a
+paste-made capo note in the editor with a remove button, and hide the paste status line once `fresh` is null. A smaller
+step is to treat a keyboard paste whose selection covers the whole box as a paste into an empty box. That also cleans
+that paste. It closes repro D but not repro E. Add a screen case for each path you close.
 
 ## P3, no change needed to pass
 
-- A tab line with single dashes, such as `e|-3-5-7-|`, is not seen as tab, because `TAB_LINE` also needs `--`
-  (`src/song-paste.ts:204`). It stays in the chart as a lyric line (unit probe: 1 of 4 lines counted). Nothing is lost,
-  but the cleaning is incomplete.
-- The status line and the chips come from `pasting`, not `fresh`. After the player deletes the pasted chart, **Use G
-  major** still offers the key of a chart that is no longer in the box.
-- The status words "Taken as words." and the scroll of the preview into view are not asserted by any check.
+- Probe F. In Edit song on a capo song, emptying the box and tapping Paste a sheet with `Key: G` / `Tempo: 120 bpm`
+  clears the capo note. `takePaste` says that a paste that leaves nothing goes in "with no field changed". Clearing it is
+  defensible, because the capo chart is gone, but the comment and the brief's words disagree with the code, and no case
+  covers it.
+- A keyboard paste over a box that holds text, Select all included, goes in raw with no cleaning. The brief asks for
+  cleaning only on Paste a sheet, so this is a gap in convenience only.
+- Still open from 917a834: a tab line with single dashes is not seen as tab. The chips, and now also the status line,
+  follow `pasting` rather than `fresh`.
 
 ## Plan and code disagree (owner)
 
-- QUESTIONS.md entry 1: a paste with nothing to clean stays as pasted, so `[Intro]` is not restyled to `INTRO`. Plan
-  section 2 case 3 restyles every heading. The cook chose this so that `check:new-song` 2b passes unedited. The choice
-  is sound, but the owner should confirm it.
-- QUESTIONS.md entry 2: case 13 reads built-in charts back with `Xsus` read as `Xsus4`, not byte for byte.
+- QUESTIONS.md, fix pass 1. A squeezed chord row goes in as a bracket line with the editor's warning, and the preview
+  still draws the second chord pushed right until the player fixes the line. The other choice was the two-line form plus
+  a warning in the status line.
+- QUESTIONS.md, the cook's entries 1 and 2 (a clean chart stays as pasted, and `Xsus` reads back as `Xsus4`). These are
+  unchanged since 917a834.
 
 ## Hands-on run
 
-The riskiest path was the capo switch and a later paste over the same form, because it is the only place where the
-editor holds state that the box does not show. `probe.ts` ran it at 360 and 390 px in the built app, with real taps,
-the keyboard paste handler and Save, and read localStorage afterwards. That is where P2-1 came from. Probe C (P2-2) and
-probe B (P2-3) ran in the same session. `window.__errors` stayed empty.
+The riskiest path was still the capo note, because it is the only form state that the box does not show. The fix
+handled one way out of the capo chart, so the probe tried the other ways a phone offers. Probe A is the fixed repro, and
+it now stores an empty note at both widths. Probes D and E are the two paths above, and both store the stale note at both
+widths. Probes G and H drive the bracket-line fallback through the real Paste a sheet tap and the capo switch. Probe F is
+the Edit song case with a paste that leaves nothing.

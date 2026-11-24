@@ -38,6 +38,8 @@ const formOf = (song?: Song): Form => ({
 type Paste = { raw: string; before: string; view: CapoView | "raw"; pasted: Pasted };
 
 const NOTHING = "Nothing here looks like a chart. It is in the box as pasted.";
+/** A key note a capo paste wrote, in either view. */
+const CAPO_NOTE = /^Capo \d+/;
 const LEFT_OUT: Record<LeftOut["what"], string> = { "tab lines": "tab line", "lines above the first section": "line above the first section", directives: "directive" };
 
 const after = (before: string, text: string) => (before.trim() ? `${before.trimEnd()}\n\n${text}` : text);
@@ -59,7 +61,7 @@ function formWithPaste(form: Form, paste: Paste, open: (field: keyof Form) => bo
   if (facts.keyRoot && facts.keyMode && open("keyRoot") && open("keyMode")) Object.assign(next, { keyRoot: facts.keyRoot, keyMode: facts.keyMode });
   if (bpm && open("bpm")) next.bpm = bpm;
   if (facts.timeSignature && open("timeSignature")) next.timeSignature = facts.timeSignature;
-  const capoNoted = /^Capo \d+/.test(form.keyNote);
+  const capoNoted = CAPO_NOTE.test(form.keyNote);
   if (facts.capo && (open("keyNote") || capoNoted)) next.keyNote = capoNote(facts.capo, paste.view === "raw" ? "shapes" : paste.view);
   // A paste that fills the whole box takes the place of the chart a capo note was about.
   else if (capoNoted && !paste.before.trim()) next.keyNote = "";
@@ -165,11 +167,11 @@ function SongEditor({ song, songs, onTempo, onClose }: { song?: Song; songs: Son
     setForm((current) => formWithPaste(current, next, open));
   };
 
-  /** Cleans a pasted text into the box. A paste that leaves nothing goes in as pasted, with no field changed. */
-  const takePaste = (raw: string) => {
+  /** Cleans a pasted text into the box after `before`. A paste that leaves nothing goes in as pasted and fills no field. */
+  const takePaste = (raw: string, before: string) => {
     const pasted = readPaste(raw);
-    if (!pasted.chart.trim()) return show({ raw, before: form.chart, view: "raw", pasted: { facts: {}, chart: "", leftOut: [] } });
-    show({ raw, before: form.chart, view: CAPO_VIEW, pasted });
+    if (!pasted.chart.trim()) return show({ raw, before, view: "raw", pasted: { facts: {}, chart: "", leftOut: [] } });
+    show({ raw, before, view: CAPO_VIEW, pasted });
   };
 
   const takeChip = (take: Partial<Form>) => {
@@ -196,7 +198,7 @@ function SongEditor({ song, songs, onTempo, onClose }: { song?: Song; songs: Son
     } catch {
       /* No clipboard, or the player said no: the box takes a paste instead. */
     }
-    if (text.trim()) return takePaste(text);
+    if (text.trim()) return takePaste(text, form.chart);
     setPasting(null);
     setPasteNote("Paste your sheet into the box.");
     chartRef.current?.focus();
@@ -281,28 +283,36 @@ function SongEditor({ song, songs, onTempo, onClose }: { song?: Song; songs: Son
             </button>
           </div>
           {pasteNote ? <p className="song-editor-hint" role="status">{pasteNote}</p> : null}
-          {pasting ? (
+          {fresh ? (
             <div className="song-editor-paste">
               <p className="song-editor-hint" role="status">
-                {pasteStatus(pasting)}
+                {pasteStatus(fresh)}
               </p>
               <div className="song-editor-paste-actions">
-                {chipsFor(form, pasting.pasted.facts).map(({ label, take }) => (
+                {chipsFor(form, fresh.pasted.facts).map(({ label, take }) => (
                   <button key={label} type="button" onClick={() => takeChip(take)}>
                     {label}
                   </button>
                 ))}
-                {fresh && fresh.view !== "raw" && fresh.pasted.facts.capo ? (
+                {fresh.view !== "raw" && fresh.pasted.facts.capo ? (
                   <button type="button" aria-pressed={fresh.view === "shapes"} onClick={() => switchTo(fresh, fresh.view === "shapes" ? "sounding" : "shapes")}>
                     {fresh.view === "shapes" ? "Show chords as they sound" : "Show guitar shapes"}
                   </button>
                 ) : null}
-                {fresh && fresh.view !== "raw" && fresh.pasted.chart !== fresh.raw ? (
+                {fresh.view !== "raw" && fresh.pasted.chart !== fresh.raw ? (
                   <button type="button" onClick={() => switchTo(fresh, "raw")}>
                     Use it as pasted
                   </button>
                 ) : null}
               </div>
+            </div>
+          ) : null}
+          {CAPO_NOTE.test(form.keyNote) ? (
+            <div className="song-editor-paste-actions song-editor-capo">
+              <span className="song-editor-hint">{form.keyNote}</span>
+              <button type="button" onClick={() => set("keyNote")("")}>
+                Remove capo note
+              </button>
             </div>
           ) : null}
           <textarea
@@ -319,9 +329,12 @@ function SongEditor({ song, songs, onTempo, onClose }: { song?: Song; songs: Son
             onChange={(event) => set("chart")(event.target.value)}
             onPaste={(event) => {
               const text = event.clipboardData.getData("text/plain");
-              if (form.chart.trim() || !text.trim()) return;
+              const box = event.currentTarget;
+              // A paste over the whole box takes its place, as a paste into an empty box does.
+              const whole = box.selectionStart === 0 && box.selectionEnd === box.value.length;
+              if (!text.trim() || (form.chart.trim() && !whole)) return;
               event.preventDefault();
-              takePaste(text);
+              takePaste(text, "");
             }}
           />
           {parsed.warnings.length > 0 ? (

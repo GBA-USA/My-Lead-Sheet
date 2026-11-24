@@ -7,7 +7,7 @@ import { useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } 
 import type { LocalMs } from "./band-time";
 import type { BandView } from "./bands-model";
 import type { ChatEntry } from "./chat-model";
-import { downloadPack, type GigPack } from "./gig-pack";
+import { atPassEnd, downloadPack, packToShow, type GigPack } from "./gig-pack";
 import type { GigPlan } from "./gig-plan-model";
 import { useGigPosition, type GigPosition } from "./gig-position";
 import { position as positionAt } from "./gig-state";
@@ -33,9 +33,9 @@ import type { MetronomePrefs } from "./metronome";
 import { followBand, stopMetronome } from "./metronome-audio";
 import type { MetronomeState } from "./metronome-view";
 import type { PersonalDefaults } from "./personal-settings-model";
-import { getFromPhone, heldFor } from "./phone-db";
+import { heldFor } from "./phone-db";
 import { gigHref, type Route } from "./route";
-import { api } from "./sign-in-methods";
+import { ApiError, api } from "./sign-in-methods";
 import { savePersonal } from "./storage";
 import { FREE_STUN } from "./sync-history";
 import type { Song } from "./types";
@@ -52,7 +52,7 @@ export type LiveDeps = {
   gigs(): Promise<GigPlan[]>;
   pack(me: string, gig: GigPlan): Promise<GigPack>;
   room(bandId: string): RoomLine;
-  names(bandId: string): Promise<Record<string, string>>;
+  names(gig: GigPlan): Promise<Record<string, string>>;
   admins(bandId: string): Promise<string[]>;
   screenOn(): Promise<(() => void) | null>;
 };
@@ -60,15 +60,21 @@ export type LiveDeps = {
 const roomUrl = (bandId: string) => `${location.origin.replace(/^http/, "ws")}/api/rooms/${bandId}`;
 const firstName = (name: string) => name.trim().split(/\s+/)[0] || name;
 const bandOf = (bandId: string) => api<BandView>("/api/bands/open", { bandId });
+/** A guest is shown no members list, only the lineup by first name, which the gig itself gives them. */
+const guestNames = (gig: GigPlan) => api<{ names?: Record<string, string> }>("/api/bands/gig/open", { bandId: gig.bandId, gigId: gig.gigId }).then((view) => view.names ?? {});
 
 const APP_DEPS: LiveDeps = {
   gigs: () => api<{ gigs: GigPlan[] }>("/api/bands/gig/live", {}).then((reply) => reply.gigs),
   async pack(me, gig) {
-    const held = heldFor(me) ? await getFromPhone("gigPacks", gig.gigId).catch(() => undefined) : undefined;
+    const held = heldFor(me) ? await packToShow(gig.gigId).catch(() => null) : null;
     return held ?? downloadPack(me, gig.bandId, gig.gigId);
   },
   room: (bandId) => roomLine(roomUrl(bandId)),
-  names: (bandId) => bandOf(bandId).then((band) => Object.fromEntries(band.members.map((member) => [member.userId, firstName(member.name)]))),
+  names: (gig) =>
+    bandOf(gig.bandId).then(
+      (band) => Object.fromEntries(band.members.map((member) => [member.userId, firstName(member.name)])),
+      (error) => (error instanceof ApiError && error.reason === "guest" ? guestNames(gig) : Promise.reject(error)),
+    ),
   admins: (bandId) => bandOf(bandId).then((band) => band.members.filter((member) => member.role === "admin").map((member) => member.userId)),
   screenOn: holdScreen,
 };
@@ -176,6 +182,9 @@ export function useLiveGig({ me, stage = null, metronome, personal, onPersonal, 
     leave();
   }, [over]);
 
+  // A guest pass's gig is left the moment the pass ends, so its charts, its screen-on and its room go with it.
+  useEffect(() => atPassEnd(joined?.pack, leave), [joined]);
+
   // The planned leader starts the gig once the room has named this phone the leader.
   useEffect(() => {
     if (!joined?.starting || !session) return;
@@ -212,7 +221,7 @@ export function useLiveGig({ me, stage = null, metronome, personal, onPersonal, 
     setJoining(null);
     setEnded(null);
     setJoined({ gig, pack, room, session, starting });
-    use.names(gig.bandId).then(setNames, () => {});
+    use.names(gig).then(setNames, () => {});
     onOpen?.(gig);
   }
 

@@ -12,6 +12,7 @@ import { APP_NAME } from "./data-kinds";
 // @ts-expect-error TS5097: esbuild maps "./gig-live.jsx" to gig-live.ts, so only ".tsx" names this file in tsc, Vite and esbuild.
 import { LiveGigStrip, useBandFollow, useGigStage } from "./gig-live.tsx";
 import { GigSongMissing, GigViewScreen } from "./gig-view";
+import { GuestPassSheet } from "./guest-pass";
 import { useAutoScroll, useScrolling, useStored, useWakeLock } from "./hooks";
 import { LearnSong } from "./learn-song";
 import { SetlistList, SongBody, SongList, Tabs } from "./library-lists";
@@ -75,6 +76,7 @@ export function App() {
   const [notice, setNotice] = useState("");
   const [setlistCode, setSetlistCode] = useState<Setlist | null>(null);
   const [setlistCopy, setSetlistCopy] = useState<{ code: string } | null>(null);
+  const [guestPass, setGuestPass] = useState<string | null>(null);
   const { invite, dropInvite } = useInvite();
 
   useEffect(() => queueOwner(account?.userId ?? null), [account?.userId]);
@@ -82,7 +84,7 @@ export function App() {
   const landings: Record<CodeScreen, (code: string) => void> = {
     friends: (code) => setFriends({ code }),
     bands: (code) => setBands({ code }),
-    gig: (code) => setBands({ code }),
+    gig: (code) => (readPayload(code)?.kind === "guest" ? setGuestPass(code) : setBands({ code })),
     connection: landSyncCheck,
     setlists: (code) => (readPayload(code)?.kind === "my-setlist" ? setSetlistCopy({ code }) : setBands({ code })),
   };
@@ -390,12 +392,13 @@ export function App() {
       ) : null}
 
       {bands && owner ? (
-        <BandsSheet code={bands.code} onBand={openBand} onSetlistCopy={(code) => { setBands(null); setSetlistCopy({ code }); }} onSignedOut={() => setAccount(null)} onClose={() => setBands(null)} />
+        <BandsSheet code={bands.code} onBand={openBand} onSetlistCopy={(code) => { setBands(null); setSetlistCopy({ code }); }} onGuestPass={(code) => { setBands(null); setGuestPass(code); }} onSignedOut={() => setAccount(null)} onClose={() => setBands(null)} />
       ) : null}
       {setlistCode && account ? <MySetlistCodeSheet key={account.userId} setlist={setlistCode} onSignedOut={() => setAccount(null)} onClose={() => setSetlistCode(null)} /> : null}
       {setlistCopy && account ? (
         <SetlistCopySheet code={setlistCopy.code} onChat={openRoom} onSignedOut={() => setAccount(null)} onClose={() => setSetlistCopy(null)} />
       ) : null}
+      {guestPass && account ? <GuestPassSheet code={guestPass} onSignedOut={() => setAccount(null)} onClose={() => setGuestPass(null)} /> : null}
       {sendSong.sheet}
       <LiveGigStrip live={live} />
 

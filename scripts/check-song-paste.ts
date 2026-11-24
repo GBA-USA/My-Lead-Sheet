@@ -738,6 +738,37 @@ await check("12p. a typed chart whose stanzas end on a lone chord over a line of
   }
 });
 
+const stanzasOf = (text: string) => sections(text).map((section) => [section.heading, section.lines]);
+
+await check("12q. a typed chart whose lone chord over a line of spaces leads to a one-word line no heading reader knows is no page copy, so the row of chords under that line keeps its columns", () => {
+  const row = chordRow([["G", 0], ["C", 12]]);
+  const stanza = (heading: string, words: string) => [heading, row, words, "D", " "];
+  const charts = [
+    ["a Riff heading", [...stanza("Verse 1", "Amazing grace how sweet"), "Riff", "G  C  D", " ", ...stanza("Verse 2", "That saved a wretch"), "Riff", "G  C  D"]],
+    ["a Turnaround: and a Post-Chorus heading", [...stanza("Verse 1", "Amazing grace how sweet"), "Turnaround:", "G  C  D", " ", ...stanza("Verse 2", "That saved a wretch"), "Post-Chorus", chordRow([["C", 0], ["G", 9]]), "I once was lost"]],
+    ["a Breakdown heading twice", ["Verse 1", row, "Amazing grace how sweet", "D", " ", "Breakdown", chordRow([["C", 0], ["G", 9]]), "I once was lost", "D", " ", "Breakdown", chordRow([["C", 0], ["G", 9]]), "I once was lost"]],
+    ["a one-word sung line", [row, "Amazing grace how sweet", "D", " ", "Oh", row, "That saved a wretch", "D", " ", "Oh", chordRow([["C", 0], ["G", 9]]), "I once was lost"]],
+    ["a one-word sung line over no chords", [row, "Amazing grace how sweet", "D", " ", "Oh", "That saved a wretch", row, "I once was lost", "D", " ", "Oh", "Was blind but now I see"]],
+    ["lines typed one chord each", ["Verse 1", "G", "Amazing grace how sweet", "D", " ", "Riff", "G  C  D", " ", "Verse 2", "G", "That saved a wretch", "D", " ", "Riff", "G  C  D"]],
+  ] as const;
+  for (const [form, typed] of charts) {
+    const chart = typed.join("\n");
+    assert.deepEqual(stanzasOf(read(chart).chart), stanzasOf(chart), `${form}: every section keeps its name, its lines and each chord its column (${js(read(chart).chart)})`);
+  }
+});
+
+await check("12r. a typed chart whose lyric lines keep a space at both ends is no page copy, so each lyric line stays its own line", () => {
+  const row = chordRow([["G", 0], ["C", 12]]);
+  const charts = [
+    ["under a heading", ["Verse 1", row, " Amazing grace how sweet the sound ", "D", " That saved a wretch like me ", row, " I once was lost but now ", "D", " Was blind but now I see "]],
+    ["with no heading", [row, " Amazing grace how sweet the sound ", "D", " That saved a wretch like me ", "", row, " I once was lost but now ", "D", " Was blind but now I see "]],
+  ] as const;
+  for (const [form, typed] of charts) {
+    const chart = typed.join("\n");
+    assert.deepEqual(stanzasOf(read(chart).chart), stanzasOf(chart), `${form}: every section keeps its lines and each chord its column (${js(read(chart).chart)})`);
+  }
+});
+
 await check("13. readPaste is stable: its own output reads back as the same chart, and a chart the app already reads stays as pasted", () => {
   assert.ok(FIXTURES.length > 20, "the fixtures above ran");
   for (const fixture of FIXTURES) {

@@ -60,7 +60,7 @@ type SearchState =
   | { kind: "searching" | "none" | "offline" | "failed"; query: string }
   | { kind: "found"; query: string; songs: CatalogSong[] };
 type Deps = {
-  fetch: (url: string, init: { headers: Record<string, string> }) => Promise<Response>;
+  fetch: (url: string, init: { headers: Record<string, string>; signal?: AbortSignal }) => Promise<Response>;
   now: () => number;
   setTimeout: (run: () => void, ms: number) => unknown;
   clearTimeout: (handle: unknown) => void;
@@ -150,11 +150,11 @@ type Reply = Response | Error | Promise<Response>;
 /** A searcher on fake time whose catalog answers with `reply`, logging each request and when it left. */
 function harness(reply: (url: string) => Reply = () => new Response(js(PAYLOAD), { status: 200 }), online = () => true) {
   const time = fakeTime();
-  const calls: { url: string; headers: Record<string, string>; at: number }[] = [];
+  const calls: { url: string; headers: Record<string, string>; at: number; signal?: AbortSignal }[] = [];
   const states: SearchState[] = [];
   const searcher = need().catalogSearcher({
     fetch: (url, init) => {
-      calls.push({ url, headers: Object.fromEntries(new Headers(init?.headers ?? {})), at: time.now() });
+      calls.push({ url, headers: Object.fromEntries(new Headers(init?.headers ?? {})), at: time.now(), signal: init?.signal });
       const answer = reply(url);
       return answer instanceof Error ? Promise.reject(answer) : Promise.resolve(answer);
     },
@@ -344,6 +344,37 @@ await check("6e. a request the catalog never answers says failed within 10 s, so
   await run.time.advance(100);
   assert.ok(!run.states.some((state) => state.kind === "found"), "the hung request's late rows never show");
   assert.equal(run.calls.length, 2, "two requests in all");
+});
+
+await check("6f. a reply that sends its headers and then stalls mid-body also says failed within 10 s", async () => {
+  const stalled = () =>
+    new Response(new ReadableStream({ start: (body) => body.enqueue(new TextEncoder().encode('{"recordings":[')) }), { status: 200 });
+  const run = harness(() => (run.calls.length === 1 ? stalled() : new Response(js(EMPTY), { status: 200 })));
+  run.search("wagon wheel");
+  await untilSent(run, 1);
+  await run.time.advance(3000);
+  assert.deepEqual(run.last(), { kind: "searching", query: "wagon wheel" }, "the rest of the body still has time to come");
+  await run.time.advance(7000);
+  assert.deepEqual(run.last(), { kind: "failed", query: "wagon wheel" }, "10 s after the request left, the box says so");
+  assert.equal(run.calls.length, 1, "the box does not ask again by itself");
+});
+
+await check("6g. a request still out at the limit is aborted, so a hung network keeps no connection open; one that answers is not", async () => {
+  const run = harness(() => (run.calls.length === 1 ? new Promise<Response>(() => {}) : new Response(js(EMPTY), { status: 200 })));
+  run.search("wagon wheel");
+  await untilSent(run, 1);
+  const hung = run.calls[0].signal;
+  assert.ok(hung instanceof AbortSignal, "the request carries an abort signal");
+  await run.time.advance(3000);
+  assert.equal(hung.aborted, false, "a request 3 s out still has time");
+  await run.time.advance(7000);
+  assert.deepEqual(run.last(), { kind: "failed", query: "wagon wheel" }, "the box says failed");
+  assert.equal(hung.aborted, true, "the hung request is aborted");
+  run.search("wagon wheel");
+  await untilSent(run, 2);
+  await run.time.advance(10000);
+  assert.deepEqual(run.last(), { kind: "none", query: "wagon wheel" }, "Try again gets the catalog's answer");
+  assert.equal(run.calls[1].signal?.aborted, false, "a request that answered in time is never aborted");
 });
 
 await check("7a. rapid typing sends one request, after a 400-800 ms pause", async () => {

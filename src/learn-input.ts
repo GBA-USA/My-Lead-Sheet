@@ -31,11 +31,14 @@ export interface FileSound {
   chunks: Iterable<Float32Array>;
 }
 
-/** The file's length from its metadata, or null when the browser does not say in time. Refuses a file no <audio> can open. */
+/**
+ * The file's length from its metadata, or null when the browser does not say: in time, or because an <audio> cannot
+ * open the file. The decoder may still read it, and is the one to say a file is unreadable.
+ */
 function fileSeconds(file: File): Promise<number | null> {
   const url = URL.createObjectURL(file);
   const audio = document.createElement("audio");
-  return new Promise<number | null>((resolve, reject) => {
+  return new Promise<number | null>((resolve) => {
     const timer = window.setTimeout(() => resolve(null), METADATA_WAIT_MS);
     audio.onloadedmetadata = () => {
       window.clearTimeout(timer);
@@ -43,7 +46,7 @@ function fileSeconds(file: File): Promise<number | null> {
     };
     audio.onerror = () => {
       window.clearTimeout(timer);
-      reject(new FileRefused("unreadable"));
+      resolve(null);
     };
     audio.preload = "metadata";
     audio.src = url;
@@ -72,7 +75,8 @@ function* seconds(samples: Float32Array, rate: number): Generator<Float32Array> 
 
 /**
  * Reads a picked file's length, refuses one over twenty minutes, then decodes it to mono at 22050 Hz. Throws
- * FileRefused before decode for a file too long or one the browser cannot open, and after it for one it cannot decode.
+ * FileRefused before decode for a file its metadata says is too long, and after it for one the decoder cannot read or
+ * finds too long.
  */
 export async function fromFile(file: File): Promise<FileSound> {
   const said = await fileSeconds(file);

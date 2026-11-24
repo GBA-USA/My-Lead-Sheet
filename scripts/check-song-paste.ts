@@ -503,6 +503,23 @@ await check("12i. a header's one-line by, an Artist: line, ChordPro facts over t
   }
 });
 
+await check("12j. a blank after an intro or solo of chords alone ends it, so the next unmarked verse stays sung", () => {
+  const typed = ["INTRO", "| G | C |", "", "Hello there my friend", "Nice to see you", "", "CHORUS", "G        C", "Sing along now"].join("\n");
+  assert.equal(read(typed).chart, typed, `a chart the app already reads stays as pasted (${js(read(typed).chart)})`);
+  const pages = [
+    ["a typed INTRO of bars", typed.split("\n"), ["Hello there my friend", "Nice to see you", "Sing along now"]],
+    ["an [Intro] of bars", ["[Intro]", "| G | C | D |", "", "Words of the song go here", "And more of them", "", "[Chorus]", "G        C", "Sing along now"], ["Words of the song go here", "And more of them", "Sing along now"]],
+    ["an Intro: line of chords", ["Intro: G C D", "", "Well I woke up early", "G        C", "And the sun was out"], ["Well I woke up early", "And the sun was out"]],
+    ["a [Solo] then a pickup line", ["[Verse]", "G        C", "Paper boats on the river", "", "[Solo]", "| Em | C |", "", "And so we sail", "G        C", "Paper boats on the river"], ["Paper boats on the river", "And so we sail", "Paper boats on the river"]],
+  ] as const;
+  for (const [form, page, words] of pages) {
+    const all = sections(read(page.join("\n")).chart);
+    assert.deepEqual(all.flatMap(notes), [], `${form}: no words made into a note (${js(all)})`);
+    assert.deepEqual(all.flatMap((section) => sung(section).map((line) => line.lyrics?.trim())), words, `${form}: every sung line stays sung`);
+    assert.ok(all.filter((section) => /^(intro|solo)$/i.test(section.heading)).every((section) => sung(section).length === 0), `${form}: the intro or solo holds no sung words (${js(all.map((section) => section.heading))})`);
+  }
+});
+
 await check("13. readPaste is stable: its own output reads back as the same chart, and a chart the app already reads stays as pasted", () => {
   assert.ok(FIXTURES.length > 20, "the fixtures above ran");
   for (const fixture of FIXTURES) {

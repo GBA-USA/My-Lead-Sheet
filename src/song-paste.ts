@@ -503,7 +503,7 @@ function say(row: PageRow, text: string) {
   row.gap = text.length - text.trimEnd().length;
 }
 
-/** The chart lines of one page line: a chord row over its words, chords alone, or the chords and then the heading they stood before. */
+/** The chart lines of one page line: a chord row over its words, or chords alone, with any row mark after them. */
 function rowLines(row: PageRow): string[] {
   let at = row.lyric ? row.lyric.length + 1 : 0;
   for (const name of row.waiting) {
@@ -512,7 +512,6 @@ function rowLines(row: PageRow): string[] {
   }
   const chords = row.placed.map((chord) => chord.name).join(" ");
   if (!row.lyric) return [chords];
-  if (headingOf(row.lyric)?.rest === "") return [...(chords ? [chords] : []), row.lyric];
   if (chordRowOf(`${chords} ${row.lyric}`)) return [`${chords} ${row.lyric}`];
   return pairLines(row.placed, row.lyric);
 }
@@ -541,7 +540,7 @@ function pageCopy(lines: string[]): string[] | null {
   const open = (): PageRow => (row ??= { lyric: "", gap: 0, placed: [], waiting: [] });
   const close = () => {
     if (row) out.push(...rowLines(row).map((text) => ({ text })));
-    if (held !== null) out.push(blank(held) ? { text: "" } : { text: held.trimEnd(), loose: true });
+    if (held !== null) out.push(blank(held) ? { text: "" } : { text: held, loose: true });
     row = null;
     held = null;
   };
@@ -573,7 +572,7 @@ function pageCopy(lines: string[]): string[] | null {
       close();
       if (fresh) out.push({ text: "" });
       after = "text";
-    } else if (after === "chord" || after === "lead" || (after === "word" && /^\s/.test(line))) {
+    } else if (after !== "text") {
       const one = /^\S+$/.test(line);
       if (after === "lead" && !one) {
         close();

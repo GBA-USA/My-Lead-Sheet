@@ -1,3 +1,4 @@
+import type { HeardChange } from "./learn-result";
 import { parseChord, pitchClass } from "./music";
 import type { ChartSection } from "./types";
 
@@ -81,6 +82,23 @@ export class Chroma {
     }
     return bins;
   }
+}
+
+/** The sound under the chords, for the bass root. The listener hands it every sample; until the bass is read, it keeps none. */
+export class LowView {
+  constructor(_sampleRate: number) {}
+
+  push(_sample: number) {}
+}
+
+/**
+ * The chord changes as heard, each from the beat it starts on, with no chart. Until the chords are heard, a change
+ * opens each bar, and the pickup before bar 1, and names nothing: the per-bar reading with no chart to read from.
+ */
+export function hearChords(_chroma: number[][], _low: LowView, beats: number[], downbeatPhase: number, beatsPerBar: number): HeardChange[] {
+  const starts = downbeatPhase > 0 ? [0] : [];
+  for (let beat = downbeatPhase; beat < beats.length; beat += beatsPerBar) starts.push(beat);
+  return starts.map((beat) => ({ beat, at: beats[beat], chord: null, confidence: 0, alternatives: [], evidence: { bass: null, tones: [], stable: 0 } }));
 }
 
 /** One bar as heard: a chord from the chart when the match clears SURE, otherwise null for not sure. */

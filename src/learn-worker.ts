@@ -59,7 +59,7 @@ export const handle: WorkerHandle = (message, post) => {
   }
   const ended = listen;
   listen = null;
-  const heard = ended?.ear.analyze(message.beatsPerBar) ?? null;
+  const heard = ended?.ear.analyze(message.beatsPerBar, message.lyrics) ?? null;
   const { source, expectedSeconds, stopped } = message;
   const coverage = ended && { heardSeconds: ended.samples / ended.sampleRate, expectedSeconds, stopped, quality: ended.quality.word() };
   post({ kind: "done", listen: heard && coverage && { source, coverage, ...heard } });

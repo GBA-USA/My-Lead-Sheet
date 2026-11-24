@@ -208,7 +208,7 @@ function Chart({
       {song.body.map((section, index) => {
         const learned = playing?.sections[index];
         const heard = learned?.heading === section.heading ? learned.heard : undefined;
-        const rows = heard ? [{ bars: heardRow(heard) }, ...section.lines] : section.lines;
+        const rows = heard ? [{ bars: heardRow(heard.map((cell) => cell.chord)) }, ...section.lines] : section.lines;
         return (
           <section key={`${section.heading}-${index}`} className="chart-section">
             <h3 className="chart-heading">{section.heading}</h3>

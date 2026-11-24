@@ -1,3 +1,4 @@
+import type { Band } from "./learn-result";
 import { scrollPixelsPerSecond } from "./music";
 import type { ChartLine, ChartSection, Song } from "./types";
 
@@ -28,6 +29,13 @@ export interface Span {
   end: number;
 }
 
+/** One kept heard chord: null for not sure, in the band it was heard in, or "set" by the player with the chord heard in `was`. */
+export interface HeardCell {
+  chord: string | null;
+  band: Band | "set";
+  was?: string | null;
+}
+
 /**
  * What Learn this song heard, in seconds on the version's clock. The clock's first bar is the count-in,
  * so `downbeat` (bar 1) is one bar of the opening tempo after 0.
@@ -37,7 +45,13 @@ export interface Learned {
   downbeat: number;
   beats: number[];
   /** One per chart section, in order. The first starts at the first note. `heard` is the bars the player kept. */
-  sections: { heading: string; at: number; heard?: (string | null)[] }[];
+  sections: { heading: string; at: number; heard?: HeardCell[] }[];
+  /** Each time a section starts, by its index in `sections`, in play order, for a recording that repeats a section the chart lists once. */
+  plays?: { section: number; at: number }[];
+  /** When each lyric line starts: its section's index, and its index among that section's chart lines. */
+  lines?: { section: number; line: number; at: number }[];
+  /** Seconds into the recording at 0 on the version's clock. */
+  offset?: number;
   /** Vocal regions the player kept from the suggestions. */
   vocals: Span[];
 }

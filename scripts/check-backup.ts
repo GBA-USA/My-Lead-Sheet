@@ -102,7 +102,7 @@ const learned: ScrollVersion = {
   name: "Learned",
   bpm: 96,
   marks: [{ at: 0.5, progress: 0 }, { at: 200, progress: 1 }],
-  learned: { beatsPerBar: 4, downbeat: 0.5, beats: [0.5, 1.125, 1.75], sections: [{ heading: "Verse 1", at: 0.5, heard: ["G", null] }], vocals: [{ start: 1, end: 2.25 }] },
+  learned: { beatsPerBar: 4, downbeat: 0.5, beats: [0.5, 1.125, 1.75], sections: [{ heading: "Verse 1", at: 0.5, heard: [{ chord: "G", band: "likely" }, { chord: null, band: "likely" }] }], vocals: [{ start: 1, end: 2.25 }] },
   tempo: [{ at: 0, bpm: 96 }, { at: 30, bpm: 100 }],
 };
 const version = (name: string, end: number): ScrollVersion => ({ name, bpm: 100, marks: [{ at: 0, progress: 0 }, { at: end, progress: 1 }] });

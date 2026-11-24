@@ -1,7 +1,8 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { type FieldBpm, addTap, fieldBpm, tapBpm } from "./bpm-detect";
-import { beatsPerBar, learnedVersion, placeHeadings, shortHeading } from "./learn-analyze";
+import { beatsPerBar, learnedVersion, shortHeading } from "./learn-analyze";
+import { placeHeadings } from "./learn-sections";
 import { chartChords, chartForm, heardBars, type HeardBar } from "./learn-chords";
 import { FileRefused, type Mic, type MicStop, type WorkerListen, fromFile, fromMic, holdScreen, listenInWorker } from "./learn-input";
 import type { Analysis, Band, Coverage, Listen, Source } from "./learn-result";

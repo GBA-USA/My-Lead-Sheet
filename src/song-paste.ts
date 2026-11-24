@@ -487,6 +487,12 @@ const loneChord = (line: string | undefined) => (line !== undefined && /^\S+$/.t
 const blank = (line: string | undefined) => line !== undefined && line.trim() === "";
 /** The one word a page box holds: no chord, no section name. A typed chart puts a heading or a chord row there instead. */
 const piece = (line: string | undefined) => line !== undefined && /^\S+$/.test(line) && !storedChord(line) && headingOf(line) === null;
+/**
+ * A typed chord line over its words: a row of chords in columns over any words, or one chord over words that start
+ * the line. A page box holds one chord over one word, so a copy has neither.
+ */
+const typedPair = (chords: string | undefined, words: string | undefined) =>
+  chords !== undefined && words !== undefined && !blank(words) && ((chordRowOf(chords)?.chords.length ?? 0) >= 2 || (loneChord(chords) !== null && /^\S+\s+\S/.test(words)));
 
 /** One line of the page while its pieces come in: the words so far, the spaces since, and the chords that wait for their word. */
 type PageRow = { lyric: string; gap: number; placed: PlacedChord[]; waiting: string[] };
@@ -529,7 +535,8 @@ function rowLines(row: PageRow): string[] {
  * page's spaces is no such copy, and `rejoin` reads it. A lone chord is a sign of such a copy when the words before
  * it have spaces on both sides, or when a line of spaces under it leads to the next box: a word, or a chord that is
  * itself a sign. A typed chart that ends a stanza on a lone chord over a line of spaces has a heading, a chord row or
- * a sung line there instead.
+ * a sung line there instead. A lone chord right under a typed chord line and its words is the typed chart's own, so
+ * a paste that has one is no such copy.
  */
 function pageCopy(lines: string[]): string[] | null {
   const spaced = (line: string | undefined) => line !== undefined && line.trim() !== "" && /^\s/.test(line) && /\s$/.test(line);
@@ -560,6 +567,7 @@ function pageCopy(lines: string[]): string[] | null {
     const word = name !== null && (after === "chord" || after === "lead") && next !== undefined && /^\s+[\p{L}']/u.test(next);
     if (name !== null && !word) {
       if (after === "text") {
+        if (typedPair(lines[i - 2], lines[i - 1])) return null;
         const before: string = held ?? "";
         const last = row ? lines[i - 1] : before;
         // Text that ends in a space, or inside a word the chord splits, is on the chord's line of the page.

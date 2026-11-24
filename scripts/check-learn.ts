@@ -6,17 +6,26 @@ import { build } from "esbuild";
 import { fakeDom, type FakeElement } from "./fake-dom.ts";
 import { FakeWorker, clearWorkerLog, listenThrough, workerFaults, workerIdle, workerLog, workerReplies } from "./fake-worker.ts";
 import { FORM, HEAD as BLUES_HEAD, blues } from "./blues.ts";
-import { MIC_LEVELS, SAMPLE_RATE as L0_RATE, micColor, render } from "./learn-render.ts";
+import { LYRICS, plainLine } from "./learn-lyrics.ts";
+import { MIC_LEVELS, SAMPLE_RATE as L0_RATE, micColor, render, type Score } from "./learn-render.ts";
 import { TOLERANCE, scoreListen } from "./learn-score.ts";
 import { SONGS } from "./learn-songs.ts";
 import type { FromWorker, Listen, ToWorker } from "../src/learn-result.ts";
 import type { Song, SongData } from "../src/types.ts";
 
-/** A TESTS-FIRST case its cook has not landed yet: it runs and prints, but its FAIL does not fail check:learn. */
-type Pending = "pending until l1";
+/**
+ * A TESTS-FIRST case its cook has not landed yet: it runs and prints, but its FAIL does not fail check:learn. A wave-B
+ * case that holds fails check:learn until its cook removes the mark.
+ */
+type Pending = "pending until l1" | "pending until l5";
 let failures = 0;
 let pendingFailures = 0;
 function check(ok: boolean, message: string, pending?: Pending) {
+  if (ok && pending === "pending until l5") {
+    failures += 1;
+    console.log(`FAIL ${message}: it holds now, so remove its "${pending}" mark`);
+    return;
+  }
   if (!ok && pending) pendingFailures += 1;
   else if (!ok) failures += 1;
   console.log(`${ok ? "ok  " : "FAIL"} ${message}${pending ? ` (${pending})` : ""}`);
@@ -25,8 +34,9 @@ function check(ok: boolean, message: string, pending?: Pending) {
 const entry = `
   export * from "./src/learn-analyze.ts";
   export * from "./src/learn-result.ts";
-  export { heardBars } from "./src/learn-chords.ts";
+  export { LowView, hearChords, heardBars } from "./src/learn-chords.ts";
   export { placeHeadings } from "./src/learn-sections.ts";
+  export { buildChart, hearLines } from "./src/learn-words.ts";
   export * from "./src/scroll-timing.ts";
   export { loadScrollVersions, saveScrollVersions } from "./src/storage.ts";
   export { LearnSong } from "./src/learn-song.tsx";
@@ -50,8 +60,9 @@ const bundle = join(mkdtempSync(join(tmpdir(), "check-learn-")), "learn.mjs");
 writeFileSync(bundle, bundled.outputFiles[0].text);
 type Learn = typeof import("../src/learn-analyze.ts") &
   typeof import("../src/learn-result.ts") &
-  Pick<typeof import("../src/learn-chords.ts"), "heardBars"> &
+  Pick<typeof import("../src/learn-chords.ts"), "LowView" | "hearChords" | "heardBars"> &
   Pick<typeof import("../src/learn-sections.ts"), "placeHeadings"> &
+  Pick<typeof import("../src/learn-words.ts"), "buildChart" | "hearLines"> &
   typeof import("../src/scroll-timing.ts") &
   typeof import("../src/cues.tsx") &
   Pick<typeof import("../src/storage.ts"), "loadScrollVersions" | "saveScrollVersions"> & {
@@ -228,6 +239,14 @@ boundaryTimes.forEach((time, i) => {
   const want = truth.starts[i + 1];
   check(Math.abs(time - want) <= 60 / PARTS[i + 1].bpm + 0.01, `${learn.shortHeading(headings[i + 1])} starts within a beat of ${want.toFixed(2)} s (${time.toFixed(2)} s)`);
 });
+{
+  const starts = heardSong.sections.slice(1).map((section) => analysis.beats[section.fromBeat]);
+  check(
+    heardSong.sections.length === 3 && starts.every((time, i) => Math.abs(time - truth.starts[i + 1]) <= 60 / PARTS[i + 1].bpm + 0.01),
+    `L5.1 boundaries are found without a chart or a count: the 3-part song is heard as 3 sections, the second and third within a beat of ${truth.starts[1].toFixed(2)} and ${truth.starts[2].toFixed(2)} s (${heardSong.sections.length} heard, starting at ${starts.map((time) => `${time.toFixed(2)} s`).join(", ") || "none after the first"})`,
+    "pending until l5",
+  );
+}
 
 const overlap = (a: { start: number; end: number }, b: { start: number; end: number }) => Math.max(0, Math.min(a.end, b.end) - Math.max(a.start, b.start));
 const voiced = analysis.vocals.reduce((sum, span) => sum + overlap(span, truth.voice), 0);
@@ -1382,6 +1401,41 @@ for (const [word, song, what] of [
 
 check(!fourNineteen.error && !!fourNineteen.listen && fourNineteen.busyMs <= budgetMs(259), `L1.14 a 4:19 file is analyzed no slower than the recorded baseline times 1.2 (${fourNineteen.busyMs.toFixed(0)} ms in the worker, budget ${budgetMs(259).toFixed(0)} ms on this machine)`);
 
+/** A share of the time the recorded baseline takes for `seconds` of audio, on this machine. */
+const baselineShare = (share: number, seconds: number) => (share * budgetMs(seconds)) / 1.2;
+{
+  const heard = fourNineteen.listen?.analysis;
+  const samples = fileSong(259)(FILE_RATE);
+  const started = performance.now();
+  const low = new learn.LowView(FILE_RATE);
+  for (const sample of samples) low.push(sample);
+  const changes = heard ? learn.hearChords(heard.chroma, low, heard.beats, heard.downbeatPhase, 4) : [];
+  const ms = performance.now() - started;
+  check(
+    !!heard && changes.length > 0 && ms <= baselineShare(1.5, 259),
+    `L3.12 the whole-song chord pass runs inside the speed budget: the low view and the chords of a 4:19 file in ${ms.toFixed(0)} ms, budget ${baselineShare(1.5, 259).toFixed(0)} ms (the recorded baseline times 1.5)`,
+  );
+}
+{
+  const gather = render(SONGS.find((score) => score.title === "Gather at the River")!);
+  const { listen } = await listenThrough(gather.samples, L0_RATE, {
+    beatsPerBar: 4,
+    lyrics: gather.lyrics,
+    source: { kind: "file", name: "gather.wav", stereo: false, sampleRate: L0_RATE },
+    expectedSeconds: gather.samples.length / L0_RATE,
+    stopped: "finished",
+  });
+  const seconds = gather.samples.length / L0_RATE;
+  const started = performance.now();
+  const lines = listen ? learn.hearLines(listen.analysis.voiceOnsets, listen.analysis.beats, listen.sections, listen.changes, gather.lyrics) : [];
+  if (listen) learn.buildChart(listen.sections, listen.changes, lines, gather.lyrics);
+  const ms = performance.now() - started;
+  check(
+    !!listen && ms <= baselineShare(0.5, seconds),
+    `L8.10 the whole-song words pass runs inside the budget: the lines and the chart of a ${Math.round(seconds)} s sung song in ${ms.toFixed(0)} ms, budget ${baselineShare(0.5, seconds).toFixed(0)} ms (the recorded baseline times 0.5)`,
+  );
+}
+
 await frozen("L1.9 the mic's last part-second reaches the worker", null, async () => {
   const sheet = await openSheet(twoHeadings(259));
   await startMic(sheet);
@@ -1877,7 +1931,166 @@ await frozen("L2.8 the Review's tempo control changes nothing until Save", null,
   check(text().includes(heardWords) && !text().includes("120 BPM"), `L2.8 listening again shows the heard ${heardWords}, not the cancelled tap (${text().slice(0, 200)})`);
 });
 
-if (pendingFailures) console.log(`${pendingFailures} pending L1 check(s) failed, not counted until their cook lands`);
+// TESTS-FIRST for L5, sections heard from the audio and named. Each line starts with its condition's number in
+// LEARN-PLAN.md L5. Beyond Listen.sections, they rely on:
+// - the Review writing "Heard N sections, the chart has M" when the counts differ, and each heading's item in the
+//   sections list carrying data-band with how sure its place is;
+// - each section's name in the Review being a button that opens a picker: a button for each of the eight label
+//   words and buttons 1 to 4 for a number; the pick shows with data-band="set" and is saved as the heading;
+// - the nudge buttons "<heading> earlier" and "<heading> later", as today.
+const L5: Pending = "pending until l5";
+const scoreBars = (text: string) => text.split("|").map((bar) => bar.trim().split(/\s+/));
+const sungLines = (lyric: string, ...lines: number[]) => lines.map((line) => plainLine(LYRICS[lyric].lines[line]));
+const L0Verse = "C | C | F | C | C | C | G | C";
+const L0Chorus = "C | F | G | C | C | F | G | C";
+/** A song whose short block before each chorus is sung the same both times, then a bridge after the second chorus. */
+const BEFORE_THE_CHORUS: Score = {
+  title: "Before the Chorus",
+  bpm: 100,
+  beatsPerBar: 4,
+  stereo: false,
+  swing: false,
+  strum: "light",
+  bass: "root-fifth",
+  sections: [
+    { label: "INTRO", group: "A", bars: scoreBars("C | C | G | C") },
+    { label: "VERSE", group: "B", bars: scoreBars(L0Verse), lines: sungLines("nonsense-a", 0, 1) },
+    { label: "PRE-CHORUS", group: "C", bars: scoreBars("F | F | G | G"), lines: sungLines("nonsense-b", 0) },
+    { label: "CHORUS", group: "D", bars: scoreBars(L0Chorus), lines: sungLines("shall-we-gather", 4, 5) },
+    { label: "VERSE", group: "B", bars: scoreBars(L0Verse), lines: sungLines("nonsense-a", 2, 3) },
+    { label: "PRE-CHORUS", group: "C", bars: scoreBars("F | F | G | G"), lines: sungLines("nonsense-b", 0) },
+    { label: "CHORUS", group: "D", bars: scoreBars(L0Chorus), lines: sungLines("shall-we-gather", 4, 5) },
+    { label: "BRIDGE", group: "E", bars: scoreBars("Am | Am | F | F | G | G | G | G"), lines: sungLines("amazing-grace", 0, 1) },
+    { label: "CHORUS", group: "D", bars: scoreBars(L0Chorus), lines: sungLines("shall-we-gather", 4, 5) },
+    { label: "OUTRO", group: "F", bars: scoreBars("C | G | C | C") },
+  ],
+};
+type Rendered = ReturnType<typeof render>;
+const heardWith = async (take: Rendered, lyrics: string | null) =>
+  (
+    await listenThrough(take.samples, L0_RATE, {
+      beatsPerBar: 4,
+      lyrics,
+      source: { kind: "file", name: "song.wav", stereo: false, sampleRate: L0_RATE },
+      expectedSeconds: take.samples.length / L0_RATE,
+      stopped: "finished",
+    })
+  ).listen;
+/** For each sung section of the song, the heard section that covers most of it, as "VERSE 1 sure". */
+function sungLabels(take: Rendered, listen: Listen | null): string[] {
+  const { truth } = take;
+  const beats = listen?.analysis.beats ?? [];
+  const end = truth.downbeats[truth.downbeats.length - 1] + (truth.downbeats[1] - truth.downbeats[0]);
+  const sections = listen?.sections ?? [];
+  const overlap = (a: { start: number; end: number }, b: { start: number; end: number }) => Math.max(0, Math.min(a.end, b.end) - Math.max(a.start, b.start));
+  return truth.sections.flatMap((section, i) => {
+    if (!take.chart[i].lines.some((line) => line.lyrics !== undefined)) return [];
+    const span = { start: truth.downbeats[section.fromBar], end: truth.downbeats[section.toBar] ?? end };
+    const heard = sections.reduce<(typeof sections)[number] | null>((best, each) => {
+      const at = { start: beats[each.fromBeat] ?? 0, end: beats[each.toBeat] ?? end };
+      return !best || overlap(at, span) > overlap({ start: beats[best.fromBeat] ?? 0, end: beats[best.toBeat] ?? end }, span) ? each : best;
+    }, null);
+    return [heard ? `${heard.label}${heard.number === null ? "" : ` ${heard.number}`} ${heard.band}` : "none"];
+  });
+}
+{
+  const gather = render(SONGS.find((score) => score.title === "Gather at the River")!);
+  const tag = (heading: string) => (heading.startsWith("CHORUS") ? "[Chorus]" : `[${heading}]`);
+  const tagged = gather.chart
+    .filter((section) => section.lines.some((line) => line.lyrics !== undefined))
+    .map((section) => [tag(section.heading), ...section.lines.flatMap((line) => (line.lyrics === undefined ? [] : [line.lyrics]))].join("\n"))
+    .join("\n\n");
+  const asTagged = sungLabels(gather, await heardWith(gather, tagged));
+  const wanted = ["VERSE 1 sure", "CHORUS sure", "VERSE 2 sure", "CHORUS sure", "BRIDGE sure", "CHORUS sure"];
+  check(JSON.stringify(asTagged) === JSON.stringify(wanted), `L5.6 labels come from the words: [Verse 1], [Chorus], [Verse 2] and [Bridge] tags name Gather at the River's sung sections as tagged, sure (${asTagged.join(", ")})`, L5);
+  const untagged = sungLabels(gather, await heardWith(gather, gather.lyrics));
+  check(
+    JSON.stringify(untagged) === JSON.stringify(wanted),
+    `L5.6 with no tags, the block sung word for word three times is the chorus: VERSE 1, CHORUS, VERSE 2, CHORUS, then the one-off block after the second chorus is BRIDGE, all green (${untagged.join(", ")})`,
+    L5,
+  );
+  const before = render(BEFORE_THE_CHORUS);
+  const preChorus = sungLabels(before, await heardWith(before, before.lyrics));
+  const wantedBefore = ["VERSE 1 sure", "PRE-CHORUS sure", "CHORUS sure", "VERSE 2 sure", "PRE-CHORUS sure", "CHORUS sure", "BRIDGE sure", "CHORUS sure"];
+  check(JSON.stringify(preChorus) === JSON.stringify(wantedBefore), `L5.6 a short block sung the same before each chorus is PRE-CHORUS (${preChorus.join(", ")})`, L5);
+}
+
+/** Opens the Learn sheet on `song`, picks `file` and waits for the Review. */
+async function reviewOf(song: Song, file: File) {
+  const sheet = await openSheet(song);
+  pick(file);
+  await until(reviewing, "Review", 6000);
+  return sheet;
+}
+const chartOf = (...headings: string[]) =>
+  ({ id: 9, title: "Sections", timeSignature: "4/4", tempo: null, officialRuntimeSec: null, body: headings.map((heading) => ({ heading, lines: [] })) }) as unknown as Song;
+const sectionItems = () => elements().filter((el) => el.nodeName === "LI" && el.parentNode?.getAttribute("class")?.includes("learn-sections"));
+const bandsIn = (el: FakeElement) => [el, ...el.elements].map((each) => each.getAttribute("data-band")).filter(Boolean);
+
+await frozen("L5.8 a chart's headings are placed on heard boundaries and a count mismatch is said", L5, async () => {
+  const parts = synthesizeSong(FILE_RATE).samples;
+  await reviewOf(chartOf("INTRO", "VERSE 1", "CHORUS", "VERSE 2", "OUTRO"), audioFile("Three Parts.wav", { seconds: Math.ceil(parts.length / FILE_RATE), channels: 1, song: () => parts }));
+  const yellow = sectionItems().filter((item) => bandsIn(item).includes("likely"));
+  check(
+    text().includes("Heard 3 sections, the chart has 5") && yellow.length >= 2,
+    `L5.8 a count mismatch is said, not forced: "Heard 3 sections, the chart has 5", the two extra headings on the nearest boundary in yellow (${yellow.length} yellow; ${text().slice(0, 300)})`,
+    L5,
+  );
+});
+
+await frozen("L5.9 a repeat the chart lists once is recorded as play order", L5, async () => {
+  const gather = render(SONGS.find((score) => score.title === "Gather at the River")!);
+  const sheet = await reviewOf(chartOf("INTRO", "VERSE 1", "CHORUS", "VERSE 2", "BRIDGE", "OUTRO"), audioFile("Gather.wav", { seconds: Math.ceil(gather.samples.length / FILE_RATE), channels: 1, song: () => gather.samples }));
+  const listen = lastListen();
+  await press(button("Save"), "Save");
+  const learned = sheet.saved[0]?.version.learned;
+  const shift = learned && listen ? learned.beats[0] - listen.analysis.beats[0] : 0;
+  const choruses = gather.truth.sections.filter((section) => section.label === "CHORUS").map((section) => gather.truth.downbeats[section.fromBar]);
+  const played = (learned?.plays ?? []).filter((play) => play.section === 2).map((play) => play.at - shift);
+  const bar = (4 * 60) / gather.truth.bpm;
+  check(
+    learned?.sections.length === 6 && played.length === 3 && played.every((at, i) => Math.abs(at - choruses[i]) <= bar),
+    `L5.9 a chart with one CHORUS over three sung choruses saves the chorus in the play order at its three times and still one section a heading (${learned?.sections.length} sections; chorus plays at ${played.map((at) => `${at.toFixed(1)} s`).join(", ") || "none"}, sung at ${choruses.map((at) => `${at.toFixed(1)} s`).join(", ")})`,
+    L5,
+  );
+});
+
+await frozen("L5.11 the nudge buttons still move a heading a beat at a time within its neighbours", null, async () => {
+  await reviewOf(chartOf("VERSE 1", "CHORUS", "OUTRO"), audioFile("Nudge.wav", { seconds: 60, channels: 1, song: fileSong(60) }));
+  const beatOf = (name: string) => {
+    const item = sectionItems().find((each) => each.textContent.startsWith(name));
+    const [, bar, beat] = item?.textContent.match(/bar (\d+)(?:, beat (\d+))?/) ?? [];
+    return bar ? 4 * (Number(bar) - 1) + (beat ? Number(beat) - 1 : 0) : NaN;
+  };
+  const [chorus, outro] = [beatOf("CHORUS"), beatOf("OUTRO")];
+  await press(button("CHORUS later"), "CHORUS later");
+  const oneLater = beatOf("CHORUS");
+  for (let tries = 0; tries < 400 && button("CHORUS later")?.getAttribute("disabled") === null; tries++) await press(button("CHORUS later"), "CHORUS later");
+  const latest = beatOf("CHORUS");
+  for (let tries = 0; tries < 400 && button("CHORUS earlier")?.getAttribute("disabled") === null; tries++) await press(button("CHORUS earlier"), "CHORUS earlier");
+  const earliest = beatOf("CHORUS");
+  check(
+    oneLater === chorus + 1 && latest === beatOf("OUTRO") - 1 && beatOf("OUTRO") === outro && earliest === 1,
+    `L5.11 a nudge moves CHORUS one beat and stops one beat short of OUTRO and of VERSE 1 (beat ${chorus} to ${oneLater}; latest ${latest}, OUTRO at ${outro}; earliest ${earliest})`,
+  );
+});
+
+await frozen("L5.12 a label is a tap away from another", L5, async () => {
+  const sheet = await reviewOf(chartOf("VERSE 1", "CHORUS"), audioFile("Picker.wav", { seconds: 60, channels: 1, song: fileSong(60) }));
+  const name = button("CHORUS");
+  await press(name, "the CHORUS name");
+  const words = ["INTRO", "VERSE", "PRE-CHORUS", "CHORUS", "BRIDGE", "SOLO", "INSTRUMENTAL", "OUTRO"];
+  const offered = words.filter((word) => elements().some((el) => el !== name && el.nodeName === "BUTTON" && (el.getAttribute("aria-label") ?? el.textContent) === word));
+  check(offered.length === words.length && ["1", "2", "3", "4"].every((number) => !!button(number)), `L5.12 the section's name opens a picker of the eight labels and a number (${offered.join(", ")})`, L5);
+  await press(button("BRIDGE"), "BRIDGE");
+  const picked = sectionItems().find((item) => item.textContent.startsWith("BRIDGE"));
+  check(!!picked && bandsIn(picked).includes("set"), `L5.12 the pick shows black, with data-band="set" (${picked ? bandsIn(picked).join(" ") : text().slice(0, 200)})`, L5);
+  await press(button("Save"), "Save");
+  const headings = sheet.saved[0]?.version.learned?.sections.map((section) => section.heading);
+  check(JSON.stringify(headings) === JSON.stringify(["VERSE 1", "BRIDGE"]), `L5.12 the pick is saved as the heading (${JSON.stringify(headings)})`, L5);
+});
+
+if (pendingFailures) console.log(`${pendingFailures} pending check(s) failed, not counted until their cooks land`);
 if (failures) {
   console.error(`${failures} learn check(s) failed`);
   process.exit(1);

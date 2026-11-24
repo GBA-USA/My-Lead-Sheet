@@ -43,6 +43,7 @@ type PasteModule = {
   keyFromChords: (sections: Section[]) => { keyRoot: string; keyMode: string } | null;
   capoNote: (capo: number, view?: "sounding" | "shapes") => string;
   SPELLINGS: readonly (readonly [string, string])[];
+  LEFT_OUT: readonly string[];
 };
 type TextModule = {
   parseSheet: (text: string) => { sections: Section[]; warnings: { line: number; message: string }[] };
@@ -282,6 +283,37 @@ await check("9. lines above the first section are left out of a chart, kept in w
   const bare = read(["Paper Boats Chords by The Made Up Band", "Tuning: E A D G B E", "G           C", "Paper boats on the river"].join("\n"));
   assert.equal(leftOut(bare, "lines above the first section"), 2, `with no heading, the lines above the first chord row (${js(bare.leftOut)})`);
   assert.deepEqual(tokens(sections(bare.chart)[0]?.lines[0]), ["G", "C"], "and the first chord row starts the first section");
+});
+
+/** For each kind of line a paste leaves out: two such lines, where they sit in the paste, and the status line's word for one. */
+const LEFT_OUT_PASTES: Record<string, { lines: [string, string]; above?: true; one: string }> = {
+  "tab lines": { lines: ["G|-----5-----7-----|", "D|--5-----5-----5--|"], one: "tab line" },
+  "lines above the first section": { lines: ["Difficulty: novice", "Tuning: E A D G B E"], above: true, one: "line above the first section" },
+  directives: { lines: ["{new_song_page}", "{column_break}"], one: "directive" },
+  "site lines": { lines: ["Login to add to songbook", "Tabbed by Nobody Real"], one: "site line" },
+};
+const leftOutKinds = () => {
+  const kinds = paste().LEFT_OUT;
+  assert.ok(Array.isArray(kinds) && kinds.length > 0, "src/song-paste.ts exports LEFT_OUT, every kind of line a paste leaves out");
+  return kinds;
+};
+const leavingOut = (what: string, count: 1 | 2) => {
+  const row = LEFT_OUT_PASTES[what];
+  assert.ok(row, `LEFT_OUT_PASTES has a paste that leaves out ${js(what)}`);
+  const left = row.lines.slice(0, count);
+  return { left, pasted: (row.above ? [...left, "", VERSE] : [VERSE, "", ...left]).join("\n") };
+};
+
+await check("9b. every kind of left-out line is counted under its own name, for one line and for two, and leaves the chart", () => {
+  for (const what of leftOutKinds()) {
+    for (const count of [1, 2] as const) {
+      const { left, pasted } = leavingOut(what, count);
+      const got = read(pasted);
+      assert.deepEqual(got.leftOut, [{ count, what }], `${count} of ${js(what)} counted and nothing else (${js(got.leftOut)})`);
+      assert.deepEqual(headings(got.chart), ["VERSE 1"], `${count} of ${js(what)}: the verse stays (${js(got.chart)})`);
+      for (const line of left) assert.ok(!got.chart.includes(line), `${js(line)} leaves the chart (${js(got.chart)})`);
+    }
+  }
 });
 
 await check("10. a capo raises every chord by default, sets the note, and the switch gives the shapes back", () => {
@@ -601,6 +633,7 @@ const SCREEN_CASES = [
   "27. a typed chart, then Select all and Paste the app takes, comes back with one Ctrl+Z, and the paste status goes",
   "28. a paste with the caret at the top of a chart, or over part of its first line, is left to the box and the chart stays as typed",
   "29. a paste scrolls the preview into view, and a capo switch or Use it as pasted leaves the screen where the player tapped",
+  "30. the status line says how many lines of each kind were left out, in the word for one line and for two",
 ];
 
 const api = createServer((request, response) => {
@@ -1048,6 +1081,21 @@ if (site) {
         await tap(label);
         await sleep(300);
         assert.ok(await s.evaluate<boolean>(onScreen(pasteBox)), `after ${label} the paste controls stay on screen (top ${await s.evaluate<number>(`${pasteBox}.getBoundingClientRect().top`)})`);
+      }
+    });
+
+    await check(SCREEN_CASES[16], async () => {
+      const status = `document.querySelector(".song-editor-paste [role=status]")`;
+      await phone(390);
+      for (const what of leftOutKinds()) {
+        for (const count of [1, 2] as const) {
+          await openNew();
+          await pasteTap(leavingOut(what, count).pasted);
+          await app.until(`!!${status}`, `the status line after a paste that leaves out ${count} of ${what}`);
+          const words = await s.evaluate<string>(`${status}.textContent.trim()`);
+          const want = `Left out ${count} ${count === 1 ? LEFT_OUT_PASTES[what].one : what}.`;
+          assert.ok(words.includes(want), `the status line says ${js(want)} (${js(words)})`);
+        }
       }
     });
   } finally {

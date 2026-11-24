@@ -86,6 +86,12 @@ function chordRowOf(line: string): ChordRow | null {
   return chords.length > 0 ? { chords, notes } : null;
 }
 
+/** A chord row over its words. Two chords with no room between them inside a word go into the words, so the editor warns about that line. */
+function pairLines(chords: PlacedChord[], lyric: string): string[] {
+  const { line, warning } = placeChords(chords, lyric);
+  return warning ? [chords.reduceRight((text, { name, at }) => `${text.padEnd(at).slice(0, at)}[${name}]${text.slice(at)}`, lyric)] : [line.chords, line.lyrics];
+}
+
 type Heading = { name: string; note?: string; rest: string };
 
 /** A section name with its repeat count apart: Chorus x2 is Chorus, played twice. */
@@ -158,6 +164,17 @@ const TITLE_LINE = /^(.+?)\s+(?:(?:guitar|ukulele|uke|bass|piano)\s+)?(?:chords?
 const ARTIST_LINE = /^(?:by\s+|artist\s*:\s*)?([^:]+?)$/i;
 /** The parts a band plays and nobody sings, where a line of words is an instruction to the player. */
 const PLAYED = /^(?:intro|solo|interlude|instrumental|riff|break)\b/i;
+/** A rule a page draws under a heading or between parts. A line of underscores is a blank to fill in, so it stays. */
+const DIVIDER = /^[-–—=*~]{3,}$/;
+/** A fretboard shape such as 032010 or xx2010. */
+const FRETS = /(?<![\w-])[xX\d]{6}(?![\w-])/;
+/** Words to the player, not sung: they name a fretboard shape, or a chord by more than its letter, such as C/E or G#dim. */
+const toPlayer = (text: string) =>
+  FRETS.test(text) ||
+  text.split(/\s+/).some((token) => {
+    const name = token.replace(/[.,;:!?]+$/, "");
+    return (name.length >= 3 || /[\d#/]/.test(name)) && storedChord(name) !== null;
+  });
 const TAB_LINE = /^\s*[A-Ga-g][#b]?\s*[|:][-0-9|hpbrsvx/\\~^.()<>=*\s]*$/;
 const DIRECTIVE = /^\{\s*([a-z_]+)\s*(?::\s*(.*?))?\s*\}$/i;
 const STARTS: Record<string, string> = { soc: "Chorus", start_of_chorus: "Chorus", sov: "Verse", start_of_verse: "Verse", sob: "Bridge", start_of_bridge: "Bridge" };
@@ -219,6 +236,7 @@ function readLine(line: string, found: Found, state: { tab: boolean }): Read {
   else if (time) found.facts.timeSignature = time[1];
   if (key || tempo || capo || time || HEADER.noCapo.test(text)) return { kind: "gone" };
   if (TAB_LINE.test(text) && text.includes("--")) return { kind: "counted", what: "tab lines" };
+  if (DIVIDER.test(text)) return { kind: "gone" };
   if (text.startsWith("|")) return { kind: "bars" };
   if ([...text.matchAll(BRACKET)].some((match) => storedChord(match[1]))) return { kind: "bracket" };
   if (SITE_LINES.some((pattern) => pattern.test(text))) return { kind: "site" };
@@ -254,10 +272,7 @@ function write(lines: string[], reads: Read[], raise: number, key: Key): { out: 
   let instructed = false;
   const row = ({ chords, notes }: ChordRow, lyric = "") => {
     const named = chords.map((chord) => ({ ...chord, name: sound(chord.name) }));
-    const { line, warning } = placeChords(named, lyric);
-    // Two chords with no room between them inside a word go into the words, so the editor warns about that line.
-    if (warning && lyric) out.push(named.reduceRight((text, { name, at }) => `${text.padEnd(at).slice(0, at)}[${name}]${text.slice(at)}`, lyric));
-    else out.push(line.chords, ...(lyric ? [line.lyrics] : []));
+    out.push(...(lyric ? pairLines(named, lyric) : [placeChords(named, lyric).line.chords]));
     out.push(...notes.map((note) => `Note: ${note}`));
   };
   for (let i = 0; i < lines.length; i += 1) {
@@ -304,6 +319,11 @@ function write(lines: string[], reads: Read[], raise: number, key: Key): { out: 
       if (/^verse\b/i.test(heading.name)) verses += 1;
       // A bare Verse is numbered, so two pasted [Verse] markers are two verses the player can tell apart.
       const name = /^verse$/i.test(heading.name) ? `Verse ${verses}` : heading.name;
+      // Under a chord row with no words, the chart would read the heading as that row's words.
+      if (out.length > 0 && chordRowOf(out[out.length - 1])) {
+        out.push("");
+        changed = true;
+      }
       // A name that is no section word stays boxed, so a second read still takes it for a heading.
       out.push(sectionName(name) ? headingLine(styled(name)) : `[${styled(name)}]`);
       if (heading.note) out.push(`Note: ${heading.note}`);
@@ -462,6 +482,157 @@ function rejoin(lines: string[]): string[] {
   return lines.flatMap((line, i) => [...(put.get(i) ?? []), ...(skip.has(i) ? [] : [line])]);
 }
 
+/** A chord on a line of its own with no space around it, the way a phone copies one from a chord page. */
+const loneChord = (line: string | undefined) => (line !== undefined && /^\S+$/.test(line) ? storedChord(line) : null);
+const blank = (line: string | undefined) => line !== undefined && line.trim() === "";
+/** The one word a page box holds: no chord, no section name. A typed chart puts a heading or a chord row there instead. */
+const piece = (line: string | undefined) => line !== undefined && /^\S+$/.test(line) && !storedChord(line) && headingOf(line) === null;
+/**
+ * A typed chord line over its words: a row of chords in columns over any words, or one chord over words that start
+ * the line. A page box holds one chord over one word, so a copy has neither.
+ */
+const typedPair = (chords: string | undefined, words: string | undefined) =>
+  chords !== undefined && words !== undefined && !blank(words) && ((chordRowOf(chords)?.chords.length ?? 0) >= 2 || (loneChord(chords) !== null && /^\S+\s+\S/.test(words)));
+
+/** One line of the page while its pieces come in: the words so far, the spaces since, and the chords that wait for their word. */
+type PageRow = { lyric: string; gap: number; placed: PlacedChord[]; waiting: string[] };
+
+/** Puts words on the row. The last chord that waits sits over their first letter, and each chord before it gets room to its left. */
+function say(row: PageRow, text: string) {
+  const joint = row.lyric && (row.gap > 0 || /^\s/.test(text)) ? " " : "";
+  const roomy = joint !== "" || row.lyric === "";
+  let at = row.lyric.length + joint.length;
+  for (const [k, name] of row.waiting.entries()) {
+    row.placed.push({ name, at });
+    if (roomy && k < row.waiting.length - 1) at += name.length + 1;
+  }
+  row.lyric = (row.lyric + joint).padEnd(at) + text.trim().replace(/\s+/g, " ");
+  row.waiting = [];
+  row.gap = text.length - text.trimEnd().length;
+}
+
+/** The chart lines of one page line: a chord row over its words, or chords alone, with any row mark after them. */
+function rowLines(row: PageRow): string[] {
+  let at = row.lyric ? row.lyric.length + 1 : 0;
+  for (const name of row.waiting) {
+    row.placed.push({ name, at });
+    at += name.length + 1;
+  }
+  const chords = row.placed.map((chord) => chord.name).join(" ");
+  if (!row.lyric) return [chords];
+  if (chordRowOf(`${chords} ${row.lyric}`)) return [`${chords} ${row.lyric}`];
+  return pairLines(row.placed, row.lyric);
+}
+
+/**
+ * A phone's copy of a chord page, put back together as the page showed it, or null when the paste is no such copy.
+ * The page holds each chord, and the word under it, in a box of its own, and the phone gives every box a line. So a
+ * line that is one chord, or the one word after it, goes on with the line before it. The text between two boxes comes
+ * as one line for each line of the page it covers: its first line goes on, and each line after it, or an empty line,
+ * starts a new line of the page. A gap of two spaces or more before a chord starts a new row. A line with no box that
+ * speaks to the player is a note, and a chord row set apart from its words by such lines takes the words, with the
+ * notes under the pair. On a page that names its sections a blank line starts none. A copy that kept none of the
+ * page's spaces is no such copy, and `rejoin` reads it. A lone chord is a sign of such a copy when the words before
+ * it have spaces on both sides, or when a line of spaces under it leads to the next box: a word, or a chord that is
+ * itself a sign. A typed chart that ends a stanza on a lone chord over a line of spaces has a heading, a chord row or
+ * a sung line there instead. A lone chord right under a typed chord line and its words is the typed chart's own, so
+ * a paste that has one is no such copy.
+ */
+function pageCopy(lines: string[]): string[] | null {
+  const spaced = (line: string | undefined) => line !== undefined && line.trim() !== "" && /^\s/.test(line) && /\s$/.test(line);
+  const sign: boolean[] = [];
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    const leads = lines[i + 1] !== "" && blank(lines[i + 1]) && (piece(lines[i + 2]) || sign[i + 2] === true);
+    sign[i] = loneChord(lines[i]) !== null && (spaced(lines[i - 1]) || leads);
+  }
+  if (sign.filter(Boolean).length < 2) return null;
+  const out: { text: string; loose?: true }[] = [];
+  const indents: number[] = [];
+  let row: PageRow | null = null;
+  /** A line of the page with no box on it yet. A chord may still follow on the same line. */
+  let held: string | null = null;
+  /** What the line before was: a chord, the spaces after a chord, the one word after a chord, or text between boxes. */
+  let after: "chord" | "lead" | "word" | "text" = "text";
+  const open = (): PageRow => (row ??= { lyric: "", gap: 0, placed: [], waiting: [] });
+  const close = () => {
+    if (row) out.push(...rowLines(row).map((text) => ({ text })));
+    if (held !== null) out.push(blank(held) ? { text: "" } : { text: held, loose: true });
+    row = null;
+    held = null;
+  };
+  for (const [i, line] of lines.entries()) {
+    const next = lines[i + 1];
+    const name = loneChord(line);
+    // A word that reads as a chord, such as A: it comes after a chord and the rest of its line follows.
+    const word = name !== null && (after === "chord" || after === "lead") && next !== undefined && /^\s+[\p{L}']/u.test(next);
+    if (name !== null && !word) {
+      if (after === "text") {
+        if (typedPair(lines[i - 2], lines[i - 1])) return null;
+        const before: string = held ?? "";
+        const last = row ? lines[i - 1] : before;
+        // Text that ends in a space, or inside a word the chord splits, is on the chord's line of the page.
+        const goesOn = /\s$/.test(last) || (/[\p{L}']$/u.test(last) && next !== undefined && /^\p{Ll}\S*$/u.test(next));
+        if (!row && blank(before)) {
+          if (held !== null) indents.push(before.length);
+          held = null;
+        } else if (!goesOn) close();
+        else if (!row) {
+          held = null;
+          say(open(), before);
+        }
+      }
+      if (open().lyric && open().gap >= 2) close();
+      open().waiting.push(name);
+      after = "chord";
+    } else if (line === "") {
+      const fresh = after === "text";
+      close();
+      if (fresh) out.push({ text: "" });
+      after = "text";
+    } else if (after !== "text") {
+      const one = /^\S+$/.test(line);
+      if (after === "lead" && !one) {
+        close();
+        held = line;
+        after = "text";
+      } else if (blank(line)) {
+        open().gap += line.length;
+        after = after === "chord" ? "lead" : "text";
+      } else {
+        say(open(), line);
+        after = one && after !== "word" ? "word" : "text";
+      }
+    } else {
+      close();
+      held = line;
+      after = "text";
+    }
+  }
+  close();
+  // A line with no box keeps its columns, less the indent the page gives every line.
+  const cut = indents.length > 0 ? Math.min(...indents) : 0;
+  const shown = out.map(({ text, loose }) => ({ loose, text: loose ? text.slice(Math.min(cut, text.length - text.trimStart().length)) : text }));
+  // Above the chart a line is the page's own, and its title may hold a word that reads as a chord.
+  const first = shown.findIndex(({ text, loose }) => (loose ? chordRowOf(text) !== null || headingOf(text) !== null : text !== ""));
+  const aside = (at: number) => at > first && shown[at]?.loose === true && !chordRowOf(shown[at].text) && toPlayer(shown[at].text);
+  const note = (text: string) => `Note: ${text.trim().replace(/\s+/g, " ")}`;
+  const page: string[] = [];
+  for (let i = 0; i < shown.length; i += 1) {
+    const { text, loose } = shown[i];
+    page.push(aside(i) ? note(text) : text);
+    if (!loose || !chordRowOf(text)) continue;
+    let under = i + 1;
+    while (shown[under]?.text === "" || aside(under)) under += 1;
+    const words = shown[under];
+    const asides = shown.slice(i + 1, under).filter((each) => each.text !== "");
+    if (asides.length === 0 || !words?.loose || chordRowOf(words.text) || headingOf(words.text)) continue;
+    page.push(words.text, ...asides.map((each) => note(each.text)));
+    i = under;
+  }
+  const named = page.some((text) => headingOf(text) !== null);
+  return named ? page.filter((text) => text !== "") : page;
+}
+
 /** Blank runs fold to one blank line, and the chart starts and ends on a line with something on it. */
 const tidy = (out: string[]) => out.join("\n").replace(/\n{3,}/g, "\n\n").replace(/^\n+|\n+$/g, "");
 
@@ -475,7 +646,7 @@ export function readPaste(text: string, view: CapoView = CAPO_VIEW): Pasted {
     .replace(/♭/g, "b")
     .split("\n")
     .map(untab);
-  const lines = rejoin(cleaned);
+  const lines = pageCopy(cleaned) ?? rejoin(cleaned);
   const found: Found = { facts: {} };
   const state = { tab: false };
   const reads = lines.map((line) => readLine(line, found, state));

@@ -59,7 +59,10 @@ function formWithPaste(form: Form, paste: Paste, open: (field: keyof Form) => bo
   if (facts.keyRoot && facts.keyMode && open("keyRoot") && open("keyMode")) Object.assign(next, { keyRoot: facts.keyRoot, keyMode: facts.keyMode });
   if (bpm && open("bpm")) next.bpm = bpm;
   if (facts.timeSignature && open("timeSignature")) next.timeSignature = facts.timeSignature;
-  if (facts.capo && (open("keyNote") || /^Capo \d+/.test(form.keyNote))) next.keyNote = capoNote(facts.capo, paste.view === "raw" ? "shapes" : paste.view);
+  const capoNoted = /^Capo \d+/.test(form.keyNote);
+  if (facts.capo && (open("keyNote") || capoNoted)) next.keyNote = capoNote(facts.capo, paste.view === "raw" ? "shapes" : paste.view);
+  // A paste that fills the whole box takes the place of the chart a capo note was about.
+  else if (capoNoted && !paste.before.trim()) next.keyNote = "";
   return next;
 }
 

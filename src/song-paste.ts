@@ -233,8 +233,12 @@ function write(lines: string[], reads: Read[], raise: number, key: Key): { out: 
   let changed = false;
   let verses = 0;
   const row = ({ chords, notes }: ChordRow, lyric = "") => {
-    const placed = placeChords(chords.map((chord) => ({ ...chord, name: sound(chord.name) })), lyric).line;
-    out.push(placed.chords, ...(lyric ? [placed.lyrics] : []), ...notes.map((note) => `Note: ${note}`));
+    const named = chords.map((chord) => ({ ...chord, name: sound(chord.name) }));
+    const { line, warning } = placeChords(named, lyric);
+    // Two chords with no room between them inside a word go into the words, so the editor warns about that line.
+    if (warning && lyric) out.push(named.reduceRight((text, { name, at }) => `${text.padEnd(at).slice(0, at)}[${name}]${text.slice(at)}`, lyric));
+    else out.push(line.chords, ...(lyric ? [line.lyrics] : []));
+    out.push(...notes.map((note) => `Note: ${note}`));
   };
   for (let i = 0; i < lines.length; i += 1) {
     const read = reads[i];

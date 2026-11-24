@@ -1,3 +1,12 @@
+# song-paste-import fix pass 1: a chord with no room in its word becomes a bracket line
+
+A pasted chord row can respell a chord longer (`CM7` to `Cmaj7`, or `Em` to `F#m` under a capo) with no word gap
+before the next chord, as in `CM7 F` over `Lovely day for it`. No chord row can keep both chords on their letters
+there. The paste now writes that one line in brackets, `[Cmaj7]Love[F]ly day for it`. The box still says which letter
+each chord belongs on, and the editor's warning list says `Chords too close inside 'Lovely'`, as it does for a typed
+bracket line. The other choice was the two-line form plus a warning in the paste status line, but that warning would
+stay up after the player fixed the line. Owner: say if you want the two-line form kept.
+
 # song-paste-import: a chart that needs no cleaning stays as pasted, and two test fixes
 
 1. The plan (section 2, case 3) turns every heading into library style, so `[Intro]` becomes `INTRO`. check:new-song

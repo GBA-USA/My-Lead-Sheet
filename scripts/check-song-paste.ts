@@ -395,6 +395,8 @@ const SCREEN_CASES = [
   "P. perf: at 4x CPU slowdown, the tap on Paste a sheet draws a 300-line chart within 100 ms of drawing the same text typed in",
   "23. a capo note leaves with its chart: a chart with no capo pasted into the emptied box saves with no capo note",
   "24. a paste that leaves nothing after cleaning stays in the box as pasted, says so, and changes no field",
+  "25. Select all, then Paste over a capo chart, is a fresh paste: it is cleaned, the capo note and its status go, and Save stores no capo note",
+  "26. a capo note the player can see and remove: typed over, the paste status goes, the note shows with Remove capo note, and Edit song shows it too",
 ];
 
 const api = createServer((request, response) => {
@@ -635,7 +637,7 @@ if (site) {
       await fill("BPM", "90");
       await pasteTap(CAPO_WEB);
       await app.until(`!!${button("Show guitar shapes")}`, "the capo switch");
-      const controls = ["Use A major", "Use 120 bpm", "Show guitar shapes", "Use it as pasted"];
+      const controls = ["Use A major", "Use 120 bpm", "Show guitar shapes", "Use it as pasted", "Remove capo note"];
       for (const width of [360, 390]) {
         await phone(width);
         for (const label of controls) await glove(button(label), label, width);
@@ -718,6 +720,65 @@ if (site) {
       await app.until(`${editor}.textContent.includes("Nothing here looks like a chart. It is in the box as pasted.")`, "the nothing-here words");
       assert.equal(await value("Chart"), headers, "the box holds the paste as pasted");
       assert.deepEqual([await value("Key"), await s.evaluate<string>(`${mode}.value`), await value("BPM")], ["C", "major", ""], "Key and BPM are left alone");
+    });
+
+    const CAPO_CHART = ["Capo: 2nd fret", "", "[Verse 1]", "G      C       D", "Paper boats on the river"].join("\n");
+    const PLAIN_CHART = ["[Chorus]", "G           C", "Float away into the light"].join("\n");
+    const preview = () => s.evaluate<string>(`document.querySelector(".song-editor-preview")?.textContent ?? ""`);
+    const pasteStatus = () => s.evaluate<string>(`document.querySelector(".song-editor-paste")?.textContent ?? ""`);
+    const savedNote = async (title: string) => (await stored()).find((song) => song.title === title)?.keyNote;
+    const capoPasted = async () => {
+      await openNew();
+      await pasteTap(CAPO_CHART);
+      await app.until(`!!${button("Show guitar shapes")}`, "the capo switch");
+      assert.ok((await preview()).includes("Capo 2 for guitar"), "the capo paste sets the note");
+    };
+
+    await check(SCREEN_CASES[11], async () => {
+      await phone(390);
+      await capoPasted();
+      await s.evaluate(`(() => { const el = ${field("Chart")}; el.focus(); el.setSelectionRange(0, el.value.length); })()`);
+      assert.equal(await keyboard(`Tuning: E A D G B E\n${PLAIN_CHART}`), true, "the app takes a paste over the whole box");
+      await app.until(`${field("Chart")}.value.includes("Float away")`, "the new chart in the box");
+      const box = await value("Chart");
+      assert.ok(!box.includes("Paper boats") && !box.includes("Tuning:"), `the paste takes the box's place and is cleaned (${js(box)})`);
+      assert.ok(!(await preview()).includes("Capo 2"), `the preview drops the capo note (${js(await preview())})`);
+      assert.ok(!/capo/i.test(await pasteStatus()), `the status names no capo (${js(await pasteStatus())})`);
+      await fill("Title", "Whole Box Paste");
+      await tap("Save");
+      await app.until(`/^#\\/song\\/\\d+/.test(location.hash) && !document.querySelector(".song-editor")`, "the saved song's page");
+      assert.equal(await savedNote("Whole Box Paste"), "", "no capo note is stored");
+    });
+
+    await check(SCREEN_CASES[12], async () => {
+      await phone(390);
+      await capoPasted();
+      await fill("Chart", "");
+      await fill("Chart", PLAIN_CHART);
+      assert.equal(await pasteStatus(), "", "the paste status goes once the box no longer holds the paste");
+      assert.ok(await s.evaluate<boolean>(`!!${button("Remove capo note")}`), "the editor shows the capo note with Remove capo note");
+      await tap("Remove capo note");
+      assert.ok(!(await preview()).includes("Capo 2"), `the preview drops the capo note (${js(await preview())})`);
+      assert.equal(await s.evaluate<boolean>(`!!${button("Remove capo note")}`), false, "and the button goes");
+      await fill("Title", "Typed Over");
+      await tap("Save");
+      await app.until(`/^#\\/song\\/\\d+/.test(location.hash) && !document.querySelector(".song-editor")`, "the saved song's page");
+      assert.equal(await savedNote("Typed Over"), "", "no capo note is stored");
+
+      await capoPasted();
+      await fill("Title", "Harbor Lights");
+      await tap("Save");
+      await app.until(`/^#\\/song\\/\\d+/.test(location.hash) && !document.querySelector(".song-editor")`, "the capo song's page");
+      assert.equal(await savedNote("Harbor Lights"), "Capo 2 for guitar", "the capo song is stored with its note");
+      await s.evaluate(`document.querySelector('.shell-header [aria-label="More"]').click()`);
+      await app.until(`!!document.querySelector("[role=menu]")`, "the More menu");
+      await app.click("Edit", `document.querySelector("[role=menu]")`);
+      await app.until(`!!${editor}`, "Edit song");
+      assert.ok(await s.evaluate<boolean>(`!!${button("Remove capo note")}`), "Edit song shows the saved capo note with Remove capo note");
+      await tap("Remove capo note");
+      await tap("Save");
+      await app.until(`!document.querySelector(".song-editor")`, "Edit song closed");
+      assert.equal(await savedNote("Harbor Lights"), "", "Edit song: the capo note is gone from the stored song");
     });
   } finally {
     await s.close();

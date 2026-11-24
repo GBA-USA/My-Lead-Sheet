@@ -4,8 +4,10 @@
  * their own browser and pastes what they find. The catalog gives title, artist, year and length only.
  */
 
-const LYRICS_SEARCH = "https://www.google.com/search?q=";
-const RECORDING_SEARCH = "https://musicbrainz.org/ws/2/recording";
+import endpoints from "../data/song-search.json";
+
+const LYRICS_SEARCH = endpoints.lyricsSearch;
+const RECORDING_SEARCH = endpoints.recordingSearch;
 /** Quiet time after the last key before the box asks the catalog. */
 export const DEBOUNCE_MS = 600;
 /** The catalog's rate rule: never more than one request a second from this phone. */

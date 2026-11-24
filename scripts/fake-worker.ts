@@ -6,8 +6,10 @@
  *   sending side as it is in a browser, and only data a worker could receive arrives.
  * - Messages are delivered in order, each in its own task. A throw in `handle` reaches the phone as an "error" event.
  * The phone makes its worker with `new Worker(new URL("./learn-worker.ts", import.meta.url), { type: "module" })`, the
- * form Vite builds and esbuild leaves alone. `workerLog` keeps every message both ways and how long `handle` ran.
- * `workerIdle` waits for the worker to catch up, and `workerReplies.rewrite` changes what the phone is told.
+ * form Vite builds and esbuild leaves alone. `workerLog` keeps every message both ways, how long `handle` ran, how many
+ * workers were stopped, and how many messages were posted to a worker after it was stopped, which a browser drops.
+ * `workerIdle` waits for the worker to catch up, `workerReplies.rewrite` changes what the phone is told, and
+ * `workerFaults.failOn` makes the worker throw.
  */
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -36,14 +38,17 @@ function workerModule(): Promise<string> {
   return bundled;
 }
 
-/** Since the last clear: workers started, every message each way, errors, and real milliseconds spent inside `handle`. */
-export const workerLog = { started: 0, toWorker: [] as ToWorker[], fromWorker: [] as FromWorker[], errors: [] as unknown[], busyMs: 0 };
+/** Since the last clear: workers started and stopped, every message each way, messages posted to a stopped worker, errors, and real milliseconds spent inside `handle`. */
+export const workerLog = { started: 0, stopped: 0, toWorker: [] as ToWorker[], toStopped: 0, fromWorker: [] as FromWorker[], errors: [] as unknown[], busyMs: 0 };
 
 /** Set `rewrite` to change each reply on its way to the phone, so a check can show the phone a result it chose. */
 export const workerReplies: { rewrite: ((reply: FromWorker) => FromWorker) | null } = { rewrite: null };
 
+/** Set `failOn` to a message kind, and the worker throws on the next one it gets, as a worker that breaks does. */
+export const workerFaults: { failOn: ToWorker["kind"] | null } = { failOn: null };
+
 export function clearWorkerLog() {
-  Object.assign(workerLog, { started: 0, toWorker: [], fromWorker: [], errors: [], busyMs: 0 });
+  Object.assign(workerLog, { started: 0, stopped: 0, toWorker: [], toStopped: 0, fromWorker: [], errors: [], busyMs: 0 });
 }
 
 type Listener = (event: { type: string; data?: unknown; message?: string; error?: unknown }) => void;
@@ -84,7 +89,7 @@ export class FakeWorker {
   }
 
   postMessage(message: ToWorker, transfer: Transferable[] | { transfer?: Transferable[] } = []) {
-    if (this.terminated) return;
+    if (this.terminated) return void (workerLog.toStopped += 1);
     const copy = structuredClone(message, { transfer: Array.isArray(transfer) ? transfer : (transfer.transfer ?? []) });
     workerLog.toWorker.push(copy);
     this.queue = this.queue.then(async (handle) => {
@@ -92,6 +97,7 @@ export class FakeWorker {
       if (!handle || this.terminated) return handle;
       const started = process.hrtime.bigint();
       try {
+        if (workerFaults.failOn === copy.kind) throw new Error(`the worker broke on ${copy.kind}`);
         handle(copy, (reply, back = []) => this.reply(reply, back));
       } catch (error) {
         this.fail(error);
@@ -115,6 +121,7 @@ export class FakeWorker {
   }
 
   terminate() {
+    if (!this.terminated) workerLog.stopped += 1;
     this.terminated = true;
   }
 

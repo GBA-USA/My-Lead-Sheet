@@ -46,6 +46,47 @@ stay up after the player fixed the line. Owner: say if you want the two-line for
 Seen, not changed (outside this cook's files): after a reload with the network off, My Songs shows no `+ Add a song`,
 and it stays hidden when the network comes back until the next reload.
 
+# L1 questions: frozen L1.2 is open, and the four Chrome checks are answered
+
+L1 is built and its cases pass, except for one seam with code this cook does not own. Frozen L1.2 (item 1) needs a decision from its owner, not from Terry. Item 2 is answered on this branch.
+
+Item 1 was measured at `017c881` on Nov 23, 2026 with Edge on Windows. `check:learn` prints 162 ok and only the pending L1.2 FAIL, and it exits 0.
+
+## 1. Frozen L1.2 fails because of the L2 tempo tracker, not the listen
+
+Frozen L1.2 in `scripts/check-learn.ts` changes 122 to 150 BPM 8 s before the end of a 60 s file. It expects the change in `analysis.tempos`. The listen delivers every sample to the worker, but the engine reads only "122.2 BPM at 3.00 s".
+
+The cause is in `src/learn-analyze.ts`. Since L2 (`928cb32`), `trackBeats` follows a local tempo only within 20% of the song's tempo (`FOLLOW_LOCAL`, `nearOctave`). 150 is 23% over 122. At the LT-A freeze (`f336126`) the tracker followed any local tempo, which is why LT-A's prototype passed L1.2.
+
+The position of the change does not matter. This engine probe uses the same song as L1.2 at 22050 Hz:
+
+| Song | Change | Found in `analysis.tempos` |
+| --- | --- | --- |
+| 60 s | 122 to 150 at 52 s (frozen L1.2) | no |
+| 60 s | 122 to 150 at 30 s | no |
+| 120 s | 122 to 150 at 60 s | no |
+| 90 s | 122 to 150 at 30 s | yes, because 150 is the song's tempo |
+| 60 s | 122 to 138 at 52 s | yes, at 52.6 s |
+
+The condition L1.2 names, "the last ten seconds count", holds. A new case shows it: a change to 138 BPM 8 s before the end of a picked file is found at 52.62 s. Frozen L1.2 stays marked "pending until l1". It still runs and prints its FAIL, but that FAIL does not fail `check:learn`.
+
+One of these settles it:
+
+- The L2 owner lets the tracker follow a lasting change past 20%, and keeps L2's push and drift cases green. Then remove the mark from L1.2.
+- The LT-A owner re-freezes L1.2 with a change the tracker follows, such as 138 BPM. That is the case this cook added.
+
+## 2. Answered: the four Chrome checks now pick the mic
+
+Answered by the l1-fable-fix cook on Nov 23, 2026, after `origin/mls-int-20261113` (`156b186`) was merged in.
+
+`check:bar`, `check:heard`, `check:learned` and `check:ux-sheet-controls-save` tapped **Learn by listen** and then waited for the mic. Since L1 the Learn sheet opens on two ways in, as the plan's flow and frozen L1.8 require. The mic opens only on a tap on **Listen with the mic**. Before L1, **Learn by listen** started the mic as the sheet opened.
+
+Each check now covers that step. It requires the sheet to list "Pick the song's file", "Listen with the mic" and "Cancel" in that order. It requires that the mic is not asked for before the pick. Then it taps **Listen with the mic**. `check:heard` and `check:learned` also require the Review's first line to start with "From the mic". Every earlier case is kept.
+
+Measured with Edge on Windows: `check:bar` 43 ok, `check:heard` 31 ok, `check:learned` 58 ok, and `check:ux-sheet-controls-save` 47 ok. The untouched base reads 41, 28, 52 and 47 ok. `check:ux-sheet-controls-save` also prints two "first chord" FAIL lines that are byte-identical to the untouched base's. They are the known Windows font gap.
+
+---
+
 # C21c deep fix: the guest switches now open a screen. I took option b of the 3c4fcdf verify. Owner, please confirm.
 
 The verify left this to the owner: (a) drop "Can see band chat" and "Can see other setlists" from the pass form, or

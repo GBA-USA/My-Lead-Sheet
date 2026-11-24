@@ -1,4 +1,4 @@
-/* The catalog search on My Songs and in New song, and Find lyrics on the web. Every target is at least 48 px tall. */
+/* The catalog search on My Songs and in New song, and Find chords on the web. Every target is at least 48 px tall. */
 
 .song-search {
   margin: 4px 0 0;
@@ -55,12 +55,12 @@
 
 .song-search-row:focus-visible,
 .song-search-retry:focus-visible,
-.find-lyrics:focus-visible {
+.find-chords:focus-visible {
   outline: 2px solid var(--accent-text);
   outline-offset: 2px;
 }
 
-.find-lyrics {
+.find-chords {
   display: inline-flex;
   align-items: center;
   justify-content: center;

@@ -1,5 +1,118 @@
 VERDICT: FAIL
 
+# song-search in-cook self-check fix pass 1 of 2 (on top of self-check 5 below)
+
+Goal: a catalog request that never answers must end in a clear message and Try again, not "Searching…" with no end.
+The case landed first, in its own commit, then the fix. Logs are in `.verify-logs/fix-p27/` (gitignored). Run on the
+Windows laptop with Edge as `CHROME`.
+
+| Finding | Case | At 9864cf8 with the case | After |
+|---|---|---|---|
+| P2-7, a hung request stays in `searching` | 6e, fake clock, the first fetch never settles | `FAIL 6e ... 10 s after the request left, the box says so` (38 ok, 1 FAIL, `head.log`) | ok (39 ok, all ok, `after.log`) |
+
+- 6e checks five things. The box still says searching 3 s after the request left. It says `failed` by 10 s. It sends
+  no second request by itself. Try again goes out 1 s or more after the hung request and gets the catalog's answer.
+  The hung request's late rows never show.
+- The fix is in `src/song-search.ts`. `ask` races the fetch and the read of its body against an 8 s limit set with
+  `deps.setTimeout`, and the limit reports `failed`. The existing "The song list didn't answer. Try again in a moment."
+  line and Try again then show. The limit is cleared when the request settles. A later search or `stop` still drops
+  the late reply through the `mine === current` test.
+- Self-check 5's probe was rerun on the rebuilt App at 360 and 390 px (`probe-360.log`, `probe-390.log`). In step B,
+  both widths show the message and Try again, with 1 request and no page errors. Steps C to E are unchanged, and the
+  late reply is still dropped.
+- `npm run build` exit 0. `check:portable` passed ("tree clean"). `tsc --noEmit -p .` exit 0.
+- Still open for the owner: keep or revert the `worker/room-library.ts` edit (85c9c5e, QUESTIONS.md top entry).
+
+VERDICT: FAIL, on owner seams only. No P0-P2 is open inside this cook's files.
+
+---
+
+# song-search in-cook self-check 5, tier deep, at 9864cf8
+
+Goal: from My Songs or Add a song, a player searches the public song catalog and starts a new sheet with title, artist
+and length filled in, and can tap Find lyrics on the web to paste the words in. This pass verifies the diff
+da2ce97..9864cf8. Since self-check 4 (8c01032), the changes are corrective 3 (4ed7935, d164fac) and VERIFY.md
+(9864cf8). Corrective 3 moved the two endpoints into `data/song-search.json` and changed 8a's last wait. The build and
+named checks were not rerun, because corrective 3 ran them at this code (`check:portable` tree clean, `check:song-search`
+38 ok, `.verify-logs/ci-fix3/`). `dist/` was built at 19:13, after 4ed7935. Run on the Windows laptop with Edge as
+`CHROME`. The probe and its logs are in `.verify-logs/self-check5/` (gitignored).
+
+Verdict: FAIL. P2-7 is still open at head and reproduces at 360 and 390 px. Corrective 3's brief limited that pass to
+the two CI failures, so P2-7 was out of its scope. Corrective 3 cleared P1-1 and P2-1, and its brief is the owner's
+approval for both. The Worker edit (85c9c5e) still has no keep-or-revert decision.
+
+## P2
+
+**P2-7 (carried, still open). A catalog request that never answers leaves "Searching…" on screen with no message and
+no Try again.** CLASS=state-machine. `ask` in `src/song-search.ts:93` awaits `deps.fetch` with no time limit. A message
+and Try again appear only when the fetch throws (offline) or the reply is bad (failed). If the request goes out but no
+reply comes back, the box stays in `searching`. The brief's must-handle asks for "Offline and slow network ... (clear
+message, no duplicates, a retry that respects the 1 req/sec floor)", and CLAUDE.md's must-handle says the same. No case
+covers this. Cases 5a-5c reject the fetch, and 6a-6d answer it badly.
+Smallest repro: `.verify-logs/self-check5/probe.ts`. It runs the real built App in Edge with a stub `/api/me` and a
+catalog stub that holds the first request open. Run it as `PROBE_WIDTH=360` and as `PROBE_WIDTH=390`. Both widths gave
+the same result (`probe-360.log`, `probe-390.log`).
+
+| Step | Result at 360 and at 390 |
+|---|---|
+| A. Type "wagon wheel", wait 1.5 s | `Searching…`, no Try again, no rows, 1 request |
+| B. Wait 20 s more | `Searching…`, no Try again, no rows, still 1 request (`hung-360.png`, `hung-390.png`) |
+| C. Add a trailing space (the catalog now answers) | the row shows. That is the only way out, and nothing on screen says so |
+| D. Retype "wagon wheel o" | the row shows. Request 3 went out 1517 ms after request 2, so the floor holds |
+| E. Release the hung request 1 | its late reply is dropped, and D's rows stay |
+| F. Page errors | none |
+
+Fix inside the owned files: race the fetch against a limit set with `deps.setTimeout`, for example 8 s, and report
+`failed` so the existing Try again shows. Add a unit case under the fake clock that holds the fetch open, expects
+`failed` once the limit passes, and expects no second request before the floor. A later search or `stop` already drops
+the late reply (step E).
+
+## Pass conditions at 9864cf8
+
+The only product-code change since self-check 3 is where `song-search.ts` gets its two URLs. Each condition below was
+walked again against that change.
+
+| # | Condition | Result |
+|---|---|---|
+| 1 | Find lyrics URL, `https://www.google.com/search?q=` plus the encoded query | Holds. The prefix now comes from `data/song-search.json`. 1a pins the full URL with its own literal, so a wrong value in the data file turns 1a red. |
+| 2 | No lyrics fetch or store | Holds (2a-2d). The data file holds only the two endpoints. 2a's OWNED scan does not list it, but 1a and 3a pin both of its values. |
+| 3 | Recording search, fmt=json, User-Agent, rows | Holds. 3a pins the endpoint. The probe's stub answers only `https://musicbrainz.org/ws/2/recording`, and the built App's requests reached it, so the JSON import works in the real bundle (measured). The brief's User-Agent names the literal preview host, but the code uses `location.origin`. CLAUDE.md rule 3 bans a hard-coded host, so the two disagree and the code follows CLAUDE.md. |
+| 4 | No results | Holds (4, 4b). |
+| 5 | Offline, a clear message, no crash, no fake rows | Holds when the fetch is refused (5a-5c). When the fetch hangs, the message never comes (P2-7). |
+| 6 | API error or malformed reply | Holds (6a-6d). |
+| 7 | At most one request a second, 400-800 ms debounce | Holds (7a-7e). Probe step D measured 1517 ms between requests. |
+| 8 | A pick goes through the existing add-own-song path and opens the sheet prefilled | Holds. 8a now waits until `.sheet .sheet-name` reads exactly `Fire Away`. That wait is stricter than the old `innerText` one, and it is the selector `check:new-song` uses. It no longer reads `.shell-title`, which shows the app name. 8b-8f unchanged. |
+| 9 | 360 and 390 px, 44 px targets | Holds. No layout changed since self-check 3, whose probe B measured both widths. The probe here shows the searching note unclipped at both widths. |
+
+## Untested new behavior
+
+- The data-file move has coverage. 1a, 3a and the page stubs use their own literals.
+- 8a's new line checks behavior players can see (the sheet's title), and corrective 3 recorded it red before its fix.
+- P2-7's hang path has no case. It is counted once, above.
+
+## Wrong-but-passing read
+
+- Stale state, account switch, signed out and data loss: no change since self-check 3. The URL move is a build-time
+  constant and holds no state.
+- Seam for L9: `song-search.ts` now has a bare JSON import. It loads through esbuild and Vite, which is how
+  `check:song-search` (`scripts/check-song-search.ts:98`) and the app load it. A later check that imports it straight
+  into `node --experimental-strip-types` would need an import attribute. `src/storage.ts` already has the same shape with
+  `data/library.json`, so this is P3 (inferred, not run).
+
+## Owner seams
+
+- P1-1 (`check:portable`): closed. The brief `BRIEF-song-search-fix3.md` asked to move both origins out of `src/`
+  without weakening `check-portable.ts`. The data-file import does that, and the layer plan's brief calls it "the way
+  song-search does". `check-portable.ts` is unchanged in this diff.
+- P2-1 (8a): closed. The fix3 brief allowed fixing the test ("fix the real cause (app or test)"). The edit tightens the
+  wait and does not weaken it.
+- Still open: keep or revert the `worker/room-library.ts` edit (85c9c5e, QUESTIONS.md top entry). It is outside the
+  owned files. `check:song-search` case 10 covers it. No decision was found in the prompt, QUESTIONS.md or the briefs.
+- The brief's standing rule sends song-search to Fable on any further failing pass. P2-7 is a self-check finding, not
+  a failed check, so whether the rule applies is the runner's call.
+
+---
+
 # song-search corrective 3: the two CI deep verify failures (run 45288550775)
 
 Goal: clear the only two red checks in CI run 45288550775 and leave the rest of song-search as it is. These close

@@ -263,12 +263,12 @@ export const gigRoom = {
     };
   },
 
-  /** A guest opens only their pass's gig, sees its lineup by first name, and is told what else their pass opens. */
+  /** A guest opens only their pass's gig, sees its lineup by first name, and is told what else their pass opens and when it ends. */
   open(band: RoomStore, userId: string, gigId: string): GigView & { names?: Record<string, string>; guest?: GuestOpens } {
     const { me } = inRoom(band.sql, userId, { gigId });
     const row = gigRow(band.sql, gigId);
     if (!row) throw refused("not-found");
-    return me.role === "guest" ? { ...viewOf(band, row), names: firstNames(band.sql, row), guest: guestOpens(band.sql, userId, Date.now()) } : viewOf(band, row);
+    return me.role === "guest" ? { ...viewOf(band, row), names: firstNames(band.sql, row), guest: guestOpens(band.sql, me, Date.now()) } : viewOf(band, row);
   },
 
   setLineup(band: RoomStore, userId: string, gigId: string, lineup: string[]): GigView {

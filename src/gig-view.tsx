@@ -4,7 +4,7 @@ import { bandSong } from "./band-setlist-view";
 import { BandStatusFaces } from "./band-status";
 import { playersFrom } from "./band-status-model";
 import type { BandView } from "./bands-model";
-import { atPassEnd, downloadPack, packToShow, type GigPack } from "./gig-pack";
+import { atPassEnd, downloadPack, packToShow, passGone, type GigPack } from "./gig-pack";
 import { gigLine, type GigView } from "./gig-plan-model";
 import type { GuestOpens } from "./guest-pass";
 import { GuestRooms } from "./guest-rooms";
@@ -129,18 +129,22 @@ export function GigViewScreen({ me, bandId, gigId, pack, position, onSignIn, onS
 
   const refused = (caught: unknown) => {
     if (caught instanceof ApiError && caught.status === 401) return onSignedOut();
+    passGone(gigId, caught).catch(() => {});
     if (!unreachable(caught) && caught instanceof ApiError && MESSAGES[caught.reason]) setProblem(MESSAGES[caught.reason]);
   };
 
-  // Asked again when the pack leaves the phone, so a guest whose pass just ended hears why.
+  // Asked again when the pack leaves the phone or the room shuts a guest's Band chat, so a guest whose pass just ended hears why.
   const noPack = pack === null;
+  const [shut, askAgain] = useReducer((n: number) => n + 1, 0);
   useEffect(() => {
     if (!me) return;
     api<GigView & { guest?: GuestOpens }>("/api/bands/gig/open", { bandId, gigId }).then((view) => {
       setOpened(view);
       if (view.gig.status === "ended") setProblem(MESSAGES["gig-ended"]);
     }, refused);
-  }, [me, bandId, gigId, noPack]);
+  }, [me, bandId, gigId, noPack, shut]);
+  // A guest's view, and the Band chat on it, closes the moment the pass ends. The end came with `gig/open`, so this needs no pack and no signal.
+  useEffect(() => atPassEnd(opened?.guest, () => setProblem(MESSAGES["pass-ended"])), [opened]);
   useEffect(() => {
     if (me) api<BandView>("/api/bands/open", { bandId }).then(setBand, () => {});
   }, [me, bandId]);
@@ -293,7 +297,7 @@ export function GigViewScreen({ me, bandId, gigId, pack, position, onSignIn, onS
           </ol>
         </section>
       ) : null}
-      {opened?.guest ? <GuestRooms me={me} bandId={bandId} opens={opened.guest} onSignedOut={onSignedOut} /> : null}
+      {opened?.guest ? <GuestRooms me={me} bandId={bandId} opens={opened.guest} onShut={askAgain} onSignedOut={onSignedOut} /> : null}
     </section>
   );
 }

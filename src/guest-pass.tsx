@@ -32,8 +32,8 @@ type GuestPass = {
 };
 type MadePass = { pass: GuestPass; code: string; link: string; expiresAt: number };
 type PassOpening = { bandId: string; gigId: string; gigName: string; bandName: string; expiresAt: number };
-/** What a guest's passes open beyond their gig, the shape `GuestOpens` in worker/room-guest.ts. `gig/open` sends it to a guest only. */
-export type GuestOpens = { canSeeChat: boolean; canSeeSetlists: boolean };
+/** What a guest's passes open beyond their gig and when the pass for the gig ends, the shape `GuestOpens` in worker/room-guest.ts. `gig/open` sends it to a guest only. */
+export type GuestOpens = { canSeeChat: boolean; canSeeSetlists: boolean; expiresAt: number };
 
 export type PassLength = { length: "tonight" } | { length: "week" } | { length: "date"; date: string };
 

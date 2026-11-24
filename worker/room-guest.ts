@@ -54,8 +54,12 @@ export type PassState = "live" | "revoked" | "ended";
 /** Where the caller asks `inRoom` to let a guest in: one gig, any of their gigs, the band chat, or the band's setlists. */
 export type GuestAccess = { gigId: string } | "gigs" | "chat" | "setlists";
 
-/** The two switches as they stand for a guest: whether any live pass they hold here opens the band chat or the band's setlists. */
-export type GuestOpens = { canSeeChat: boolean; canSeeSetlists: boolean };
+/**
+ * What a guest's gig view is told: the two switches as they stand, whether any live pass they hold here opens the band
+ * chat or the band's setlists, and when their last live pass for the gig ends, so the phone closes the view then with
+ * no pack to carry the end.
+ */
+export type GuestOpens = { canSeeChat: boolean; canSeeSetlists: boolean; expiresAt: number };
 
 export type GuestMe = { role: "guest"; user_id: string; pass: PassRow };
 
@@ -104,10 +108,15 @@ export function guestIn(sql: SqlStorage, userId: string, access: GuestAccess | u
   throw refused("guest");
 }
 
-/** What `userId`'s live passes here open beyond their gig, the same answer `inRoom` gives, so the gig view offers only what the room lets them read. */
-export function guestOpens(sql: SqlStorage, userId: string, now: number): GuestOpens {
-  const live = passesHeld(sql, userId, now).filter((pass) => pass.state === "live");
-  return { canSeeChat: live.some((pass) => grants(pass.row, "chat")), canSeeSetlists: live.some((pass) => grants(pass.row, "setlists")) };
+/** What the guest's live passes here open beyond the gig `me.pass` let them into, the same answer `inRoom` gives, so the gig view offers only what the room lets them read, and until when. */
+export function guestOpens(sql: SqlStorage, me: GuestMe, now: number): GuestOpens {
+  const live = passesHeld(sql, me.user_id, now).flatMap((pass) => (pass.state === "live" ? [pass.row] : []));
+  const gig = { gigId: me.pass.gig_id };
+  return {
+    canSeeChat: live.some((row) => grants(row, "chat")),
+    canSeeSetlists: live.some((row) => grants(row, "setlists")),
+    expiresAt: Math.max(me.pass.expires_at, ...live.flatMap((row) => (grants(row, gig) ? [row.expires_at] : []))),
+  };
 }
 
 /** A member as a guest sees them: first name only (PLAN.md 7.14). */

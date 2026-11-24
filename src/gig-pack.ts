@@ -29,9 +29,9 @@ export const packEnded = (pack: GigPack, now = Date.now()) => pack.expiresAt !==
 /** setTimeout fires at once when asked to wait longer than this, about 24.8 days. */
 const LONGEST_TIMER_MS = 2 ** 31 - 1;
 
-/** Runs `then` the moment the guest pass a pack came with ends, and returns what cancels it. A lineup player's pack never ends. */
-export function atPassEnd(pack: GigPack | null | undefined, then: () => void): () => void {
-  const ends = pack?.expiresAt;
+/** Runs `then` the moment a guest pass ends, by the end its pack or its gig view carries, and returns what cancels it. A lineup player's pack never ends. */
+export function atPassEnd(held: { expiresAt: number | null } | null | undefined, then: () => void): () => void {
+  const ends = held?.expiresAt;
   if (ends == null) return () => {};
   let timer: ReturnType<typeof setTimeout>;
   const wait = () => {
@@ -44,6 +44,13 @@ export function atPassEnd(pack: GigPack | null | undefined, then: () => void): (
 
 /** The server's words for a guest pass that no longer opens its gig. Its pack leaves the phone as soon as the phone hears one. */
 const PASS_GONE: readonly string[] = ["pass-revoked", "pass-ended"];
+
+/** Whether `error` is the server calling the gig's guest pass revoked or ended. If so the gig's pack is off this phone before this answers, whichever screen heard it. */
+export async function passGone(gigId: string, error: unknown): Promise<boolean> {
+  if (!(error instanceof ApiError) || !PASS_GONE.includes(error.reason)) return false;
+  await dropGigPacks((held) => held.gig.gigId === gigId);
+  return true;
+}
 
 /** How long a guest's phone waits for the server's word on the pass. A weak venue signal can leave a request hanging. */
 const ASK_PASS_MS = 4000;
@@ -67,9 +74,9 @@ export async function packToShow(gigId: string): Promise<GigPack | null> {
   if (pack.expiresAt === null) return pack;
   const verdict = api("/api/bands/gig/open", { bandId: pack.gig.bandId, gigId }).then(
     () => pack,
-    (error) => {
+    async (error) => {
       if (!(error instanceof ApiError)) throw error;
-      if (PASS_GONE.includes(error.reason)) return dropGigPacks((held) => held.gig.gigId === gigId).then(() => null);
+      if (await passGone(gigId, error)) return null;
       return error.reason === "offline" || error.status >= 500 ? pack : null;
     },
   );

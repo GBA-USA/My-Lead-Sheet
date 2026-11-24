@@ -57,11 +57,13 @@ function GuestSetlists({ bandId, onSignedOut }: { bandId: string; onSignedOut: (
 /**
  * On a guest's gig view, what their pass opens beyond tonight: Band chat and Band setlists, each only when the admin
  * switched it on. The Worker decides both (`guestOpens`); a guest isn't in the band, so neither shows anywhere else.
+ * When the room shuts the chat, because the pass was revoked or ended, the chat closes with the reason in its place and
+ * `onShut` has the gig view ask what the pass still opens.
  */
-export function GuestRooms({ me, bandId, opens, onSignedOut }: { me: string; bandId: string; opens: GuestOpens; onSignedOut: () => void }) {
+export function GuestRooms({ me, bandId, opens, onShut, onSignedOut }: { me: string; bandId: string; opens: GuestOpens; onShut: () => void; onSignedOut: () => void }) {
   const [shown, setShown] = useState<"chat" | "setlists" | null>(null);
   const [gone, setGone] = useState<unknown>(null);
-  if (!opens.canSeeChat && !opens.canSeeSetlists) return null;
+  if (!opens.canSeeChat && !opens.canSeeSetlists && !gone) return null;
   const toggle = (which: "chat" | "setlists") => setShown((open) => (open === which ? null : which));
   return (
     <section className="guest-rooms">
@@ -83,7 +85,7 @@ export function GuestRooms({ me, bandId, opens, onSignedOut }: { me: string; ban
         </p>
       ) : null}
       {shown === "chat" ? (
-        <Room inline guest me={me} roomId={bandId} entry={undefined} onEntry={() => {}} onGone={(error) => (setShown(null), setGone(error))} onSignedOut={onSignedOut} />
+        <Room inline guest me={me} roomId={bandId} entry={undefined} onEntry={() => {}} onGone={(error) => (setShown(null), setGone(error), onShut())} onSignedOut={onSignedOut} />
       ) : null}
       {shown === "setlists" ? <GuestSetlists bandId={bandId} onSignedOut={onSignedOut} /> : null}
     </section>

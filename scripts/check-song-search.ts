@@ -324,6 +324,28 @@ await check("6c. a reply for a query the box no longer holds is never shown", as
   assert.deepEqual(run.last(), { kind: "none", query: "new song" });
 });
 
+await check("6e. a request the catalog never answers says failed within 10 s, so Try again shows, and its late reply is dropped", async () => {
+  let release: (response: Response) => void = () => {};
+  const hung = new Promise<Response>((done) => (release = done));
+  const run = harness(() => (run.calls.length === 1 ? hung : new Response(js(EMPTY), { status: 200 })));
+  run.search("wagon wheel");
+  await untilSent(run, 1);
+  await run.time.advance(3000);
+  assert.deepEqual(run.last(), { kind: "searching", query: "wagon wheel" }, "a reply 3 s late still has time to come");
+  await run.time.advance(7000);
+  assert.deepEqual(run.last(), { kind: "failed", query: "wagon wheel" }, "10 s after the request left, the box says so");
+  assert.equal(run.calls.length, 1, "the box does not ask again by itself");
+  run.search("wagon wheel");
+  await untilSent(run, 2);
+  assert.ok(run.calls[1].at - run.calls[0].at >= 1000, `Try again left ${run.calls[1].at - run.calls[0].at} ms after the hung request`);
+  await run.time.advance(100);
+  assert.deepEqual(run.last(), { kind: "none", query: "wagon wheel" }, "Try again gets the catalog's answer");
+  release(new Response(js(PAYLOAD), { status: 200 }));
+  await run.time.advance(100);
+  assert.ok(!run.states.some((state) => state.kind === "found"), "the hung request's late rows never show");
+  assert.equal(run.calls.length, 2, "two requests in all");
+});
+
 await check("7a. rapid typing sends one request, after a 400-800 ms pause", async () => {
   const run = harness();
   for (const [index, text] of ["f", "fi", "fir", "fire", "fire ", "fire a", "fire aw", "fire away"].entries()) {

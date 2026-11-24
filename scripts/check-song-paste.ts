@@ -448,6 +448,12 @@ await check("12e. a paste of words with site lines and a blank line after every 
   assert.deepEqual([plain.chart, plain.facts], [[words[0], words[1], "", words[2], words[3]].join("\n"), {}], "the same words typed plainly stay as pasted");
 });
 
+await check("12f. short lines typed with one chord each stay lines; only words that run on are a page copy", () => {
+  const typed = ["G", "Oh yeah", "C", "Oh no", "", "D", "Hey there", "G", "Go now"].join("\n");
+  assert.equal(read(typed).chart, typed, "a chart the app already reads stays as pasted");
+  assert.deepEqual(sections(read(typed).chart).map((section) => section.lines.map((line) => line.lyrics)), [["Oh yeah", "Oh no"], ["Hey there", "Go now"]], "each line its own");
+});
+
 await check("13. readPaste is stable: its own output reads back as the same chart, and a chart the app already reads stays as pasted", () => {
   assert.ok(FIXTURES.length > 20, "the fixtures above ran");
   for (const fixture of FIXTURES) {

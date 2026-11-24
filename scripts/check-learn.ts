@@ -26,6 +26,7 @@ const entry = `
   export * from "./src/learn-analyze.ts";
   export * from "./src/learn-result.ts";
   export { heardBars } from "./src/learn-chords.ts";
+  export { placeHeadings } from "./src/learn-sections.ts";
   export * from "./src/scroll-timing.ts";
   export { loadScrollVersions, saveScrollVersions } from "./src/storage.ts";
   export { LearnSong } from "./src/learn-song.tsx";
@@ -50,6 +51,7 @@ writeFileSync(bundle, bundled.outputFiles[0].text);
 type Learn = typeof import("../src/learn-analyze.ts") &
   typeof import("../src/learn-result.ts") &
   Pick<typeof import("../src/learn-chords.ts"), "heardBars"> &
+  Pick<typeof import("../src/learn-sections.ts"), "placeHeadings"> &
   typeof import("../src/scroll-timing.ts") &
   typeof import("../src/cues.tsx") &
   Pick<typeof import("../src/storage.ts"), "loadScrollVersions" | "saveScrollVersions"> & {

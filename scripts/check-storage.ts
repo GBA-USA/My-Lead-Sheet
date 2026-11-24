@@ -182,11 +182,40 @@ const version = (sections: unknown[]) => ({ name: "V1", bpm: 100, marks: [{ at: 
 storage.map.set(`${app.SCROLL_VERSIONS_KEY}.13`, JSON.stringify({ versions: [version(learned.sections)], selected: 0 }));
 const old = app.loadScrollVersions("local/13");
 check(old.selected === 0 && old.versions[0].learned?.sections.every((section) => section.heard === undefined), "a learned version saved before heard chords still loads, with no heard bars");
-const kept = [{ heading: "VERSE 1", at: 0, heard: ["A7", null, "D7"] }, learned.sections[1]];
+const onDisk = () => JSON.parse(storage.map.get(`${app.SCROLL_VERSIONS_KEY}.13`)!).versions[0].learned.sections;
+const loadedSections = () => JSON.stringify(app.loadScrollVersions("local/13").versions[0]?.learned?.sections);
+const kept = [{ heading: "VERSE 1", at: 0, heard: [{ chord: "A7", band: "likely" }, { chord: null, band: "likely" }, { chord: "D7", band: "likely" }] }, learned.sections[1]];
 app.saveScrollVersions("local/13", { versions: [version(kept)], selected: 0 });
-check(JSON.stringify(app.loadScrollVersions("local/13").versions[0].learned?.sections) === JSON.stringify(kept), "kept heard bars, not-sure bars included, load back as saved");
-storage.map.set(`${app.SCROLL_VERSIONS_KEY}.13`, JSON.stringify({ versions: [version([{ heading: "VERSE 1", at: 0, heard: ["A7", 7] }])], selected: 0 }));
-check(app.loadScrollVersions("local/13").versions.length === 0, "a version whose heard bars are not chord names is dropped");
+check(loadedSections() === JSON.stringify(kept), "kept heard bars, not-sure bars included, load back as saved");
+check(JSON.stringify(onDisk()) === JSON.stringify([{ heading: "VERSE 1", at: 0, heard: ["A7", null, "D7"] }, learned.sections[1]]), `likely heard chords are stored as chord names alone, as a build from before colors stores them (${JSON.stringify(onDisk())})`);
+const colored = [{ heading: "VERSE 1", at: 0, heard: [{ chord: "A7", band: "sure" }, { chord: null, band: "check" }, { chord: "C", band: "set", was: "Am" }, { chord: "D7", band: "likely" }] }, learned.sections[1]];
+app.saveScrollVersions("local/13", { versions: [version(colored)], selected: 0 });
+check(loadedSections() === JSON.stringify(colored), `heard chords keep their bands, and a player's pick keeps the chord it replaced (${loadedSections()})`);
+check(
+  JSON.stringify(onDisk()[0].heard) === JSON.stringify(["A7", null, "C", "D7"]) && onDisk()[0].cells?.length === 4,
+  `colored heard chords are still stored as the chord names a build from before colors reads, their bands beside them (${JSON.stringify(onDisk()[0])})`,
+);
+storage.map.set(`${app.SCROLL_VERSIONS_KEY}.13`, JSON.stringify({ versions: [version([{ heading: "VERSE 1", at: 0, heard: ["G", null] }])], selected: 0 }));
+check(loadedSections() === JSON.stringify([{ heading: "VERSE 1", at: 0, heard: [{ chord: "G", band: "likely" }, { chord: null, band: "likely" }] }]), `heard bars saved before colors load as likely chords (${loadedSections()})`);
+const cellsOnDisk = [{ heading: "VERSE 1", at: 0, heard: [{ chord: "G", band: "sure" }, { chord: "C", band: "set", was: null }] }];
+storage.map.set(`${app.SCROLL_VERSIONS_KEY}.13`, JSON.stringify({ versions: [version(cellsOnDisk)], selected: 0 }));
+check(loadedSections() === JSON.stringify(cellsOnDisk), `heard chords stored as cells load as they are (${loadedSections()})`);
+for (const [what, heard] of [["not chord names", ["A7", 7]], ["in a band there is not", [{ chord: "A7", band: "green" }]], ["names and cells mixed", ["A7", { chord: "D7", band: "sure" }]]] as const) {
+  storage.map.set(`${app.SCROLL_VERSIONS_KEY}.13`, JSON.stringify({ versions: [version([{ heading: "VERSE 1", at: 0, heard }])], selected: 0 }));
+  check(app.loadScrollVersions("local/13").versions.length === 0, `a version whose heard bars are ${what} is dropped`);
+}
+const timed = { ...version(learned.sections), learned: { ...learned, plays: [{ section: 0, at: 2.4 }, { section: 1, at: 3.6 }, { section: 0, at: 4.2 }], lines: [{ section: 1, line: 0, at: 3.7 }], offset: -1.5 } } as ScrollVersion;
+app.saveScrollVersions("local/13", { versions: [timed], selected: 0 });
+check(JSON.stringify(app.loadScrollVersions("local/13").versions[0]) === JSON.stringify(timed), "a learned version's play order, line starts and recording offset load back as saved");
+for (const [what, extra] of [
+  ["a play of a section it does not have", { plays: [{ section: 2, at: 4 }] }],
+  ["a line in a section it does not have", { lines: [{ section: 5, line: 0, at: 4 }] }],
+  ["a line counted from -1", { lines: [{ section: 0, line: -1, at: 4 }] }],
+  ["an offset that is not a number", { offset: "1.5" }],
+] as const) {
+  storage.map.set(`${app.SCROLL_VERSIONS_KEY}.13`, JSON.stringify({ versions: [{ ...version(learned.sections), learned: { ...learned, ...extra } }], selected: 0 }));
+  check(app.loadScrollVersions("local/13").versions.length === 0, `a version with ${what} is dropped`);
+}
 
 freshStorage();
 const taught = { name: "V1", bpm: 78, marks: [{ at: 0, progress: 0 }, { at: 12.5, progress: 0.2 }, { at: 30, progress: 0.2 }, { at: 190, progress: 1 }] };
@@ -198,6 +227,8 @@ const learnedV2 = {
   tempo: [{ at: 0, bpm: 76 }],
   learned: { beatsPerBar: 4, downbeat: 1.92, beats: [1.92, 2.71, 3.5, 4.29], sections: [{ heading: "VERSE 1", at: 0, heard: ["G", null, "C"] }, { heading: "CHORUS", at: 42.1 }], vocals: [{ start: 3.1, end: 20.4 }] },
 };
+/** A stored versions list as it loads: each kept heard chord stored as a name comes back as a likely cell. */
+const asLoaded = (raw: string) => JSON.stringify(JSON.parse(raw, (key, value) => (key === "heard" && Array.isArray(value) ? value.map((chord) => ({ chord, band: "likely" })) : value)));
 const phone: Record<string, string> = {
   "leadSheetsScrollVersions.13": JSON.stringify({ versions: [taught, tempoMapped, learnedV2], selected: 2 }),
   "leadSheetsScrollVersions.10": JSON.stringify({ versions: [tempoMapped], selected: null }),
@@ -219,7 +250,7 @@ check(
   "every setlist lists its songs as refs, in the same order",
 );
 check(storage.getItem("leadSheetsLibrary") === storedBefore && !storedBefore.includes("songRefs") && !storedBefore.includes('"ref"'), "the stored library keeps the shape an older build reads");
-check(JSON.stringify(app.loadScrollVersions(ref(13))) === phone["leadSheetsScrollVersions.13"], "old taught, tempo-mapped and learned versions load byte-equal under the song's ref");
+check(JSON.stringify(app.loadScrollVersions(ref(13))) === asLoaded(phone["leadSheetsScrollVersions.13"]), "old taught, tempo-mapped and learned versions load under the song's ref, their heard bars as likely chords");
 check(JSON.stringify(app.loadScrollVersions(ref(10))) === phone["leadSheetsScrollVersions.10"], "another song's old versions load byte-equal under its ref");
 check(JSON.stringify(app.loadSongData(ref(13))) === phone["leadSheetsSongData.13"], "old song data loads byte-equal under the song's ref");
 check(app.loadScrollPercent(ref(13)) === 85 && app.loadNotation(ref(13)) === "nashville", "old per-song scroll speed and notation load under the song's ref");
@@ -232,7 +263,7 @@ check([...storage.map.keys()].sort().join() === keysBefore, "saving under the re
 const mixed = { versions: [taught, { name: "Low set", semitones: -2, metronomeBpm: 72, scrollPercent: 90, notation: "nashville" }, learnedV2], selected: 1 };
 const twelve: SongRef = "local/12";
 storage.map.set("leadSheetsScrollVersions.12", JSON.stringify(mixed));
-check(JSON.stringify(app.loadScrollVersions(twelve)) === JSON.stringify(mixed), "old versions still read: old taught and learned rows load unchanged beside a version with no taught timing, in order, with its selection");
+check(JSON.stringify(app.loadScrollVersions(twelve)) === asLoaded(JSON.stringify(mixed)), "old versions still read: old taught and learned rows load beside a version with no taught timing, in order, with its selection");
 storage.map.set("leadSheetsScrollVersions.12", JSON.stringify({ versions: [{ name: "Half", bpm: 78 }, { name: "Odd", semitones: "two" }, taught], selected: 2 }));
 check(JSON.stringify(app.loadScrollVersions(twelve)) === JSON.stringify({ versions: [taught], selected: null }), "a version with timing but no marks, or a bad setting, is dropped and the selection falls back");
 
@@ -246,7 +277,7 @@ app.saveNotation(bandSong.ref, "notes");
 check(JSON.stringify(app.loadScrollVersions(bandSong.ref)) === JSON.stringify({ versions: [taught], selected: 0 }) && app.loadSongData(bandSong.ref).tempo === 90, "a band song keeps its own versions and song data");
 check(app.loadScrollPercent(bandSong.ref) === 60 && app.loadNotation(bandSong.ref) === "notes", "a band song keeps its own scroll speed and notation");
 check(
-  JSON.stringify(app.loadScrollVersions(ref(13))) === phone["leadSheetsScrollVersions.13"] &&
+  JSON.stringify(app.loadScrollVersions(ref(13))) === asLoaded(phone["leadSheetsScrollVersions.13"]) &&
     JSON.stringify(app.loadSongData(ref(13))) === phone["leadSheetsSongData.13"] &&
     app.loadScrollPercent(ref(13)) === 85 &&
     app.loadNotation(ref(13)) === "nashville",

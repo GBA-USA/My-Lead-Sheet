@@ -3,7 +3,7 @@ import { PER_ACCOUNT, SONG_SETTING_KEYS } from "./backup-keys";
 import { clampScrollPercent, isNotation, pitchClass, type Notation } from "./music";
 import { parsePersonal, type PersonalDefaults } from "./personal-settings-model";
 import { CHOICE_WORDS, type RouteChoice } from "./routes";
-import type { Learned, Mark, ScrollPlan, Span, Tempo } from "./scroll-timing";
+import type { HeardCell, Learned, Mark, ScrollPlan, Span, Tempo } from "./scroll-timing";
 import type { BassNote, ChartLine, ChartSection, CopyMark, Library, LibraryFile, Song, SongData, SongRef } from "./types";
 
 export const LIBRARY_KEY = "leadSheetsLibrary";
@@ -594,15 +594,62 @@ const isMark = shaped<Mark>({
   progress: (value) => typeof value === "number" && value >= 0 && value <= 1,
 });
 
-const isLearned = shaped<Learned>({
+/**
+ * A learned section as stored. Its kept heard chords are names in `heard`, null where not sure, as a build from
+ * before colors reads them, and `cells` beside them holds each one's band, and the chord a pick replaced, when any is
+ * not likely. That build drops a version whose `heard` holds anything else, and its next write of the song stores
+ * the shorter list, which backup spreads to every phone.
+ */
+type StoredSection = Omit<Learned["sections"][number], "heard"> & { heard?: (string | null)[] | HeardCell[]; cells?: Omit<HeardCell, "chord">[] };
+
+const isChordName: Check = (value) => value === null || isString(value);
+const isBand: Check = (value) => value === "sure" || value === "likely" || value === "check" || value === "set";
+const isIndex: Check = (value) => Number.isInteger(value) && (value as number) >= 0;
+
+const isLearnedShape = shaped<Learned>({
   beatsPerBar: (value) => Number.isInteger(value) && (value as number) > 0,
   downbeat: isPositive,
   beats: listOf(isTime),
   sections: listOf(
-    shaped<Learned["sections"][number]>({ heading: isString, at: isTime, heard: optional(listOf((value) => value === null || isString(value))) }),
+    shaped<StoredSection>({
+      heading: isString,
+      at: isTime,
+      heard: optional((value) => listOf(isChordName)(value) || listOf(shaped<HeardCell>({ chord: isChordName, band: isBand, was: optional(isChordName) }))(value)),
+      cells: optional(listOf(shaped<Omit<HeardCell, "chord">>({ band: isBand, was: optional(isChordName) }))),
+    }),
   ),
+  plays: optional(listOf(shaped<Required<Learned>["plays"][number]>({ section: isIndex, at: isTime }))),
+  lines: optional(listOf(shaped<Required<Learned>["lines"][number]>({ section: isIndex, line: isIndex, at: isTime }))),
+  offset: optional((value) => typeof value === "number" && Number.isFinite(value)),
   vocals: listOf(shaped<Span>({ start: isTime, end: isTime })),
 });
+
+/** Every play and line names a section the version has. */
+const isLearned: Check = (value) => {
+  if (!isLearnedShape(value)) return false;
+  const { sections, plays = [], lines = [] } = value as Learned;
+  return [...plays, ...lines].every((each) => each.section < sections.length);
+};
+
+/** Kept heard chords stored as names come back as cells, each in its stored band, or likely when it has none. */
+function withHeardCells(version: StoredVersion): StoredVersion {
+  if (!version.learned?.sections.some((section) => section.heard)) return version;
+  const sections = (version.learned.sections as StoredSection[]).map(({ heard, cells, ...section }) =>
+    heard ? { ...section, heard: heard.map((each, i): HeardCell => (typeof each === "object" && each !== null ? each : { chord: each, ...(cells?.[i] ?? { band: "likely" as const }) })) } : section,
+  );
+  return { ...version, learned: { ...version.learned, sections } };
+}
+
+/** Kept heard chords go to disk as names, with their bands beside them only when one is not likely. */
+function withHeardNames(version: StoredVersion): StoredVersion {
+  if (!version.learned?.sections.some((section) => section.heard)) return version;
+  const sections: StoredSection[] = version.learned.sections.map(({ heard, ...section }) => {
+    if (!heard) return section;
+    const likely = heard.every((cell) => cell.band === "likely" && cell.was === undefined);
+    return { ...section, heard: heard.map((cell) => cell.chord), ...(likely ? {} : { cells: heard.map(({ chord: _chord, ...cell }) => cell) }) };
+  });
+  return { ...version, learned: { ...version.learned, sections } as Learned };
+}
 
 const isTempoMap: Check = (value) => {
   if (!listOf(shaped<Tempo>({ at: isTime, bpm: isPositive }))(value)) return false;
@@ -674,14 +721,14 @@ function withoutChordsOnly(row: unknown): unknown {
 
 export function loadScrollVersions(ref: SongRef): ScrollVersions {
   const value = readSongPref(SCROLL_VERSIONS_KEY, ref) as Partial<ScrollVersions> | undefined;
-  const versions = Array.isArray(value?.versions) ? value.versions.map(withoutEvenPace).map(withoutChordsOnly).filter(isVersion) : [];
+  const versions = Array.isArray(value?.versions) ? value.versions.map(withoutEvenPace).map(withoutChordsOnly).filter(isVersion).map(withHeardCells) : [];
   const selected = value?.selected;
   const valid = typeof selected === "number" && Number.isInteger(selected) && selected >= 0 && selected < versions.length;
   return { versions, selected: valid ? selected : null };
 }
 
 export function saveScrollVersions(ref: SongRef, value: ScrollVersions): boolean {
-  return writeRaw(`${SCROLL_VERSIONS_KEY}.${refKey(ref)}`, JSON.stringify({ ...value, versions: value.versions.map((version) => withChordsOnly(withEvenPace(version))) }));
+  return writeRaw(`${SCROLL_VERSIONS_KEY}.${refKey(ref)}`, JSON.stringify({ ...value, versions: value.versions.map((version) => withChordsOnly(withEvenPace(withHeardNames(version)))) }));
 }
 
 /** Applies one change to the stored versions, not to a copy a screen holds, so a version pulled meanwhile stays. Null when the browser refused the write. */

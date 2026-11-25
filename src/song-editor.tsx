@@ -29,8 +29,8 @@ type Form = { title: string; artist: string; keyRoot: string; keyMode: KeyMode; 
 const DETAILS: readonly (keyof Form)[] = ["title", "artist", "keyRoot", "keyMode", "bpm", "timeSignature"];
 /** Why a lookup gave no guess, for the part of the song it was looking for. */
 const NO_LOOKUP: Record<"offline" | "failed", (missing: string) => string> = {
-  offline: (missing) => `You're offline, so the ${missing} can't be looked up. Type it in, or try again.`,
-  failed: (missing) => `The song list didn't answer. Type the ${missing} in, or try again.`,
+  offline: (missing) => `You're offline, so the ${missing} can't be looked up. Try again when you're back online.`,
+  failed: (missing) => `The song list didn't answer, so the ${missing} can't be looked up. Try again in a moment.`,
 };
 
 const formOf = (song?: Song): Form => ({

@@ -209,8 +209,11 @@ function titleLines(sections: ChartSection[]): string[] {
       const words = plainWords(lyrics ?? "");
       if (words.length < TITLE_WORDS.min || words.length > TITLE_WORDS.max) continue;
       const line = lines.get(words.join(" "));
-      if (line) Object.assign(line, { count: line.count + 1, chorus: line.chorus || chorus });
-      else lines.set(words.join(" "), { count: 1, chorus, words: words.length, at: lines.size });
+      if (!line) lines.set(words.join(" "), { count: 1, chorus, words: words.length, at: lines.size });
+      else {
+        line.count += 1;
+        line.chorus ||= chorus;
+      }
     }
   }
   return [...lines]

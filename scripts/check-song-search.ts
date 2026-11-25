@@ -776,6 +776,63 @@ await check("11h. stop() between the two lines ends the lookup: no second reques
   assert.ok(!run.heard.some((lookup) => lookup.kind !== "searching"), "and it never said none");
 });
 
+/** A chart that sings each line as many times as its count, all in one chorus. */
+const singing = (lines: [line: string, times: number][]): LookupSection[] => [
+  { heading: "Chorus", lines: lines.flatMap(([lyrics, times]) => Array.from({ length: times }, () => ({ chords: "G C", lyrics }))) },
+];
+const released = (recording: object, score: number, releases: number) => ({ ...recording, score, releases: Array.from({ length: releases }, (_, i) => ({ id: `release-${i}` })) });
+const asked = (url: string) => new URL(url).searchParams.get("query") ?? "";
+
+await check("11i. a title is asked so the catalog scores a widely released recording higher, and of the rows it scores the same the most released is the first guess", async () => {
+  const covers = Array.from({ length: 11 }, (_, i) => released(recordingOf(`cover-${i}`, "Carry the Lantern Home", `Cover Band ${i}`), 100, i === 4 ? 3 : 1));
+  const rows = [
+    ...covers,
+    released(recordingOf("known", "Carry the Lantern Home", "The Made Up Band"), 100, 40),
+    released(recordingOf("scored-lower", "Carry the Lantern Home", "Band Lower"), 92, 90),
+  ];
+  const run = lookupRun(() => replyWith(rows));
+  await run.time.advance(4000);
+  const final = run.final();
+  assert.deepEqual(final.kind === "found" ? final.songs.map((song) => song.id) : final, ["known", "cover-4", "cover-0"], "the most released first, the catalog's order after that, and its score before either");
+  const typed = lookupRun(() => replyWith(rows), { known: { title: "Carry the Lantern Home", artist: "" } });
+  await typed.time.advance(4000);
+  const typedFinal = typed.final();
+  assert.equal(typedFinal.kind === "found" ? typedFinal.songs[0].id : typedFinal.kind, "known", "a typed title too");
+  for (const call of [run.calls[0], typed.calls[0]]) {
+    assert.match(asked(call.url), /primarytype:single\^=\d/, "a recording released as a single scores higher");
+    assert.match(asked(call.url), /country:[A-Z]{2}\^=\d/, "and so does one released in more places");
+  }
+});
+
+await check("11j. a sung line keeps its apostrophes when it is asked, straight ones for curly ones, and loses its other punctuation", async () => {
+  const reply = () => replyWith([recordingOf("r1", "Don't Stop the Lantern's Light", "The Made Up Band")]);
+  const straight = lookupRun(reply, { sections: singing([["Don't stop, the lantern's light!", 3]]) });
+  await straight.time.advance(4000);
+  assert.deepEqual(straight.calls.map((call) => phrase(call.url)), ["don't stop the lantern's light"]);
+  const final = straight.final();
+  assert.deepEqual(final.kind === "found" ? final.songs.map((song) => song.title) : final, ["Don't Stop the Lantern's Light"], "and the catalog's spelling comes back as the guess");
+  const curly = lookupRun(reply, { sections: singing([["Don’t stop the lantern’s light", 3]]) });
+  await curly.time.advance(4000);
+  assert.deepEqual(curly.calls.map((call) => phrase(call.url)), ["don't stop the lantern's light"], "a curly apostrophe is asked as a straight one");
+  const typed = lookupRun(reply, { known: { title: "Don’t Stop the Lantern’s Light", artist: "" } });
+  await typed.time.advance(4000);
+  assert.deepEqual(typed.calls.map((call) => phrase(call.url)), ["don't stop the lantern's light"], "in a typed title too");
+});
+
+await check("11k. only a sung line of 2 to 8 words is asked: a one-word line and a nine-word line never leave the phone, however often they are sung", async () => {
+  const ONE = "Lantern";
+  const TWO = "Lantern road";
+  const EIGHT = "Boots are wet and the wind is low";
+  const NINE = "Carry the lantern home over the hill tonight friend";
+  const run = lookupRun(() => replyWith([]), { sections: singing([[ONE, 5], [NINE, 4], [TWO, 2], [EIGHT, 1]]) });
+  await run.time.advance(12000);
+  assert.deepEqual(run.calls.map((call) => phrase(call.url)), [TWO.toLowerCase(), EIGHT.toLowerCase()], "the two-word line and the eight-word line, and neither of the others");
+  const neither = lookupRun(() => replyWith([recordingOf("r1", ONE, "The Made Up Band")]), { sections: singing([[ONE, 5], [NINE, 4]]) });
+  await neither.time.advance(4000);
+  assert.equal(neither.calls.length, 0, "a chart with only those two lines asks nothing");
+  assert.deepEqual(neither.heard, [{ kind: "none" }]);
+});
+
 // ---------------------------------------------------------------------------------------------- screen cases
 
 /** In the page before any app script: the catalog answers from here by `__mb.mode`, every other host is refused and logged, and window.open is logged. */

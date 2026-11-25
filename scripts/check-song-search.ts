@@ -782,6 +782,19 @@ const singing = (lines: [line: string, times: number][]): LookupSection[] => [
 ];
 const released = (recording: object, score: number, releases: number) => ({ ...recording, score, releases: Array.from({ length: releases }, (_, i) => ({ id: `release-${i}` })) });
 const asked = (url: string) => new URL(url).searchParams.get("query") ?? "";
+/** Whether the catalog lists a recording of the asked title for a title query `A AND (B OR C ...)`, read as the catalog reads it. */
+const listsRecording = (query: string, recording: { single: boolean; places: string[] }) => {
+  const [must, any] = query.split(" AND ");
+  const holds = (clause: string) => {
+    const field = clause.replace(/\^=\d+$/, "");
+    if (field.startsWith("recording:")) return true;
+    if (field === "primarytype:single") return recording.single;
+    const place = /^country:([A-Z]{2})$/.exec(field);
+    if (place) return recording.places.includes(place[1]);
+    throw new Error(`a clause this check cannot read: ${clause}`);
+  };
+  return holds(must) && any.replace(/^\(|\)$/g, "").split(" OR ").some(holds);
+};
 
 await check("11i. a title is asked so the catalog scores a widely released recording higher, and of the rows it scores the same the most released is the first guess", async () => {
   const covers = Array.from({ length: 11 }, (_, i) => released(recordingOf(`cover-${i}`, "Carry the Lantern Home", `Cover Band ${i}`), 100, i === 4 ? 3 : 1));
@@ -801,6 +814,8 @@ await check("11i. a title is asked so the catalog scores a widely released recor
   for (const call of [run.calls[0], typed.calls[0]]) {
     assert.match(asked(call.url), /primarytype:single\^=\d/, "a recording released as a single scores higher");
     assert.match(asked(call.url), /country:[A-Z]{2}\^=\d/, "and so does one released in more places");
+    assert.ok(listsRecording(asked(call.url), { single: true, places: ["US"] }), "a single released in the US is listed");
+    assert.ok(listsRecording(asked(call.url), { single: false, places: ["FI"] }), "and so is an album track released only in Finland, so a little-known song can be looked up");
   }
 });
 

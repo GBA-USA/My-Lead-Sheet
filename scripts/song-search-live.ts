@@ -41,7 +41,10 @@ const LINES: Record<string, (song: CatalogSong) => boolean> = {
   "YOU AND ME": titled("you and me"),
 };
 
-/** [the title as a chart sings it or a player types it, the artist a player expects]. The last six were not used to shape the query. */
+/**
+ * [the title as a chart sings it or a player types it, the artist a player expects]. The last seven were not used to shape
+ * the query. The last is an album track released only in Finland, so it is found only while every recording of the title matches.
+ */
 const SUNG: [line: string, artist: string][] = [
   ["Stand by me", "ben e. king"],
   ["Let it be", "beatles"],
@@ -63,6 +66,7 @@ const SUNG: [line: string, artist: string][] = [
   ["Hotel California", "eagles"],
   ["Friends in low places", "garth brooks"],
   ["Sweet home Alabama", "lynyrd skynyrd"],
+  ["Hän tanssi kanssa enkeleiden", "yö"],
 ];
 const TYPED: [title: string, artist: string][] = [
   ["Wagon Wheel", "old crow medicine show"],

@@ -151,3 +151,19 @@ well-known song can pass the 8 second limit. The lookup then says it failed and 
 | `check:song-paste` | 59 ok, 0 FAIL |
 | `check:new-song` | 36 ok, 0 FAIL |
 | Six mutations of the fix, `.verify-logs/fix-pr116/mutate.mjs` | each fails 11i, 11j or 11k |
+
+## Deep fix after the deep verify at e48e5e6
+
+The verify found one P2. The last clause of `titleQuery`, `OR recording:"…"^=0`, makes every recording of the title
+match. Without it, only a recording that was released as a single or in a place of `WIDE` is listed. No check and no
+live line noticed when the clause was deleted. The query was already right, so this round changes tests only.
+
+| Change | Proof |
+|---|---|
+| Case 11i reads the asked query the way the catalog reads it, `A AND (B OR C …)`. It asserts that an album track released only in Finland is listed, and so is a US single. A clause the check cannot read fails the case | With the clause deleted (mutation N1 of `.verify-logs/fix-deep/mutate.mjs`), 11i fails. At this head it passes |
+| `SUNG` in `scripts/song-search-live.ts` adds "Hän tanssi kanssa enkeleiden" by Yö, a Finland-only album track | Live on Nov 25, 2026, Yö is guess 2 of 3 with the clause. With the clause deleted the lookup says none and the line FAILs |
+
+| Run | Result |
+|---|---|
+| `check:song-search` | 63 ok, 0 FAIL |
+| `mutate.mjs N0 N1 N5 N6` | N0 passes. N1 fails 11i. N5 and N6 (the weights 2 and 1) still pass. The live script is what holds the weights, as before |

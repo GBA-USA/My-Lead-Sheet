@@ -799,6 +799,33 @@ await check("14. src/song-paste.ts makes no network call", () => {
   for (const banned of ["fetch", "XMLHttpRequest", "WebSocket", "import("]) assert.ok(!source.includes(banned), `no ${banned}`);
 });
 
+/** A chord page with every fact on its own line above the chart, and the same chart with no fact at all. Made-up words. */
+const CHROME = fixture("chrome-facts.txt");
+const BARE = fixture("bare-words.txt");
+
+await check("14b. a page with a title line, a by line, Key, Capo, BPM and Time gives every fact, as it sounds and as shapes, and none of those lines stays in the chart", () => {
+  const sounding = read(CHROME);
+  assert.deepEqual(
+    { title: sounding.facts.title, artist: sounding.facts.artist, tempo: sounding.facts.tempo, timeSignature: sounding.facts.timeSignature, capo: sounding.facts.capo, keyRoot: sounding.facts.keyRoot, keyMode: sounding.facts.keyMode },
+    { title: "Lantern Road", artist: "The Made Up Band", tempo: 96, timeSignature: "6/8", capo: 2, keyRoot: "A", keyMode: "major" },
+    `the facts as the chart sounds (${js(sounding.facts)})`,
+  );
+  const shapes = paste().readPaste(CHROME, "shapes");
+  assert.deepEqual([shapes.facts.keyRoot, shapes.facts.keyMode, shapes.facts.title, shapes.facts.artist], ["G", "major", "Lantern Road", "The Made Up Band"], "the shapes keep the page's key, title and artist");
+  assert.deepEqual(headings(sounding.chart), ["VERSE 1", "CHORUS"], "the chart is the verse and the chorus");
+  for (const gone of ["Lantern Road Chords", "by The Made Up Band", "Key: G", "Capo: 2nd fret", "BPM 96", "Time: 6/8", "Difficulty: novice"]) {
+    assert.ok(!lines(sounding.chart).some((line) => line.trim() === gone), `${gone} leaves the chart`);
+  }
+  assert.deepEqual(tokens(sections(sounding.chart)[0].lines[0]), ["A", "D"], "the first row sounds a tone up, capo 2");
+});
+
+await check("14c. the same chart with no fact line gives no title and no artist, so those two wait for the player or a lookup", () => {
+  const pasted = read(BARE);
+  assert.equal(pasted.facts.title, undefined, "no title");
+  assert.equal(pasted.facts.artist, undefined, "no artist");
+  assert.deepEqual(headings(pasted.chart), ["Verse 1", "Chorus", "Verse 2", "Chorus"], "the chart keeps its four sections");
+});
+
 // Screen cases.
 
 /** A chord chart as a site shows it: site lines, header facts, tab, and two odd spellings. */
@@ -851,7 +878,33 @@ const SCREEN_CASES = [
   "28. a paste with the caret at the top of a chart, or over part of its first line, is left to the box and the chart stays as typed",
   "29. a paste scrolls the preview into view, and a capo switch or Use it as pasted leaves the screen where the player tapped",
   "30. the status line says how many lines of each kind were left out, in the word for one line and for two",
+  "31. a paste with a title line, a by line, Key, Capo, BPM and Time fills each field from the paste, asks the catalog nothing, saves nothing, and folds the details to Lantern Road · The Made Up Band",
+  "32. a bare paste shows the catalog's title and artist as a guess: no field takes it and nothing is stored until the player taps it, and Save then stores the title, artist and length",
+  "32b. a guess the player never taps writes nothing: a typed title saves with no artist and no length from the catalog",
+  "33. an offline or failed lookup fills nothing, says so with Try again and throws nothing; the details stay open on the title, Save asks for a title and stores nothing, and a typed title then saves",
+  "34. the details fold, a guess, Add a title and Try again are at least 44 px tall and not clipped at 360 px and 390 px",
 ];
+
+const RECORDING_SEARCH = "https://musicbrainz.org/ws/2/recording";
+/**
+ * In the page before any app script: the song catalog answers from here, so no case reaches the live catalog. It says
+ * no songs unless a case sets `__catalog.mode` to "found" (with `recordings`), "offline" or "failed".
+ */
+const CATALOG_STUB = `(() => {
+  window.__catalog = { mode: "none", recordings: [], calls: [] };
+  const realFetch = window.fetch.bind(window);
+  window.fetch = (input, init = {}) => {
+    const href = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    const url = new URL(href, location.href);
+    if (url.origin === location.origin) return realFetch(input, init);
+    window.__catalog.calls.push(url.href);
+    const { mode, recordings } = window.__catalog;
+    if (mode === "offline") return Promise.reject(new TypeError("Failed to fetch"));
+    if (mode === "failed") return Promise.resolve(new Response("oops", { status: 500 }));
+    const found = mode === "found" ? recordings : [];
+    return Promise.resolve(new Response(JSON.stringify({ created: "2026-11-24T00:00:00.000Z", count: found.length, offset: 0, recordings: found }), { status: 200, headers: { "content-type": "application/json" } }));
+  };
+})();`;
 
 const api = createServer((request, response) => {
   const path = new URL(request.url ?? "/", "http://localhost").pathname;
@@ -876,6 +929,7 @@ if (site) {
   const s = site;
   try {
     const app = await appPage(s);
+    await s.send("Page.addScriptToEvaluateOnNewDocument", { source: CATALOG_STUB });
     const HEIGHT = 780;
     const phone = async (width: number) => {
       await s.send("Emulation.setDeviceMetricsOverride", { width, height: HEIGHT, deviceScaleFactor: 2, mobile: true });
@@ -1314,6 +1368,187 @@ if (site) {
           assert.ok(words.includes(want), `the status line says ${js(want)} (${js(words)})`);
         }
       }
+    });
+
+    // Cases 31 on: the facts a paste fills, the lookup for a missing title or artist, and the details fold.
+    /** The fold's button: the one that says whether the part holding the Title field is open. */
+    const fold = `[...${editor}.querySelectorAll("button[aria-expanded][aria-controls]")].find((b) => document.getElementById(b.getAttribute("aria-controls"))?.contains(${field("Title")}))`;
+    const foldOpen = () => s.evaluate<boolean | null>(`(() => { const b = ${fold}; return b ? b.getAttribute("aria-expanded") === "true" : null; })()`);
+    const onPage = (expression: string) => s.evaluate<boolean>(`!!(${expression})?.getClientRects().length`);
+    /** Whether the field is shown and pointed to: it has the caret, or it is marked as the one that needs filling. */
+    const pointedTo = (label: string) => s.evaluate<boolean>(`(() => { const el = ${field(label)}; return !!el && el.getClientRects().length > 0 && (document.activeElement === el || el.getAttribute("aria-invalid") === "true"); })()`);
+    const guesses = `[...${editor}.querySelectorAll('[aria-label="Songs this could be"] button')]`;
+    const guessTexts = () => s.evaluate<string[]>(`${guesses}.map((b) => b.textContent.trim())`);
+    const catalog = (mode: "none" | "found" | "offline" | "failed", recordings: object[] = []) => s.evaluate(`Object.assign(window.__catalog, { mode: ${js(mode)}, recordings: ${js(recordings)}, calls: [] })`);
+    const catalogCalls = () => s.evaluate<string[]>(`window.__catalog.calls`);
+    const recording = (id: string, title: string, artist: string, length: number) => ({ id, score: 100, title, length, "artist-credit": [{ name: artist, joinphrase: "" }], "first-release-date": "2014", lyrics: "DECOY WORDS NEVER STORED" });
+    const LANTERN = recording("rec-lantern", "Carry the Lantern Home", "The Made Up Band", 232000);
+    type Kept = { id: number; title: string; artist: string; officialRuntimeSec: number | null; tempo: number | null; timeSignature: string; keyRoot: string; keyNote: string };
+    const kept = () => s.evaluate<Kept[]>(`JSON.parse(localStorage.getItem("leadSheetsLibrary") ?? "{}").songs ?? []`);
+    /** The stored library as text: any song written shows as a change here. */
+    const library = () => s.evaluate<string>(`localStorage.getItem("leadSheetsLibrary") ?? ""`);
+    const everything = () => s.evaluate<string>(`JSON.stringify(Object.fromEntries(Object.keys(localStorage).map((key) => [key, localStorage.getItem(key)])))`);
+    const savedPage = () => app.until(`/^#\\/song\\/\\d+/.test(location.hash) && !document.querySelector(".song-editor")`, "the saved song's page");
+    const sungLines = lines(BARE).filter((line) => /[a-z]{3}/.test(line) && !line.startsWith("[")).map((line) => line.trim().toLowerCase());
+    const askedPhrase = (url: string) => /recording:"([^"]*)"/.exec(new URL(url).searchParams.get("query") ?? "")?.[1] ?? "";
+
+    await check(SCREEN_CASES[17], async () => {
+      await phone(390);
+      await openNew();
+      assert.equal(await foldOpen(), true, "New song starts with the details open, since it has no title");
+      assert.ok(await pointedTo("Title"), "and the Title field pointed to");
+      const before = await library();
+      await catalog("found", [LANTERN]);
+      await pasteTap(CHROME);
+      await app.until(`document.querySelectorAll(".song-editor-preview .chart-heading").length >= 2`, "the preview's sections");
+      assert.deepEqual(
+        [await value("Title"), await value("Artist"), await value("Key"), await s.evaluate<string>(`${mode}.value`), await value("BPM"), await value("Time signature")],
+        ["Lantern Road", "The Made Up Band", "A", "major", "96", "6/8"],
+        "every field is filled from the paste",
+      );
+      assert.ok((await editorText()).includes("Capo 2 for guitar"), "and the capo is noted");
+      await sleep(2500);
+      assert.deepEqual(await catalogCalls(), [], "the catalog was asked nothing, since the paste named the title and artist");
+      assert.deepEqual(await guessTexts(), [], "and no guess shows");
+      assert.equal(await library(), before, "the paste stored nothing");
+      assert.equal(await foldOpen(), false, "the details fold once the paste gave a title");
+      assert.equal(await onPage(field("Title")), false, "a folded Title field is off the page");
+      const summary = await s.evaluate<string>(`${fold}.textContent`);
+      assert.ok(summary.includes("Lantern Road · The Made Up Band"), `the fold says the title and artist on one line (${js(summary)})`);
+      const box = await s.evaluate<{ h: number; line: number }>(`(() => { const b = ${fold}; return { h: b.getBoundingClientRect().height, line: parseFloat(getComputedStyle(b).lineHeight) || 24 }; })()`);
+      assert.ok(box.h < 44 + box.line, `the folded summary is one line (${box.h} px tall)`);
+      await s.evaluate(`${fold}.click()`);
+      await sleep(150);
+      assert.equal(await foldOpen(), true, "a tap opens the details");
+      assert.ok(await onPage(field("Title")), "and shows the Title field");
+      assert.equal(await value("Title"), "Lantern Road", "with the title still in it");
+      await s.evaluate(`${fold}.click()`);
+      await sleep(150);
+      assert.equal(await foldOpen(), false, "and a second tap folds them again");
+    });
+
+    await check(SCREEN_CASES[18], async () => {
+      await phone(390);
+      await openNew();
+      const seen = (await app.errors()).length;
+      const before = await library();
+      await catalog("found", [LANTERN]);
+      await pasteTap(BARE);
+      await app.until(`${guesses}.length > 0`, "a guess from the catalog", 8000);
+      const calls = await catalogCalls();
+      assert.ok(calls.length >= 1 && calls.length <= 2, `one or two requests left the phone (${calls.length})`);
+      for (const url of calls) {
+        assert.ok(url.startsWith(RECORDING_SEARCH), `the request went to the catalog's recording search (${url})`);
+        assert.ok(sungLines.includes(askedPhrase(url)), `it asked for one sung line (${js(askedPhrase(url))})`);
+        assert.ok(decodeURIComponent(url).length < 600, "and never the whole chart");
+      }
+      const shownGuesses = await guessTexts();
+      assert.equal(shownGuesses.length, 1, "one guess shows");
+      for (const part of ["Carry the Lantern Home", "The Made Up Band", "3:52"]) assert.ok(shownGuesses[0].includes(part), `the guess names ${part} (${js(shownGuesses[0])})`);
+      assert.deepEqual([await value("Title"), await value("Artist")], ["", ""], "no field takes the guess");
+      assert.equal(await library(), before, "showing a guess stores nothing");
+      assert.equal(await s.evaluate<string>(`location.hash`), "#/songs", "and the editor is still open on My Songs");
+      assert.equal(await foldOpen(), true, "the details are open, since the title is missing");
+      assert.ok(await pointedTo("Title"), "and the Title field is pointed to");
+      await s.evaluate(`${guesses}[0].click()`);
+      await sleep(200);
+      assert.deepEqual([await value("Title"), await value("Artist")], ["Carry the Lantern Home", "The Made Up Band"], "a tap on the guess writes its title and artist");
+      assert.deepEqual(await guessTexts(), [], "and the guess goes");
+      assert.equal(await library(), before, "taking a guess stores nothing");
+      assert.ok(!!(await s.evaluate<boolean>(`!!${editor}`)), "the editor stays open");
+      await tap("Save");
+      await savedPage();
+      const saved = (await kept()).find((song) => song.title === "Carry the Lantern Home");
+      assert.ok(saved, "Save stores the song under the title the player took");
+      assert.deepEqual([saved.artist, saved.officialRuntimeSec], ["The Made Up Band", 232], "with the guess's artist and length");
+      assert.ok(!(await everything()).includes("DECOY"), "nothing past title, artist and length was kept from the reply");
+      assert.deepEqual((await app.errors()).slice(seen), [], "no page errors");
+    });
+
+    await check(SCREEN_CASES[19], async () => {
+      await phone(390);
+      await openNew();
+      await catalog("found", [LANTERN]);
+      await pasteTap(BARE);
+      await app.until(`${guesses}.length > 0`, "a guess from the catalog", 8000);
+      await s.evaluate(`${fold}.getAttribute("aria-expanded") === "true" || ${fold}.click()`);
+      await fill("Title", "My Own Name");
+      assert.equal(await value("Artist"), "", "typing a title leaves the artist alone");
+      await tap("Save");
+      await savedPage();
+      const saved = (await kept()).find((song) => song.title === "My Own Name");
+      assert.ok(saved, "the typed title saves");
+      assert.deepEqual([saved.artist, saved.officialRuntimeSec], ["", null], "with nothing from the guess the player never tapped");
+      assert.ok(!(await kept()).some((song) => song.title === "My Own Name" && song.artist === "The Made Up Band"), "no guess was written on the way");
+    });
+
+    await check(SCREEN_CASES[20], async () => {
+      await phone(390);
+      for (const [lookup, words] of [
+        ["offline", /offline/i],
+        ["failed", /didn.t answer/i],
+      ] as const) {
+        await openNew();
+        const seen = (await app.errors()).length;
+        const before = await library();
+        await catalog(lookup, [LANTERN]);
+        await pasteTap(BARE);
+        await app.until(`!!${button("Try again")}`, `Try again after the ${lookup} lookup`, 15000);
+        assert.ok(words.test(await editorText()), `${lookup}: the editor says why there is no guess (${js((await editorText()).slice(0, 200))})`);
+        assert.deepEqual(await guessTexts(), [], `${lookup}: no guess shows`);
+        assert.deepEqual([await value("Title"), await value("Artist")], ["", ""], `${lookup}: no field is filled`);
+        assert.equal(await foldOpen(), true, `${lookup}: the details are open, since the title is missing`);
+        assert.ok(await pointedTo("Title"), `${lookup}: the Title field is pointed to`);
+        assert.deepEqual(await previewHeadings(), ["Verse 1", "Chorus", "Verse 2", "Chorus"], `${lookup}: the preview still draws the chart`);
+        await tap("+ Bridge");
+        assert.ok((await value("Chart")).includes("BRIDGE"), `${lookup}: the editor still takes a tap`);
+        await tap("Save");
+        assert.ok((await app.text(".song-editor [role=alert]")).includes("Add a title"), `${lookup}: Save with no title says Add a title`);
+        assert.equal(await library(), before, `${lookup}: and stores nothing`);
+        assert.ok(await s.evaluate<boolean>(`document.activeElement === ${field("Title")}`), `${lookup}: Save puts the caret in the Title field`);
+        assert.equal(await s.evaluate<string>(`location.hash`), "#/songs", `${lookup}: the editor stays open`);
+        await fill("Title", "   ");
+        await tap("Save");
+        assert.ok((await app.text(".song-editor [role=alert]")).includes("Add a title"), `${lookup}: a title of spaces is still no title`);
+        assert.equal(await library(), before, `${lookup}: and it stores nothing`);
+        await catalog("found", [LANTERN]);
+        await tap("Try again");
+        await app.until(`${guesses}.length > 0`, `${lookup}: a guess once the catalog answers`, 8000);
+        assert.deepEqual([await value("Title"), await value("Artist")], ["   ", ""], `${lookup}: the late guess fills nothing by itself`);
+        await fill("Title", `Typed After ${lookup}`);
+        await tap("Save");
+        await savedPage();
+        const saved = (await kept()).find((song) => song.title === `Typed After ${lookup}`);
+        assert.ok(saved, `${lookup}: a typed title saves`);
+        assert.deepEqual([saved.artist, saved.officialRuntimeSec], ["", null], `${lookup}: with no guess in it`);
+        assert.deepEqual((await app.errors()).slice(seen), [], `${lookup}: no page errors`);
+      }
+    });
+
+    await check(SCREEN_CASES[21], async () => {
+      for (const width of [360, 390]) {
+        await phone(width);
+        await openNew();
+        await glove(fold, "the open details fold", width);
+        await catalog("found", [LANTERN]);
+        await pasteTap(BARE);
+        await app.until(`${guesses}.length > 0`, "a guess from the catalog", 8000);
+        await glove(`${guesses}[0]`, "a guess", width);
+        await glove(button("Add a title"), "Add a title", width);
+        await tap("Add a title");
+        assert.ok(await s.evaluate<boolean>(`document.activeElement === ${field("Title")}`), `${width} px: Add a title puts the caret in the Title field`);
+        await openNew();
+        await catalog("offline");
+        await pasteTap(BARE);
+        await app.until(`!!${button("Try again")}`, "Try again", 15000);
+        await glove(button("Try again"), "Try again", width);
+        await openNew();
+        await catalog("none");
+        await pasteTap(CHROME);
+        await app.until(`document.querySelectorAll(".song-editor-preview .chart-heading").length >= 2`, "the preview's sections");
+        await glove(fold, "the folded details", width);
+      }
+      await phone(390);
     });
   } finally {
     await s.close();

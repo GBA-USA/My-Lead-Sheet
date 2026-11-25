@@ -624,6 +624,158 @@ await check("7d. stop() ends a pending search: no request, no report", async () 
   assert.equal(run.states.length, heard, "nothing reported after stop");
 });
 
+// ---------------------------------------------------------------------------------------------- lookup cases
+
+/**
+ * The lookup a paste runs when its title or artist is missing. `pasteLookup(searcher, known, sections, report)` asks
+ * the catalog through `searcher` for the title when `known` has one, else for up to two sung lines of `sections`, one
+ * request each. `report` hears `{ kind: "searching" }`, then one of `{ kind: "found", songs }`, `none`, `offline` or
+ * `failed`. A song is a guess only when the asked words sing its whole title. Nothing is written anywhere: the screen
+ * shows the guesses and the player taps one.
+ */
+type Lookup = { kind: "idle" | "searching" | "none" | "offline" | "failed" } | { kind: "found"; songs: CatalogSong[] };
+type LookupLine = { chords?: string; lyrics?: string; bars?: string; note?: string };
+type LookupSection = { heading: string; lines: LookupLine[] };
+type LookupModule = { pasteLookup: (searcher: Searcher, known: { title: string; artist: string }, sections: LookupSection[], report: (lookup: Lookup) => void) => void };
+
+/** The bare fixture's chart: sung lines under chords, no title and no artist anywhere. Made-up words. */
+let bare: LookupSection[] = [];
+try {
+  const bundle = await build({
+    stdin: { contents: `export { readPaste } from "./src/song-paste.ts"; export { parseSheet } from "./src/song-text.ts";`, resolveDir: root, loader: "ts" },
+    bundle: true,
+    write: false,
+    format: "esm",
+    platform: "neutral",
+    logLevel: "silent",
+  });
+  const reader: { readPaste: (text: string) => { facts: Record<string, unknown>; chart: string }; parseSheet: (text: string) => { sections: LookupSection[] } } = await import(
+    `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString("base64")}`
+  );
+  const pasted = reader.readPaste(readFileSync(join(root, "tests", "fixtures", "paste", "bare-words.txt"), "utf8"));
+  assert.ok(!pasted.facts.title && !pasted.facts.artist, "the bare fixture names no title and no artist");
+  bare = reader.parseSheet(pasted.chart).sections;
+} catch (error) {
+  console.log(`FAIL the bare paste fixture reads as a chart: ${error instanceof Error ? error.message.split("\n")[0] : String(error)}`);
+  failed += 1;
+}
+const sung = () => bare.flatMap((section) => section.lines.flatMap((line) => (line.lyrics ? [line.lyrics.toLowerCase()] : [])));
+const HOOK = "carry the lantern home";
+const recordingOf = (id: string, title: string, artist: string, length = 232000) => ({ id, score: 100, title, length, "artist-credit": [{ name: artist, joinphrase: "" }], "first-release-date": "2014" });
+const replyWith = (recordings: object[]) => new Response(js({ ...EMPTY, count: recordings.length, recordings }), { status: 200 });
+/** The phrase one catalog request asked for. */
+const phrase = (url: string) => /recording:"([^"]*)"/.exec(new URL(url).searchParams.get("query") ?? "")?.[1] ?? "";
+
+function lookupRun(reply: (url: string) => Reply, { online = () => true, known = { title: "", artist: "" }, sections = bare }: { online?: () => boolean; known?: { title: string; artist: string }; sections?: LookupSection[] } = {}) {
+  const run = harness(reply, online);
+  const heard: Lookup[] = [];
+  const { pasteLookup } = need() as SongSearch & LookupModule;
+  assert.equal(typeof pasteLookup, "function", "src/song-search.ts exports pasteLookup");
+  pasteLookup(run.searcher, known, sections, (lookup) => heard.push(lookup));
+  return { ...run, heard, final: () => heard[heard.length - 1] };
+}
+
+await check("11a. a chart with no title asks the catalog for the line it sings most, and a recording with that title comes back as a guess with its artist and length", async () => {
+  assert.ok(sung().filter((line) => line === HOOK).length >= 3, "the fixture sings its hook three times");
+  const run = lookupRun(() => replyWith([recordingOf("r1", "Carry the Lantern Home", "The Made Up Band")]));
+  assert.deepEqual(run.heard, [{ kind: "searching" }], "it says searching at once");
+  await run.time.advance(4000);
+  assert.equal(run.calls.length, 1, "one request");
+  assert.ok(run.calls[0].url.startsWith(RECORDING_SEARCH), "to the catalog's recording search");
+  assert.equal(phrase(run.calls[0].url), HOOK, "for the line the chart sings most");
+  assert.deepEqual(run.final(), { kind: "found", songs: [{ id: "r1", title: "Carry the Lantern Home", artist: "The Made Up Band", year: "2014", lengthSec: 232 }] });
+});
+
+await check("11b. a guess is kept only when the asked line sings its whole title: a longer title and a match on the artist alone are dropped, one title and artist shows once, and three guesses at most", async () => {
+  const run = lookupRun(() =>
+    replyWith([
+      recordingOf("r1", "Carry the Lantern Home", "The Made Up Band"),
+      recordingOf("r2", "Carry the Lantern Home", "The Made Up Band"),
+      recordingOf("r3", "Carry the Lantern Home Tonight", "Band Three"),
+      recordingOf("r4", "Night Train", "Carry the Lantern Home"),
+      recordingOf("r5", "Carry the Lantern Home (live)", "Band Five"),
+      recordingOf("r6", "Carry The Lantern Home", "Band Six"),
+      recordingOf("r7", "Carry the Lantern Home", "Band Seven"),
+    ]),
+  );
+  await run.time.advance(4000);
+  const final = run.final();
+  assert.equal(final.kind, "found");
+  assert.deepEqual(final.kind === "found" ? final.songs.map((song) => song.id) : [], ["r1", "r5", "r6"]);
+});
+
+await check("11c. when the first line finds no guess a second sung line is asked at least 1 s later, one line a request, and never a third", async () => {
+  const second = lookupRun((url) => (phrase(url) === HOOK ? replyWith([recordingOf("x1", "Some Other Song", "Band One")]) : replyWith([recordingOf("x2", phrase(url), "Band Two")])));
+  await second.time.advance(8000);
+  assert.equal(second.calls.length, 2, "two requests");
+  const asked = second.calls.map((call) => phrase(call.url));
+  assert.equal(asked[0], HOOK, "the hook first");
+  assert.ok(asked[1] !== HOOK && sung().includes(asked[1]), `then another sung line, whole and alone (${js(asked[1])})`);
+  assert.ok(second.calls[1].at - second.calls[0].at >= 1000, `the second request left ${second.calls[1].at - second.calls[0].at} ms after the first`);
+  assert.deepEqual(second.final(), { kind: "found", songs: [{ id: "x2", title: asked[1], artist: "Band Two", year: "2014", lengthSec: 232 }] });
+  const nothing = lookupRun(() => replyWith([]));
+  await nothing.time.advance(12000);
+  assert.equal(nothing.calls.length, 2, "two lines asked and no more");
+  assert.deepEqual(nothing.final(), { kind: "none" });
+});
+
+await check("11d. offline, a failed network, a busy catalog and a malformed reply each end the lookup with no guess, no throw and no second line", async () => {
+  const offline = lookupRun(() => replyWith([recordingOf("r1", "Carry the Lantern Home", "The Made Up Band")]), { online: () => false });
+  await offline.time.advance(5000);
+  assert.equal(offline.calls.length, 0, "offline sends nothing");
+  assert.deepEqual(offline.final(), { kind: "offline" });
+  const dropped = lookupRun(() => new TypeError("Failed to fetch"));
+  await dropped.time.advance(5000);
+  assert.equal(dropped.calls.length, 1, "a failed network is not asked a second line");
+  assert.deepEqual(dropped.final(), { kind: "offline" });
+  const busyRun = lookupRun(() => new Response(BUSY_BODY, { status: 503 }));
+  await busyRun.time.advance(12000);
+  assert.deepEqual(busyRun.final(), { kind: "failed" }, "a catalog that stays busy");
+  assert.ok(busyRun.calls.every((call) => phrase(call.url) === HOOK), "a busy catalog is not asked a second line");
+  const malformed = lookupRun(() => new Response("<html>oops</html>", { status: 200 }));
+  await malformed.time.advance(5000);
+  assert.deepEqual(malformed.final(), { kind: "failed" }, "a malformed reply");
+  for (const run of [offline, dropped, busyRun, malformed]) assert.ok(!run.heard.some((lookup) => lookup.kind === "found"), "no guess");
+});
+
+await check("11e. with a title and no artist the title is asked, never a sung line, and only recordings of that title come back", async () => {
+  const run = lookupRun(() => replyWith([recordingOf("a", "Lantern Road", "The Made Up Band"), recordingOf("b", "Lantern Road Blues", "Band Two"), recordingOf("c", "lantern road", "Pat Bass")]), {
+    known: { title: "Lantern Road", artist: "" },
+  });
+  await run.time.advance(4000);
+  assert.deepEqual(run.calls.map((call) => phrase(call.url)), ["lantern road"], "one request, for the title");
+  const final = run.final();
+  assert.deepEqual(final.kind === "found" ? final.songs.map((song) => song.id) : final, ["a", "c"]);
+});
+
+await check("11f. with an artist and no title, only that artist's recordings are guesses", async () => {
+  const run = lookupRun(() => replyWith([recordingOf("o1", "Carry the Lantern Home", "Band Two"), recordingOf("o2", "Carry the Lantern Home", "the made up band")]), {
+    known: { title: "", artist: "The Made Up Band" },
+  });
+  await run.time.advance(4000);
+  const final = run.final();
+  assert.deepEqual(final.kind === "found" ? final.songs.map((song) => song.id) : final, ["o2"]);
+});
+
+await check("11g. a chart with no sung line and no title asks nothing and says none", async () => {
+  const run = lookupRun(() => replyWith([recordingOf("r1", "Carry the Lantern Home", "The Made Up Band")]), { sections: [{ heading: "INTRO", lines: [{ bars: "| G | C |" }, { note: "let it ring" }] }] });
+  await run.time.advance(4000);
+  assert.equal(run.calls.length, 0, "no request");
+  assert.deepEqual(run.heard, [{ kind: "none" }]);
+});
+
+await check("11h. stop() between the two lines ends the lookup: no second request and no later report", async () => {
+  const run = lookupRun(() => replyWith([]));
+  await run.time.advance(700);
+  assert.equal(run.calls.length, 1, "the first line was asked");
+  run.searcher.stop();
+  const heard = run.heard.length;
+  await run.time.advance(8000);
+  assert.equal(run.calls.length, 1, "nothing sent after stop");
+  assert.equal(run.heard.length, heard, "nothing reported after stop");
+  assert.ok(!run.heard.some((lookup) => lookup.kind !== "searching"), "and it never said none");
+});
+
 // ---------------------------------------------------------------------------------------------- screen cases
 
 /** In the page before any app script: the catalog answers from here by `__mb.mode`, every other host is refused and logged, and window.open is logged. */

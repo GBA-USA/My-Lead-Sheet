@@ -1,174 +1,111 @@
 VERDICT: FAIL
 
-# song-paste-format-fix-2 self-check at c4f0c97, tier deep
+# Self-check: chord-grab-plan-fable at 828a005, tier deep
 
-Goal: a phone copy from a chord-site page becomes a real lead sheet. Lyric lines sit under the right chords, the
-page's section names become sections, title and artist are filled when present, comments become notes and dividers
-are dropped.
+Goal of the cook: one build-ready plan at `docs/PLAN-chord-grab.md` and four copy-ready build briefs under `docs/cooks/`, for search-and-grab from chord sites. Docs only, nothing queued.
 
-Two P2s are open. Fix pass 1 (2d2c5d4) closed the exact repro of the earlier P2, but not its class. A typed chart
-whose blank lines hold a space is still read as a phone copy when the line after the space is any one-word line that
-`headingOf` does not know. That covers a heading outside the section-word list (`Riff`, `Turnaround:`, `Post-Chorus`,
-`Breakdown`) and a one-word sung line (`Oh`). The heading is lost and the chord row under it becomes words with its
-columns folded. The second sign path, a lone chord after words with a space on both sides, joins two sung lines of a
-typed chart into one. Base 95432ec gives back every one of these charts unchanged.
+The diff adds five files and nothing else (`git diff --name-status b2b248a 828a005`). The base `b2b248a` is the tip of `origin/mls-int-20261113`. Build and `check:portable` already ran at this commit, and the diff changes no check or fixture, so no check was rerun.
 
-Diff checked: `95432ec..c4f0c97`, which touches `src/song-paste.ts`, `scripts/check-song-paste.ts`, two fixtures and
-VERIFY.md. Since the earlier self-check at ff8f5a9 the product change is 2d2c5d4 (the `leads` and `piece` sign rule) and
-case 12p. The checks were not rerun, because the brief says they already ran at this commit. Probes are in
-`.verify-logs/self-check-c4f/`. Runs used headless Edge on Windows with the path shim.
+One P2 fails the verdict. A Grab can reach two stop values that the plan gives no words. The rest of the plan holds up against the tree, and the hands-on run backs its central claim.
 
 ## Pass conditions from the brief
 
 | Condition | Result | Evidence |
 |---|---|---|
-| tiny-dancer fixture fails on base, passes on head | met | cook log `before-d963e70.log` FAIL 12k, 12l, 12m; 12k unchanged since d963e70 |
-| fixture is the t300u paste, verbatim | met | sha256 pinned in 12k, matched at ff8f5a9; the fixture is untouched since |
-| "C F" over "Blue jean baby," style rows | met | 12k |
-| Verse 2, Pre-Chorus, Chorus recognized, no verse per fragment | met | 12k |
-| dividers dropped | met | 12k, 12m |
-| voicing and comment prose are notes | met | 12k |
-| Sweet Home shaped fixture passes | met | 12l |
-| existing check:song-paste and check:song-search pass, build green | met | already run at this commit (brief); fix1 logs show 48 ok and 52 ok |
-| committed on the branch, REPORT starts with filled HANDOFF | met | `reports/REPORT-song-paste-format-fix-2.md` opens with `## HANDOFF` |
-| HANDOFF in the last commit message body | partly | 2d2c5d4 holds one `GOAL:` line. c4f0c97, a docs-only commit, holds none. P3 |
-| VERIFY.md has no open P0-P2 | not met | P2-1 and P2-2 below |
+| Plan at `docs/PLAN-chord-grab.md`, briefs under `docs/cooks/` | Met | 5 files added |
+| No app code, Worker, `package.json`, queue or dependency change | Met | diff file list; `queue.json` names only `chord-grab-plan-fable` |
+| Build cooks not queued, no build branch | Met | `git branch -a --list "*chord-grab*"` shows only the plan branch |
+| Written in sections | Met | Cook transcript: a 68-line skeleton Write, then 21 Edits of 1 to 103 lines, then one Write per brief |
+| Few test fetches, no scraping code in the repo | Met | 17 requests to 7 sites, at most 3 for each. The probe and prototype lived in `/tmp`. `/tmp/chord-grab-probe-*` is deleted. `/tmp/chord-grab-proto/proto.mjs` remains and holds no page text. |
+| Outside addresses in a data file, not `src/` | Met | `data/chord-sites.json` is designed. `worker/README.md` confirms `check:portable` skips `data/` |
+| Offline after save | Met | Case A10 reloads with the network cut |
+| Terms risk stated, DMCA agent not a license | Met | Section 5 |
+| Shape of `PLAN-song-search-layers.md` | Met | Summary, measurements, changes, decisions, design sections, briefs with the six-line HANDOFF |
+| Seven required sections | Met | Sections 1 to 7, plus section 8 "What stays unproven" |
+| Each brief: HANDOFF, tests first, owned files and do-not-touch, checks, model | Met | The six HANDOFF lines of each standalone file equal the plan's block, compared line by line. All 14 existing `check:*` names in the brief lists exist in `package.json`. |
+| Model picks per `MODEL-RULES.md` | Met | The Nov 18 t441u pick (Fable plans, Opus builds) and the Nov 23 escalation scope are quoted correctly |
+| Inherited "the app never fetches chord pages" rule not copied | Met | It appears only as the rule the owner lifted |
+| No secrets, no names or emails | Met | Grep for emails, 32-hex ids, `workers.dev`, `pages.dev`, owner names: none |
 
-## P2-1. A one-word line the heading reader does not know still makes a typed chart a page copy
+Repo facts the briefs rely on, each read in the tree: `readSession`, `readJsonObject`, `Refused`, `startApi`, `catalogSearcher`, `takePaste`, `NoWordsYet`, `addOwnSong`, `replaceOwnSong`, `Song.sourceNote` (drawn at `src/sheet.tsx:50`), `officialRuntimeSec`, `RP_NAME`, `APP_ORIGIN`, `PRIVACY_CONTACT`, `GOOGLE_ISSUER`, Worker type imports from `src/chat-model.ts`, `resolveJsonModule` in `worker/tsconfig.json`, `src/App.tsx` at 490 lines, one SVG icon in the manifest, `public/sw.js` passing non-GET through, 225.64 KB gzipped in the cook's own build log, and PR 116 as the open `cook/song-paste-autofill`.
 
-CLASS=data-shape
+## Hands-on run: the riskiest claim
 
-The 2d2c5d4 sign needs a lone chord, then a line of spaces, then a `piece`: one word that is no chord and no
-`headingOf` heading (src/song-paste.ts:489, 537). `headingOf` knows only the closed `SECTION_WORD` list
-(src/song-text.ts:14) plus boxed and round-bracketed names. So a bare one-word heading outside that list is a
-`piece`, and so is a one-word sung line. Two such stanza ends make two signs. From there the state machine is the
-same one the earlier P2 hit. After the word comes `lead`, and the column-spaced chord row is said into the words with
-its spaces folded.
+The whole design rests on this claim: text the Worker sends goes through `readPaste` and `parseSheet` unchanged and keeps each chord over its syllable. The prototype counted chords but did not check positions (plan section 8 says so). I checked positions on made-up words.
 
-Smallest repro (`␠` is a line holding one space; `.verify-logs/self-check-c4f/probe.mjs` case R2, at both trees):
+Probe: `.verify-logs/self-check-deep/grab-shapes.mjs` (bundles the app's own `src/song-paste.ts` and `src/song-text.ts` with esbuild). Output: `.verify-logs/self-check-deep/grab-shapes.out`.
 
-```
-Verse 1
-G           C
-Amazing grace how sweet
-D
-␠
-Turnaround:
-G  C  D
-␠
-Verse 2
-G           C
-That saved a wretch
-D
-␠
-Post-Chorus
-C        G
-I once was lost
-```
+- Bracket text, which is the Chordie recipe's output (`[G]Paper boats on [C]Tuesday`): every chord lands on its word. Sections come out as "Verse 1" and "Chorus".
+- Bracketed section names (`[Verse]`, `[Chorus]`) are read as headings, not as chords. Chords stay aligned. The headings come back uppercased as "VERSE 1" and "CHORUS". That is the reader's own normalizing, not a defect. It is the probe's one FAIL line, and the FAIL comes from my case-sensitive expectation.
+- Column text, which is the `<pre>` recipes' output: every chord stays in its column over its word.
+- `Intro G C G D` with no colon is dropped, as the plan says for E-Chords. `readPaste` reports it as `{"count":1,"what":"lines above the first section"}`, so the player is told.
 
-- Base 95432ec gives the chart back unchanged.
-- Head gives `D` over the sung words `Turnaround:G C D`, and `D` over `Post-ChorusC G`, then `I once was lost` with no
-  chords. Both headings are gone, and the G of `C        G` moves from column 9 to column 13 of a word line. Top rule 1
-  breaks.
-- The same happens with `Riff` (R1), `Breakdown` (R3) and a one-word sung line `Oh` (H2). All four forms are measured.
-  The probe log shows each one.
+So the claim "a grab needs no second parser" holds for the three shapes the recipes will send.
 
-Hands-on run in the real app (`.verify-logs/self-check-c4f/app.ts`, New song, Paste a sheet, at 360 and 390 px, log in
-`app.log`). Measured, the same at both widths:
+## Findings
 
-- The preview headings are `VERSE 1, VERSE 2`. The rows include `["D", "Turnaround:G C D"]` and `["D", "Post-ChorusC G"]`.
-- The status reads only `Found key G major.`, so nothing tells the player a section was lost.
-- `Use it as pasted` is offered. A player who saves without comparing keeps the broken chart.
-- No sideways scroll at either width.
+### P2-1. Two stop values have no words, and one of them is reachable from the designed off switch
 
-Untested. Every 12p form uses a heading in `SECTION_WORD`, a boxed heading, no heading, or `Amen` with a single sign.
+CLASS=stale-ui
 
-Premise. Both fix rounds assumed that a closed test on the line after the stanza end can tell a page box from a typed
-chart line. Any one-word line that is neither a chord nor a known section word breaks that test. My guess at a fix,
-not tried: test what a typed chart has and a page copy never has. A phone copy gives each chord a line of its own, so a
-line that `chordRowOf` reads as two or more chords with column gaps never comes from a page box. `pageCopy` could keep
-such a row and the line before it as typed, wherever the state machine is. It could also refuse the copy reading when
-a paste holds such a row after a sign. That rule needs a check against the "ordinary chord-over-lyric rows mixed in" of
-the tiny-dancer fixture. A 12q case with R1, R2, R3 and H2 should fail at c4f0c97 and pass after.
+`GrabStop` (plan section 1) has `"off"` and `"failed"`. The failure table ("What the player sees when something fails") covers `off` only at load time: "Grab is off on this server: Nothing. The Grab buttons are not drawn." `failed` has no row. Cases A3, A4 and A12 test only the table's rows, so `check:chord-grab` would pass with a blank status line.
 
-## P2-2. Sung lines with a space at both ends join into one line
+`off` is reached after the buttons are drawn in two designed ways:
+- The server passes its daily cap of 2,000 calls (section 2: "then refuses with `grab-off` until the next UTC day").
+- The owner removes a site, or empties `GRAB_SITES`, and deploys. This is section 5 rule 5, and rule 7 says the owner does it the same day a site writes. The open app read `grab: true` from `/api/auth/config` before the deploy and keeps drawing **Grab**.
 
-CLASS=data-shape
+Smallest repro, on paper against the spec. Load the app with `/api/auth/config` answering `grab: true`. Make `/api/grab/find` answer 503 `{ "error": "grab-off" }`. Tap **Grab**. The editor opens with **Looking for chords…**. The state goes to `{ kind: "stopped", why: "off" }`, and the table gives it no words. A 500, or a reply the phone cannot read, gives `failed` with no words either.
 
-The other sign is a lone chord after words that start and end with a space (`spaced`, src/song-paste.ts:534-538). A
-typed chart whose lyric lines are indented one space and keep a trailing space reads that way at every one-chord row.
-Two such rows make it a page copy.
+Fix in the plan: add two rows. `off` mid-session: "Grab is resting for now. Find the chart on the web and paste it." Also hide the **Grab** buttons for the rest of the session. `failed`: "Something went wrong while grabbing. Try again.", with **Try again**. Then extend A4 with "a 503 `grab-off` gives `off`, a 500 gives `failed`", and A12 with both words.
 
-Repro (probe case S1):
+### P3-1. D8's server cap is in a different unit from the one section 2 builds
 
-```
-Verse 1
-G           C
- Amazing grace how sweet the sound␠
-D
- That saved a wretch like me␠
-G           C
- I once was lost but now␠
-D
- Was blind but now I see␠
-```
+CLASS=data-shape. D8 asks the owner to approve "2,000 requests to chord sites a day for the server". Section 2 builds "2,000 `find` and `page` calls a day". One `find` can send up to three site requests, so the cap the owner approves is not the cap that ships. Section 7's cost line ("a few thousand requests a day") matches section 2, not D8. Fix: state D8 in calls, or count site requests in `grab_use`.
 
-- Base gives it back unchanged, with 4 lines in Verse 1.
-- Head gives two sung lines, `Amazing grace how sweet the sound That saved a wretch like me` with D at column 34, and
-  the same for the second pair. The D still sits over `That`, but the chart's line breaks are lost, and on a 360 px
-  phone the 61-character line no longer reads as the lyric line the player typed.
-- Without the `Verse 1` heading (S2) the result is the same.
+### P3-2. Cook 2's copy-ready brief leaves out gate G1
 
-How often charts look like this is a guess. Indenting a lyric to sit under a pickup chord is common. A trailing space on
-every line is less so, but copies from web pages and some PDF readers leave one. Untested. No case pastes a typed chart
-whose lyric lines carry spaces at both ends.
+CLASS=state-machine. Section 7's phase table says cook 2 waits for G1, and G1's last row can stop the feature. The summary table and the HANDOFF `DECIDED` and `NEEDS OWNER` lines of `docs/cooks/chord-grab-app.md` name only cook 1, PR 116 and D5 to D7. Someone who queues from the brief alone builds the screen before G1. Fix: add "and gate G1 passed" to the brief's `NEEDS OWNER` and to the "Waits for" cell of row 2.
 
-## Other paths
+### P3-3. A hint in the app brief rests on a false premise
 
-- Sign-out, offline, second phone. Not reached. `readPaste` maps text to text with no storage or network.
-- Stale state. None found. A view switch reruns `readPaste` on the raw paste.
-- Widths. No CSS in the diff. The real-app run at 360 and 390 px shows no sideways scroll.
-- Error paths. No throw in any probe. The fix1 seeded fuzz shows 0 throws in 20,000 variants. I did not repeat it.
-- Checks. Not rerun, as the brief says. The diff after the last check run is docs only.
+CLASS=other. `docs/cooks/chord-grab-app.md` hint 2 (rated High) says the search box must not fetch `/api/auth/config` because of `check:song-search` case 2d, and says to "read whether Grab is on from the config the app already loads". Both parts are wrong:
+- Case 2d logs only cross-origin calls. `scripts/check-song-search.ts:638` passes every same-origin fetch through. `openSite` serves `/api/*` on the page origin (`scripts/chrome.ts:54`).
+- A caught 404 adds no page error, since `app.errors()` collects only `error` and `unhandledrejection`.
+- A signed-in player's app never loads `/api/auth/config` today. The only reads are `usePreviewEntry` when signed out and the account sheet (`src/account.tsx:99`, `:214`).
 
-## P3
+A cook that follows the hint finds no config to pass down. Case A7 would catch it, at the cost of a round. Fix: "read `/api/auth/config` once after sign-in, which case 2d does not see, or add `grab` to the `/api/me` reply."
 
-1. c4f0c97 is the last commit and its body holds no HANDOFF block. 2d2c5d4, the last code commit, holds one.
-2. The earlier P3 items (row split on two spaces, re-paste drift, hidden line breaks and the rest) still stand. I did
-   not re-derive them.
+### P3-4. The probe's User-Agent was not the honest client the plan specifies
 
-## Fix pass 2, after 7de7cbf
+CLASS=other. The cook's curl probe sent `Mozilla/5.0 (compatible; lead-sheet-research/0.1)`. The plan calls this "a generic research client". Case W18 requires that the Worker's User-Agent "does not hold the word Mozilla". The site answers in the measurement table came from a browser-shaped User-Agent the build will never send, and "What was not measured" does not say so. G1 and cook 1's laptop live script re-measure with the real client, so the risk is contained. Fix: give the exact User-Agent in "The test fetches", and add "the honest User-Agent of D3 was not tried" under "What was not measured".
 
-Premise of both earlier fixes: a test on the lines after a lone chord can tell a page box from a typed chart line.
-I tested it with `.verify-logs/fix2/diag.mjs`. Each typed repro has 2 to 4 rows of chords in columns. In each, the
-stanza-ending lone chord sits right under a chord row and its words. In the two real copies, no lone chord sits under
-such a pair, and no lone chord sits over a line of two words or more that starts at column 0. The sign test now
-leaves the next lines alone and asks what sits above the chord.
+### P3-5. "The landed Origin rule already keeps other sites out" is not true for `/api/grab/`
 
-- P2-1, fixed. `pageCopy` returns null when a lone chord comes right under a typed pair. A typed pair is a row of two
-  chords or more over any words, or one chord over a line of two words or more that starts at column 0. `readPaste`
-  then reads the paste as before the page-copy pass. Case 12q holds the Riff, Turnaround:/Post-Chorus, Breakdown and
-  "Oh" forms, plus "Oh" over no chords and lines typed one chord each. It fails at c4f0c97 and passes here.
-- P2-2, fixed by the same rule. The lone `D` under `G           C` and its spaced lyric line is a typed chart's own.
-  Case 12r holds both repro forms. It fails at c4f0c97 and passes here.
-- Rejected. I first also refused a copy whose box word runs into a row of chords in columns. The seeded fuzz showed
-  that this refuses real copies. A page's `G/B     G/B*` row can follow a box word straight on. It made 5 to 14
-  variants newly unstable, so I dropped it.
-- P3-1. This commit is the last one and its body holds the HANDOFF.
-- P3-2, not re-derived.
+CLASS=origin-host. In `worker/index.ts:63-64` the Origin check sits inside the `DIRECTORY_PATH` branch. The plan routes `/api/grab/` before that branch. Step 1 of `find` ("Check the Origin") and case W15 still require the check, so the build is safe. The sentence in section 2 "Routes" should say the new branch calls `fromApp` itself.
 
-Runs on this commit, measured:
+## Where the plan and CLAUDE.md differ
 
-- check:song-paste 50 ok with Edge, check:song-search 52 ok, build exit 0.
-- Case 21 (the service worker after a reload) failed once before the fix and once under mutant M2, and passed on each
-  rerun. It is a flake. The diff does not touch it.
-- Three mutations of the new rule each fail the case aimed at them (`.verify-logs/fix2/M1.log` to `M3.log`):
-  - M1 drops the rule and fails 12q and 12r.
-  - M2 drops the one-chord half and fails 12q's lines typed one chord each.
-  - M3 drops the chord-row half and fails 12q and 12r.
-- The self-check's own probe: all seven forms read the same as the paste. The real-app probe
-  `.verify-logs/self-check-c4f/app.ts` gives a box equal to the paste at 360 and 390 px, with no sideways scroll
-  (`.verify-logs/fix2/app.log`).
-- The seeded fuzz has 0 throws in 20,000 variants and 472 unstable, against 475 at c4f0c97. Against c4f0c97 it shows
-  0 newly unstable and 3 newly stable (`.verify-logs/fix2/fuzz-diff3.log`).
-- check:chords and check:one-copy die on the Windows `C:\C:\` root before any case. They are not in the diff.
+`CLAUDE.md` names `BAND_ROUTES`, merged into the Directory's `ROUTES`, as the Worker route pattern. The plan answers `/api/grab/*` in the Worker's entry with one Directory call for the session and the counts. Its change 5 gives the reason: a page fetch inside the single Directory object would make every account's request wait. I agree with the change. The owner should know it departs from the named pattern.
+
+## Not findings, checked
+
+- Signed-out, second account, offline and empty states each have a row or a case. Exception: P2-1.
+- 360 px and 390 px are covered by case A16. Section 8 says nobody has seen the row at 360 px.
+- A share wipes an unsaved draft, and an app unload during review loses edits. Both are stated as accepted limits.
+- `check:privacy` and apostrophes: the two privacy sentences have none.
+- The bulk-import seam on `SongStart` is real (`docs/PLAN-bulk-import.md:671` on `cook/bulk-import-plan-fable` also adds a start draft). The plan names it.
+
+Nothing was committed, pushed or deployed by this self-check.
+
+# Fix pass 1
+
+Probe: `.verify-logs/fix1/plan-findings.mjs`, one case per finding, read from the plan and the four briefs. It printed 26 FAIL at 828a005 (`.verify-logs/fix1/before-828a005.out`) and 30 ok after the fix (`.verify-logs/fix1/after.out`). The four HANDOFF-equality cases passed both times. They guard the copy that P3-2 edits.
+
+- P2-1. The failure table gains a `GrabStop` column, so each stop names its row. New rows: `off` mid-session ("Grab is resting for now. Find the chart on the web and paste it.", which hides every Grab button for the rest of the session) and `failed` ("Something went wrong while grabbing. Try again.", with **Try again**). A4 and A12 test both. The share table sends any other stop of a link Grab to these words.
+- P3-1. D8 and decision 13 count `find` and `page` calls. D8 and section 7 give the site bound, at most 6,000 requests a day.
+- P3-2. Row 2 of the summary and the app brief's `DECIDED` and `NEEDS OWNER` wait for gate G1, in the plan's copy and the standalone file.
+- P3-3. Hint 2 of the app brief now says to read `/api/auth/config` once after sign-in, and that case 2d sees only cross-origin calls. The risk row in section 7 says the same.
+- P3-4. "The test fetches" gives the exact User-Agent. "What was not measured" says the honest User-Agent of D3 was not tried.
+- P3-5. The routes section, the `wrong-origin` row and the worker brief's hint say the `/api/grab/` branch calls `fromApp` itself.
+
+`npm run check:portable` passed after the fix. Docs only, so no other check was rerun.

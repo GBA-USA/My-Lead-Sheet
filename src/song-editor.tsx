@@ -170,6 +170,8 @@ function SongEditor({ song, songs, onTempo, onClose }: { song?: Song; songs: Son
   const summary = [form.title, form.artist].map((part) => part.trim()).filter(Boolean).join(" · ");
   /** What a lookup is for, in the player's words, or "" when the song has both. */
   const missing = [...(untitled ? ["title"] : []), ...(form.artist.trim() ? [] : ["artist"])].join(" and ");
+  /** The lookup, while it has something to say about a part the song still lacks. */
+  const looking = missing && lookup.kind !== "idle" && lookup.kind !== "none" ? lookup : null;
 
   /** Asks the catalog for the title or artist the song still lacks. What comes back is shown, never written. */
   const look = () => {
@@ -443,7 +445,7 @@ function SongEditor({ song, songs, onTempo, onClose }: { song?: Song; songs: Son
 
         <section className="song-editor-preview" aria-label="Preview" ref={previewRef}>
           <h3>Preview</h3>
-          {parsed.sections.length > 0 && missing ? (
+          {parsed.sections.length > 0 && (untitled || looking) ? (
             <div className="song-editor-missing">
               {untitled ? (
                 <div className="song-editor-paste-actions song-editor-capo">
@@ -453,22 +455,22 @@ function SongEditor({ song, songs, onTempo, onClose }: { song?: Song; songs: Son
                   </button>
                 </div>
               ) : null}
-              {lookup.kind === "searching" ? <p className="song-editor-hint" role="status">Looking up the {missing}…</p> : null}
-              {lookup.kind === "offline" || lookup.kind === "failed" ? (
+              {looking?.kind === "searching" ? <p className="song-editor-hint" role="status">Looking up the {missing}…</p> : null}
+              {looking?.kind === "offline" || looking?.kind === "failed" ? (
                 <div className="song-editor-paste-actions song-editor-capo">
                   <span className="song-editor-hint" role="status">
-                    {NO_LOOKUP[lookup.kind](missing)}
+                    {NO_LOOKUP[looking.kind](missing)}
                   </span>
                   <button type="button" onClick={look}>
                     Try again
                   </button>
                 </div>
               ) : null}
-              {lookup.kind === "found" ? (
+              {looking?.kind === "found" ? (
                 <>
                   <p className="song-editor-hint">Is it one of these? Tap one to fill in the {missing}.</p>
                   <ul className="song-editor-paste-actions song-editor-guesses" aria-label="Songs this could be">
-                    {lookup.songs.map((guess) => (
+                    {looking.songs.map((guess) => (
                       <li key={guess.id}>
                         <button type="button" onClick={() => takeGuess(guess)}>
                           {[guess.title, guess.artist, guess.lengthSec === null ? "" : lengthText(guess.lengthSec)].filter(Boolean).join(" · ")}

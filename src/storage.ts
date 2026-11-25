@@ -324,7 +324,8 @@ export function takeSongIds(ids: number[]) {
 
 /** False when the song has no title, the browser refused the write or the song isn't one this phone can show. */
 function writeOwnSong(raw: string | null, id: number, song: Omit<Song, "ref" | "id">): boolean {
-  if (!song.title.trim()) return false;
+  // A song from another phone is read here first, so a title that is no text is refused the same way, not thrown on.
+  if (typeof song.title !== "string" || !song.title.trim()) return false;
   if (!writeRaw(LIBRARY_KEY, withOwnLibraryItems(raw, new Map([[`${SONG_ROW}.${id}`, JSON.stringify({ item: { ...song, id } })]])))) return false;
   storageChanged();
   return loadLibrary().songs.some((stored) => stored.id === id);

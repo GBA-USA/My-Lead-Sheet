@@ -85,3 +85,69 @@ second floor with the two search boxes, and that floor lives in that file.
 
 A lookup with no guess ends silently, so the line appears and leaves. It sits under the Preview heading, above the
 chart, so nothing the player is reading above it moves.
+
+## Fix round after the deep verify at 4f108e1
+
+The deep verify ran the lookup against the live catalog and opened three P2s. This section replaces P3-3 above. Each
+finding has a `check:song-search` case that fails at 4f108e1.
+
+| Finding | Change | Case |
+|---|---|---|
+| P2-1. A guess names the wrong artist for most songs | `titleQuery` in `src/song-search.ts` asks for a title so that the catalog scores a recording higher when it was released as a single and in more countries. `songsOf` lists recordings with the same score most released first | 11i fails at 4f108e1. The lookup lines of `scripts/song-search-live.ts` hold the live rate |
+| P2-2. A sung line with a contraction is asked without its apostrophe | `titleLines` returns the line as the chart sings it. `askedWords` is the one place that cleans a line for the catalog. It keeps apostrophes and asks a curly one as a straight one | 11j fails at 4f108e1 |
+| P2-3. The 2 to 8 word rule has no test | Test only | 11k passes at 4f108e1 and fails there with `TITLE_WORDS = { min: 1, max: 80 }` |
+
+### The live rate
+
+One full run of `node --experimental-strip-types scripts/song-search-live.ts` on Nov 25, 2026. The log is
+`.verify-logs/fix-pr116/after-live.log`.
+
+| Lookup | Lookups | The expected artist is a guess | The expected artist is the first guess |
+|---|---|---|---|
+| The verify's 14 songs, the title as the only sung line | 14 | 14 | 12 |
+| Six songs that were not used to shape the query | 6 | 6 | 6 |
+| A typed title with no artist | 3 | 3 | 2 |
+
+The deep verify measured 3 of 11 and 0 of 3 for the first and third rows at 4f108e1. The 10 search box lines of the
+script still pass. Every guess for a line with a contraction spells the title with its apostrophe.
+
+What bounds the rate. The catalog lists a title's recordings in score order, and the old query's score did not tell a
+well-known recording from a cover, so the 15 rows that came back were 15 of several hundred in no useful order. The
+catalog holds 2,828 recordings with "Stand by Me" in the title. The new query makes the catalog's score count how
+widely a recording was released, so the 15 rows are the most widely released ones.
+
+What else the number could be measuring.
+
+- Catalog errors. Every lookup ended `found`. A busy reply is retried by the searcher.
+- Run to run noise. Four lookups were run a second time and gave the same guesses.
+- A query shaped to the test songs. The query was written once and first tried on five of the 14 songs. The most
+  released rule for equal scores was chosen after seeing all 14. The six songs of the second row were chosen after
+  both were fixed.
+- An easy chart. Each chart sings the title as its only line, which is the best case. See the first open item below.
+
+The cost is the size of the reply. The catalog sends every release of each recording, and the best-known recordings
+have the most releases. The largest reply of the run was "Stand by Me" at 2,073 kB, which is 323 kB compressed and
+took about 1 second here. The old query's reply for that title was 23 kB. On a slow phone network a lookup for a very
+well-known song can pass the 8 second limit. The lookup then says it failed and shows Try again, as `check:song-paste`
+33 covers.
+
+### Still open after this round
+
+- A chart whose most-sung line is not its title can still be offered a different song that has that line as its
+  title. The deep verify saw this for 2 of 3 such charts. This round does not change it. The guess shows its title and
+  artist, and nothing is written until the player taps it.
+- "Sweet Caroline" and "Wagon Wheel" list the expected artist as the third guess, after two other well-known
+  recordings.
+- With an artist known and no title, the lookup still compares that artist with the 15 rows that come back. A
+  little-known artist's recording of a common title is not among them.
+- The search box query is unchanged. Its rows now list most released first when the catalog scores them the same.
+
+### What was run at the fix
+
+| Run | Result |
+|---|---|
+| `npm run build` | green |
+| `check:song-search` | 63 ok, 0 FAIL. At 4f108e1 with the three new cases, 61 ok and 2 FAIL (11i, 11j) |
+| `check:song-paste` | 59 ok, 0 FAIL |
+| `check:new-song` | 36 ok, 0 FAIL |
+| Six mutations of the fix, `.verify-logs/fix-pr116/mutate.mjs` | each fails 11i, 11j or 11k |

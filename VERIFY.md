@@ -1,174 +1,87 @@
-VERDICT: FAIL
+VERDICT: PASS
 
-# song-paste-format-fix-2 self-check at c4f0c97, tier deep
+# song-paste-autofill self-check at ad7c26e
 
-Goal: a phone copy from a chord-site page becomes a real lead sheet. Lyric lines sit under the right chords, the
-page's section names become sections, title and artist are filled when present, comments become notes and dividers
-are dropped.
+Goal: after a smart paste, the editor fills title, artist, key, tempo, time signature and capo from the paste, or
+offers a lookup's guesses when title or artist is still missing. The details section is folded by default. No song
+saves without a title.
 
-Two P2s are open. Fix pass 1 (2d2c5d4) closed the exact repro of the earlier P2, but not its class. A typed chart
-whose blank lines hold a space is still read as a phone copy when the line after the space is any one-word line that
-`headingOf` does not know. That covers a heading outside the section-word list (`Riff`, `Turnaround:`, `Post-Chorus`,
-`Breakdown`) and a one-word sung line (`Oh`). The heading is lost and the chord row under it becomes words with its
-columns folded. The second sign path, a lone chord after words with a space on both sides, joins two sung lines of a
-typed chart into one. Base 95432ec gives back every one of these charts unchanged.
+No P0, P1 or P2 is open. Seven P3s are listed below. Two of them are decisions for the owner.
 
-Diff checked: `95432ec..c4f0c97`, which touches `src/song-paste.ts`, `scripts/check-song-paste.ts`, two fixtures and
-VERIFY.md. Since the earlier self-check at ff8f5a9 the product change is 2d2c5d4 (the `leads` and `piece` sign rule) and
-case 12p. The checks were not rerun, because the brief says they already ran at this commit. Probes are in
-`.verify-logs/self-check-c4f/`. Runs used headless Edge on Windows with the path shim.
+Diff checked: `b2b248a..ad7c26e`. It touches `src/song-editor.tsx`, `src/song-editor.css`, `src/song-search.ts`,
+`src/storage.ts`, one word in `src/song-search.tsx`, the three check scripts and two fixtures. Every run used headless
+Edge on Windows. The box verify uses Chrome on Linux. No run reached the live catalog: each screen check installs a
+catalog stub in the page before any app script. The tools and logs are in `.verify-logs/cook/`, which git ignores.
 
 ## Pass conditions from the brief
 
 | Condition | Result | Evidence |
 |---|---|---|
-| tiny-dancer fixture fails on base, passes on head | met | cook log `before-d963e70.log` FAIL 12k, 12l, 12m; 12k unchanged since d963e70 |
-| fixture is the t300u paste, verbatim | met | sha256 pinned in 12k, matched at ff8f5a9; the fixture is untouched since |
-| "C F" over "Blue jean baby," style rows | met | 12k |
-| Verse 2, Pre-Chorus, Chorus recognized, no verse per fragment | met | 12k |
-| dividers dropped | met | 12k, 12m |
-| voicing and comment prose are notes | met | 12k |
-| Sweet Home shaped fixture passes | met | 12l |
-| existing check:song-paste and check:song-search pass, build green | met | already run at this commit (brief); fix1 logs show 48 ok and 52 ok |
-| committed on the branch, REPORT starts with filled HANDOFF | met | `reports/REPORT-song-paste-format-fix-2.md` opens with `## HANDOFF` |
-| HANDOFF in the last commit message body | partly | 2d2c5d4 holds one `GOAL:` line. c4f0c97, a docs-only commit, holds none. P3 |
-| VERIFY.md has no open P0-P2 | not met | P2-1 and P2-2 below |
+| A paste with title and artist lines, Key, Capo, BPM and Time fills those facts | met | `check:song-paste` 14b and 31 |
+| A bare paste, lookup mocked, offers guesses and writes none until tapped | met | `check:song-paste` 32, 32b, 35, 36 |
+| The lookup saves nothing by itself | met | 32 and 32b compare the stored library before and after |
+| An offline or failed lookup leaves the form usable, fills no guess, throws nothing | met | `check:song-paste` 33, `check:song-search` 11d |
+| Details folded by default on New song and Edit song, with a one-line summary | met, with one reading | `check:new-song` 7 (two cases), `check:song-paste` 31. See P3-1 |
+| Details open and the Title field pointed to when the title is missing | met | 31, 32, 33 and `check:new-song` 7 |
+| Save blocked with a clear message when the title is blank | met | 33 and `check:new-song` 7. Save says "Add a title" and puts the caret in the Title field |
+| `addOwnSong` and `replaceOwnSong` refuse a title of spaces | met | `check:new-song` 7 and 7b |
+| A song stored earlier with no title still loads | met | `check:new-song` 7, last assertion |
+| Existing `check:song-paste`, `check:song-search`, `check:new-song` cases pass | met | 60, 59 and 36 ok at ad7c26e, 0 FAIL. The cases of b2b248a are unchanged |
+| `npm run build` green | met | `final-build.log` |
+| `check:one-copy`, `check:portable` | met | 18 ok. `check:portable` exit 0 |
+| `check:chords` | flaky on this laptop, same on the base | P3-5 |
 
-## P2-1. A one-word line the heading reader does not know still makes a typed chart a page copy
+## What was run
 
-CLASS=data-shape
+| Run | Result |
+|---|---|
+| Tests-only snapshot of 95244a8 | The 17 new cases fail. The 52, 52 and 31 cases that were there before pass |
+| ad7c26e | `check:song-search` 60 ok, `check:song-paste` 59 ok, `check:new-song` 36 ok, build green |
+| Neighbour checks at ad7c26e | `one-copy`, `portable`, `screens`, `privacy`, `ux-theme-tokens`, `search`, `storage` pass |
+| Mutation proof, `mutate.mjs` | 29 one-line source mutations, 29 killed. The first run killed 24 of 28. Cases 35, 36 and 7b were added for the four that lived |
+| Probe, `probe.ts` | 22 of 22. Screenshots at 360 px and 390 px, a keyboard paste, Cancel during a lookup, Edit song with a title and no artist, a long title in the fold |
 
-The 2d2c5d4 sign needs a lone chord, then a line of spaces, then a `piece`: one word that is no chord and no
-`headingOf` heading (src/song-paste.ts:489, 537). `headingOf` knows only the closed `SECTION_WORD` list
-(src/song-text.ts:14) plus boxed and round-bracketed names. So a bare one-word heading outside that list is a
-`piece`, and so is a one-word sung line. Two such stanza ends make two signs. From there the state machine is the
-same one the earlier P2 hit. After the word comes `lead`, and the column-spaced chord row is said into the words with
-its spaces folded.
+## P3-1. A blank New song starts with the details open
 
-Smallest repro (`␠` is a line holding one space; `.verify-logs/self-check-c4f/probe.mjs` case R2, at both trees):
+The brief says the details are closed by default and also open when the title is missing. A New song has no title
+when it opens, so the fold starts open with the Title field marked. It folds once a paste gives a title, and on a
+tap. Edit song starts folded. If the owner wants a blank New song folded too, the summary line needs words for a
+song with no title, and `check:new-song` 7 pins the current reading.
 
-```
-Verse 1
-G           C
-Amazing grace how sweet
-D
-␠
-Turnaround:
-G  C  D
-␠
-Verse 2
-G           C
-That saved a wretch
-D
-␠
-Post-Chorus
-C        G
-I once was lost
-```
+## P3-2. The lookup sends one or two sung lines to the public catalog without a tap
 
-- Base 95432ec gives the chart back unchanged.
-- Head gives `D` over the sung words `Turnaround:G C D`, and `D` over `Post-ChorusC G`, then `I once was lost` with no
-  chords. Both headings are gone, and the G of `C        G` moves from column 9 to column 13 of a word line. Top rule 1
-  breaks.
-- The same happens with `Riff` (R1), `Breakdown` (R3) and a one-word sung line `Oh` (H2). All four forms are measured.
-  The probe log shows each one.
+The handoff decided this. After a paste with no title, the editor waits 600 ms and asks the catalog for the line the
+chart sings most, then one more line at most. Each request holds one line. The editor shows "Looking up the title
+and artist…" while it runs. The app's privacy copy does not mention the catalog at all, before or after this change.
+A tap-first lookup is a small change in `look` in `src/song-editor.tsx` if the owner prefers one.
 
-Hands-on run in the real app (`.verify-logs/self-check-c4f/app.ts`, New song, Paste a sheet, at 360 and 390 px, log in
-`app.log`). Measured, the same at both widths:
+## P3-3. How often the lookup finds a real song is not measured
 
-- The preview headings are `VERSE 1, VERSE 2`. The rows include `["D", "Turnaround:G C D"]` and `["D", "Post-ChorusC G"]`.
-- The status reads only `Found key G major.`, so nothing tells the player a section was lost.
-- `Use it as pasted` is offered. A player who saves without comparing keeps the broken chart.
-- No sideways scroll at either width.
+The brief forbids a live catalog run. The lookup reuses the query shape that `scripts/song-search-live.ts` measured for
+a typed title. That shape lists a recording only when its title holds the asked words, and the lookup keeps a guess
+only when the title is the asked words and no more. So it finds a song whose title is sung as a whole line, and no
+song whose title is part of a longer line. Every case here stubs the catalog. One run of
+`scripts/song-search-live.ts` with a sung line would give the real rate.
 
-Untested. Every 12p form uses a heading in `SECTION_WORD`, a boxed heading, no heading, or `Amen` with a single sign.
+## P3-4. A song stored with no title before this change cannot be kept by a friend's phone
 
-Premise. Both fix rounds assumed that a closed test on the line after the stanza end can tell a page box from a typed
-chart line. Any one-word line that is neither a chord nor a known section word breaks that test. My guess at a fix,
-not tried: test what a typed chart has and a page copy never has. A phone copy gives each chord a line of its own, so a
-line that `chordRowOf` reads as two or more chords with column gaps never comes from a page box. `pageCopy` could keep
-such a row and the line before it as typed, wherever the state machine is. It could also refuse the copy reading when
-a paste holds such a row after a sign. That rule needs a check against the "ordinary chord-over-lyric rows mixed in" of
-the tiny-dancer fixture. A 12q case with R1, R2, R3 and H2 should fail at c4f0c97 and pass after.
+`writeOwnSong` now refuses a blank title for every caller, as the brief asks. A song saved before this change with a
+title of spaces still loads and still sends. The phone that receives it says "This phone couldn't add ." The sender
+fixes it by giving the song a title in Edit, which now requires one.
 
-## P2-2. Sung lines with a space at both ends join into one line
+## P3-5. `check:chords` fails on this laptop at the same rate with and without the change
 
-CLASS=data-shape
+Its three FAIL lines are "a row paints past the chart: Fire Away @320px x1", the first view of the run. In one folder,
+base and head source in turn, six runs each, the base failed 4 and the head failed 5, with identical lines
+(`chords-compare.tsv`). Earlier separate runs read 1 of 3 on the base and 3 of 3 on the head. The change touches no
+sheet code or sheet style. This is the Windows Edge flake earlier cooks recorded. The Linux box is the judge.
 
-The other sign is a lone chord after words that start and end with a space (`spaced`, src/song-paste.ts:534-538). A
-typed chart whose lyric lines are indented one space and keep a trailing space reads that way at every one-chord row.
-Two such rows make it a page copy.
+## P3-6. One word changed in a file the brief does not own
 
-Repro (probe case S1):
+`src/song-search.tsx` gains `export` on `browserSearcher`. The editor's lookup must share the phone's one request a
+second floor with the two search boxes, and that floor lives in that file.
 
-```
-Verse 1
-G           C
- Amazing grace how sweet the sound␠
-D
- That saved a wretch like me␠
-G           C
- I once was lost but now␠
-D
- Was blind but now I see␠
-```
+## P3-7. "Looking up…" shows for one to three seconds and then goes when nothing is found
 
-- Base gives it back unchanged, with 4 lines in Verse 1.
-- Head gives two sung lines, `Amazing grace how sweet the sound That saved a wretch like me` with D at column 34, and
-  the same for the second pair. The D still sits over `That`, but the chart's line breaks are lost, and on a 360 px
-  phone the 61-character line no longer reads as the lyric line the player typed.
-- Without the `Verse 1` heading (S2) the result is the same.
-
-How often charts look like this is a guess. Indenting a lyric to sit under a pickup chord is common. A trailing space on
-every line is less so, but copies from web pages and some PDF readers leave one. Untested. No case pastes a typed chart
-whose lyric lines carry spaces at both ends.
-
-## Other paths
-
-- Sign-out, offline, second phone. Not reached. `readPaste` maps text to text with no storage or network.
-- Stale state. None found. A view switch reruns `readPaste` on the raw paste.
-- Widths. No CSS in the diff. The real-app run at 360 and 390 px shows no sideways scroll.
-- Error paths. No throw in any probe. The fix1 seeded fuzz shows 0 throws in 20,000 variants. I did not repeat it.
-- Checks. Not rerun, as the brief says. The diff after the last check run is docs only.
-
-## P3
-
-1. c4f0c97 is the last commit and its body holds no HANDOFF block. 2d2c5d4, the last code commit, holds one.
-2. The earlier P3 items (row split on two spaces, re-paste drift, hidden line breaks and the rest) still stand. I did
-   not re-derive them.
-
-## Fix pass 2, after 7de7cbf
-
-Premise of both earlier fixes: a test on the lines after a lone chord can tell a page box from a typed chart line.
-I tested it with `.verify-logs/fix2/diag.mjs`. Each typed repro has 2 to 4 rows of chords in columns. In each, the
-stanza-ending lone chord sits right under a chord row and its words. In the two real copies, no lone chord sits under
-such a pair, and no lone chord sits over a line of two words or more that starts at column 0. The sign test now
-leaves the next lines alone and asks what sits above the chord.
-
-- P2-1, fixed. `pageCopy` returns null when a lone chord comes right under a typed pair. A typed pair is a row of two
-  chords or more over any words, or one chord over a line of two words or more that starts at column 0. `readPaste`
-  then reads the paste as before the page-copy pass. Case 12q holds the Riff, Turnaround:/Post-Chorus, Breakdown and
-  "Oh" forms, plus "Oh" over no chords and lines typed one chord each. It fails at c4f0c97 and passes here.
-- P2-2, fixed by the same rule. The lone `D` under `G           C` and its spaced lyric line is a typed chart's own.
-  Case 12r holds both repro forms. It fails at c4f0c97 and passes here.
-- Rejected. I first also refused a copy whose box word runs into a row of chords in columns. The seeded fuzz showed
-  that this refuses real copies. A page's `G/B     G/B*` row can follow a box word straight on. It made 5 to 14
-  variants newly unstable, so I dropped it.
-- P3-1. This commit is the last one and its body holds the HANDOFF.
-- P3-2, not re-derived.
-
-Runs on this commit, measured:
-
-- check:song-paste 50 ok with Edge, check:song-search 52 ok, build exit 0.
-- Case 21 (the service worker after a reload) failed once before the fix and once under mutant M2, and passed on each
-  rerun. It is a flake. The diff does not touch it.
-- Three mutations of the new rule each fail the case aimed at them (`.verify-logs/fix2/M1.log` to `M3.log`):
-  - M1 drops the rule and fails 12q and 12r.
-  - M2 drops the one-chord half and fails 12q's lines typed one chord each.
-  - M3 drops the chord-row half and fails 12q and 12r.
-- The self-check's own probe: all seven forms read the same as the paste. The real-app probe
-  `.verify-logs/self-check-c4f/app.ts` gives a box equal to the paste at 360 and 390 px, with no sideways scroll
-  (`.verify-logs/fix2/app.log`).
-- The seeded fuzz has 0 throws in 20,000 variants and 472 unstable, against 475 at c4f0c97. Against c4f0c97 it shows
-  0 newly unstable and 3 newly stable (`.verify-logs/fix2/fuzz-diff3.log`).
-- check:chords and check:one-copy die on the Windows `C:\C:\` root before any case. They are not in the diff.
+A lookup with no guess ends silently, so the line appears and leaves. It sits under the Preview heading, above the
+chart, so nothing the player is reading above it moves.

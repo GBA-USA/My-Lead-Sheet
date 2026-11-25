@@ -322,14 +322,15 @@ export function takeSongIds(ids: number[]) {
   if (lastSongId > library.lastSongId) localStorage.setItem(LIBRARY_KEY, JSON.stringify({ ...library, lastSongId }));
 }
 
-/** False when the browser refused the write or the song isn't one this phone can show. */
+/** False when the song has no title, the browser refused the write or the song isn't one this phone can show. */
 function writeOwnSong(raw: string | null, id: number, song: Omit<Song, "ref" | "id">): boolean {
+  if (!song.title.trim()) return false;
   if (!writeRaw(LIBRARY_KEY, withOwnLibraryItems(raw, new Map([[`${SONG_ROW}.${id}`, JSON.stringify({ item: { ...song, id } })]])))) return false;
   storageChanged();
   return loadLibrary().songs.some((stored) => stored.id === id);
 }
 
-/** Adds a song to My Songs under a new id. Null when the browser refused the write or the song isn't one this phone can show. */
+/** Adds a song to My Songs under a new id. Null when the song has no title, the browser refused the write or the song isn't one this phone can show. */
 export function addOwnSong(song: Omit<Song, "ref" | "id">): number | null {
   const raw = readRaw(LIBRARY_KEY);
   const id = freeOwnId(raw, SONG_ROW, []);

@@ -7,8 +7,10 @@ import { songYouHave } from "./search";
 import { YouHaveIt } from "./search-box";
 import { LeadSheet } from "./sheet";
 import { BpmField, parseBpm, SongDataEditor } from "./song-data-editor";
+// The half with no screen is "./song-search.js", as it is in song-search.tsx.
+import { lengthText, pasteLookup, type CatalogSong, type Lookup } from "./song-search.js";
 // @ts-expect-error TS5097: song-search.ts holds the same stem, so only ".tsx" names this file in tsc, Vite and esbuild.
-import { FindChords, SongSearch } from "./song-search.tsx";
+import { browserSearcher, FindChords, SongSearch } from "./song-search.tsx";
 import { CAPO_VIEW, capoNote, readPaste, type CapoView, type LeftOut, type Pasted } from "./song-paste";
 import { KEY_ROOTS, ownSong, parseSheet, sectionsToText, sheetProblem, type SongFacts, type SongMeta } from "./song-text";
 import { addOwnSong, removeOwnSong, replaceOwnSong, saveSongData, songByRef, withSongData } from "./storage";
@@ -19,9 +21,17 @@ import "./song-editor.css";
 export type SongEdit = "timing" | "new" | "chart" | "delete";
 
 const NOT_SAVED = "This phone couldn't save the song. Free some space and try again.";
+const BAD_BPM = "BPM must be a whole number the metronome can play";
 const SECTION_BUTTONS = ["Verse", "Chorus", "Bridge"] as const;
 
 type Form = { title: string; artist: string; keyRoot: string; keyMode: KeyMode; bpm: string; timeSignature: string; chart: string; keyNote: string };
+/** The fields under Song details, which fold away once the song has a title. */
+const DETAILS: readonly (keyof Form)[] = ["title", "artist", "keyRoot", "keyMode", "bpm", "timeSignature"];
+/** Why a lookup gave no guess, for the part of the song it was looking for. */
+const NO_LOOKUP: Record<"offline" | "failed", (missing: string) => string> = {
+  offline: (missing) => `You're offline, so the ${missing} can't be looked up. Type it in, or try again.`,
+  failed: (missing) => `The song list didn't answer. Type the ${missing} in, or try again.`,
+};
 
 const formOf = (song?: Song): Form => ({
   title: song?.title ?? "",
@@ -122,12 +132,20 @@ export function SongEditors({
 
 /**
  * One screen to write a song or change one the player made: the details, then the chart as text, typed or pasted,
- * drawn below by the normal chart as it is typed. Nothing here talks to the server.
+ * drawn below by the normal chart as it is typed. Nothing here talks to the server. A paste that leaves the title or
+ * artist blank asks the public song catalog for them, and what it finds waits as guesses the player taps.
  */
 function SongEditor({ song, songs, onTempo, onClose }: { song?: Song; songs: Song[]; onTempo?: (tempo: number | null) => void; onClose: () => void }) {
   const titleId = useId();
-  const ids = { title: useId(), artist: useId(), key: useId(), mode: useId(), time: useId(), chart: useId(), hint: useId() };
+  const ids = { title: useId(), artist: useId(), key: useId(), mode: useId(), time: useId(), chart: useId(), hint: useId(), details: useId() };
   const [form, setForm] = useState(() => formOf(song));
+  /** Whether the player wants the details open. With no title they are open either way. */
+  const [detailsWanted, setDetailsWanted] = useState(() => !form.title.trim());
+  const [lookup, setLookup] = useState<Lookup>({ kind: "idle" });
+  /** The guess the player tapped, as the fields held it then. Its length is stored while they still do. */
+  const [took, setTook] = useState<{ title: string; artist: string; lengthSec: number | null } | null>(null);
+  const searcher = useMemo(browserSearcher, []);
+  const titleRef = useRef<HTMLInputElement>(null);
   const [problem, setProblem] = useState("");
   const [pasteNote, setPasteNote] = useState("");
   const [have, setHave] = useState<Song | null>(null);
@@ -140,15 +158,32 @@ function SongEditor({ song, songs, onTempo, onClose }: { song?: Song; songs: Son
   const parsed = useMemo(() => parseSheet(form.chart), [form.chart]);
   const tempo = parseBpm(form.bpm);
   const meta: SongMeta = { title: form.title, artist: form.artist, keyRoot: form.keyRoot, keyMode: form.keyMode, tempo, timeSignature: form.timeSignature };
-  const stored = (before?: Omit<Song, "ref" | "id">) => ({ ...ownSong(meta, parsed.sections, before), keyNote: form.keyNote });
+  const guessLength = took && took.title === form.title && took.artist === form.artist ? took.lengthSec : null;
+  const stored = (before?: Omit<Song, "ref" | "id">) => ({ ...ownSong(meta, parsed.sections, before), keyNote: form.keyNote, officialRuntimeSec: before?.officialRuntimeSec ?? guessLength });
   const preview: Song = { ...stored(song && content(song)), title: form.title.trim() || "Untitled", ref: "draft/song", id: 0 };
   const metronome = useMetronome(null, tempo);
   /** The paste's switches, while the box still holds what the paste put there. */
   const fresh = pasting && form.chart === shown(pasting) ? pasting : null;
+  const untitled = !form.title.trim();
+  const detailsOpen = detailsWanted || untitled;
+  /** The folded details in one line. */
+  const summary = [form.title, form.artist].map((part) => part.trim()).filter(Boolean).join(" · ");
+  /** What a lookup is for, in the player's words, or "" when the song has both. */
+  const missing = [...(untitled ? ["title"] : []), ...(form.artist.trim() ? [] : ["artist"])].join(" and ");
+
+  /** Asks the catalog for the title or artist the song still lacks. What comes back is shown, never written. */
+  const look = () => {
+    if (missing) return pasteLookup(searcher, form, parsed.sections, setLookup);
+    searcher.stop();
+    setLookup({ kind: "idle" });
+  };
 
   useEscape(onClose);
+  useEffect(() => searcher.stop, [searcher]);
   useEffect(() => {
-    if (taken) previewRef.current?.scrollIntoView({ block: "start" });
+    if (!taken) return;
+    previewRef.current?.scrollIntoView({ block: "start" });
+    look();
   }, [taken]);
 
   const set = <K extends keyof Form>(field: K) => (next: Form[K]) => {
@@ -156,6 +191,18 @@ function SongEditor({ song, songs, onTempo, onClose }: { song?: Song; songs: Son
     setForm((current) => ({ ...current, [field]: next }));
     setProblem("");
     setHave(null);
+    // A detail the player is typing stays on the page.
+    if (DETAILS.includes(field)) setDetailsWanted(true);
+    // Guesses were for the title and artist as they stood. A lookup that never ran keeps its Try again.
+    if (field === "title" || field === "artist") {
+      searcher.stop();
+      setLookup((current) => (current.kind === "offline" || current.kind === "failed" ? current : { kind: "idle" }));
+    }
+  };
+
+  const pointAtTitle = () => {
+    setDetailsWanted(true);
+    titleRef.current?.focus();
   };
 
   /** A field a paste may fill: blank, or not yet touched in a new song. */
@@ -178,12 +225,23 @@ function SongEditor({ song, songs, onTempo, onClose }: { song?: Song; songs: Son
     const next: Paste = pasted.chart.trim() ? { raw, before, view: CAPO_VIEW, pasted } : { raw, before, view: "raw", pasted: { facts: {}, chart: "", leftOut: [] } };
     show(next);
     setTaken((count) => count + 1);
+    // A paste folds the details away, so the chart it brought has the screen. With no title they stay open.
+    setDetailsWanted(false);
     return shown(next);
   };
 
   const takeChip = (take: Partial<Form>) => {
     for (const field of Object.keys(take) as (keyof Form)[]) touched.current.add(field);
     setForm((current) => ({ ...current, ...take }));
+  };
+
+  /** A tapped guess fills the title and artist the song lacks, and nothing the player already wrote. */
+  const takeGuess = (guess: CatalogSong) => {
+    const filled = { title: untitled ? guess.title : form.title, artist: form.artist.trim() ? form.artist : guess.artist };
+    takeChip(filled);
+    setTook({ ...filled, lengthSec: guess.lengthSec });
+    setLookup({ kind: "idle" });
+    setProblem("");
   };
 
   const switchTo = (paste: Paste, view: Paste["view"]) => show({ ...paste, view, pasted: readPaste(paste.raw, view === "raw" ? "shapes" : view) });
@@ -212,8 +270,14 @@ function SongEditor({ song, songs, onTempo, onClose }: { song?: Song; songs: Son
   };
 
   const save = (anyway = false) => {
-    const refusal = sheetProblem(meta, parsed.sections) ?? (form.bpm.trim() && tempo == null ? "BPM must be a whole number the metronome can play" : null);
-    if (refusal) return setProblem(refusal);
+    const refusal = sheetProblem(meta, parsed.sections) ?? (form.bpm.trim() && tempo == null ? BAD_BPM : null);
+    if (refusal) {
+      setProblem(refusal);
+      // The field the message is about comes into view: the title with the caret in it, or the folded BPM.
+      if (untitled) pointAtTitle();
+      else if (refusal === BAD_BPM) setDetailsWanted(true);
+      return;
+    }
     const same = song || anyway ? undefined : songYouHave(songs, meta);
     if (same) return setHave(same);
     if (!song) {
@@ -243,10 +307,29 @@ function SongEditor({ song, songs, onTempo, onClose }: { song?: Song; songs: Son
       >
         <h2 id={titleId}>{song ? "Edit song" : "New song"}</h2>
         {!song && !form.title && !form.artist && !form.chart ? <SongSearch songs={songs} /> : null}
-        <div className="song-editor-fields">
+        <button
+          type="button"
+          className="song-editor-fold"
+          aria-expanded={detailsOpen}
+          aria-controls={ids.details}
+          aria-label={detailsOpen ? undefined : `Song details: ${summary}`}
+          onClick={() => setDetailsWanted(!detailsOpen)}
+        >
+          <span>{detailsOpen ? "Song details" : summary}</span>
+        </button>
+        <div className="song-editor-fields" id={ids.details} hidden={!detailsOpen}>
           <div className="song-data-field">
             <label htmlFor={ids.title}>Title</label>
-            <input id={ids.title} autoComplete="off" value={form.title} onChange={(event) => set("title")(event.target.value)} />
+            <input
+              id={ids.title}
+              ref={titleRef}
+              autoComplete="off"
+              placeholder="Needed to save"
+              aria-required="true"
+              aria-invalid={untitled || undefined}
+              value={form.title}
+              onChange={(event) => set("title")(event.target.value)}
+            />
           </div>
           <div className="song-data-field">
             <label htmlFor={ids.artist}>Artist</label>
@@ -360,6 +443,43 @@ function SongEditor({ song, songs, onTempo, onClose }: { song?: Song; songs: Son
 
         <section className="song-editor-preview" aria-label="Preview" ref={previewRef}>
           <h3>Preview</h3>
+          {parsed.sections.length > 0 && missing ? (
+            <div className="song-editor-missing">
+              {untitled ? (
+                <div className="song-editor-paste-actions song-editor-capo">
+                  <span className="song-editor-hint">This song needs a title before it can be saved.</span>
+                  <button type="button" onClick={pointAtTitle}>
+                    Add a title
+                  </button>
+                </div>
+              ) : null}
+              {lookup.kind === "searching" ? <p className="song-editor-hint" role="status">Looking up the {missing}…</p> : null}
+              {lookup.kind === "offline" || lookup.kind === "failed" ? (
+                <div className="song-editor-paste-actions song-editor-capo">
+                  <span className="song-editor-hint" role="status">
+                    {NO_LOOKUP[lookup.kind](missing)}
+                  </span>
+                  <button type="button" onClick={look}>
+                    Try again
+                  </button>
+                </div>
+              ) : null}
+              {lookup.kind === "found" ? (
+                <>
+                  <p className="song-editor-hint">Is it one of these? Tap one to fill in the {missing}.</p>
+                  <ul className="song-editor-paste-actions song-editor-guesses" aria-label="Songs this could be">
+                    {lookup.songs.map((guess) => (
+                      <li key={guess.id}>
+                        <button type="button" onClick={() => takeGuess(guess)}>
+                          {[guess.title, guess.artist, guess.lengthSec === null ? "" : lengthText(guess.lengthSec)].filter(Boolean).join(" · ")}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : null}
+            </div>
+          ) : null}
           {parsed.sections.length > 0 ? (
             <LeadSheet song={preview} scale={1} semitones={0} notation="notes" metronome={metronome} />
           ) : (

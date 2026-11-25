@@ -2,9 +2,13 @@
  * Song search, the half with no screen: the general web search a player opens to find a song's chord chart, and the public
  * song catalog's recording search. The app never asks for, keeps or shows lyrics. The player opens the web search in
  * their own browser and pastes what they find. The catalog gives title, artist, year and length only.
+ *
+ * A chart the player pasted with no title or artist is looked up here too: `pasteLookup` asks the catalog for the
+ * title, or for one or two lines the chart sings, each as a title to search for. What comes back is shown as guesses.
  */
 
 import endpoints from "../data/song-search.json";
+import type { ChartSection } from "./types";
 
 const CHART_SEARCH = endpoints.chartSearch;
 const RECORDING_SEARCH = endpoints.recordingSearch;
@@ -175,4 +179,81 @@ export function catalogSearcher(deps: SearchDeps) {
     },
     stop: cancel,
   };
+}
+
+/** What looking up a pasted chart's missing title or artist came to. A guess is shown for the player to tap, never written for them. */
+export type Lookup = { kind: "idle" | "searching" | "none" | "offline" | "failed" } | { kind: "found"; songs: CatalogSong[] };
+
+/** How many sung lines one lookup may ask the catalog for, and how many guesses it shows. */
+const LOOKUP_LINES = 2;
+const GUESSES = 3;
+/** A sung line shorter or longer than this is rarely a title. */
+const TITLE_WORDS = { min: 2, max: 8 };
+
+/** The words of a title or a sung line, as they compare: no capitals, no punctuation, and nothing in round brackets such as (live). */
+const plainWords = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/['\p{Pi}\p{Pf}]/gu, "")
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+const wordSet = (text: string) => [...new Set(plainWords(text))].sort().join(" ");
+
+/** The sung lines most likely to be the title: the line sung most, a chorus line before a verse line, a short line before a long one. */
+function titleLines(sections: ChartSection[]): string[] {
+  const lines = new Map<string, { count: number; chorus: boolean; words: number; at: number }>();
+  for (const section of sections) {
+    const chorus = /chorus|refrain|hook/i.test(section.heading);
+    for (const { lyrics } of section.lines) {
+      const words = plainWords(lyrics ?? "");
+      if (words.length < TITLE_WORDS.min || words.length > TITLE_WORDS.max) continue;
+      const line = lines.get(words.join(" "));
+      if (line) Object.assign(line, { count: line.count + 1, chorus: line.chorus || chorus });
+      else lines.set(words.join(" "), { count: 1, chorus, words: words.length, at: lines.size });
+    }
+  }
+  return [...lines]
+    .sort(([, a], [, b]) => b.count - a.count || Number(b.chorus) - Number(a.chorus) || a.words - b.words || a.at - b.at)
+    .slice(0, LOOKUP_LINES)
+    .map(([line]) => line);
+}
+
+/** The songs worth showing for what was asked: the title is the asked words and no more, by `artist` when one is known, one row an artist. */
+function guessesIn(songs: CatalogSong[], asked: string, artist: string): CatalogSong[] {
+  const title = wordSet(asked);
+  const by = wordSet(artist);
+  const artists = new Set<string>();
+  return songs
+    .filter((song) => {
+      const credit = wordSet(song.artist);
+      if (wordSet(song.title) !== title || (by && credit !== by) || artists.has(credit)) return false;
+      artists.add(credit);
+      return true;
+    })
+    .slice(0, GUESSES);
+}
+
+/**
+ * Looks up the title or artist a pasted chart lacks. With a title it asks for that title. With none it asks for the
+ * sung lines of `titleLines`, one request a line, until one gives a guess. `report` hears `searching`, then `found`
+ * with the guesses, `none`, `offline` or `failed`. Stopping `searcher`, or searching it again, ends the lookup unheard.
+ */
+export function pasteLookup(
+  searcher: Pick<ReturnType<typeof catalogSearcher>, "search">,
+  known: { title: string; artist: string },
+  sections: ChartSection[],
+  report: (lookup: Lookup) => void,
+) {
+  const asks = known.title.trim() ? [known.title] : titleLines(sections);
+  const ask = (index: number) => {
+    if (index === asks.length) return report({ kind: "none" });
+    searcher.search(asks[index], (state) => {
+      if (state.kind === "searching" || state.kind === "offline" || state.kind === "failed") return report({ kind: state.kind });
+      const songs = state.kind === "found" ? guessesIn(state.songs, asks[index], known.artist) : [];
+      if (songs.length) report({ kind: "found", songs });
+      else ask(index + 1);
+    });
+  };
+  ask(0);
 }

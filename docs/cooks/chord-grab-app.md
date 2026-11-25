@@ -7,7 +7,7 @@ Not queued. This brief waits for the owner's review. Model: Opus. Plan: `docs/PL
 GOAL: A signed-in player taps Grab on a search result, sees the song's chart as the real sheet with the title, artist and length filled in, and taps Save. The song is in My Songs and opens with no network. When no site has the chart, the player sees why and is one tap from the web search and the paste.
 DECIDED: one cook, one branch, cook/chord-grab-app off mls-int-20261113 after chord-grab-worker and PR 116 (song-paste-autofill) have merged and gate G1 (plan section 7) has passed; the search list stays the song catalog and each row gains a Grab button (plan decision D5); Grab opens the one SongEditor with a start draft, and the grabbed text is taken as a paste through readPaste; the first row is fetched at once and the others sit under Try another version; the catalog row wins for title, artist and length; a grabbed song carries a credit line in Song.sourceNote (D6); the first Grab shows the note of plan section 5 once, and the privacy page gains its two sentences (D7); the state of a Grab is one value from grabber in src/chord-grab.ts.
 REJECTED: a second editor or a second preview; a second chart reader; a site address or a site id in src/; a request from the phone to a chord site; a song saved before the player taps Save; a page's title written over one the player typed; the grabbed text kept anywhere but the editor's box; any new localStorage key except the first-use flag; new libraries; edits to worker files; edits outside the owned files.
-DONE MEANS: cases A1 to A17 of plan section 1 each have a named check line that failed on the tests-only commit and passes now; the boxes under "Verification (cook 2)" in section 1 are ticked with their evidence in the report; src/App.tsx is at most 500 lines; npm run build and npm run check:portable are green.
+DONE MEANS: cases A1 to A20 of plan section 1 each have a named check line that failed on the tests-only commit and passes now; the boxes under "Verification (cook 2)" in section 1 are ticked with their evidence in the report; src/App.tsx is at most 500 lines; npm run build and npm run check:portable are green.
 SOURCE: docs/PLAN-chord-grab.md sections 1 and 5.
 NEEDS OWNER: D5 to D7 answered, and gate G1 (plan section 7) passed, before this cook starts. A G1 table that stops the feature means this cook does not run. The cook changes an interaction, so the owner reviews it on a phone in Preview before merge.
 ```
@@ -19,14 +19,14 @@ Read `CLAUDE.md` first, then "Rules every brief below inherits" in section 6 of 
 ## What the player can do
 
 1. Type a song in **Find a song to add**. Each row has a **Grab** button.
-2. Tap **Grab**. The New song editor opens with the title, artist, and length. It says **Looking for chords…**, then shows the chart as the real sheet, with **Chords from** and the site's name on the status line.
+2. Tap **Grab**. The New song editor opens with the title, artist, and length. It says **Looking for chords…** with a **Cancel** button, then shows the chart as the real sheet, with **Chords from** and the site's name on the status line.
 3. Tap **Try another version** to swap the chart, or **Look on another site**. Tap a chip to take a key or a BPM. Edit anything.
 4. Tap **Save**. The song is in My Songs and opens with no network.
 5. On a sheet with no chart, tap **Grab chords**. In the editor, tap **Grab chords** beside **Paste a sheet**.
 
 ## Tests first
 
-Commit 1 holds `scripts/check-chord-grab.ts` and its one `package.json` line, and nothing else. Cases A1 to A17 of plan section 1 fail on that commit. Paste the failing run into the report. Each case prints one named `ok` or `FAIL` line.
+Commit 1 holds `scripts/check-chord-grab.ts` and its one `package.json` line, and nothing else. Cases A1 to A20 of plan section 1 fail on that commit. Paste the failing run into the report. Each case prints one named `ok` or `FAIL` line.
 
 Cases A1 to A6 run in node on `grabber` with a stub `api` and stub timers. The other cases drive headless Chrome through `scripts/chrome.ts` and `scripts/app-page.ts`. The check starts no Worker. It answers `/api/me`, `/api/auth/config`, and `/api/grab/*` from a stub, as `scripts/check-song-search.ts` answers the catalog. Every chart in the check is written for the check, with made-up words.
 
@@ -67,9 +67,13 @@ If `mls-int-20261113` already has a start draft from another cook, use that one 
 
 ## Empty and error states, and the wired flow
 
-Every row of the table "What the player sees when something fails" in plan section 1 has its words on the screen and a case in A12. The words live in one `MESSAGES` map in `src/chord-grab.tsx`.
+Every row of the table "What the player sees when something fails" in plan section 1 has its words on the screen, and the table's last column names the cases that test the row. The words live in one `MESSAGES` map in `src/chord-grab.tsx`.
 
-Each `GrabStop` value has its own row in that table and a non-empty entry in `MESSAGES`. With Grab off, no **Grab** control is drawn anywhere and no request leaves. Grab can also go off after the buttons are drawn, when the server passes its daily count or the owner empties `GRAB_SITES`. That 503 `grab-off` shows the `off` words and hides every **Grab** control for the rest of the session. A 500, or a reply the phone cannot read, shows the `failed` words with **Try again**. A signed-out visitor never sees the search box, as today. A session that ended during a Grab opens the landed sign-in sheet, which can be closed. A storage failure on **Save** keeps the editor open with the landed message. Typing in the search box, closing the editor, or leaving the screen during a Grab drops the replies and adds no song.
+Each `GrabStop` value has its own row in that table and a non-empty entry in `MESSAGES`. With Grab off, no **Grab** control is drawn anywhere and no request leaves. Grab can also go off after the buttons are drawn, when the server passes its daily count or the owner empties `GRAB_SITES`. That 503 `grab-off` shows the `off` words and hides every **Grab** control for the rest of the session. A 500, or a reply the phone cannot read, shows the `failed` words with **Try again**. A signed-out visitor never sees the search box, as today. A session that ended during a Grab opens the landed sign-in sheet, which can be closed. A storage failure on **Save** keeps the editor open with the landed message.
+
+A Grab ends early in four ways, and each one calls `stop()` on the driver: a tap on **Cancel**, a keystroke in the editor's text box, the editor closing, and a sign-out or an account switch. The replies are then dropped. No song is added, what the player typed stays in the box, and no chart lands in the next account's editor. Cases A19 and A20 test this through the screen. A5 tests only the driver.
+
+**Grab chords** in the editor is drawn only when Grab is on and the title is not blank, and an `off` stop hides it too. Case A18 tests it.
 
 Flow: My Songs, type a title, **Grab**, **Looking for chords…**, the sheet in the review, **Save**, the sheet opens.
 
@@ -80,7 +84,7 @@ Flow: My Songs, type a title, **Grab**, **Looking for chords…**, the sheet in 
 ## Hints
 
 - Worth writing `grabber` and cases A1 to A6 before any screen. Copy the shape of `catalogSearcher`: injected `api` and timers, a counter that drops a late reply. High.
-- Worth knowing that a signed-in player's app never reads `/api/auth/config` today. Only `usePreviewEntry` reads it when signed out, and the account sheet reads it in `src/account.tsx`. So read `/api/auth/config` once after sign-in through `src/sign-in-methods.ts`, keep the answer as one session switch in `src/chord-grab.tsx`, and let an `off` stop turn the same switch off. `check:song-search` case 2d logs only cross-origin calls, and its stub passes every same-origin fetch through, so this read does not trip it. A caught 404 from a stub server adds no page error either. A row tap must still send nothing new. High.
+- Worth knowing that a signed-in player's app never reads `/api/auth/config` today. Only `usePreviewEntry` reads it when signed out, and the account sheet reads it in `src/account.tsx`. So read `/api/auth/config` once after each sign-in through `src/sign-in-methods.ts`, keep the answer as one session switch in `src/chord-grab.tsx`, and let an `off` stop turn the same switch off. A later read does not turn it back on. `check:song-search` case 2d logs only cross-origin calls, and its stub passes every same-origin fetch through, so this read does not trip it. A caught 404 from a stub server adds no page error either. A row tap must still send nothing new. High.
 - Worth taking the grabbed text with `takePaste(text, before)`, where `before` is the box as it was before the first Grab. **Try another version** then replaces the first chart and never stacks a second one under it. High.
 - Worth keeping the row's own button as it is and adding **Grab** as a second button in the same list item. `check:song-search` taps the row. High.
 - The editor's `stored()` builds the song from the form. The length and the credit line are not form fields, so carry them beside the form and add them in `stored()`. Medium.

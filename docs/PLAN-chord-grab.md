@@ -127,7 +127,7 @@ The brief gave the planner room to reorder, split, and swap methods. Each change
 3. **Smart paste runs on the phone.** The Worker returns plain chart text, and the phone calls `readPaste`. The reader keeps one copy, `check:song-paste` keeps covering it, and the editor's text box stays the one editable copy of the chart.
 4. **Rules that name a site live in the Worker.** The prototype found a mail header on one site and tab blocks marked in the HTML on another. The Worker's site code drops them. `src/song-paste.ts` gains nothing.
 5. **The fetch runs in the Worker's entry, not in the Directory object.** The Directory is one object for every account. A page fetch and its parsing there would make every other request wait. The entry does the fetch. The Directory answers one small call that checks the session and counts the use.
-6. **The fetch route is not an open fetcher.** It takes a page address only when the host and the path match a row of the site table, and it follows a redirect only inside that host. Without this rule any signed-in account could make the Worker fetch any address.
+6. **The fetch route is not an open fetcher.** It takes a page address only when the host and the path match a row of the site table, and it follows a redirect only inside that host. It tests each redirect before it sends the next request, so no request leaves the host. Without this rule any signed-in account could make the Worker fetch any address.
 7. **The Worker is an honest client, and a block is final.** The starting design says to try the next site when one blocks. This plan adds the other half. The Worker names the app in its User-Agent, and no cook builds a browser disguise, a proxy, a cookie replay, or a CAPTCHA solver. See decision D3.
 8. **`robots.txt` is honored.** Two of the five sites disallow their search pages. Decision D2 keeps the Worker off those pages. E-Chords needs no search. Ultimate Guitar does, so Ultimate Guitar leaves the search set.
 9. **The fallback order is Chordie, GuitarTabs.cc, E-Chords.** Section 3 gives the reasons. Gate G1 can reorder them with one line.
@@ -174,18 +174,18 @@ D1 to D4 and D8 are the answers cook 1 needs. Cook 2 needs D5 to D7. Section 7 l
 
 Grab starts in the **Find a song to add** box, which already sits on My Songs and in the New song editor.
 
-1. **Type.** The box lists recordings from the song catalog, as it does today. When the server says Grab is on, each row shows a **Grab** button at its right edge.
-2. **Tap Grab.** The New song editor opens at once with the row's title, artist, and length. A status line under the fields says **Looking for chords…** and has a **Cancel** button. Nothing is saved yet. A song the player already has asks first, before any request, as a pick does today.
-3. **The chart arrives.** The status line says **Getting the chart…** and then what a paste says, with the source in front, such as **Chords from Chordie. 6 sections. Left out 16 tab lines.** The text box holds the cleaned chart, and the real sheet is drawn under it.
-4. **Review.** The chips for key and BPM, the capo switch, and **Use it as pasted** work as they do after a paste. **Try another version** lists the site's other rows and ends with **Look on another site**, which asks the next site in the order. A tap on a row replaces the grabbed chart and nothing else.
-5. **Save.** The song goes to My Songs through `addOwnSong`, and the sheet opens. From here on the song needs no network.
+1. **Type.** The box lists recordings from the song catalog, as it does today. When the server says Grab is on, each row shows a **Grab** button at its right edge. Case A7.
+2. **Tap Grab.** The New song editor opens at once with the row's title, artist, and length. A status line under the fields says **Looking for chords…** and has a **Cancel** button. A tap on **Cancel** stops the Grab. The status line clears, no further request leaves, and a reply that arrives later changes nothing. Nothing is saved yet. A song the player already has asks first, before any request, as a pick does today. Cases A8, A13, A19.
+3. **The chart arrives.** The status line says **Getting the chart…** and then what a paste says, with the source in front, such as **Chords from Chordie. 6 sections. Left out 16 tab lines.** **Cancel** stays on the line until the chart is in the box. The text box holds the cleaned chart, and the real sheet is drawn under it. Cases A9, A19.
+4. **Review.** The chips for key and BPM, the capo switch, and **Use it as pasted** work as they do after a paste. **Try another version** lists the site's other rows and ends with **Look on another site**, which asks the next site in the order. A tap on a row replaces the grabbed chart and nothing else. Cases A9, A11.
+5. **Save.** The song goes to My Songs through `addOwnSong`, and the sheet opens. From here on the song needs no network. Case A10.
 
 A tap on the rest of the row still starts an empty sheet, as today.
 
 Grab has two more entries. Both open the same editor, so the states and the words have one home.
 
-- **An empty sheet.** A song the player made that has no chart shows **Grab chords** as the first control of the `NoWordsYet` panel. The Edit song editor opens with the grab started. **Save** writes the same song through `replaceOwnSong`.
-- **Inside the editor.** **Grab chords** sits beside **Paste a sheet** when Grab is on and the title is not blank.
+- **An empty sheet.** A song the player made that has no chart shows **Grab chords** as the first control of the `NoWordsYet` panel. The Edit song editor opens with the grab started. **Save** writes the same song through `replaceOwnSong`. Case A14.
+- **Inside the editor.** **Grab chords** sits beside **Paste a sheet** when Grab is on and the title is not blank. An `off` stop hides it with every other Grab control. Case A18.
 
 The song search plan rejected a draft that waits for **Save**, because the player left the app to copy a chart. With Grab the player stays in the app. If the phone unloads the app during the review, one tap repeats the Grab.
 
@@ -215,6 +215,8 @@ export type GrabState =
 
 Cook 2 adds `grabber(deps)` to the same file. It takes an injected `api` and timers, as `catalogSearcher` does. `grab({ title, artist })` asks the Worker to find the song, then asks for the first row's page. When that page fails, it asks for the next site and tries again. `take(match)` fetches one more row for **Try another version**. `stop()` drops the replies of a Grab the player left.
 
+The screen calls `stop()` in four places, and nowhere else decides that a Grab is over: a tap on **Cancel**, a keystroke in the editor's text box, the editor closing, and a sign-out or an account switch. Without the call a late chart would replace what the player typed, or land in the next account's editor.
+
 Cook 2 also gives the editor one start draft, which cook 4 reuses.
 
 ```ts
@@ -238,22 +240,22 @@ One rule decides each field. The catalog row wins for title, artist, and length.
 
 Every case leaves the editor open and usable. **Find chords on the web** and **Paste a sheet** are already in the editor, one tap away.
 
-Each `GrabStop` value has one row, and the `MESSAGES` map of `src/chord-grab.tsx` holds exactly these words. A row with no `GrabStop` is not a stop.
+Each `GrabStop` value has one row, and the `MESSAGES` map of `src/chord-grab.tsx` holds exactly these words. A row with no `GrabStop` is not a stop. The last column names the cases that test the row, and `check:chord-grab-plan` fails when a row names none.
 
-| Case | `GrabStop` | Words on the status line | What else |
-|---|---|---|---|
-| No site lists the song | `none` | No chart found for this song on the sites the app can read. | **Start an empty sheet** saves the title, artist, and length, as a row tap does |
-| Every site refused or timed out | `blocked` | The chord sites didn't answer. Find the chart on the web and paste it. | **Try again** |
-| A page was fetched and held no chart | | The next row or the next site is tried without a word. When none is left, the `none` words show. | |
-| Offline, or the Worker did not answer | `offline` | You're offline, so the app can't look for chords right now. | **Try again** |
-| The account passed its limit | `slow-down` | That's a lot of grabs. Try again in a few minutes. | No button. The wait comes from the Worker. |
-| The session ended | `signed-out` | Sign in again to grab chords. | The landed sign-in sheet opens, and it can be closed |
-| Grab is off when the app reads `/api/auth/config` | | Nothing. The **Grab** buttons are not drawn. | |
-| Grab went off after the buttons were drawn: the server passed its daily count, or the owner emptied or cut `GRAB_SITES` and deployed. The Worker says 503 `grab-off`. | `off` | Grab is resting for now. Find the chart on the web and paste it. | No button. The stop turns off the same switch that `/api/auth/config` set, so every **Grab** button is hidden for the rest of the session, until the app is opened again. |
-| The Worker sent a 500, a reply that is not JSON, or a reason this table does not name, such as `bad-request` or `wrong-origin` | `failed` | Something went wrong while grabbing. Try again. | **Try again** |
-| The grabbed text has no chart after cleaning | | Nothing here looks like a chart. It is in the box as pasted. | The landed paste message |
-| The player types in the box, or closes the editor, while a Grab runs | | Nothing | The replies are dropped, and no song is added |
-| A second account on the same phone | | No change | A grabbed song is one of the signed-in account's own songs |
+| Case | `GrabStop` | Words on the status line | What else | Cases |
+|---|---|---|---|---|
+| No site lists the song | `none` | No chart found for this song on the sites the app can read. | **Start an empty sheet** saves the title, artist, and length, as a row tap does | A3, A12 |
+| Every site refused or timed out | `blocked` | The chord sites didn't answer. Find the chart on the web and paste it. | **Try again** | A3, A12 |
+| A page was fetched and held no chart | | The next row or the next site is tried without a word. When none is left, the `none` words show. | | A2 |
+| Offline, or the Worker did not answer | `offline` | You're offline, so the app can't look for chords right now. | **Try again** | A4, A12 |
+| The account passed its limit | `slow-down` | That's a lot of grabs. Try again in a few minutes. | No button. The wait comes from the Worker. | A4, A12 |
+| The session ended | `signed-out` | Sign in again to grab chords. | The landed sign-in sheet opens, and it can be closed | A4, A12 |
+| Grab is off when the app reads `/api/auth/config` | | Nothing. The **Grab** buttons are not drawn. | | A7, A18 |
+| Grab went off after the buttons were drawn: the server passed its daily count, or the owner emptied or cut `GRAB_SITES` and deployed. The Worker says 503 `grab-off`. | `off` | Grab is resting for now. Find the chart on the web and paste it. | No button. The stop turns off the same switch that `/api/auth/config` set, so every **Grab** button is hidden for the rest of the session, until the app is opened again. A later read of `/api/auth/config` does not turn it back on. | A4, A12, A18 |
+| The Worker sent a 500, a reply that is not JSON, or a reason this table does not name, such as `bad-request` or `wrong-origin` | `failed` | Something went wrong while grabbing. Try again. | **Try again** | A4, A12 |
+| The grabbed text has no chart after cleaning | | Nothing here looks like a chart. It is in the box as pasted. | The landed paste message | A12 |
+| The player taps **Cancel**, types in the editor's text box, or closes the editor, while a Grab runs | | Nothing | The replies are dropped, and no song is added. What the player typed stays in the box. | A5, A19, A20 |
+| A second account on the same phone | | No change | A grabbed song is one of the signed-in account's own songs. A sign-out or an account switch while a Grab runs drops its replies, so no chart lands in the next account's editor. The Grab switch is read again after each sign-in. | A7, A20 |
 
 ### Where each part lives
 
@@ -263,7 +265,7 @@ Each `GrabStop` value has one row, and the `MESSAGES` map of `src/chord-grab.tsx
 | The Grab button, the status line, **Try another version**, the first-use note | `src/chord-grab.tsx`, `src/chord-grab.css` | 2 |
 | The editor takes a start draft and a grabbed text | `src/song-editor.tsx` | 2 |
 | The button on a search row and on the empty-sheet panel | `src/song-search.tsx` | 2 |
-| Whether Grab is on | `GET /api/auth/config`, read through `src/sign-in-methods.ts` once after sign-in, and turned off for the session by an `off` stop | 1, then 2 |
+| Whether Grab is on | `GET /api/auth/config`, read through `src/sign-in-methods.ts` once after each sign-in, so an account switch reads it again, and turned off for the session by an `off` stop | 1, then 2 |
 | Every chord site address | `data/chord-sites.json` | 1 |
 
 ### Required test cases for the screen (cook 2)
@@ -276,21 +278,24 @@ Cases A1 to A6 run in node on `grabber` with a stub `api`. The rest drive headle
 - A4. A request that never got an answer gives `offline`. A 429 gives `slow-down`. A 401 gives `signed-out`. A 503 `grab-off` gives `off`. A 500 gives `failed`, and so do a 200 that is not JSON and a 400 `bad-request`.
 - A5. `stop()` during `looking` drops the late reply. No state is reported after it.
 - A6. `take(match)` gives `got` with that row's chart and keeps the same `found`.
-- A7. With Grab on, each search row has a **Grab** button. With Grab off, none is drawn and no request leaves.
-- A8. A tap on **Grab** opens the New song editor with the row's title and artist, and the status line shows the looking words.
-- A9. The stub chart lands in the box, the sheet draws its headings, and the status line starts with **Chords from** and the site's name.
+- A7. With Grab on, each search row has a **Grab** button. With Grab off, none is drawn and no request leaves. After a sign-out and a sign-in as a second account on the same page, the stub sees a second read of `/api/auth/config`.
+- A8. A tap on **Grab** opens the New song editor with the row's title and artist, and the status line says **Looking for chords…**.
+- A9. While the stub holds the page, the status line says **Getting the chart…**. The stub chart lands in the box, the sheet draws its headings, and the status line starts with **Chords from** and the site's name. **Use it as pasted** is drawn, as after a paste.
 - A10. **Save** adds one song. Its `officialRuntimeSec` is the row's length, and its `sourceNote` is the credit line. With the network cut, a reload opens the same sheet.
 - A11. **Try another version** lists the other rows. A tap replaces the chart in the box. A title the player typed stays. **Look on another site** sends `find` with `after` set to the current site.
-- A12. Each row of the table above shows its words, and each `GrabStop` value has a non-empty entry in `MESSAGES`. **Start an empty sheet** adds a song with no chart. With Grab on at load, a 503 `grab-off` shows the `off` words, and then no search row and no empty-sheet panel draws a **Grab** button. A 500 shows the `failed` words and **Try again**, and the tap sends one new `find`.
+- A12. Each row of the table above shows its words, and each `GrabStop` value has a non-empty entry in `MESSAGES`. **Start an empty sheet** adds a song with no chart. With Grab on at load, a 503 `grab-off` shows the `off` words, and then no search row and no empty-sheet panel draws a **Grab** button. A 500 shows the `failed` words and **Try again**, and the tap sends one new `find`. A 401 shows the `signed-out` words and opens the landed sign-in sheet, and closing the sheet leaves the editor usable.
 - A13. A song the player already has asks first, and the stub sees no request before the answer.
 - A14. On an empty sheet, **Grab chords** opens Edit song. **Save** keeps the song's id, and My Songs holds one copy.
 - A15. The first Grab on this phone shows the note of section 5 once. The second Grab does not.
 - A16. At 360 px and 390 px every new control is at least 44 px tall and is not clipped.
 - A17. `check:song-search`, `check:song-paste`, and `check:new-song` pass with no edit to their scripts.
+- A18. In the editor with a title, **Grab chords** is drawn beside **Paste a sheet**. With a blank title it is not drawn. With Grab off at load it is not drawn. After a 503 `grab-off` it is gone, and it stays gone when the editor is opened again.
+- A19. A tap on **Cancel** while the status line says **Looking for chords…** clears the line, and the stub sees no further request. The title field and the box still take typing. The stub's late reply changes nothing in the box or on the status line. The same holds for **Cancel** while the line says **Getting the chart…**.
+- A20. The player types in the editor's text box while a Grab runs, and then the stub's chart arrives. The box holds what the player typed, the status line is clear, and no song is added. The same holds when the player closes the editor before the reply. When the player signs out and a second account signs in before the reply, no chart lands in an editor, and the second account's My Songs holds no new song.
 
 ### Verification (cook 2)
 
-- [ ] Unit. `npm run check:chord-grab` prints `ok` for A1 to A17. Each case printed `FAIL` on the tests-only commit.
+- [ ] Unit. `npm run check:chord-grab` prints `ok` for A1 to A20. Each case printed `FAIL` on the tests-only commit.
 - [ ] Live. `wrangler dev --local` with cook 1's Worker, and the app in headless Chrome. Search "brown eyed girl", tap **Grab** on the Van Morrison row, tap **Save**. Pass when the saved sheet has at least 4 sections and 20 chords, and it opens after the network is cut.
 - [ ] Perf. The main script is 225.64 KB gzipped at `b2b248a`, read from `npm run build`. The cook fails this box when its build is over 232 KB. A Grab that pulls in more than 6 KB of new code belongs behind `import()`.
 - [ ] The owner taps through the flow on a phone in Preview before merge. This cook changes an interaction.
@@ -301,27 +306,30 @@ Cases A1 to A6 run in node on `grabber` with a stub `api`. The rest drive headle
 
 Two new routes do the work. Both are `POST`. `worker/index.ts` sends `/api/grab/` to a new file, `worker/grab.ts`, before it tries the Directory routes. The landed Origin check sits inside the `DIRECTORY_PATH` branch of `worker/index.ts`, so it never sees these routes. The new branch calls `fromApp` itself, as step 1 of `find` says, and case W15 tests it.
 
+This leaves the route pattern that `CLAUDE.md` names, a `Record<string, Route>` such as `BAND_ROUTES` that is merged into the Directory's `ROUTES`. Change 5 gives the reason. A page fetch inside the Directory would make every account wait. Only `allowGrab` runs in the Directory. Cook 1 does not move these routes into `ROUTES`, and its report names the departure, as `CLAUDE.md` asks.
+
 | Route | Body | Answer |
 |---|---|---|
 | `POST /api/grab/find` | `{ title, artist, after? }` | `GrabFound`: the first site that lists the song, and up to 8 rows. `after` is a site id, and the walk starts behind it. |
 | `POST /api/grab/page` | `{ url }` | `GrabbedChart`: that page's title, artist, and chart text |
 | `GET /api/auth/config` | | The landed reply gains `grab: boolean` |
 
-A refusal is `throw new Refused(reason, status)`, and the phone branches on the reason.
+A refusal is `throw new Refused(reason, status)`, and the phone branches on the reason. The last column names the cases that test the row.
 
-| Reason | Status | When |
-|---|---|---|
-| `wrong-origin` | 403 | `fromApp` refuses the `POST`, called by the `/api/grab/` branch |
-| `signed-out` | 401 | No session, or a session that was replaced |
-| `grab-off` | 503 | `GRAB_SITES` is empty, or the server passed its daily count |
-| `bad-request` | 400 | No title, or a body over 2 KB |
-| `slow-down` | 429 | The account passed a limit. The reply carries `waitMs`. |
-| `not-a-chart-page` | 400 | The address fails the site table |
-| `no-match` | 404 | `find`: a site answered, and none lists the song |
-| `sites-down` | 502 | `find`: no site answered |
-| `site-blocked` | 502 | `page`: the site said 403 or 429, or sent a challenge page |
-| `site-down` | 504 | `page`: no answer in 6 seconds, or a 5xx |
-| `no-chart` | 422 | `page`: the page was read and holds no chart, or the site said 404 |
+| Reason | Status | When | Cases |
+|---|---|---|---|
+| `wrong-origin` | 403 | `fromApp` refuses the `POST`, called by the `/api/grab/` branch | W15 |
+| `signed-out` | 401 | No session, or a session that was replaced | W15 |
+| `grab-off` | 503 | `GRAB_SITES` is empty, or the server passed its daily count | W15 |
+| `bad-request` | 400 | No title, or a body that is not a JSON object | W15 |
+| `too-large` | 413 | A body over 2 KB. `readJsonObject` refuses it with this reason. | W15 |
+| `slow-down` | 429 | The account passed a limit. The reply carries `waitMs`. | W16 |
+| `not-a-chart-page` | 400 | The address fails the site table, or a redirect leaves the site's host | W13 |
+| `no-match` | 404 | `find`: a site answered, and none lists the song | W10 |
+| `sites-down` | 502 | `find`: no site answered | W10 |
+| `site-blocked` | 502 | `page`: the site said 403 or 429, or sent a challenge page | W14 |
+| `site-down` | 504 | `page`: no answer in 6 seconds, or a 5xx | W14 |
+| `no-chart` | 422 | `page`: the page was read and holds no chart, or the site said 404 | W14 |
 
 ### The site table
 
@@ -375,11 +383,13 @@ Two Worker variables steer the table. Both are declared in `env.test` and `env.p
 5. For a site with `built`, make the address and send a `HEAD` request. A 200 is one row. The page itself is not fetched until the phone asks for it.
 6. Return the first site that has a row. When the walk ends with none, refuse with `no-match` or `sites-down`.
 
+Both requests of `find` follow the redirect rule of `page` step 3, so a site cannot send the Worker to another host. A redirect that leaves the host counts as no answer from that site.
+
 `page` does this.
 
 1. The same guards, then `allowGrab(userId, version, "page")`.
 2. Parse `url` with `new URL`. Refuse with `not-a-chart-page` unless the scheme is `https`, the address has no port and no user, the host equals one site's host, and the path matches that site's `page` pattern. Drop the query and the hash.
-3. Fetch the page with a 6 second limit and read at most 1 MB. Refuse when the final address left the site's host.
+3. Fetch the page with `redirect: "manual"`, a 6 second limit, and at most 1 MB read. `fetch` follows a redirect by default, and the request to the new address has then already left. So the Worker reads `Location` itself and follows it only when it is `https` on the same site's host, with no port and no user. Any other `Location` is refused with `not-a-chart-page`, and no request goes to it. A fourth redirect is `no-chart`.
 4. Pass the HTML to `chart`. A null is `no-chart`.
 5. Reply with the title, the artist, and the text, cut at 60,000 characters, with `Cache-Control: no-store`.
 
@@ -406,12 +416,12 @@ Cases W1 to W8 run in node on the recipes. Every fixture is HTML written for the
 - W7. A page with no chart block gives null from every recipe.
 - W8. The site table and `RECIPES` hold the same ids. Every row has `find` or `built` and not both. Every `page` pattern compiles and matches its fixture address.
 - W9. `find` returns the first site's rows, and the stub log shows that the second site was not asked.
-- W10. A first site that says 403 gives the second site's rows. A first site that holds the request past the limit does the same. Every site refusing gives 502 `sites-down`. Every site answering with no row gives 404 `no-match`.
+- W10. A first site that says 403 gives the second site's rows. A first site that holds the request past the limit does the same. A first site whose search page redirects to another host does the same, and the stub sees no request on that host. Every site refusing gives 502 `sites-down`. Every site answering with no row gives 404 `no-match`.
 - W11. `after` starts the walk behind the named site.
 - W12. `page` returns the title, the artist, and the text for a listed address. The reply has `Cache-Control: no-store`.
-- W13. `page` refuses with `not-a-chart-page`, and the stub sees no request, for each of these: another host, a listed host with a path that is no chart page, `http`, an address with a port, an address with a user, a host that only starts with a listed host, and a bare IP address. A redirect that leaves the host is refused.
-- W14. A site's 403 gives `site-blocked`. A 500 and a held request give `site-down`. A page with no chart gives 422 `no-chart`. A 3 MB body is cut at the limit and gives `no-chart` with no crash.
-- W15. Signed out is 401. A wrong Origin is 403. With `GRAB_SITES` empty, both routes give 503 `grab-off` and `/api/auth/config` says `grab: false`. With sites listed it says `grab: true`.
+- W13. `page` refuses with `not-a-chart-page`, and the stub sees no request, for each of these: another host, a listed host with a path that is no chart page, `http`, an address with a port, an address with a user, a host that only starts with a listed host, and a bare IP address. A listed page that answers with a redirect to another host is refused with `not-a-chart-page`, and the stub sees no request on that host. A redirect inside the host is followed.
+- W14. A site's 403 gives `site-blocked`, and so do a 429 and a 200 with a `cf-mitigated` header. A 500 and a held request give `site-down`. A page with no chart gives 422 `no-chart`, and so does a site's 404. A 3 MB body is cut at the limit and gives `no-chart` with no crash.
+- W15. Signed out is 401. A wrong Origin is 403. A body with no title is 400 `bad-request`, and a body over 2 KB is 413 `too-large`. With `GRAB_SITES` empty, both routes give 503 `grab-off` and `/api/auth/config` says `grab: false`. With sites listed it says `grab: true`.
 - W16. The 21st `page` call inside one hour is 429 `slow-down` with a `waitMs`. After the shortened hour it passes. A second account is not slowed.
 - W17. Nothing is stored. The fixture chart holds a marker word. After a `find` and a `page`, no file under the Worker's local state folder holds that word.
 - W18. The User-Agent the stub saw holds the `RP_NAME` and the contact from the variables, and does not hold the word "Mozilla".
@@ -448,12 +458,12 @@ The order is the value of `GRAB_SITES`, so a change is one line in `worker/wrang
 
 ### How a block and a layout change look to the Worker
 
-| What the site sends | What the Worker says | What it means |
-|---|---|---|
-| 403 or 429, or a reply with a `cf-mitigated` header | `site-blocked` | The site refuses this client |
-| No answer in time, or a 5xx | `site-down` | The site is slow or down |
-| 200 and the recipe finds no chart block | `no-chart` | The layout changed, or the reply is a challenge page |
-| 200 on the search page and the recipe finds no row | `no-match` | The song is not there, or the search layout changed |
+| What the site sends | What the Worker says | What it means | Cases |
+|---|---|---|---|
+| 403 or 429, or a reply with a `cf-mitigated` header | `site-blocked` | The site refuses this client | W14, C3 |
+| No answer in time, or a 5xx | `site-down` | The site is slow or down | W14, C3 |
+| 200 and the recipe finds no chart block | `no-chart` | The layout changed, or the reply is a challenge page | W14, C3 |
+| 200 on the search page and the recipe finds no row | `no-match` | The song is not there, or the search layout changed | W10, C3 |
 
 A changed search layout looks the same as a missing song for one request. The canary tells them apart, because the canary asks for a song that every site has.
 
@@ -527,16 +537,16 @@ export type Shared =
 
 A text that holds a chart and a link is a text share, because the chart needs no network. A text that holds only a link, or a title and a link, is a link share.
 
-| Case | What the player sees |
-|---|---|
-| A link to a chart page on a listed site | The review, as after a Grab |
-| A link to any other page | The app can't read that page. Select the chart on the page and copy it, then tap **Paste a sheet**. |
-| A link the site refused | The same words |
-| Any other stop of the link's Grab, such as `slow-down`, `off`, or `failed` | The words of that `GrabStop` in the section 1 table |
-| A link, with no network | You're offline, so the app can't fetch that page right now. **Try again** |
-| Selected chart text | The review, as after a paste |
-| Nothing usable | The New song editor, with "Paste your sheet into the box." |
-| Signed out | The landed sign-in sheet. Closing it leaves the app usable and shows "Sign in to add the shared chart." The share opens after a sign-in on the same page. |
+| What was shared | What the player sees | Cases |
+|---|---|---|
+| A link to a chart page on a listed site | The review, as after a Grab | S5 |
+| A link to any other page | The app can't read that page. Select the chart on the page and copy it, then tap **Paste a sheet**. | S6 |
+| A link the site refused | The same words | S6 |
+| A link whose Grab stops any other way, such as `slow-down`, `off`, or `failed` | The words of that `GrabStop` in the section 1 table | S6 |
+| A link, with no network | You're offline, so the app can't fetch that page right now. **Try again** | S7 |
+| Selected chart text | The review, as after a paste | S4 |
+| Nothing usable | The New song editor, with "Paste your sheet into the box." | S4 |
+| Anything, while signed out | The landed sign-in sheet. Closing it leaves the app usable and shows "Sign in to add the shared chart." The share opens after a sign-in on the same page. | S8 |
 
 Two limits stay. A share starts the app on a fresh page, so an editor draft that was open and not saved is lost, as with any reload. The manifest has one SVG icon, and Chrome may want PNG icons before it installs the app. The cook renders them from `public/favicon.svg` with the repo's Chrome driver if the phone test asks for them.
 
@@ -545,9 +555,9 @@ Two limits stay. A share starts the app on a fresh page, so an editor draft that
 - S1. The sorting function: an address field gives `link`. A text that is only an address gives `link`. A title line and an address give `link`. A text with chart lines gives `text`. A chart with an address in it gives `text`. Nothing gives `empty`.
 - S2. The built manifest has a `share_target` with `POST`, an action inside the scope, and the three fields.
 - S3. With the network cut, a form `POST` to the share action lands on the app, and the page stub sees no request that holds the shared text.
-- S4. A shared chart opens the New song editor with the cleaned chart and the paste status line. **Save** adds one song.
+- S4. A shared chart opens the New song editor with the cleaned chart and the paste status line. **Save** adds one song. A share with no text and no address opens the New song editor with "Paste your sheet into the box." and adds no song.
 - S5. A shared link to a listed site, with `/api/grab/page` stubbed, opens the review with the credit line.
-- S6. `not-a-chart-page` and `site-blocked` show the words of the table, and **Paste a sheet** is on the screen.
+- S6. `not-a-chart-page` and `site-blocked` show the words of the table, and **Paste a sheet** is on the screen. A 429 `slow-down` shows the `slow-down` words of the section 1 table.
 - S7. With the network cut, a shared link shows the offline words and **Try again**, and a shared chart still opens.
 - S8. Signed out, the sign-in sheet opens and can be closed. The app is usable after the close. After a sign-in the shared chart opens.
 - S9. The share is taken once. A reload does not open the editor again, and the address bar holds no shared text.
@@ -646,6 +656,7 @@ Each brief is ready to copy into the queue. The queue's own header, laptop notes
 - Read `CLAUDE.md` first. Stay inside the owned files. Add one `check:*` line to `package.json` and nothing else there.
 - Commit 1 holds the tests alone, and each new case fails on it. Paste the failing run into the report. Later commits do not weaken a case. A case that is wrong goes in `QUESTIONS.md`, which is a shared log, so add the entry at the top.
 - The required test cases are the numbered cases in the named section of `docs/PLAN-chord-grab.md`. Each case needs a named line that prints `ok` or `FAIL`.
+- Each step of the Grab flow and each row of a state table in this plan names the cases that test it, and `npm run check:chord-grab-plan` holds that. A cook that adds a state, a row, or a control adds its case to the plan in the same commit.
 - A new check passes three runs in a row before the report, on Windows paths and on Linux paths. Write paths with `fileURLToPath` and `path.join`, and read the browser from `CHROME`.
 - No new libraries. Screen cases use `scripts/chrome.ts` and `scripts/app-page.ts`, as `scripts/check-song-search.ts` does.
 - **The fetch rule.** The Worker may search the listed chord sites and fetch the one page a player asks for. Nothing that was fetched is stored. No page, no search HTML, and no chart text goes into a Durable Object, KV, R2, the Cache API, or a log line.
@@ -699,7 +710,7 @@ Standalone file: `docs/cooks/chord-grab-app.md`. Model: Opus.
 GOAL: A signed-in player taps Grab on a search result, sees the song's chart as the real sheet with the title, artist and length filled in, and taps Save. The song is in My Songs and opens with no network. When no site has the chart, the player sees why and is one tap from the web search and the paste.
 DECIDED: one cook, one branch, cook/chord-grab-app off mls-int-20261113 after chord-grab-worker and PR 116 (song-paste-autofill) have merged and gate G1 (plan section 7) has passed; the search list stays the song catalog and each row gains a Grab button (plan decision D5); Grab opens the one SongEditor with a start draft, and the grabbed text is taken as a paste through readPaste; the first row is fetched at once and the others sit under Try another version; the catalog row wins for title, artist and length; a grabbed song carries a credit line in Song.sourceNote (D6); the first Grab shows the note of plan section 5 once, and the privacy page gains its two sentences (D7); the state of a Grab is one value from grabber in src/chord-grab.ts.
 REJECTED: a second editor or a second preview; a second chart reader; a site address or a site id in src/; a request from the phone to a chord site; a song saved before the player taps Save; a page's title written over one the player typed; the grabbed text kept anywhere but the editor's box; any new localStorage key except the first-use flag; new libraries; edits to worker files; edits outside the owned files.
-DONE MEANS: cases A1 to A17 of plan section 1 each have a named check line that failed on the tests-only commit and passes now; the boxes under "Verification (cook 2)" in section 1 are ticked with their evidence in the report; src/App.tsx is at most 500 lines; npm run build and npm run check:portable are green.
+DONE MEANS: cases A1 to A20 of plan section 1 each have a named check line that failed on the tests-only commit and passes now; the boxes under "Verification (cook 2)" in section 1 are ticked with their evidence in the report; src/App.tsx is at most 500 lines; npm run build and npm run check:portable are green.
 SOURCE: docs/PLAN-chord-grab.md sections 1 and 5.
 NEEDS OWNER: D5 to D7 answered, and gate G1 (plan section 7) passed, before this cook starts. A G1 table that stops the feature means this cook does not run. The cook changes an interaction, so the owner reviews it on a phone in Preview before merge.
 
@@ -707,13 +718,13 @@ NEEDS OWNER: D5 to D7 answered, and gate G1 (plan section 7) passed, before this
 
 ## What the player can do
 1. Type a song in Find a song to add. Each row has a Grab button.
-2. Tap Grab. The New song editor opens with the title, artist and length, says Looking for chords, then shows the chart as the real sheet with "Chords from" and the site's name.
+2. Tap Grab. The New song editor opens with the title, artist and length, says Looking for chords with a Cancel button, then shows the chart as the real sheet with "Chords from" and the site's name.
 3. Tap Try another version to swap the chart. Tap a chip to take a key or a BPM. Edit anything.
 4. Tap Save. The song is in My Songs and opens with no network.
 5. On a sheet with no chart, tap Grab chords. In the editor, tap Grab chords beside Paste a sheet.
 
 ## Tests first
-Commit 1 holds scripts/check-chord-grab.ts and its one package.json line, and nothing else. Cases A1 to A17 fail on that commit. Paste the failing run into the report. The check starts no Worker. It answers /api/me, /api/auth/config and /api/grab/* from a stub, as scripts/check-song-search.ts answers the catalog.
+Commit 1 holds scripts/check-chord-grab.ts and its one package.json line, and nothing else. Cases A1 to A20 fail on that commit. Paste the failing run into the report. The check starts no Worker. It answers /api/me, /api/auth/config and /api/grab/* from a stub, as scripts/check-song-search.ts answers the catalog.
 
 ## Owned files
 src/chord-grab.ts (add grabber; keep the types as cook 1 froze them), src/chord-grab.tsx and src/chord-grab.css (new: the Grab button, the status line, Try another version, the first-use note, the MESSAGES map), src/song-editor.tsx and src/song-editor.css (SongEdit gains a start draft; a grabbed text goes through takePaste; the length and the credit line reach the saved song; Grab chords beside Paste a sheet), src/song-search.tsx and src/song-search.css (the button on a row, Grab chords in NoWordsYet, the hint line), src/library-lists.tsx and src/App.tsx (pass the start draft to the editor; at most three new lines in src/App.tsx), src/data-kinds.ts (the first-use flag) and scripts/build-privacy.ts (the two sentences), scripts/check-chord-grab.ts (new), scripts/check-one-copy.ts (new rows only), package.json (one line).

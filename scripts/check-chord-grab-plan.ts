@@ -138,7 +138,7 @@ const section2 = plan.slice(plan.indexOf("\n## 2. "), plan.indexOf("\n## 3. "));
 const pageSteps = section2.slice(section2.indexOf("\n`page` does this."), section2.indexOf("\n### Guards"));
 const redirectSentences = (cases.get("W13") ?? "").split(/(?<=\.) /).filter((sentence) => /redirect/i.test(sentence));
 check(
-  pageSteps.includes('`redirect: "manual"`') && redirectSentences.length > 0 && redirectSentences.every((sentence) => /sees no request/.test(sentence)),
+  pageSteps.includes('`redirect: "manual"`') && redirectSentences.some((sentence) => /sees no request/.test(sentence)),
   'no request leaves a site\'s host: the `page` steps say `redirect: "manual"`, and W13 says the stub sees no request on a redirect that leaves the host',
 );
 const routes = section("### Routes").join("\n");

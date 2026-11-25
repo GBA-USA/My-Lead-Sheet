@@ -7,7 +7,7 @@ Not queued. This brief waits for the owner's review. Model: Opus. Plan: `docs/PL
 GOAL: A signed-in player picks or drops a pile of text files and documents (.txt, ChordPro, .html, .rtf, .docx, or a .zip of them) and gets a review list, one row a file, that says Looks good, Check this or Couldn't read. One tap saves every good row to My Songs, and each saved song opens with no network.
 DECIDED: one cook, one branch, cook/bulk-import-text off mls-int-20261113 after PR 116 (song-paste-autofill) has merged; every file's text goes through readPaste, which stays the only reader of chart rules; the review list lives in memory; Fix opens the one SongEditor; a title may come from the file name; a duplicate is flagged by songYouHave and waits for Keep both, Replace or Skip (plan decision D6); Save writes the library once with addOwnSongs; the file picker has no accept filter.
 REJECTED: a second chart parser or a second chord rule; a second editor or a second preview; a draft store for the list; any network call; a catalog lookup for each file; PDFs, photos and MusicXML, which are later cooks; new libraries; any change to what is shared; real charts as fixtures; edits outside the owned files.
-DONE MEANS: cases U1 to U11, X1 to X12 and B1 to B12 of the plan each have a named check line that failed on the tests-only commit and passes now; every box under "Verification for the flow" in section 1 and "Verification for the batch" in section 4 is ticked with its evidence in the report; npm run build and npm run check:portable are green.
+DONE MEANS: cases U1 to U13, X1 to X13 and B1 to B14 of the plan each have a named check line that failed on the tests-only commit and passes now; every box under "Verification for the flow" in section 1 and "Verification for the batch" in section 4 is ticked with its evidence in the report; npm run build and npm run check:portable are green.
 SOURCE: docs/PLAN-bulk-import.md sections 1, 2 (tier 1) and 4.
 NEEDS OWNER: none to start. The owner reviews the flow on a phone before merge. The sample files of plan section 7 make the live script useful and do not block the cook.
 ```
@@ -29,7 +29,7 @@ Read `CLAUDE.md` first, then "Rules every brief below inherits" in section 6 of 
 
 Commit 1 holds `scripts/check-song-import.ts` and its one `package.json` line, and nothing else. Every case fails on that commit. Paste the failing run into the report.
 
-The cases are U1 to U11 in plan section 1, X1 to X12 in plan section 2, and B1 to B12 in plan section 4. Each case prints one named `ok` or `FAIL` line.
+The cases are U1 to U13 in plan section 1, X1 to X13 in plan section 2, and B1 to B14 in plan section 4. Each case prints one named `ok` or `FAIL` line.
 
 The check builds its own files. It writes a real `.docx` and a real `.zip` with `node:zlib`, with at least one deflated entry. It hands files to the picker with the browser's own file-input command through `scripts/chrome.ts`. It starts no Worker, and signs in against a stub `/api/me` as `scripts/check-song-paste.ts` does.
 
@@ -41,9 +41,9 @@ The check builds its own files. It writes a real `.docx` and a real `.zip` with 
 | `src/import-read.ts` | New. `unzip`, the readers for text, HTML, RTF, and `.docx`, and the `READERS` table. |
 | `src/song-import.tsx`, `src/song-import.css` | New. The sheet, the list, the row preview, the `MESSAGES` maps. |
 | `src/storage.ts` | Add `addOwnSongs`. Nothing else. |
-| `src/song-editor.tsx` | `SongEdit` gains `"import"`, `SongEditors` mounts the sheet, and `SongEditor` takes a start draft and a callback for a saved id. |
+| `src/song-editor.tsx` | `SongEdit` gains `"import"`, `SongEditors` mounts the sheet, and `SongEditor` takes a start draft and a callback for a saved id. `SongEditors` takes the account's user id. It mounts the sheet only while there is one, with `key` set to that id, as `src/App.tsx` does for `MySetlistCodeSheet`. It calls `onClose` when the id changes while the sheet is open. Case U12 tests this. |
 | `src/song-paste.ts` | Add the `export` keyword to `chordRowOf` and `storedChord`. Change no rule. |
-| `src/library-lists.tsx`, `src/App.tsx` | The **Import files** button and the page drop. At most three new lines in `src/App.tsx`, which must stay at 500 lines or fewer. |
+| `src/library-lists.tsx`, `src/App.tsx` | The **Import files** button, the page drop, and the account's user id on the existing `SongEditors` line. At most three new lines in `src/App.tsx`, which must stay at 500 lines or fewer. |
 | `scripts/check-song-import.ts` | New. |
 | `scripts/song-import-live.ts` | New. Reads a folder given as an argument and prints one line for each file: kind, mark, reasons, chord count. It prints no chart text. |
 | `scripts/check-one-copy.ts` | New rows for `unzip` and `decodeText`. |
@@ -55,9 +55,15 @@ Do not touch: any rule in `src/song-paste.ts`, `src/song-text.ts`, `src/sheet.ts
 
 `ImportKind`, `Extracted`, `Doubt`, `Reader`, `Unread`, `Draft`, and `ImportRow` as plan section 1 gives them. Cooks 2, 4, and 5 import them. `READERS` is a record from kind to reader or `null`. A later cook adds a reader by changing one line.
 
+## The duplicate flag and `CLAUDE.md`
+
+`CLAUDE.md` lists "deciding same song by comparing print, title or content" as an obsolete pattern. The duplicate flag compares title and artist with `songYouHave`, as the editor does today, and compares file bytes by SHA-256. The flag is a hint to the player about the player's own library. No id exists to compare before the song is saved. The flag decides nothing about sharing or privacy. Rule 5 stands there, and sharing is judged by ids and lineage. The plan and `CLAUDE.md` differ on paper here, so say so in the report.
+
 ## Empty and error states, and the wired flow
 
 Every state in the table "What the player sees when something is missing" in plan section 1, and every reason in the two tables of plan section 4, has its words on the screen. A signed-out visitor sees no button and a drag does nothing. Closing with unsaved rows asks once. A refused write keeps every unsaved row in the list under the landed message.
+
+The rows never outlive the account that picked them. When the session ends or a second account signs in, the sheet closes with no question and its rows are gone. It stays closed until that account taps **Import files** (case U12).
 
 Flow: My Songs, **Import files**, **Choose files**, the list, a title fix, **Save 3 songs**, **Close**, the songs are in My Songs.
 
@@ -69,6 +75,7 @@ Flow: My Songs, **Import files**, **Choose files**, the list, a title fix, **Sav
 
 - Worth writing `src/song-import.ts` and its node cases before any screen. The reducer and `judge` carry the rules, and the sheet only draws them. High.
 - Worth one `try` around each file and one timer for each read, in one function. Case B2 fails if a reader can hold the loop. High.
+- A timer cannot stop the RTF, HTML, and `.docx` readers, because they run on the main thread. Test the size limit before the reader starts (B13), stop `unzip` at the limit (B14), and make each reader end on a file that is cut off (X13). High.
 - Worth testing `unzip` on a `.docx` that Word saved, if the laptop has one. The plan's prototype read Word's own files with `DecompressionStream("deflate-raw")` in 40 lines. High.
 - Worth reading the kind from the first bytes before the name. A phone can hand over a file with no extension. High.
 - Worth keeping the sheet out of the main script with `import()` if the size box fails. The main script is 225.6 KB gzipped today. Medium.

@@ -7,7 +7,7 @@ Not queued. This brief waits for the owner's review and for decision D1. Model: 
 GOAL: A PDF with real text inside, from a chord site or from Word, imports with every chord over the word it sits over on the page. It is read on the phone and nothing is uploaded.
 DECIDED: one cook, one branch, cook/bulk-import-pdf off mls-int-20261113 after bulk-import-text has merged; pdfjs-dist is the PDF reader (plan decision D1), loaded with import() only when a PDF is picked and kept out of the service worker's file list; chords are placed by position and written as inline brackets; a monospace line uses even letter steps and a proportional line uses widths measured in a font on the device; a file whose two readings differ keeps both; a scan is refused with its own reason until the photo cook lands.
 REJECTED: a hand-written PDF parser; any upload of a PDF; a chord row padded with spaces as the reader's output; a guess at where one song ends inside a file; OCR; a second chord rule; any other new library; edits outside the owned files.
-DONE MEANS: cases P1 to P11 of plan section 2 each have a named check line that failed on the tests-only commit and passes now; every box under "Verification for cook 2" is ticked with its evidence in the report; the report gives the gzipped size of the main script before and after, and of the PDF chunk; npm run build, check:offline and check:portable are green.
+DONE MEANS: cases P1 to P12 of plan section 2 each have a named check line that failed on the tests-only commit and passes now; every box under "Verification for cook 2" is ticked with its evidence in the report; the report gives the gzipped size of the main script before and after, and of the PDF chunk; npm run build, check:offline and check:portable are green.
 SOURCE: docs/PLAN-bulk-import.md section 2 (tier 2), and the PDF table in "What was measured for this plan".
 NEEDS OWNER: D1 must be yes before this cook starts.
 ```
@@ -28,7 +28,7 @@ Read `CLAUDE.md` first, then "Rules every brief below inherits" in section 6 of 
 
 Commit 1 holds `scripts/check-song-import-pdf.ts` and its one `package.json` check line, and nothing else. Every case fails on that commit. The `pdfjs-dist` dependency line comes in commit 2.
 
-The cases are P1 to P11 in plan section 2. The cases for `src/import-layout.ts` run in node on made-up runs of text, with a table of letter widths passed in as the measuring function. The check prints its PDFs with headless Chrome from pages written for the check, so no PDF file is committed.
+The cases are P1 to P12 in plan section 2. The cases for `src/import-layout.ts` run in node on made-up runs of text, with a table of letter widths passed in as the measuring function. The check prints its PDFs with headless Chrome from pages written for the check, so no PDF file is committed.
 
 ## Owned files
 
@@ -39,7 +39,7 @@ The cases are P1 to P11 in plan section 2. The cases for `src/import-layout.ts` 
 | `src/import-read.ts` | One line. The `pdf` entry of `READERS`. |
 | `src/song-import.ts` | A new reason word where one is needed. Nothing else. |
 | `src/song-import.tsx`, `src/song-import.css` | **Split by page**, and the words for the new reasons. |
-| `vite.config.ts`, `public/sw.js` | The PDF library's two files leave the offline list. The service worker caches them the first time they are fetched. |
+| `vite.config.ts`, `public/sw.js` | The PDF library's two files leave the offline list. The service worker caches them the first time they are fetched. `public/sw.js` writes nothing to the cache after install today. In `fromCache`, the fall-through `?? fetch(request)` puts the response in the cache only when it is `ok` and the request is for one of those two files. Every other request keeps today's path. Cases P10 and P12 and `check:offline` cover this edit. |
 | `scripts/check-song-import-pdf.ts` | New. |
 | `scripts/song-import-live.ts` | The PDF kind. |
 | `package.json` | One line, `check:song-import-pdf`, and the `pdfjs-dist` dependency. |

@@ -159,6 +159,7 @@ Cooks 1 and 5 need no decision. Cook 2 needs D1. Cooks 3 and 4 need the rest.
 | D7 | A sheet read from a photo is always **Check this**, never **Looks good**, and its row shows the photo beside the sheet. | Yes | Nothing |
 | D8 | A song the player made is shared whole today, words included. Bulk import will put many copyrighted charts in own libraries. Which sharing rule holds for an imported chart? The song-search plan asked the same question as its D4. | The owner decides before bulk import reaches players. No cook in this plan changes sharing. | Nothing in this plan |
 | D9 | Should a signed-out visitor be able to import? Today a signed-out visitor cannot add a song at all. | No change. Import follows `+ Add a song`. | Nothing |
+| D10 | The review list is kept in memory alone (change 12). A reload, or a phone that unloads the page in the background, loses every row that was not saved, with any title typed on it. Should the list survive a reload? | No, for now. Saved songs are safe, and the same pile picked again flags them. A stored list needs a store, a privacy page entry, and an account-switch rule. Decide again after the phone review of cook 1. | Nothing. Cook 1 builds this default. |
 
 D1 is the answer the queue needs first. D2 and D4 let cook 3 start as soon as the sample photos exist.
 
@@ -228,16 +229,20 @@ Three pure functions do the judging, and the sheet only draws their results.
 
 ### What the player sees when something is missing
 
-| Case | What happens |
-|---|---|
-| Signed out | No **Import files** button, as with `+ Add a song` today. A drag onto the page does nothing. |
-| A second account on the same phone | The review list is in memory and belongs to the sheet. Closing the sheet or switching account drops it. Saved songs follow the rules for own songs. |
-| No files picked, or the picker is closed | The sheet stays on **Choose files**. |
-| Every file failed | The list shows each reason, and the bottom button is disabled and says **Nothing to save**. |
-| A row with no title | The **Title** field is outlined and says **Add a title**. The row is not counted in **Save 31 songs**. |
-| The phone refuses the write | The rows that were saved are marked saved. The rest stay as they are, under the landed message **This phone couldn't save the song. Free some space and try again.** |
-| The app is unloaded during review | Saved songs are in the library. The player picks the pile again, and each saved song comes back flagged **You already have this**. |
-| Closing with unsaved rows | The sheet asks once, **Leave without saving 6 songs?** |
+Each row names the required case that proves it. `npm run check:bulk-import-plan` fails on a row with no case.
+
+| When | What happens | Cases |
+|---|---|---|
+| Signed out | No **Import files** button, as with `+ Add a song` today. A drag onto the page does nothing. | U1 |
+| A second account on the same phone | The review list is in memory and belongs to the sheet. When the session ends or a second account signs in, the sheet closes with no question and its rows are gone. It stays closed until that account taps **Import files**. Saved songs follow the rules for own songs. | U12 |
+| No files picked, or the picker is closed | The sheet stays on **Choose files**. | U13 |
+| Every file failed | The list shows each reason, and the bottom button is disabled and says **Nothing to save**. | B3 |
+| A row with no title | The **Title** field is outlined and says **Add a title**. The row is not counted in **Save 31 songs**. | U3 |
+| The phone refuses the write | The rows that were saved are marked saved. The rest stay as they are, under the landed message **This phone couldn't save the song. Free some space and try again.** | B8 |
+| The app is unloaded during review | Saved songs are in the library. The player picks the pile again, and each saved song comes back flagged **You already have this**. | B11 |
+| Closing with unsaved rows | The sheet asks once, **Leave without saving 6 songs?** | U9 |
+
+The sheet's rows must not outlive the account that picked them. `SongEditors` takes the account's user id and mounts the sheet only while there is one, with `key` set to that id, as `src/App.tsx` does for `MySetlistCodeSheet`. It calls `onClose` when the id changes while the sheet is open.
 
 ### Where each part lives
 
@@ -269,10 +274,12 @@ Screen cases run in headless Chrome through `scripts/chrome.ts`, at 360 px and 3
 - U9. Closing with unsaved rows asks once. **Escape** closes through the same question, by `useEscape`.
 - U10. Every control is at least 44 px tall and is not clipped at either width. No row scrolls sideways.
 - U11. A drag of two files onto My Songs opens the sheet with two rows.
+- U12. With two ready rows showing, the session ends with a 401. The sheet closes with no question. A second account then signs in. The sheet stays closed, that account's **Import files** opens on **Choose files** with no row, and the stored library holds no song from the pile.
+- U13. A pick of no files, and a picker that is closed, each leave the sheet on **Choose files** with no row.
 
 ### Verification for the flow
 
-- [ ] Unit. `npm run check:song-import` prints cases U1 to U11 as `ok`, with the cases of sections 2 and 4 that belong to cook 1. Commit 1 holds the cases alone, and each fails on that commit.
+- [ ] Unit. `npm run check:song-import` prints cases U1 to U13 as `ok`, with the cases of sections 2 and 4 that belong to cook 1. Commit 1 holds the cases alone, and each fails on that commit.
 - [ ] Live. In the built app at 390 px, pick a `.txt`, a ChordPro file, a Word `.docx`, a file named `IMG_0001.txt`, and an empty file. Pass when three rows say **Looks good**, the fourth asks for a title, the fifth says **This file is empty.**, and **Save 3 songs** puts three songs in My Songs that open with the network off.
 - [ ] Perf. Metric one is the gzipped size of the main script from `npm run build`. The baseline is 225.6 KB at `b2b248a`, measured again on the branch point. Fail above the baseline plus 15 KB. Metric two is the time from the pick of 100 generated text files to the last row, in Chrome at 4 times CPU slowdown. The flow is new, so there is no trunk baseline. The cook measures it first, writes the number in the report, and fails above 5 seconds.
 - [ ] `check:new-song`, `check:song-paste`, `check:song-search`, `check:storage`, `check:chords`, `check:screens`, `check:phone-layout`, and `check:one-copy` pass with no edit to their scripts, apart from new rows in `check:one-copy`.
@@ -338,7 +345,7 @@ The other formats are named in section 7 under NEEDS TERRY. Each one needs a rea
 | `src/import-read.ts` | New. `unzip`, the readers for text, HTML, RTF, and `.docx`, and the `READERS` table from kind to reader. | 1, then one line each in 2, 4, and 5 |
 | `src/import-layout.ts` | New. Placed runs to chart text. Pure. | 2 |
 | `src/import-pdf.ts` | New. Loads the library, reads the runs, finds scans and locked files. | 2 |
-| `vite.config.ts`, `public/sw.js` | The PDF library's two files leave the offline list and are cached on first use. | 2 |
+| `vite.config.ts`, `public/sw.js` | The PDF library's two files leave the offline list and are cached on first use. `public/sw.js` writes nothing to the cache after install today. In `fromCache`, the fall-through `?? fetch(request)` puts the response in the cache only when it is `ok` and the request is for one of those two files. Every other request keeps today's path. | 2 |
 | `package.json` | One check line in each cook. One dependency line in cook 2. | 1, 2 |
 | `scripts/check-song-import.ts`, `scripts/check-song-import-pdf.ts` | New. | 1, 2 |
 | `scripts/song-import-live.ts` | New. A script a person runs on a folder outside the repo. It prints one line for each file with its kind, mark, reasons, and chord count, and no chart text. | 1, extended in 2 |
@@ -359,6 +366,7 @@ Unit cases run in node. Cases that need `DOMParser` or the canvas run in headles
 - X10. A file of zero bytes, a file of random bytes, an old `.doc`, and a `.docx` with no `word/document.xml` are each refused with their own reason.
 - X11. `titleFromName` gives `Wagon Wheel` for `Wagon_Wheel-chords (1).txt`, and an empty title for `IMG_2041.jpg`, `Scan0003.pdf`, and `12.txt`.
 - X12. `src/song-import.ts` and `src/import-read.ts` contain no `fetch`, `XMLHttpRequest`, or `WebSocket`.
+- X13. An RTF cut off inside a group, inside a hex escape, and inside a Unicode escape, an HTML page cut off inside a tag, and a `.docx` whose XML is cut off inside a tag each end as a row. No reader loops on them.
 
 ### Required cases for cook 2
 
@@ -375,10 +383,11 @@ The check prints its PDFs with headless Chrome from pages written for the check.
 - P9. A PDF with no text is refused as a scan. A locked PDF is refused as locked. A file that is not a PDF is refused as damaged.
 - P10. The built `sw.js` does not list the PDF library's files. After one PDF import, a second import with the network off still works.
 - P11. A PDF picked beside a `.txt` gives two rows, and a PDF that fails leaves the `.txt` row good.
+- P12. With the network off and the PDF library not yet cached, a PDF row says **The PDF reader could not be loaded. Check your connection and try again.** After the network returns, **Try again** reads the file into the same row and adds no second row.
 
 ### Verification for cook 2
 
-- [ ] Unit. `npm run check:song-import-pdf` prints P1 to P11 as `ok`. Commit 1 holds the cases alone, and each fails on that commit.
+- [ ] Unit. `npm run check:song-import-pdf` prints P1 to P12 as `ok`. Commit 1 holds the cases alone, and each fails on that commit.
 - [ ] Live. In the built app at 390 px, import a chart saved as PDF from Word in Courier New and one printed from a browser in a proportional font. Pass when both rows say **Looks good** and each saved sheet shows every chord over the word it is over on the page.
 - [ ] Perf. Metric one is the gzipped size of the main script. The baseline is the size at the branch point. Fail above the baseline plus 3 KB, because the library must sit in its own chunk. Metric two is the time from picking a three-page PDF to its row, with the library already loaded, at 4 times CPU slowdown. The cook measures it first and fails above 3 seconds.
 - [ ] `check:offline`, `check:song-import`, `check:chords`, and `check:portable` pass with no edit to their scripts.
@@ -488,6 +497,7 @@ No case reaches the live service. The Worker under test points at a stand-in rea
 ### One file can never stop the pile
 
 - Each file is read inside its own `try`. A reader that throws, or that passes 20 seconds, gives a **Couldn't read** row, and the next file starts.
+- No timer can stop a reader that runs on the main thread, and the RTF, HTML, and `.docx` readers do. So the size limit is tested before a reader starts, `unzip` stops inflating an entry at the size limit, and each of those readers ends on a file that is cut off at any point.
 - Files are read one at a time, and the sheet yields to the screen between files. **Stop** is answered between two files.
 - A row is a small state machine: waiting, reading, ready, unread, or saved. Only the reducer in `src/song-import.ts` moves a row, so a row cannot be both saved and waiting.
 - Saving is safe to repeat. A saved row holds its song id and is never written again, by a second tap or by a second **Save**.
@@ -499,7 +509,7 @@ Each limit is one constant in `src/song-import.ts`. A file or a page past a limi
 | Limit | Value | Why |
 |---|---|---|
 | Files in one pile, after zips are opened | 200 | Review of more than this is not practical on a phone, and the library has a size limit. |
-| Size of one file | 20 MB | A phone can hold this in memory. |
+| Size of one file, and of one file inside a zip after it is inflated | 20 MB | A phone can hold this in memory. A small zip can hold a very large file. |
 | Pages read from one PDF | 60 | A larger file is a songbook, which the player should split. |
 | Characters of text from one file | 200,000 | A chart is a few thousand. More means the file is not a chart. |
 | Time for one file | 20 seconds | A stuck reader must not hold the pile. |
@@ -572,7 +582,7 @@ This flag is a hint to the player about the player's own library. It decides not
 
 - B1. A pile of five files with one reader that throws gives four rows with sheets and one **Couldn't read** row, in the picked order.
 - B2. A reader that never returns is stopped at the time limit, and the files after it are read.
-- B3. Each reason in the **Couldn't read** table has a file that produces it and shows its words. No unread row shows any text from its file.
+- B3. Each reason in the **Couldn't read** table has a file that produces it and shows its words. No unread row shows any text from its file. With no other row in the pile, the bottom button is disabled and says **Nothing to save**.
 - B4. Each cook 1 reason in the **Check this** table has a file that produces it.
 - B5. A row whose title and artist match a song in My Songs is flagged and is not saved by **Save**. **Keep both** then adds a second song. The first song is byte-for-byte unchanged.
 - B6. **Replace** on a song the player made keeps the song's id and its place in a setlist, and changes its chart. **Replace** is not offered for a built-in song.
@@ -582,10 +592,12 @@ This flag is a hint to the player about the player's own library. It decides not
 - B10. File 201 of a pile gets the `too-many` reason. A zip of 250 files gives 200 rows and one line that says the rest were not read.
 - B11. After a save and a reload, picking the same pile again flags every saved song and adds none without a tap.
 - B12. `addOwnSongs` with one song that has no title saves the others and returns null for that one.
+- B13. A file over the size limit gets the `too-big` reason, and no reader is called for it. The case counts the calls.
+- B14. A zip entry that would inflate past the size limit gets the `too-big` reason. `unzip` stops inflating it at the limit, and the other entries are read. A `.docx` whose `word/document.xml` passes the limit is refused as `damaged`.
 
 ### Verification for the batch
 
-- [ ] Unit. `npm run check:song-import` prints B1 to B12 as `ok`. Each failed on the tests-only commit.
+- [ ] Unit. `npm run check:song-import` prints B1 to B14 as `ok`. Each failed on the tests-only commit.
 - [ ] Live, signed in. On a local Worker, import 50 generated songs, let backup run, then sign in on a second browser profile. Pass when the second profile lists the same 50 songs once each.
 - [ ] Live. In the built app at 390 px, import a pile of six files where one is a renamed photo and one is a song already in My Songs. Pass when four rows are saved by one tap, the photo row says why it could not be read, the duplicate waits with its three choices, and My Songs holds four new songs and the old song unchanged.
 - [ ] Perf. The metric is the time of **Save** for 100 ready rows, in Chrome at 4 times CPU slowdown. The baseline is 100 calls of the landed `addOwnSong` on the branch point, measured first. Fail if `addOwnSongs` is not at least 5 times faster, or if it passes 2 seconds.
@@ -652,8 +664,20 @@ The model column follows `MODEL-RULES.md` in the laptop's cooks folder. The owne
 - No outside address and no key in `src/`, in `worker/`, or in any committed file. `npm run check:portable` must pass.
 - No internal names on a screen. Do not show a library name, a model name, a reason word such as `no-text`, or a cook id.
 - Every new control is styled in the cook's CSS file, is at least 44 px tall, and is checked at 360 px and 390 px.
-- Handle the list in `CLAUDE.md` under "Must handle in every feature". For these cooks that means: a signed-out visitor sees no import button and is never trapped, a second account on the phone sees none of the first account's rows, a slow or missing network gives a clear retry and never a second song, and every empty and error state has words.
+- Handle the list in `CLAUDE.md` under "Must handle in every feature". The table below says what each rule means for these cooks and names the required cases that prove it.
 - Before the report: `npm run build`, the cook's own check, `check:song-paste`, `check:new-song`, `check:storage`, `check:chords`, `check:one-copy`, and `check:portable`.
+
+### Must handle, and the cases that prove it
+
+The table has one row for each rule in `CLAUDE.md` under "Must handle in every feature". `npm run check:bulk-import-plan` fails when a rule has no row, or a row names no case. A rule added to `CLAUDE.md` needs a row and a case here.
+
+| `CLAUDE.md` rule | What it means for these cooks | Cases |
+|---|---|---|
+| Signed out | A signed-out visitor sees no import button, a drag does nothing, and nobody is trapped in a sheet. The read route of cook 4 answers 401. | U1, V8 |
+| Second phone or account switch on a shared phone | When the session ends or a second account signs in, the import sheet closes and its rows are gone. A second account sees no row and saves no song from the first account's pile. The page count of cook 4 is kept for each account. A second phone gets saved songs through backup, which the live box under "Verification for the batch" covers. | U12, V7 |
+| Old, expired, reset or wrong links | Import adds no link and no code. The same rule holds for a wrong or damaged file. It gets a clear reason, and no part of the file shows in the refusal. | X10, B3, V5 |
+| Offline or slow network | Cook 1 makes no network call. Cook 2 fetches the PDF library once and gives a clear retry when it cannot. Cook 4 gives a clear retry. No retry adds a second row or a second song. | X12, P12, V6 |
+| Empty states and error states | Every state in the table "What the player sees when something is missing", and every reason in the tables of sections 3 and 4, has its words on the screen. | U13, B3, B4, P9, V5 |
 
 ### 6.1 Brief: `bulk-import-text`
 
@@ -662,13 +686,13 @@ The model column follows `MODEL-RULES.md` in the laptop's cooks folder. The owne
 GOAL: A signed-in player picks or drops a pile of text files and documents (.txt, ChordPro, .html, .rtf, .docx, or a .zip of them) and gets a review list, one row a file, that says Looks good, Check this or Couldn't read. One tap saves every good row to My Songs, and each saved song opens with no network.
 DECIDED: one cook, one branch, cook/bulk-import-text off mls-int-20261113 after PR 116 (song-paste-autofill) has merged; every file's text goes through readPaste, which stays the only reader of chart rules; the review list lives in memory; Fix opens the one SongEditor; a title may come from the file name; a duplicate is flagged by songYouHave and waits for Keep both, Replace or Skip (plan decision D6); Save writes the library once with addOwnSongs; the file picker has no accept filter.
 REJECTED: a second chart parser or a second chord rule; a second editor or a second preview; a draft store for the list; any network call; a catalog lookup for each file; PDFs, photos and MusicXML, which are later cooks; new libraries; any change to what is shared; real charts as fixtures; edits outside the owned files.
-DONE MEANS: cases U1 to U11, X1 to X12 and B1 to B12 of the plan each have a named check line that failed on the tests-only commit and passes now; every box under "Verification for the flow" in section 1 and "Verification for the batch" in section 4 is ticked with its evidence in the report; npm run build and npm run check:portable are green.
+DONE MEANS: cases U1 to U13, X1 to X13 and B1 to B14 of the plan each have a named check line that failed on the tests-only commit and passes now; every box under "Verification for the flow" in section 1 and "Verification for the batch" in section 4 is ticked with its evidence in the report; npm run build and npm run check:portable are green.
 SOURCE: docs/PLAN-bulk-import.md sections 1, 2 (tier 1) and 4.
 NEEDS OWNER: none to start. The owner reviews the flow on a phone before merge. The sample files of plan section 7 make the live script useful and do not block the cook.
 ```
 
 - **Tests first.** Commit 1 is `scripts/check-song-import.ts` and its `package.json` line alone. Cases U, X, and B all fail on it.
-- **Owned files.** `src/song-import.ts`, `src/import-read.ts`, `src/song-import.tsx`, `src/song-import.css`, and `scripts/song-import-live.ts`, all new. `src/storage.ts` for `addOwnSongs` alone. `src/song-editor.tsx` for the `"import"` sheet and a start draft. `src/song-paste.ts` for two `export` keywords alone. `src/library-lists.tsx` and `src/App.tsx` for the button and the drop, with at most three new lines in `src/App.tsx`. New rows in `scripts/check-one-copy.ts`.
+- **Owned files.** `src/song-import.ts`, `src/import-read.ts`, `src/song-import.tsx`, `src/song-import.css`, and `scripts/song-import-live.ts`, all new. `src/storage.ts` for `addOwnSongs` alone. `src/song-editor.tsx` for the `"import"` sheet and a start draft. `SongEditors` takes the account's user id, mounts the sheet only while there is one with `key` set to that id, and calls `onClose` when the id changes (case U12). `src/song-paste.ts` for two `export` keywords alone. `src/library-lists.tsx` and `src/App.tsx` for the button, the drop, and the user id on the existing `SongEditors` line, with at most three new lines in `src/App.tsx`. New rows in `scripts/check-one-copy.ts`.
 - **Do not touch.** Any rule in `src/song-paste.ts`, `src/song-text.ts`, `src/sheet.tsx`, `src/song-search.ts`, `src/song-search.tsx`, `src/backup.ts`, `src/phone-db.ts`, worker files, and earlier check scripts.
 - **Checks.** `check:song-import` (new), `check:new-song`, `check:song-paste`, `check:song-search`, `check:storage`, `check:chords`, `check:screens`, `check:phone-layout`, `check:one-copy`, `check:portable`.
 
@@ -679,13 +703,13 @@ NEEDS OWNER: none to start. The owner reviews the flow on a phone before merge. 
 GOAL: A PDF with real text inside, from a chord site or from Word, imports with every chord over the word it sits over on the page. It is read on the phone and nothing is uploaded.
 DECIDED: one cook, one branch, cook/bulk-import-pdf off mls-int-20261113 after bulk-import-text has merged; pdfjs-dist is the PDF reader (plan decision D1), loaded with import() only when a PDF is picked and kept out of the service worker's file list; chords are placed by position and written as inline brackets; a monospace line uses even letter steps and a proportional line uses widths measured in a font on the device; a file whose two readings differ keeps both; a scan is refused with its own reason until the photo cook lands.
 REJECTED: a hand-written PDF parser; any upload of a PDF; a chord row padded with spaces as the reader's output; a guess at where one song ends inside a file; OCR; a second chord rule; any other new library; edits outside the owned files.
-DONE MEANS: cases P1 to P11 of plan section 2 each have a named check line that failed on the tests-only commit and passes now; every box under "Verification for cook 2" is ticked with its evidence in the report; the report gives the gzipped size of the main script before and after, and of the PDF chunk; npm run build, check:offline and check:portable are green.
+DONE MEANS: cases P1 to P12 of plan section 2 each have a named check line that failed on the tests-only commit and passes now; every box under "Verification for cook 2" is ticked with its evidence in the report; the report gives the gzipped size of the main script before and after, and of the PDF chunk; npm run build, check:offline and check:portable are green.
 SOURCE: docs/PLAN-bulk-import.md section 2 (tier 2), and the PDF table in "What was measured for this plan".
 NEEDS OWNER: D1 must be yes before this cook starts.
 ```
 
-- **Tests first.** Commit 1 is `scripts/check-song-import-pdf.ts` and its `package.json` check line alone. Cases P1 to P11 fail on it.
-- **Owned files.** `src/import-layout.ts` and `src/import-pdf.ts`, new. One line in the `READERS` table of `src/import-read.ts`. `src/song-import.tsx` and `src/song-import.css` for **Split by page**. `vite.config.ts` and `public/sw.js` for the offline list. `package.json` for one check line and the `pdfjs-dist` line. `scripts/song-import-live.ts` for the PDF kind.
+- **Tests first.** Commit 1 is `scripts/check-song-import-pdf.ts` and its `package.json` check line alone. Cases P1 to P12 fail on it.
+- **Owned files.** `src/import-layout.ts` and `src/import-pdf.ts`, new. One line in the `READERS` table of `src/import-read.ts`. `src/song-import.tsx` and `src/song-import.css` for **Split by page**. `vite.config.ts` and `public/sw.js` for the offline list, and for one cache write in `fromCache` that is limited to the library's two files. `package.json` for one check line and the `pdfjs-dist` line. `scripts/song-import-live.ts` for the PDF kind.
 - **Do not touch.** `src/song-paste.ts`, `src/song-import.ts` apart from a new reason word, `src/storage.ts`, `src/song-editor.tsx`, `src/App.tsx`, worker files, and earlier check scripts.
 - **Checks.** `check:song-import-pdf` (new), `check:song-import`, `check:offline`, `check:chords`, `check:one-copy`, `check:portable`.
 
@@ -738,7 +762,7 @@ NEEDS OWNER: the list of apps and one exported file from each. With no answer, t
 ```
 
 - **Tests first.** Commit 1 is `scripts/check-song-import-apps.ts` and its `package.json` line alone. Cases M1 to M8 fail on it.
-- **Owned files.** `src/import-musicxml.ts`, new. One line for each new kind in `READERS` and in `kindOf`. One refusal word for each format that is named and not built. `scripts/song-import-live.ts` for the new kinds.
+- **Owned files.** `src/import-musicxml.ts`, new. `src/import-read.ts` for one `READERS` line for each new kind. `src/song-import.ts` for the new kinds in `kindOf`, and one reason word for each format that is named and not built. `src/song-import.tsx` for the words of the new reasons. `scripts/song-import-live.ts` for the new kinds.
 - **Do not touch.** `src/song-paste.ts`, `src/storage.ts`, `src/song-editor.tsx`, `src/App.tsx`, worker files, and earlier check scripts.
 - **Checks.** `check:song-import-apps` (new), `check:song-import`, `check:chords`, `check:one-copy`, `check:portable`.
 
@@ -807,7 +831,7 @@ Files that two cooks touch: `src/import-read.ts` gains one `READERS` line in coo
 3. **Is each file one song?** Or do some files hold a whole songbook.
 4. **Which other chord apps do you or your bandmates move files from?** OnSong, SongBook, iReal Pro, MuseScore, forScore, or another. One exported file from each lets cook 5 be specified. With no answer, cook 5 builds MusicXML alone.
 5. **Are any of the photos handwritten charts?**
-6. **Decisions D1 to D9** in "Decisions the owner must make". D1 unblocks PDFs. D2 and D4 unblock the probe.
+6. **Decisions D1 to D10** in "Decisions the owner must make". D1 unblocks PDFs. D2 and D4 unblock the probe.
 7. **For the probe, once its brief is approved:** six photos of three printed pages that the cook provides, and an API key set in the laptop's environment. The key goes in no file.
 8. **A monthly spending limit for photo reading**, which sets the page limits in D3.
 9. **A phone review** of cook 1 before it merges, and of the notice in cook 4.

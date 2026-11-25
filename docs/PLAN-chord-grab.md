@@ -24,7 +24,7 @@ The cooks land in this order.
 | Order | Cook | What the player gains | Waits for |
 |---|---|---|---|
 | 1 | `chord-grab-worker` | Nothing on the screen yet. The Worker can find and fetch a chart. | Owner decisions D1 to D4 and D8 |
-| 2 | `chord-grab-app` | **Grab** in the search list, the review, and the save | Cook 1, PR 116 (`song-paste-autofill`), and owner decisions D5 to D7 |
+| 2 | `chord-grab-app` | **Grab** in the search list, the review, and the save | Cook 1, gate G1 passed, PR 116 (`song-paste-autofill`), and owner decisions D5 to D7 |
 | 3 | `chord-grab-canary` | A broken site is skipped, and the owner is warned | Cook 1 |
 | 4 | `chord-grab-share` | On Android, a chart page or a selected chart shared to the app becomes a sheet | Cook 2, owner decision D9 |
 
@@ -46,7 +46,7 @@ Every number here comes from Nov 25, 2026. Each fetch happened once, from a lapt
 
 ### The test fetches
 
-Seventeen requests went to seven sites. Each site got at most three. Every request named a generic research client in its User-Agent, sent no cookie, and ran no script.
+Seventeen requests went to seven sites. Each site got at most three. Every request sent the User-Agent `Mozilla/5.0 (compatible; lead-sheet-research/0.1)`, sent no cookie, and ran no script. That User-Agent starts like a browser's. The Worker will not send it, since case W18 bans the word "Mozilla".
 
 | Site | What was asked | Answer | In front of the site |
 |---|---|---|---|
@@ -115,7 +115,8 @@ The prototype also timed the text extraction on the laptop, 31 runs for each pag
 - **No request was sent from a Cloudflare Worker.** This cook may not deploy. A laptop on a home connection is the friendliest client a site sees. The brief says Ultimate Guitar blocks servers, and Ultimate Guitar answered the laptop. So a laptop answer does not predict a Worker answer. Gate G1 measures it.
 - **No terms page was read.** Section 5 treats every site's terms as forbidding this fetch, which is the brief's own statement.
 - **No second song was tried.** A song with an odd title, a cover, or a non-English song can list badly. Cook 1's live script takes any list of songs.
-- **Cifra Club was tried once with an honest client.** A browser disguise was not tried, because the plan rejects disguises. See decision D3.
+- **Cifra Club was tried once, with the User-Agent above.** A full browser disguise was not tried, because the plan rejects disguises. See decision D3.
+- **The honest User-Agent of decision D3 was not tried.** Every answer above came to the browser-shaped User-Agent of the test fetches. A site that filters on the User-Agent can answer the Worker's own differently. Cook 1's live script and gate G1 send the real one.
 
 ## Changes to the brief, and why
 
@@ -133,7 +134,7 @@ The brief gave the planner room to reorder, split, and swap methods. Each change
 10. **The canary runs inside the Worker, on a timer, one site for each run.** A canary in GitHub Actions would test from a different network than a real Grab uses. The Worker's canary also lets the search skip a broken site with no deploy.
 11. **The share backup is narrower than the starting design hoped.** When a site blocks the Worker, a shared link to that site fails for the same reason. Only shared or pasted text gets through. Share target also works only on Android, in an installed app. Section 4 says so plainly, and decision D9 asks whether to build it.
 12. **Grab has an off switch for each environment.** One Worker variable lists the sites that are on. An empty list turns Grab off and hides the button. Live stays off until the owner says yes. See decision D1.
-13. **"Not at scale" is a number.** An account may grab 20 times an hour and 60 times a day. The whole server may send 2,000 requests to chord sites a day. See decision D8.
+13. **"Not at scale" is a number.** An account may grab 20 times an hour and 60 times a day. The whole server may answer 2,000 `find` and `page` calls a day. See decision D8.
 14. **Four cooks, not one.** The Worker, the screen, the canary, and the share entry each end in their own check. The Worker cook must land and be measured from Preview before the site order is final, and the screen cook waits for PR 116. One cook would hold everything behind both.
 
 ### Things in the brief or the repo that look wrong
@@ -160,7 +161,7 @@ No cook needs an API key or a new secret under the recommended answers.
 | D5 | A search row gets a **Grab** button, and a tap on the rest of the row still starts an empty sheet. The other choice is one tap target that always grabs. | The separate button. It does what its label says, and every landed search case keeps passing. | Cook 2. The owner reviews it on a phone before merge. |
 | D6 | A grabbed song carries one credit line on the sheet, such as "Chords from Chordie". | Yes. It is honest, and it tells the owner where a chart came from if a site complains. | Cook 2 |
 | D7 | The first Grab shows a short note once, and the privacy page gains two sentences. Section 5 has the words. | Yes | Cook 2 |
-| D8 | The limits: 20 grabs an hour and 60 a day for one account, and 2,000 requests to chord sites a day for the server. | Yes. Each is one constant. | Cook 1 |
+| D8 | The limits: 20 grabs an hour and 60 a day for one account, and 2,000 `find` and `page` calls a day for the server. A `find` sends at most three requests to sites and a `page` sends one, so the cap holds the sites under 6,000 requests a day. | Yes. Each is one constant. | Cook 1 |
 | D9 | Build the share entry? It works on Android in an installed app, and not on an iPhone. | Yes if the owner or the band uses Android. No if every phone is an iPhone. | Cook 4 |
 | D10 | May a grabbed chart, words included, be shared with a band or a friend? Today a song the player made is shared whole. | The owner decides before Grab reaches Live. No cook in this plan changes sharing. | Nothing in this plan |
 | D11 | How is the owner warned when a site breaks? A scheduled GitHub workflow can read the Worker's health route and fail red. It needs the `workflow` scope on the push token and one repo variable for the Preview address. | Yes. Without it the health route still exists, and the search still skips a broken site. | The last commit of cook 3 |
@@ -237,18 +238,22 @@ One rule decides each field. The catalog row wins for title, artist, and length.
 
 Every case leaves the editor open and usable. **Find chords on the web** and **Paste a sheet** are already in the editor, one tap away.
 
-| Case | Words on the status line | What else |
-|---|---|---|
-| No site lists the song | No chart found for this song on the sites the app can read. | **Start an empty sheet** saves the title, artist, and length, as a row tap does |
-| Every site refused or timed out | The chord sites didn't answer. Find the chart on the web and paste it. | **Try again** |
-| A page was fetched and held no chart | The next row or the next site is tried without a word. When none is left, the "No chart found" line shows. | |
-| Offline, or the Worker did not answer | You're offline, so the app can't look for chords right now. | **Try again** |
-| The account passed its limit | That's a lot of grabs. Try again in a few minutes. | No button. The wait comes from the Worker. |
-| The session ended | Sign in again to grab chords. | The landed sign-in sheet opens, and it can be closed |
-| Grab is off on this server | Nothing. The **Grab** buttons are not drawn. | |
-| The grabbed text has no chart after cleaning | Nothing here looks like a chart. It is in the box as pasted. | The landed paste message |
-| The player types in the box, or closes the editor, while a Grab runs | Nothing | The replies are dropped, and no song is added |
-| A second account on the same phone | No change | A grabbed song is one of the signed-in account's own songs |
+Each `GrabStop` value has one row, and the `MESSAGES` map of `src/chord-grab.tsx` holds exactly these words. A row with no `GrabStop` is not a stop.
+
+| Case | `GrabStop` | Words on the status line | What else |
+|---|---|---|---|
+| No site lists the song | `none` | No chart found for this song on the sites the app can read. | **Start an empty sheet** saves the title, artist, and length, as a row tap does |
+| Every site refused or timed out | `blocked` | The chord sites didn't answer. Find the chart on the web and paste it. | **Try again** |
+| A page was fetched and held no chart | | The next row or the next site is tried without a word. When none is left, the `none` words show. | |
+| Offline, or the Worker did not answer | `offline` | You're offline, so the app can't look for chords right now. | **Try again** |
+| The account passed its limit | `slow-down` | That's a lot of grabs. Try again in a few minutes. | No button. The wait comes from the Worker. |
+| The session ended | `signed-out` | Sign in again to grab chords. | The landed sign-in sheet opens, and it can be closed |
+| Grab is off when the app reads `/api/auth/config` | | Nothing. The **Grab** buttons are not drawn. | |
+| Grab went off after the buttons were drawn: the server passed its daily count, or the owner emptied or cut `GRAB_SITES` and deployed. The Worker says 503 `grab-off`. | `off` | Grab is resting for now. Find the chart on the web and paste it. | No button. The stop turns off the same switch that `/api/auth/config` set, so every **Grab** button is hidden for the rest of the session, until the app is opened again. |
+| The Worker sent a 500, a reply that is not JSON, or a reason this table does not name, such as `bad-request` or `wrong-origin` | `failed` | Something went wrong while grabbing. Try again. | **Try again** |
+| The grabbed text has no chart after cleaning | | Nothing here looks like a chart. It is in the box as pasted. | The landed paste message |
+| The player types in the box, or closes the editor, while a Grab runs | | Nothing | The replies are dropped, and no song is added |
+| A second account on the same phone | | No change | A grabbed song is one of the signed-in account's own songs |
 
 ### Where each part lives
 
@@ -258,7 +263,7 @@ Every case leaves the editor open and usable. **Find chords on the web** and **P
 | The Grab button, the status line, **Try another version**, the first-use note | `src/chord-grab.tsx`, `src/chord-grab.css` | 2 |
 | The editor takes a start draft and a grabbed text | `src/song-editor.tsx` | 2 |
 | The button on a search row and on the empty-sheet panel | `src/song-search.tsx` | 2 |
-| Whether Grab is on | `GET /api/auth/config`, read through `src/sign-in-methods.ts` | 1, then 2 |
+| Whether Grab is on | `GET /api/auth/config`, read through `src/sign-in-methods.ts` once after sign-in, and turned off for the session by an `off` stop | 1, then 2 |
 | Every chord site address | `data/chord-sites.json` | 1 |
 
 ### Required test cases for the screen (cook 2)
@@ -268,7 +273,7 @@ Cases A1 to A6 run in node on `grabber` with a stub `api`. The rest drive headle
 - A1. A found song gives `looking`, `fetching`, then `got` with the first row's chart.
 - A2. A first page that fails with `no-chart` makes the driver ask for the next site, and the second site's chart arrives.
 - A3. `no-match` from every site gives `stopped` with `none`. A refusal from every site gives `blocked`.
-- A4. A request that never got an answer gives `offline`. A 429 gives `slow-down`. A 401 gives `signed-out`.
+- A4. A request that never got an answer gives `offline`. A 429 gives `slow-down`. A 401 gives `signed-out`. A 503 `grab-off` gives `off`. A 500 gives `failed`, and so do a 200 that is not JSON and a 400 `bad-request`.
 - A5. `stop()` during `looking` drops the late reply. No state is reported after it.
 - A6. `take(match)` gives `got` with that row's chart and keeps the same `found`.
 - A7. With Grab on, each search row has a **Grab** button. With Grab off, none is drawn and no request leaves.
@@ -276,7 +281,7 @@ Cases A1 to A6 run in node on `grabber` with a stub `api`. The rest drive headle
 - A9. The stub chart lands in the box, the sheet draws its headings, and the status line starts with **Chords from** and the site's name.
 - A10. **Save** adds one song. Its `officialRuntimeSec` is the row's length, and its `sourceNote` is the credit line. With the network cut, a reload opens the same sheet.
 - A11. **Try another version** lists the other rows. A tap replaces the chart in the box. A title the player typed stays. **Look on another site** sends `find` with `after` set to the current site.
-- A12. Each row of the table above shows its words. **Start an empty sheet** adds a song with no chart.
+- A12. Each row of the table above shows its words, and each `GrabStop` value has a non-empty entry in `MESSAGES`. **Start an empty sheet** adds a song with no chart. With Grab on at load, a 503 `grab-off` shows the `off` words, and then no search row and no empty-sheet panel draws a **Grab** button. A 500 shows the `failed` words and **Try again**, and the tap sends one new `find`.
 - A13. A song the player already has asks first, and the stub sees no request before the answer.
 - A14. On an empty sheet, **Grab chords** opens Edit song. **Save** keeps the song's id, and My Songs holds one copy.
 - A15. The first Grab on this phone shows the note of section 5 once. The second Grab does not.
@@ -294,7 +299,7 @@ Cases A1 to A6 run in node on `grabber` with a stub `api`. The rest drive headle
 
 ### Routes
 
-Two new routes do the work. Both are `POST`, so the landed Origin rule already keeps other sites out. `worker/index.ts` sends `/api/grab/` to a new file, `worker/grab.ts`, before it tries the Directory routes.
+Two new routes do the work. Both are `POST`. `worker/index.ts` sends `/api/grab/` to a new file, `worker/grab.ts`, before it tries the Directory routes. The landed Origin check sits inside the `DIRECTORY_PATH` branch of `worker/index.ts`, so it never sees these routes. The new branch calls `fromApp` itself, as step 1 of `find` says, and case W15 tests it.
 
 | Route | Body | Answer |
 |---|---|---|
@@ -306,7 +311,7 @@ A refusal is `throw new Refused(reason, status)`, and the phone branches on the 
 
 | Reason | Status | When |
 |---|---|---|
-| `wrong-origin` | 403 | The landed rule for a `POST` |
+| `wrong-origin` | 403 | `fromApp` refuses the `POST`, called by the `/api/grab/` branch |
 | `signed-out` | 401 | No session, or a session that was replaced |
 | `grab-off` | 503 | `GRAB_SITES` is empty, or the server passed its daily count |
 | `bad-request` | 400 | No title, or a body over 2 KB |
@@ -527,6 +532,7 @@ A text that holds a chart and a link is a text share, because the chart needs no
 | A link to a chart page on a listed site | The review, as after a Grab |
 | A link to any other page | The app can't read that page. Select the chart on the page and copy it, then tap **Paste a sheet**. |
 | A link the site refused | The same words |
+| Any other stop of the link's Grab, such as `slow-down`, `off`, or `failed` | The words of that `GrabStop` in the section 1 table |
 | A link, with no network | You're offline, so the app can't fetch that page right now. **Try again** |
 | Selected chart text | The review, as after a paste |
 | Nothing usable | The New song editor, with "Paste your sheet into the box." |
@@ -691,11 +697,11 @@ Standalone file: `docs/cooks/chord-grab-app.md`. Model: Opus.
 ```text
 ## HANDOFF
 GOAL: A signed-in player taps Grab on a search result, sees the song's chart as the real sheet with the title, artist and length filled in, and taps Save. The song is in My Songs and opens with no network. When no site has the chart, the player sees why and is one tap from the web search and the paste.
-DECIDED: one cook, one branch, cook/chord-grab-app off mls-int-20261113 after chord-grab-worker and PR 116 (song-paste-autofill) have merged; the search list stays the song catalog and each row gains a Grab button (plan decision D5); Grab opens the one SongEditor with a start draft, and the grabbed text is taken as a paste through readPaste; the first row is fetched at once and the others sit under Try another version; the catalog row wins for title, artist and length; a grabbed song carries a credit line in Song.sourceNote (D6); the first Grab shows the note of plan section 5 once, and the privacy page gains its two sentences (D7); the state of a Grab is one value from grabber in src/chord-grab.ts.
+DECIDED: one cook, one branch, cook/chord-grab-app off mls-int-20261113 after chord-grab-worker and PR 116 (song-paste-autofill) have merged and gate G1 (plan section 7) has passed; the search list stays the song catalog and each row gains a Grab button (plan decision D5); Grab opens the one SongEditor with a start draft, and the grabbed text is taken as a paste through readPaste; the first row is fetched at once and the others sit under Try another version; the catalog row wins for title, artist and length; a grabbed song carries a credit line in Song.sourceNote (D6); the first Grab shows the note of plan section 5 once, and the privacy page gains its two sentences (D7); the state of a Grab is one value from grabber in src/chord-grab.ts.
 REJECTED: a second editor or a second preview; a second chart reader; a site address or a site id in src/; a request from the phone to a chord site; a song saved before the player taps Save; a page's title written over one the player typed; the grabbed text kept anywhere but the editor's box; any new localStorage key except the first-use flag; new libraries; edits to worker files; edits outside the owned files.
 DONE MEANS: cases A1 to A17 of plan section 1 each have a named check line that failed on the tests-only commit and passes now; the boxes under "Verification (cook 2)" in section 1 are ticked with their evidence in the report; src/App.tsx is at most 500 lines; npm run build and npm run check:portable are green.
 SOURCE: docs/PLAN-chord-grab.md sections 1 and 5.
-NEEDS OWNER: D5 to D7 answered before this cook starts. The cook changes an interaction, so the owner reviews it on a phone in Preview before merge.
+NEEDS OWNER: D5 to D7 answered, and gate G1 (plan section 7) passed, before this cook starts. A G1 table that stops the feature means this cook does not run. The cook changes an interaction, so the owner reviews it on a phone in Preview before merge.
 
 # Grab in the search list
 
@@ -828,7 +834,7 @@ Run this once, after cook 1 has merged and the laptop has deployed Preview.
 
 - **Money.** Nothing under the recommended answers. No key, no paid service. A paid Workers plan is needed only if G1 shows a CPU problem. From memory it costs about 5 dollars a month.
 - **Worker use.** One Grab is two Worker calls and two Directory calls. The server cap of 2,000 calls a day is small beside the free plan's daily request limit. `find` sends at most three requests to sites, and `page` sends one.
-- **Site traffic.** At the cap, the three sites together get a few thousand requests a day. The canary adds 24.
+- **Site traffic.** At the cap, the three sites together get at most 6,000 requests a day, and nearer 4,000 when each `find` is followed by its `page`. The canary adds 24.
 - **Upkeep.** A site changes its layout, and a recipe breaks. Each break is one small fix cook: a recipe, a fixture, a live run. The planner's guess is a few breaks a year for three sites.
 - **Cooks.** Two medium and two small, on Opus.
 
@@ -840,7 +846,7 @@ Run this once, after cook 1 has merged and the laptop has deployed Preview.
 | A layout changes | The canary says `no-chart` or `no-match` twice | The search skips the site. A fix cook updates the recipe. |
 | The first chart is thin or wrong | The owner's phone review | **Try another version** and **Look on another site** in the review. The order can change in `GRAB_SITES`. |
 | The wrong song is grabbed, such as a cover | The review shows the sheet before **Save** | The player picks another version or cancels |
-| A new request on a pick breaks a landed search case | `check:song-search` case 2d compares every request that is not a catalog call with an empty list | Cook 2 sends nothing new on a row tap. Only the **Grab** button sends a request. |
+| A new request on a pick breaks a landed search case | `check:song-search` case 2d compares every cross-origin request that is not a catalog call with an empty list. Same-origin calls pass through its stub unseen. | Cook 2 sends nothing new on a row tap. Only the **Grab** button sends a request. |
 | Preview gives any visitor an account | Many accounts could pass the limit for one account | The server cap of 2,000 a day holds for all of them together |
 | The service worker change breaks offline | `check:offline` | Cook 4 adds one branch for one `POST` and changes no `GET` |
 

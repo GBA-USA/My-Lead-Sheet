@@ -85,7 +85,7 @@ Run the first mode once and put the table in the report. Do not run it in a loop
 - Worth dropping tags without touching a space on the two `<pre>` sites. The columns are the alignment. High.
 - Worth reading the reply through a reader that stops at 1 MB. Do not call `response.text()` on a body of unknown size. High.
 - Worth importing `fold` from `src/search.ts` for the title match. Do not copy it. High.
-- `/api/grab/` is answered in `worker/index.ts`. Do not add it to `DIRECTORY_PATH`. A request with the wrong Origin gets 403 before 401, so a check call sends the test Origin. Medium.
+- `/api/grab/` is answered in `worker/index.ts`. Do not add it to `DIRECTORY_PATH`. The landed Origin check sits inside the `DIRECTORY_PATH` branch, so the new branch calls `fromApp` itself, before it reads the session. A request with the wrong Origin gets 403 before 401, so a check call sends the test Origin. Medium.
 - `allowGrab` reads the session and writes the count in one synchronous segment, as the comment on `signedIn` in `worker/directory-http.ts` asks. Medium.
 - An old site can send Latin-1. Decode with the charset of the reply's header. Medium.
 - For W17, `startApi` takes a folder for saved state. Search every file in that folder for the marker word. Medium.

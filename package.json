@@ -98,7 +98,8 @@
     "check:mirror": "tsc -p worker && node --experimental-strip-types scripts/check-mirror.ts",
     "check:song-search": "node --experimental-strip-types scripts/check-song-search.ts",
     "check:song-paste": "node --experimental-strip-types scripts/check-song-paste.ts",
-    "check:guest": "tsc -p worker && node --experimental-strip-types scripts/check-guest.ts"
+    "check:guest": "tsc -p worker && node --experimental-strip-types scripts/check-guest.ts",
+    "check:bulk-import-plan": "node --experimental-strip-types scripts/check-bulk-import-plan.ts"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.5",

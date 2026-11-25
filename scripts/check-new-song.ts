@@ -358,6 +358,22 @@ await check("7. the write path refuses a song with no title: addOwnSong and repl
   assert.ok(app.loadLibrary().songs.some((stored) => stored.id === id), "a song stored with no title before this rule still loads");
 });
 
+await check("7b. a song from another phone whose title is no text is refused the same way: no throw, and nothing written", () => {
+  const app = need();
+  const store = new FakeStorage();
+  useStorage(store);
+  const song = app.ownSong(META, app.parseSheet(TWO_SECTIONS).sections);
+  const id = app.addOwnSong(song);
+  assert.ok(id !== null, "a song with a title is added");
+  const before = store.getItem(app.LIBRARY_KEY);
+  for (const title of [undefined, null, 7]) {
+    const sent = { ...song, title } as unknown as typeof song;
+    assert.equal(app.addOwnSong(sent), null, `addOwnSong refuses the title ${js(title) ?? "undefined"}`);
+    assert.equal(app.replaceOwnSong(id, sent), false, `replaceOwnSong refuses the title ${js(title) ?? "undefined"}`);
+    assert.equal(store.getItem(app.LIBRARY_KEY), before, "and nothing is written");
+  }
+});
+
 await check("4. an own song survives reload and backs up and restores with the account", async () => {
   const app = need();
   const { worker, base } = await startApi();

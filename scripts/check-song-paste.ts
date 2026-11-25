@@ -883,6 +883,8 @@ const SCREEN_CASES = [
   "32b. a guess the player never taps writes nothing: a typed title saves with no artist and no length from the catalog",
   "33. an offline or failed lookup fills nothing, says so with Try again and throws nothing; the details stay open on the title, Save asks for a title and stores nothing, and a typed title then saves",
   "34. the details fold, a guess, Add a title and Try again are at least 44 px tall and not clipped at 360 px and 390 px",
+  "35. a title typed after a bare paste keeps the details open under the player, and the guess, which was for a song with no title, goes",
+  "36. a guess tapped for a song with a typed title fills the artist and leaves the title; a title changed after the tap stores no catalog length",
 ];
 
 const RECORDING_SEARCH = "https://musicbrainz.org/ws/2/recording";
@@ -1549,6 +1551,46 @@ if (site) {
         await glove(fold, "the folded details", width);
       }
       await phone(390);
+    });
+
+    await check(SCREEN_CASES[22], async () => {
+      await phone(390);
+      await openNew();
+      await catalog("found", [LANTERN]);
+      await pasteTap(BARE);
+      await app.until(`${guesses}.length > 0`, "a guess from the catalog", 8000);
+      assert.equal(await foldOpen(), true, "the details are open on the missing title");
+      await fill("Title", "T");
+      assert.equal(await foldOpen(), true, "the first letter of a title does not fold the details");
+      assert.ok(await onPage(field("Title")), "so the Title field stays on the page");
+      await fill("Title", "Typed Over");
+      assert.equal(await foldOpen(), true, "and they stay open as the title grows");
+      assert.deepEqual(await guessTexts(), [], "the guess for a song with no title goes once the player types one");
+      assert.equal(await value("Artist"), "", "and the artist stays blank");
+      await sleep(2500);
+      assert.deepEqual(await guessTexts(), [], "no guess comes back by itself");
+    });
+
+    await check(SCREEN_CASES[23], async () => {
+      await phone(390);
+      await openNew();
+      await fill("Title", "lantern road");
+      await catalog("found", [recording("rec-road", "Lantern Road", "The Made Up Band", 200000), recording("rec-blues", "Lantern Road Blues", "Band Two", 100000)]);
+      await pasteTap(BARE);
+      await app.until(`${guesses}.length > 0`, "a guess for the artist", 8000);
+      assert.deepEqual((await catalogCalls()).map(askedPhrase), ["lantern road"], "the catalog was asked for the typed title, not a sung line");
+      const shownGuesses = await guessTexts();
+      assert.equal(shownGuesses.length, 1, `one guess, of that title (${js(shownGuesses)})`);
+      assert.ok(shownGuesses[0].includes("The Made Up Band"), "naming the artist");
+      await s.evaluate(`${guesses}[0].click()`);
+      await sleep(200);
+      assert.deepEqual([await value("Title"), await value("Artist")], ["lantern road", "The Made Up Band"], "the tap fills the artist and leaves the title as the player typed it");
+      await fill("Title", "Lantern Road Again");
+      await tap("Save");
+      await savedPage();
+      const saved = (await kept()).find((song) => song.title === "Lantern Road Again");
+      assert.ok(saved, "the song saves under the changed title");
+      assert.deepEqual([saved.artist, saved.officialRuntimeSec], ["The Made Up Band", null], "with the artist the player took, and no length from a guess whose title they changed");
     });
   } finally {
     await s.close();

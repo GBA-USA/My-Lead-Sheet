@@ -334,6 +334,46 @@ class Device {
   }
 }
 
+await check("7. the write path refuses a song with no title: addOwnSong and replaceOwnSong write nothing for a blank or spaces-only title, a real title still saves, and a title-less song stored earlier still loads", () => {
+  const app = need();
+  const store = new FakeStorage();
+  useStorage(store);
+  const song = app.ownSong(META, app.parseSheet(TWO_SECTIONS).sections);
+  const id = app.addOwnSong(song);
+  assert.ok(id !== null, "a song with a title is added");
+  const before = store.getItem(app.LIBRARY_KEY);
+  for (const title of ["", "   ", "\t\n "]) {
+    assert.equal(app.addOwnSong({ ...song, title }), null, `addOwnSong refuses the title ${js(title)}`);
+    assert.equal(app.replaceOwnSong(id, { ...song, title }), false, `replaceOwnSong refuses the title ${js(title)}`);
+    assert.equal(store.getItem(app.LIBRARY_KEY), before, `and the title ${js(title)} writes nothing`);
+  }
+  assert.equal(app.loadLibrary().songs.find((stored) => stored.id === id)?.title, META.title, "the stored song keeps its title");
+  assert.equal(app.replaceOwnSong(id, { ...song, title: "Kitchen Floor (live)" }), true, "a real title still replaces");
+  assert.equal(app.loadLibrary().songs.find((stored) => stored.id === id)?.title, "Kitchen Floor (live)", "and is stored");
+  const second = app.addOwnSong({ ...song, title: " Padded " });
+  assert.ok(second !== null && second !== id, "a title with spaces around it still adds");
+  const raw = JSON.parse(store.getItem(app.LIBRARY_KEY)!) as { songs: { id: number; title: string }[] };
+  raw.songs.find((stored) => stored.id === id)!.title = "  ";
+  store.setItem(app.LIBRARY_KEY, JSON.stringify(raw));
+  assert.ok(app.loadLibrary().songs.some((stored) => stored.id === id), "a song stored with no title before this rule still loads");
+});
+
+await check("7b. a song from another phone whose title is no text is refused the same way: no throw, and nothing written", () => {
+  const app = need();
+  const store = new FakeStorage();
+  useStorage(store);
+  const song = app.ownSong(META, app.parseSheet(TWO_SECTIONS).sections);
+  const id = app.addOwnSong(song);
+  assert.ok(id !== null, "a song with a title is added");
+  const before = store.getItem(app.LIBRARY_KEY);
+  for (const title of [undefined, null, 7]) {
+    const sent = { ...song, title } as unknown as typeof song;
+    assert.equal(app.addOwnSong(sent), null, `addOwnSong refuses the title ${js(title) ?? "undefined"}`);
+    assert.equal(app.replaceOwnSong(id, sent), false, `replaceOwnSong refuses the title ${js(title) ?? "undefined"}`);
+    assert.equal(store.getItem(app.LIBRARY_KEY), before, "and nothing is written");
+  }
+});
+
 await check("4. an own song survives reload and backs up and restores with the account", async () => {
   const app = need();
   const { worker, base } = await startApi();
@@ -438,8 +478,25 @@ const measure = `(() => {
   return { right: box.right, rows };
 })()`;
 
+/**
+ * In the page before any app script: the song catalog says no songs, so a paste's lookup for a missing title never
+ * reaches the live catalog. A request to this origin goes through.
+ */
+const CATALOG_STUB = `(() => {
+  window.__catalogCalls = [];
+  const realFetch = window.fetch.bind(window);
+  window.fetch = (input, init = {}) => {
+    const href = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    const url = new URL(href, location.href);
+    if (url.origin === location.origin) return realFetch(input, init);
+    window.__catalogCalls.push(url.href);
+    return Promise.resolve(new Response(JSON.stringify({ created: "2026-11-24T00:00:00.000Z", count: 0, offset: 0, recordings: [] }), { status: 200, headers: { "content-type": "application/json" } }));
+  };
+})();`;
+
 async function phoneChecks(site: Site, base: string, origin: string) {
   const page = await appPage(site);
+  await site.send("Page.addScriptToEvaluateOnNewDocument", { source: CATALOG_STUB });
   type Reply = { status: number; body: Record<string, any> };
   const appCalls = (path: string, body: object) =>
     site.evaluate<Reply>(`fetch(${js(path)}, { method: "POST", headers: { "content-type": "application/json" }, body: ${js(js(body))} }).then(async (r) => ({ status: r.status, body: await r.json() }))`);
@@ -1020,6 +1077,86 @@ async function phoneChecks(site: Site, base: string, origin: string) {
     await closeMore();
   });
 
+  /** The fold's button: the one that says whether the part holding the Title field is open. */
+  const fold = `[...${editor}.querySelectorAll("button[aria-expanded][aria-controls]")].find((b) => document.getElementById(b.getAttribute("aria-controls"))?.contains(${field("Title")}))`;
+  const foldOpen = () => site.evaluate<boolean | null>(`(() => { const b = ${fold}; return b ? b.getAttribute("aria-expanded") === "true" : null; })()`);
+  const onPage = (expression: string) => site.evaluate<boolean>(`!!(${expression})?.getClientRects().length`);
+  const DETAILS = ["Title", "Artist", "Key", "BPM", "Time signature"];
+  const caretIn = (label: string) => site.evaluate<boolean>(`document.activeElement === ${field(label)}`);
+  const tapFold = async () => {
+    assert.ok(await site.evaluate<boolean>(`(() => { const b = ${fold}; b?.click(); return !!b; })()`), "a details fold to tap");
+    await settle(150);
+  };
+
+  await check("7. New song opens with the details open and the Title field pointed to; with a title they fold to one line on a tap and open again", async () => {
+    await openNewSong();
+    assert.equal(await foldOpen(), true, "with no title the details are open");
+    for (const label of DETAILS) assert.ok(await onPage(field(label)), `the ${label} field shows`);
+    assert.ok(await site.evaluate<boolean>(`(() => { const el = ${field("Title")}; return document.activeElement === el || el.getAttribute("aria-invalid") === "true"; })()`), "and the Title field is pointed to");
+    await fill("Title", "Fold Me");
+    await fill("Artist", "Pat Bass");
+    assert.equal(await foldOpen(), true, "typing a title does not fold the details under the player's fingers");
+    assert.ok(await site.evaluate<boolean>(`${field("Title")}.getAttribute("aria-invalid") !== "true"`), "a filled Title field is no longer marked");
+    await tapFold();
+    assert.equal(await foldOpen(), false, "a tap folds them");
+    for (const label of DETAILS) assert.equal(await onPage(field(label)), false, `the folded ${label} field is off the page`);
+    assert.ok((await site.evaluate<string>(`${fold}.textContent`)).includes("Fold Me · Pat Bass"), "the fold says Fold Me · Pat Bass");
+    await fitsAt("the folded editor", ".song-editor");
+    await tapFold();
+    assert.equal(await foldOpen(), true, "and a second tap opens them");
+    assert.equal(await value("Title"), "Fold Me", "with what was typed still there");
+    await tapIn(editor, "Cancel");
+  });
+
+  await check("7. Edit song opens with the details folded to Title · Artist; a title of spaces is refused with Add a title, which opens the details on the Title field and stores nothing", async () => {
+    await openNewSong();
+    await fill("Title", "Folded Edit");
+    await fill("Artist", "Pat Bass");
+    await fill("BPM", "104");
+    await fill("Chart", TWO_SECTIONS);
+    await tapIn(editor, "Save");
+    await page.until(onSongPage, "the song's page");
+    const folded = (await hashId())!;
+    await openEdit();
+    assert.equal(await foldOpen(), false, "Edit song starts with the details folded");
+    for (const label of DETAILS) assert.equal(await onPage(field(label)), false, `the ${label} field is off the page`);
+    assert.ok(await onPage(field("Chart")), "the chart box shows");
+    const summary = await site.evaluate<string>(`${fold}.textContent`);
+    assert.ok(summary.includes("Folded Edit · Pat Bass"), `the fold says Folded Edit · Pat Bass (${js(summary)})`);
+    await tapFold();
+    assert.equal(await foldOpen(), true, "a tap opens them");
+    assert.deepEqual([await value("Title"), await value("Artist"), await value("BPM")], ["Folded Edit", "Pat Bass", "104"], "with the song's details");
+    await fill("Title", "   ");
+    await tapFold();
+    assert.equal(await foldOpen(), true, "details with no title do not fold");
+    const before = await site.evaluate<string>(`localStorage.getItem("leadSheetsLibrary")`);
+    await tapIn(editor, "Save");
+    assert.ok((await page.text(".song-editor [role=alert]")).includes("Add a title"), "Save with a title of spaces says Add a title");
+    assert.ok(await site.evaluate<boolean>(`!!${editor}`), "the editor stays open");
+    assert.equal(await site.evaluate<string>(`localStorage.getItem("leadSheetsLibrary")`), before, "and nothing is stored");
+    assert.ok(await onPage(field("Title")), "the Title field shows");
+    assert.ok(await caretIn("Title"), "with the caret in it");
+    assert.equal((await stored()).find((song) => song.id === folded)?.title, "Folded Edit", "the stored song keeps its title");
+    await fill("Title", "Folded Edit Again");
+    await tapIn(editor, "Save");
+    await page.until(`!document.querySelector(".song-editor")`, "the editor to close");
+    assert.equal((await stored()).find((song) => song.id === folded)?.title, "Folded Edit Again", "a real title then saves");
+  });
+
+  await check("7. a BPM the metronome can't play, saved with the details folded, opens them so the player sees which field the message is about", async () => {
+    await openEdit();
+    assert.equal(await foldOpen(), false, "Edit song starts folded");
+    await fill("BPM", "9999");
+    if (await foldOpen()) await tapFold();
+    assert.equal(await foldOpen(), false, "the details are folded over the bad BPM");
+    await tapIn(editor, "Save");
+    assert.ok((await page.text(".song-editor [role=alert]")).includes("BPM must be a whole number"), "the BPM is refused");
+    assert.equal(await foldOpen(), true, "and the details open");
+    assert.ok(await onPage(field("BPM")), "on the BPM field");
+    await tapIn(editor, "Cancel");
+  });
+
+  assert.equal(await site.evaluate<number>(`window.__catalogCalls.length`), await site.evaluate<number>(`window.__catalogCalls.filter((url) => url.startsWith("https://musicbrainz.org/ws/2/recording")).length`), "no request but the catalog's recording search left the page");
   assert.deepEqual(await page.errors(), [], "no page errors");
 }
 

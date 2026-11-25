@@ -2,9 +2,13 @@
  * Song search, the half with no screen: the general web search a player opens to find a song's chord chart, and the public
  * song catalog's recording search. The app never asks for, keeps or shows lyrics. The player opens the web search in
  * their own browser and pastes what they find. The catalog gives title, artist, year and length only.
+ *
+ * A chart the player pasted with no title or artist is looked up here too: `pasteLookup` asks the catalog for the
+ * title, or for one or two lines the chart sings, each as a title to search for. What comes back is shown as guesses.
  */
 
 import endpoints from "../data/song-search.json";
+import type { ChartSection } from "./types";
 
 const CHART_SEARCH = endpoints.chartSearch;
 const RECORDING_SEARCH = endpoints.recordingSearch;
@@ -64,6 +68,40 @@ function catalogQuery(typed: string): string | null {
   return `recording:${phrase} OR artist:${phrase} OR (${everyWord})`;
 }
 
+/**
+ * The words of a title or a sung line as the catalog is asked for them: no capitals, nothing in round brackets such as
+ * (live), and no punctuation but the apostrophe, which the catalog does not fold. A curly apostrophe is asked as a
+ * straight one: the catalog matches a straight one to both, and a curly one loosens the phrase.
+ */
+const askedWords = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/[\u2018\u2019]/g, "'")
+    .split(/[^\p{L}\p{N}']+/u)
+    .filter((word) => /[\p{L}\p{N}]/u.test(word));
+/** The same words as they compare: no apostrophes either. */
+const plainWords = (text: string) => askedWords(text).map((word) => word.replaceAll("'", ""));
+const wordSet = (text: string) => [...new Set(plainWords(text))].sort().join(" ");
+
+/** Where a recording's releases count toward `titleQuery`'s score: the catalog's largest countries, Europe (XE) and worldwide (XW). */
+const WIDE = ["US", "GB", "DE", "JP", "FR", "CA", "AU", "NL", "XE", "XW"];
+
+/**
+ * What the catalog is asked for a title whose best-known recordings are wanted, or null when the title holds no words.
+ * The catalog keeps no popularity and lists the hundreds of recordings of a well-known title in no useful order, so the
+ * query fixes each clause's score: every recording of the title matches, one released as a single scores 2 more, and
+ * one released in a place of `WIDE` scores 1 more for each. `scripts/song-search-live.ts` measures it against the live
+ * catalog.
+ */
+function titleQuery(title: string): string | null {
+  const words = askedWords(title);
+  if (!words.length) return null;
+  const titled = `recording:"${words.join(" ")}"`;
+  const wide = WIDE.map((place) => `country:${place}^=1`).join(" OR ");
+  return `${titled}^=1 AND (primarytype:single^=2 OR ${wide} OR ${titled}^=0)`;
+}
+
 function requestUrl(asked: string): string {
   const params = new URLSearchParams({ query: asked, fmt: "json", limit: String(LIMIT) });
   return `${RECORDING_SEARCH}?${params}`;
@@ -78,22 +116,28 @@ function busyWaitMs(retryAfter: string | null): number {
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 const text = (value: unknown) => (typeof value === "string" ? value : "");
 
-/** The reply's recordings, or null when the reply is not a recording list. A recording with no title is left out. */
+/**
+ * The reply's recordings, or null when the reply is not a recording list. A recording with no title is left out. They
+ * stay in the catalog's order, highest score first, and recordings it scores the same are listed most released first.
+ */
 function songsOf(body: unknown): CatalogSong[] | null {
   if (!isObject(body) || !Array.isArray(body.recordings)) return null;
-  return body.recordings.flatMap((recording): CatalogSong[] => {
+  const rows = body.recordings.flatMap((recording): { song: CatalogSong; score: number; released: number }[] => {
     if (!isObject(recording) || !text(recording.id) || !text(recording.title).trim()) return [];
     const credits = Array.isArray(recording["artist-credit"]) ? recording["artist-credit"] : [];
     const artist = credits.map((credit) => (isObject(credit) ? text(credit.name) + text(credit.joinphrase) : "")).join("").trim();
     const year = /^\d{4}/.exec(text(recording["first-release-date"]))?.[0] ?? null;
     const ms = recording.length;
     const lengthSec = typeof ms === "number" && Number.isFinite(ms) && ms > 0 ? Math.max(1, Math.round(ms / 1000)) : null;
-    return [{ id: text(recording.id), title: text(recording.title).trim(), artist, year, lengthSec }];
+    const score = typeof recording.score === "number" ? recording.score : 0;
+    const released = Array.isArray(recording.releases) ? recording.releases.length : 0;
+    return [{ song: { id: text(recording.id), title: text(recording.title).trim(), artist, year, lengthSec }, score, released }];
   });
+  return rows.sort((a, b) => b.score - a.score || b.released - a.released).map((row) => row.song);
 }
 
 /**
- * One search box's link to the catalog. Each `search` replaces the one before: it reports `searching` at once, waits
+ * One search box's link to the catalog. Each `search` or `titled` replaces the one before: it reports `searching` at once, waits
  * for typing to pause, keeps a second request at least `FLOOR_MS` after the last, and reports what came back. A busy
  * catalog is asked again after its Retry-After while the `ANSWER_MS` budget lasts. A reply for a search that was
  * replaced, or after `stop`, is dropped, and a replaced search asks no more.
@@ -155,24 +199,103 @@ export function catalogSearcher(deps: SearchDeps) {
     return songs.length ? { kind: "found", query, songs } : { kind: "none", query };
   }
 
+  function begin(typed: string, queryFor: (typed: string) => string | null, report: (state: SearchState) => void) {
+    cancel();
+    const mine = current;
+    const query = typed.trim();
+    if (!query) return report({ kind: "idle" });
+    const asked = queryFor(query);
+    if (asked === null) return report({ kind: "none", query });
+    report({ kind: "searching", query });
+    // The floor is read again when the wait ends, since another searcher sharing it may have asked meanwhile.
+    const send = () => {
+      const wait = floor.lastSent + FLOOR_MS - deps.now();
+      if (wait > 0) return void (timer = deps.setTimeout(send, wait));
+      timer = null;
+      ask(query, asked, () => mine === current).then((state) => mine === current && report(state));
+    };
+    timer = deps.setTimeout(send, DEBOUNCE_MS);
+  }
+
   return {
-    search(typed: string, report: (state: SearchState) => void) {
-      cancel();
-      const mine = current;
-      const query = typed.trim();
-      if (!query) return report({ kind: "idle" });
-      const asked = catalogQuery(query);
-      if (asked === null) return report({ kind: "none", query });
-      report({ kind: "searching", query });
-      // The floor is read again when the wait ends, since another searcher sharing it may have asked meanwhile.
-      const send = () => {
-        const wait = floor.lastSent + FLOOR_MS - deps.now();
-        if (wait > 0) return void (timer = deps.setTimeout(send, wait));
-        timer = null;
-        ask(query, asked, () => mine === current).then((state) => mine === current && report(state));
-      };
-      timer = deps.setTimeout(send, DEBOUNCE_MS);
-    },
+    /** Asks for a line typed in a search box: a title, an artist, or both. */
+    search: (typed: string, report: (state: SearchState) => void) => begin(typed, catalogQuery, report),
+    /** Asks for the recordings of one title, best known first. */
+    titled: (title: string, report: (state: SearchState) => void) => begin(title, titleQuery, report),
     stop: cancel,
   };
+}
+
+/** What looking up a pasted chart's missing title or artist came to. A guess is shown for the player to tap, never written for them. */
+export type Lookup = { kind: "idle" | "searching" | "none" | "offline" | "failed" } | { kind: "found"; songs: CatalogSong[] };
+
+/** How many sung lines one lookup may ask the catalog for, and how many guesses it shows. */
+const LOOKUP_LINES = 2;
+const GUESSES = 3;
+/** A sung line shorter or longer than this is rarely a title. */
+const TITLE_WORDS = { min: 2, max: 8 };
+
+/**
+ * The sung lines most likely to be the title, each as the chart first sings it: the line sung most, a chorus line
+ * before a verse line, a short line before a long one.
+ */
+function titleLines(sections: ChartSection[]): string[] {
+  const lines = new Map<string, { sung: string; count: number; chorus: boolean; words: number; at: number }>();
+  for (const section of sections) {
+    const chorus = /chorus|refrain|hook/i.test(section.heading);
+    for (const { lyrics: sung = "" } of section.lines) {
+      const words = plainWords(sung);
+      if (words.length < TITLE_WORDS.min || words.length > TITLE_WORDS.max) continue;
+      const line = lines.get(words.join(" "));
+      if (!line) lines.set(words.join(" "), { sung, count: 1, chorus, words: words.length, at: lines.size });
+      else {
+        line.count += 1;
+        line.chorus ||= chorus;
+      }
+    }
+  }
+  return [...lines]
+    .sort(([, a], [, b]) => b.count - a.count || Number(b.chorus) - Number(a.chorus) || a.words - b.words || a.at - b.at)
+    .slice(0, LOOKUP_LINES)
+    .map(([, line]) => line.sung);
+}
+
+/** The songs worth showing for what was asked: the title is the asked words and no more, by `artist` when one is known, one row an artist. */
+function guessesIn(songs: CatalogSong[], asked: string, artist: string): CatalogSong[] {
+  const title = wordSet(asked);
+  const by = wordSet(artist);
+  const artists = new Set<string>();
+  return songs
+    .filter((song) => {
+      const credit = wordSet(song.artist);
+      if (wordSet(song.title) !== title || (by && credit !== by) || artists.has(credit)) return false;
+      artists.add(credit);
+      return true;
+    })
+    .slice(0, GUESSES);
+}
+
+/**
+ * Looks up the title or artist a pasted chart lacks. With a title it asks for that title. With none it asks for the
+ * sung lines of `titleLines`, one request a line, until one gives a guess. `report` hears `searching`, then `found`
+ * with the guesses, best known first, `none`, `offline` or `failed`. Stopping `searcher`, or asking it again, ends the
+ * lookup unheard.
+ */
+export function pasteLookup(
+  searcher: Pick<ReturnType<typeof catalogSearcher>, "titled">,
+  known: { title: string; artist: string },
+  sections: ChartSection[],
+  report: (lookup: Lookup) => void,
+) {
+  const asks = known.title.trim() ? [known.title] : titleLines(sections);
+  const ask = (index: number) => {
+    if (index === asks.length) return report({ kind: "none" });
+    searcher.titled(asks[index], (state) => {
+      if (state.kind === "searching" || state.kind === "offline" || state.kind === "failed") return report({ kind: state.kind });
+      const songs = state.kind === "found" ? guessesIn(state.songs, asks[index], known.artist) : [];
+      if (songs.length) report({ kind: "found", songs });
+      else ask(index + 1);
+    });
+  };
+  ask(0);
 }

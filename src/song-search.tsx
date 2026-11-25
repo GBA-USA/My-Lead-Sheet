@@ -14,7 +14,7 @@ const NOT_ADDED = "This phone couldn't add the song. Free some space and try aga
 /** Every search box on this phone keeps one floor, so two boxes open at once still ask the catalog at most once a second. */
 const PHONE_FLOOR: Floor = { lastSent: -Infinity };
 
-const browserSearcher = () =>
+export const browserSearcher = () =>
   catalogSearcher({
     fetch: (url, init) => fetch(url, init),
     now: () => performance.now(),

@@ -12,7 +12,8 @@ import { CodeOfferButton } from "./setlist-code";
 import { codeOffer } from "./setlist-code-model";
 import { LeadSheet } from "./sheet";
 // @ts-expect-error TS5097: song-search.ts holds the same stem, so only ".tsx" names this file in tsc, Vite and esbuild.
-import { NoWordsYet, SongSearch } from "./song-search.tsx";
+import { SongSearch } from "./song-search.tsx";
+import { SongStartPanel } from "./song-start";
 import { hasTiming } from "./song-version";
 import { songByRef, tempoText } from "./storage";
 import type { Library, Setlist, Song, SongRef } from "./types";
@@ -81,6 +82,9 @@ export function SongBody({
   semitones,
   notation,
   metronome,
+  onPaste,
+  onLearn,
+  onBpm,
 }: {
   library: Library;
   songRef: SongRef;
@@ -88,6 +92,9 @@ export function SongBody({
   semitones: number;
   notation: Notation;
   metronome: ReturnType<typeof useMetronome>;
+  onPaste: (text: string) => void;
+  onLearn: () => void;
+  onBpm: (bpm: number) => void;
 }) {
   const song = songByRef(library.songs, songRef);
   if (!song) {
@@ -101,7 +108,7 @@ export function SongBody({
   return (
     <>
       <CopyNote song={song} />
-      <NoWordsYet song={song} />
+      <SongStartPanel song={song} onPaste={onPaste} onLearn={onLearn} onBpm={onBpm} />
       <LeadSheet song={song} scale={scale} semitones={semitones} notation={notation} metronome={metronome} />
     </>
   );

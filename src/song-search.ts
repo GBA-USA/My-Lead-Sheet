@@ -24,11 +24,22 @@ const BUSY_RETRIES = 2;
 const BUSY_WAIT_MAX_MS = 2000;
 const LIMIT = 15;
 
-/** A general web search for `"<title>" "<artist>" chords`, leaving out a blank field. */
-export function chartSearchUrl(title: string, artist: string): string {
+function webSearchUrl(title: string, artist: string, topic: "chords" | "lyrics"): string {
   const quoted = [title, artist].map((field) => field.trim()).filter(Boolean).map((field) => `"${field}"`);
-  return CHART_SEARCH + encodeURIComponent([...quoted, "chords"].join(" "));
+  return CHART_SEARCH + encodeURIComponent([...quoted, topic].join(" "));
 }
+
+/** A general web search for `"<title>" "<artist>" chords`, leaving out a blank field. */
+export function chordsSearchUrl(title: string, artist: string): string {
+  return webSearchUrl(title, artist, "chords");
+}
+
+/** A general web search for `"<title>" "<artist>" lyrics`, leaving out a blank field. */
+export function lyricsSearchUrl(title: string, artist: string): string {
+  return webSearchUrl(title, artist, "lyrics");
+}
+
+export const chartSearchUrl = chordsSearchUrl;
 
 /** One recording from the catalog, as much as a new sheet uses. */
 export type CatalogSong = { id: string; title: string; artist: string; year: string | null; lengthSec: number | null };

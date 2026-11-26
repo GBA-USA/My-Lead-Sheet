@@ -67,7 +67,7 @@ export function App() {
   const [hash, setHash] = useState(() => window.location.hash);
   const [textIndex, setTextIndex] = useStored(loadTextScaleIndex);
   const [menu, setMenu] = useState<MenuId>(null);
-  const [scrollSheet, setScrollSheet] = useState(false);
+  const [scrollSheet, setScrollSheet] = useState<false | "speed" | "learn">(false);
   const { account, setAccount, checking, owner } = useAccount();
   const [personal, setPersonal] = useStored(() => loadPersonal(owner ?? null), owner);
   const [accountOpen, setAccountOpen] = useState(() => googleReturn() !== null);
@@ -269,6 +269,7 @@ export function App() {
   const retempo = (song: Song, tempo: number | null) => {
     if (tempo !== song.tempo) metronome.setBpm(initialMetronomeBpm(tempo));
   };
+  const setSongBpm = (bpm: number) => { setFollowed(null); songVersion.set((current) => ({ bpm: initialMetronomeBpm(bpm), data: { ...current.data, tempo: bpm } })); };
 
   const saveData = (song: Song, data: SongData) => {
     saveSongData(song.ref, data);
@@ -321,7 +322,7 @@ export function App() {
             onNotation={(notation) => songVersion.set({ notation })}
             scrolling={performance.scrolling}
             onToggleScroll={() => (take ? stopTake(take) : performance.setScrolling((on) => !on))}
-            onScrollSheet={() => { closeMenu(); setScrollSheet(true); }}
+            onScrollSheet={() => { closeMenu(); setScrollSheet("speed"); }}
             onSend={route.name === "song" ? sendSong.onSend(activeSong) : undefined}
             take={
               take ? (
@@ -346,7 +347,7 @@ export function App() {
           canTeach={even != null}
           onListen={route.name === "song" ? () => setTeaching({ learning: true }) : undefined}
           onTeach={teach}
-          onBpm={metronome.setBpm}
+          onBpm={setSongBpm} initial={scrollSheet}
           onClose={() => setScrollSheet(false)}
         />
       ) : null}
@@ -453,6 +454,7 @@ export function App() {
             semitones={draft?.semitones ?? 0}
             notation={draft?.notation ?? "notes"}
             metronome={metronome}
+            onPaste={(paste) => setEditing({ paste })} onLearn={() => setScrollSheet("learn")} onBpm={setSongBpm}
           />
         ) : null}
         {gigRoute && gigRoute.index === null && !holding ? (

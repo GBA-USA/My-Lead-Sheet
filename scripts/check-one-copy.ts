@@ -1,7 +1,8 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = new URL("..", import.meta.url).pathname;
+const root = fileURLToPath(new URL("..", import.meta.url));
 const sources = ["src", "worker"].flatMap((dir) =>
   readdirSync(join(root, dir), { recursive: true })
     .map((name) => String(name).replaceAll("\\", "/"))
@@ -39,6 +40,12 @@ const ONE_COPY: { what: string; pattern: RegExp; home: string | string[]; dir?: 
   { what: "unzip, the one zip reader, for a .zip and a .docx", pattern: /DecompressionStream\(|0x06054b50/, home: "src/import-read.ts", dir: "src/" },
   { what: "decodeText, which picks the encoding of a text file", pattern: /new TextDecoder\("utf-8", \{ fatal: true \}\)/, home: "src/song-import.ts", dir: "src/" },
   { what: "L1.9 the song listener, so analysis runs off the main thread,", pattern: /new SongListener\(/, home: "src/learn-worker.ts", dir: "src/" },
+  { what: "general web search URL for lyrics", pattern: /\b(?:function|const)\s+lyricsSearchUrl\b/, home: "src/song-search.ts", dir: "src/" },
+  { what: "general web search URL for chords", pattern: /\b(?:function|const)\s+chordsSearchUrl\b/, home: "src/song-search.ts", dir: "src/" },
+  { what: "web search link for chords and lyrics", pattern: /className=\{[^}]*"find-chords"|className="find-chords"/, home: "src/song-search.tsx", dir: "src/" },
+  { what: "smart paste reader", pattern: /\b(?:function|const)\s+readPaste\b/, home: "src/song-paste.ts", dir: "src/" },
+  { what: "Learn this song chooser definition", pattern: /\b(?:function|const)\s+LearnChooser\b/, home: "src/learn-chooser.tsx", dir: "src/" },
+  { what: "Learn this song chooser mount", pattern: /<LearnChooser\b/, home: "src/scroll-sheet.tsx", dir: "src/" },
 ];
 
 for (const { what, pattern, home, dir, pending } of ONE_COPY) {

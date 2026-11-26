@@ -70,6 +70,7 @@
                     "check:song-notes":  "tsc -p worker \u0026\u0026 node --experimental-strip-types scripts/check-song-notes.ts",
                     "check:song-paste":  "node --experimental-strip-types scripts/check-song-paste.ts",
                     "check:song-search":  "node --experimental-strip-types scripts/check-song-search.ts",
+                    "check:song-start":  "node --experimental-strip-types scripts/check-song-start.ts",
                     "check:spend-guard":  "node --experimental-strip-types scripts/check-spend-guard.ts",
                     "check:spike-links":  "node --experimental-strip-types scripts/check-spike-links.ts",
                     "check:spike-server":  "node spike/server/check.mjs",

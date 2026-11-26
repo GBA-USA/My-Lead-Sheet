@@ -16,6 +16,7 @@ export function ScrollSheet({
   onTeach,
   onBpm,
   onClose,
+  initial = "speed",
 }: {
   percent: number;
   onPercent: (next: number) => void;
@@ -24,8 +25,9 @@ export function ScrollSheet({
   onTeach: () => void;
   onBpm: (bpm: number) => void;
   onClose: () => void;
+  initial?: "speed" | "learn";
 }) {
-  const [learning, setLearning] = useState(false);
+  const [learning, setLearning] = useState(initial === "learn");
   const closeThen = (run: () => void) => () => {
     onClose();
     run();

@@ -229,10 +229,20 @@ export function chordCount(chart: string): number {
 /** The lines `parseSheet` warns about, which the editor marks. */
 export const warningCount = (draft: Draft) => parseSheet(draft.chart).warnings.length;
 
-/** The song a draft saves, as the editor stores a new song. */
-export function songOf(draft: Draft): Omit<Song, "ref" | "id"> {
-  const meta = { title: draft.title, artist: draft.artist, keyRoot: draft.keyRoot, keyMode: draft.keyMode, tempo: parseBpm(draft.bpm), timeSignature: draft.timeSignature };
-  return { ...ownSong(meta, parseSheet(draft.chart).sections), keyNote: draft.keyNote };
+/**
+ * The song a draft saves, as the editor stores a new song. With `before`, the song it replaces: the chart, key and
+ * time come from the file, and the title, artist, length and notes stay, the tempo too when the file gives none.
+ */
+export function songOf(draft: Draft, before?: Omit<Song, "ref" | "id">): Omit<Song, "ref" | "id"> {
+  const meta = {
+    title: before?.title ?? draft.title,
+    artist: before?.artist ?? draft.artist,
+    keyRoot: draft.keyRoot,
+    keyMode: draft.keyMode,
+    tempo: parseBpm(draft.bpm) ?? before?.tempo ?? null,
+    timeSignature: draft.timeSignature,
+  };
+  return { ...ownSong(meta, parseSheet(draft.chart).sections, before), keyNote: draft.keyNote || (before?.keyNote ?? "") };
 }
 
 /**

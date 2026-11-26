@@ -1489,13 +1489,20 @@ if (site) {
       await s.evaluate(`[...${editor}.querySelectorAll("a")].find((a) => a.textContent.trim() === "Open").click()`);
       await app.until(`location.hash.startsWith("#/song/${have.id}")`, "the page of the song the player has");
       await sleep(400);
-      const asked = await s.evaluate<{ sheet: boolean; question: string; rows: number; editor: boolean }>(
-        `({ sheet: !!${sheet}, question: ${sheet}?.querySelector(".song-import-ask")?.textContent ?? "", rows: document.querySelectorAll(".song-import-row").length, editor: !!${editor} })`,
+      const asked = await s.evaluate<{ sheet: boolean; question: string; editor: boolean }>(
+        `({ sheet: !!${sheet}, question: ${sheet}?.querySelector(".song-import-ask")?.textContent ?? "", editor: !!${editor} })`,
       );
       assert.equal(asked.sheet, true, `the sheet stays after Open (${js(asked)})`);
       assert.ok(asked.question.includes("Leave without saving 2 songs?"), `it asks first (${js(asked)})`);
-      assert.equal(asked.rows, 2, "the rows are kept");
       assert.equal(asked.editor, false, "the row's editor makes way for the question");
+      await tapIn(button("Stay", sheet), "Stay");
+      if (await s.evaluate<boolean>(`!!${button("Back to the list", sheet)}`)) await tapIn(button("Back to the list", sheet), "Back to the list");
+      assert.deepEqual(
+        (await rowsOf()).map((row) => row.name),
+        ["have-it-again.txt", "not-yet.txt"],
+        "Stay keeps both rows",
+      );
+      await tapIn(button("Close", sheet), "Close");
       await tapIn(button("Leave", sheet), "Leave");
       await app.until(`!${sheet}`, "the sheet closed by Leave");
       await app.until(`document.querySelector(".sheet .sheet-name")?.textContent === "Pebble Have It"`, "the song Open asked for");

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useReducer, useRef, useState, type ReactNode } from "react";
+import { content } from "./band-library";
 import { useEscape } from "./hooks";
 import { pickedFile, readFiles, type ReadEvent } from "./import-read";
 import { useMetronome } from "./metronome-view";
@@ -253,6 +254,19 @@ export function SongImport({
     if (asking) return setAsking(false);
     close();
   });
+  // A change of page leaves through close too, so unsaved rows are asked about first. It subscribes once: App's own
+  // hashchange listener re-renders this sheet in the same event, and a listener re-added mid-dispatch is not called.
+  const moved = useRef(close);
+  moved.current = () => {
+    setFixing(null);
+    setReplacing(null);
+    close();
+  };
+  useEffect(() => {
+    const onHash = () => moved.current();
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
 
   const actions: RowActions = {
     onOpen: setOpen,
@@ -300,8 +314,7 @@ export function SongImport({
     const have = duplicate?.by === "library" ? library.find((song) => song.id === duplicate.songId) : undefined;
     setReplacing(null);
     if (!have || duplicate?.by !== "library" || written.current.has(target.id)) return;
-    const song = songOf(target.state.draft);
-    if (!replaceOwnSong(have.id, { ...song, title: have.title, artist: have.artist, keyNote: song.keyNote || have.keyNote })) return setNotice(NOT_SAVED);
+    if (!replaceOwnSong(have.id, songOf(target.state.draft, content(have)))) return setNotice(NOT_SAVED);
     written.current.add(target.id);
     setNotice("");
     dispatch({ do: "saved", saved: [{ id: target.id, songId: have.id }], songs: loadLibrary().songs });

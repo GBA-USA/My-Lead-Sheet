@@ -127,7 +127,8 @@ function SongRowText({ song }: { song: Song }) {
  * account's never does. Each change to the phone's band data reads it again, so a sign-out that clears the phone
  * empties open results too.
  */
-export function SongList({ songs, userId, onAdd }: { songs: Song[]; userId: string | null; onAdd?: () => void }) {
+/** `onAdd` and `onImport` are there only while signed in. Files dragged onto the page go to `onImport`. */
+export function SongList({ songs, userId, onAdd, onImport }: { songs: Song[]; userId: string | null; onAdd?: () => void; onImport?: (files: File[]) => void }) {
   const [query, setQuery] = useState("");
   const [chips, setChips] = useState(NO_CHIPS);
   const [held, setHeld] = useState<CachedBandSong[]>([]);
@@ -147,6 +148,26 @@ export function SongList({ songs, userId, onAdd }: { songs: Song[]; userId: stri
       current = false;
     };
   }, [searching, userId, phone]);
+
+  // Signed out there is no listener, so a drag does nothing the page did not do before.
+  useEffect(() => {
+    if (!onImport) return;
+    const over = (event: DragEvent) => {
+      if (event.dataTransfer?.types.includes("Files")) event.preventDefault();
+    };
+    const drop = (event: DragEvent) => {
+      const files = [...(event.dataTransfer?.files ?? [])];
+      if (files.length === 0) return;
+      event.preventDefault();
+      onImport(files);
+    };
+    document.addEventListener("dragover", over);
+    document.addEventListener("drop", drop);
+    return () => {
+      document.removeEventListener("dragover", over);
+      document.removeEventListener("drop", drop);
+    };
+  }, [onImport]);
 
   if (open) {
     return (
@@ -185,6 +206,11 @@ export function SongList({ songs, userId, onAdd }: { songs: Song[]; userId: stri
           <button type="button" className="song-list-add" onClick={onAdd}>
             + Add a song
           </button>
+          {onImport ? (
+            <button type="button" className="song-list-add" onClick={() => onImport([])}>
+              Import files
+            </button>
+          ) : null}
           <SongSearch songs={songs} />
         </>
       ) : null}

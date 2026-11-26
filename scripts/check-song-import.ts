@@ -992,12 +992,13 @@ if (site) {
     };
     let opened = 0;
     const openImport = async () => {
-      opened += 1;
       await closeImport();
       await onSongs();
       await app.until(`!!${importButton}`, "the Import files button", 5000);
       await s.evaluate(`${importButton}.click()`);
       await app.until(`!!${sheet} && !!${button("Choose files", sheet)}`, "the sheet on Choose files", 5000);
+      // Counted once the sheet shows, so the last line says the sheet ran.
+      opened += 1;
     };
     const closeImport = async () => {
       if (!(await s.evaluate<boolean>(`!!${sheet}`))) return;
@@ -1513,9 +1514,10 @@ if (site) {
         // As App does, onClose sets editing to null.
         const draw = (userId) => flushSync(() => root.render(createElement(SongEditors, { editing, song: undefined, songs: [], userId, files: [], onSongData() {}, onTempo() {}, onClose: () => ((closed += 1), (editing = null)) })));
         const showing = () => !!host.querySelector(".song-import");
-        const wait = () => new Promise((done) => setTimeout(done, 100));
+        // The sheet loads with import(), and React holds a Suspense reveal for up to 300 ms.
+        const wait = () => new Promise((done) => setTimeout(done, 500));
         draw(${js(ACCOUNT.userId)});
-        await wait();
+        for (let at = 0; at < 60 && !showing(); at += 1) await new Promise((done) => setTimeout(done, 50));
         const first = showing();
         draw(${js(SECOND.userId)});
         await wait();

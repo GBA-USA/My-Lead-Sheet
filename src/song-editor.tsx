@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { content } from "./band-library";
 import { useEscape } from "./hooks";
 import { useMetronome } from "./metronome-view";
@@ -11,14 +11,19 @@ import { BpmField, parseBpm, SongDataEditor } from "./song-data-editor";
 import { lengthText, pasteLookup, type CatalogSong, type Lookup } from "./song-search.js";
 // @ts-expect-error TS5097: song-search.ts holds the same stem, so only ".tsx" names this file in tsc, Vite and esbuild.
 import { browserSearcher, FindChords, SongSearch } from "./song-search.tsx";
+import type { Draft } from "./song-import.js";
 import { CAPO_VIEW, capoNote, readPaste, type CapoView, type LeftOut, type Pasted } from "./song-paste";
 import { KEY_ROOTS, ownSong, parseSheet, sectionsToText, sheetProblem, type SongFacts, type SongMeta } from "./song-text";
 import { addOwnSong, removeOwnSong, replaceOwnSong, saveSongData, songByRef, withSongData } from "./storage";
 import type { KeyMode, Song, SongData } from "./types";
 import "./song-editor.css";
 
-/** Which song sheet is open over the page: timing, a new song, the open song's chart, or the Delete question. */
-export type SongEdit = "timing" | "new" | "chart" | "delete";
+/** Which song sheet is open over the page: timing, a new song, the open song's chart, the Delete question, or Import files. */
+export type SongEdit = "timing" | "new" | "chart" | "delete" | "import";
+
+/** Import files and its readers load on the first tap, so the main script keeps its size. The service worker holds every built file, so it opens offline too. */
+// @ts-expect-error TS5097: song-import.ts holds the same stem, so only ".tsx" names this file in tsc, Vite and esbuild.
+const SongImport = lazy(() => import("./song-import.tsx").then((module) => ({ default: module.SongImport })));
 
 const NOT_SAVED = "This phone couldn't save the song. Free some space and try again.";
 const BAD_BPM = "BPM must be a whole number the metronome can play";
@@ -110,6 +115,8 @@ export function SongEditors({
   editing,
   song,
   songs,
+  userId,
+  files = [],
   onSongData,
   onTempo,
   onClose,
@@ -117,11 +124,31 @@ export function SongEditors({
   editing: SongEdit | null;
   song: Song | undefined;
   songs: Song[];
+  /** The signed-in account. Import files belongs to it, and closes when it changes. */
+  userId: string | null;
+  /** Files dropped on the page, for Import files to read first. */
+  files?: File[];
   onSongData: (song: Song, data: SongData) => void;
   /** The open song's tempo was saved; `song` is the song as it was. */
   onTempo: (song: Song, tempo: number | null) => void;
   onClose: () => void;
 }) {
+  // The pile belongs to the account that picked it. Another account, or none, closes the sheet with no question.
+  const owner = useRef(userId);
+  useEffect(() => {
+    if (owner.current === userId) return;
+    owner.current = userId;
+    if (editing === "import") onClose();
+  }, [userId]);
+  if (editing === "import") {
+    if (!userId || owner.current !== userId) return null;
+    const editor = (start: Draft, done: (songId: number | null) => void): ReactNode => <SongEditor songs={songs} start={start} onSaved={done} onClose={() => done(null)} />;
+    return (
+      <Suspense fallback={null}>
+        <SongImport key={userId} songs={songs} files={files} editor={editor} onClose={onClose} />
+      </Suspense>
+    );
+  }
   if (editing === "new") return <SongEditor songs={songs} onClose={onClose} />;
   if (!song) return null;
   if (editing === "chart") return <SongEditor song={song} songs={songs} onTempo={(tempo) => onTempo(song, tempo)} onClose={onClose} />;
@@ -135,10 +162,26 @@ export function SongEditors({
  * drawn below by the normal chart as it is typed. Nothing here talks to the server. A paste that leaves the title or
  * artist blank asks the public song catalog for them, and what it finds waits as guesses the player taps.
  */
-function SongEditor({ song, songs, onTempo, onClose }: { song?: Song; songs: Song[]; onTempo?: (tempo: number | null) => void; onClose: () => void }) {
+function SongEditor({
+  song,
+  songs,
+  start,
+  onSaved,
+  onTempo,
+  onClose,
+}: {
+  song?: Song;
+  songs: Song[];
+  /** A new song's fields to start from, such as a row of Import files. */
+  start?: Draft;
+  /** Takes a new song's id in place of opening it. */
+  onSaved?: (id: number) => void;
+  onTempo?: (tempo: number | null) => void;
+  onClose: () => void;
+}) {
   const titleId = useId();
   const ids = { title: useId(), artist: useId(), key: useId(), mode: useId(), time: useId(), chart: useId(), hint: useId(), details: useId() };
-  const [form, setForm] = useState(() => formOf(song));
+  const [form, setForm] = useState(() => (start ? { ...start } : formOf(song)));
   /** Whether the player wants the details open. With no title they are open either way. */
   const [detailsWanted, setDetailsWanted] = useState(() => !form.title.trim());
   const [lookup, setLookup] = useState<Lookup>({ kind: "idle" });
@@ -285,6 +328,7 @@ function SongEditor({ song, songs, onTempo, onClose }: { song?: Song; songs: Son
     if (!song) {
       const id = addOwnSong(stored());
       if (id === null) return setProblem(NOT_SAVED);
+      if (onSaved) return onSaved(id);
       window.location.hash = songHref(id, "songs");
       return;
     }

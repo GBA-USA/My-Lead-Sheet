@@ -881,8 +881,8 @@ const SCREEN_CASES = [
   "3e. clearing the box clears the list",
   "9a. at 360 px and 390 px the search box and result rows fit and are glove-sized",
   "8a. tapping a result on My Songs opens a new own song with title, artist and length",
-  "1c. the new sheet offers Find chords on the web for its title and artist, and Learn this song",
-  "9b. at 360 px and 390 px Find chords on the web on the new sheet fits and is glove-sized",
+  "1c. the new sheet offers Find chord / lead sheet for its title and artist, and Learn this song",
+  "9b. at 360 px and 390 px Find chord / lead sheet on the new sheet fits and is glove-sized",
   "8b. in Add a song, the same search starts the new song from a pick",
   "1d. in Add a song, Find chords on the web follows the typed title and artist, and fits at 360 px and 390 px",
   "7e. My Songs' box under the open Add a song still waits 1 s after the dialog's box asked, so the phone asks once a second",
@@ -927,6 +927,7 @@ if (site) {
     const ROWS = (box: string) => `[...(${box}?.closest(".song-search")?.querySelectorAll("li button") ?? [])]`;
     const NOTE = (box: string) => `(${box}?.closest(".song-search")?.textContent ?? "")`;
     const chordsLink = (scope: string) => `[...(${scope}?.querySelectorAll("a, button") ?? [])].find((el) => el.textContent.trim() === "Find chords on the web")`;
+    const sheetLink = (scope: string) => `[...(${scope}?.querySelectorAll("a, button") ?? [])].find((el) => el.textContent.trim() === "Find chord / lead sheet")`;
     const typeInto = async (box: string, text: string) => {
       await s.evaluate(`(() => { const field = ${box}; Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field), "value").set.call(field, ${js(text)}); field.dispatchEvent(new Event("input", { bubbles: true })); })()`);
     };
@@ -1085,15 +1086,15 @@ if (site) {
     await check(SCREEN_CASES[8], async () => {
       assert.ok(pickedId !== null, "a song was picked");
       const link = await s.evaluate<{ tag: string; href: string; target: string } | null>(
-        `(() => { const el = ${chordsLink("document.querySelector('#sheet-scroll')")}; return el ? { tag: el.tagName, href: el.href ?? "", target: el.target ?? "" } : null; })()`,
+        `(() => { const el = ${sheetLink("document.querySelector('#sheet-scroll')")}; return el ? { tag: el.tagName, href: el.href ?? "", target: el.target ?? "" } : null; })()`,
       );
-      assert.ok(link, "Find chords on the web is on the new sheet");
-      const expected = chartUrl('"Fire Away" "Pat Bass & The Low End" chords');
+      assert.ok(link, "Find chord / lead sheet is on the new sheet");
+      const expected = chartUrl('"Fire Away" "Pat Bass & The Low End" chords lyrics');
       if (link.tag === "A") {
         assert.equal(link.href, expected, "it links to the general search");
         assert.equal(link.target, "_blank", "in the player's browser, not over the app");
       } else {
-        await s.evaluate(`${chordsLink("document.querySelector('#sheet-scroll')")}.click()`);
+        await s.evaluate(`${sheetLink("document.querySelector('#sheet-scroll')")}.click()`);
         assert.deepEqual(await s.evaluate<string[]>(`window.__mb.opened`), [expected], "it opens the general search");
       }
       await s.evaluate(`document.querySelector('[aria-label="Scroll settings"]').click()`);
@@ -1108,10 +1109,10 @@ if (site) {
       const add = await measure(addButton);
       assert.ok(add, "+ Add a song is there to compare with");
       await s.evaluate(`location.hash = "#/song/${pickedId}"`);
-      await app.until(`!!${chordsLink("document.querySelector('#sheet-scroll')")}`, "the new sheet");
+      await app.until(`!!${sheetLink("document.querySelector('#sheet-scroll')")}`, "the new sheet");
       for (const width of [360, 390]) {
         await phone(width);
-        await glove(chordsLink("document.querySelector('#sheet-scroll')"), "Find chords on the web", width, Math.max(44, add.h - 0.5));
+        await glove(sheetLink("document.querySelector('#sheet-scroll')"), "Find chord / lead sheet", width, Math.max(44, add.h - 0.5));
       }
       await phone(390);
     });

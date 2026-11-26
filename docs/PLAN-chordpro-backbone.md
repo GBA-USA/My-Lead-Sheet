@@ -22,7 +22,7 @@ The cooks land in this order. Each is verified and merged before the next starts
 |---|---|---|---|---|
 | 1 | `chordpro-codec` | The pure codec `src/chordpro.ts` with its round-trip check. Nashville math in `src/music.ts`. The bass table, `BassNote` and every read of `bassNotes` are removed. No stored byte changes. | The bass table is gone. A minor chord shows `6m` in every song. | nothing |
 | 2 | `chordpro-worker` | The Worker reads both song shapes, stores band songs and copy codes as ChordPro text, and answers each phone in the shape that phone asks for. It also holds the rule that stops an old build from syncing a backup it cannot read. | Nothing. Every phone still runs the old shape. | cook 1 |
-| 3 | `chordpro-phone` | The phone saves ChordPro, reads both shapes, tells the Worker so, and moves the library to a key an old tab cannot damage. | Nothing new on a screen. Songs sync and share as before. | cook 2 merged and its Worker deployed |
+| 3 | `chordpro-phone` | The phone saves ChordPro, reads both shapes, tells the Worker so, and keeps the library under a new key an old tab cannot damage. The old key stays as that tab last saw it. | Nothing new on a screen. Songs sync and share as before. | cook 2 merged and its Worker deployed |
 
 ```text
 chordpro-codec ──► chordpro-worker ──► chordpro-phone
@@ -34,7 +34,7 @@ The brief suggested three cooks split another way: codec with Nashville, then th
 
 ## What was measured for this plan
 
-Every number here comes from a run on Nov 26, 2026, on the laptop, with Node 24. The inputs are the two files the repo already holds: `data/library.json` (the 15 built-in songs) and `docs/handoff/lead-sheets-data-export.json` (the 16 songs of the original export). The codec that produced the numbers was a throwaway prototype of section 1, kept outside the repo. Cook 1 commits a check that repeats the round trip and prints the sizes.
+Every number here comes from a run on Nov 26, 2026, on the laptop, with Node 24. The inputs are the two files the repo already holds: `data/library.json` (the 15 built-in songs) and `docs/handoff/lead-sheets-data-export.json` (the 16 songs of the original export). The codec that produced the numbers is the plan's reference for section 1, `scripts/chordpro-plan-reference.ts`. `npm run check:chordpro-plan` runs every written example of section 1 through it. Cook 1 writes the real module, commits a check that repeats the round trip and prints the sizes, and deletes the reference.
 
 ### Bytes per song
 
@@ -65,6 +65,8 @@ The prototype wrote each song as text and read it back.
 | Made-up songs full of hard characters (`[ ] { } \ # " \|`, tabs, line breaks inside a field, empty fields, every mix of the four line fields) | 20,000 | 20,000 | 20,000 | 20,000 | 20,000 |
 
 "Same print" compares the chart the way `printOf` in `worker/room-library.ts` reads it before hashing. For the 31 real songs the run also called the Worker's own `printOf`, bundled with esbuild, before and after: 31 of 31 prints are equal. "Same lines" is stricter: no section and no line is dropped or split, because a saved timing points at a line by its number.
+
+The fix pass ran 20,000 more made-up songs with a harsher mix: empty chord rows, empty headings, and a line with no field next to a note that opens a section. That run found one shape whose text changed on its second writing. The rule for a note that opens a section is now exact (section 1, "Chart lines"), and the run holds 20,000 of 20,000. The 31 real songs give the same sizes as before, to the character.
 
 What the built-in library needs from the format:
 
@@ -102,7 +104,7 @@ What the chords are: 726 plain major, 261 sevenths, 197 minor, 45 sus, 7 major s
 
 ### What an old build does with a song it cannot read
 
-This was read in the code at `61f18be`. It was not run. Cooks 2 and 3 each prove their half with a bundle of the old build, the way `scripts/check-ux-settings-only-old-build.ts` does.
+Items 1 to 6 were read in the code at `61f18be`. They were not run. Item 7 was run. Cooks 2 and 3 each prove their half with a bundle of the old build, the way `scripts/check-ux-settings-only-old-build.ts` does.
 
 1. **The library.** `parseStored` in `src/storage.ts` keeps only the songs that pass `isSong`. `loadLibrary` then writes the shorter library back. So an old tab that meets a new-shape song in `leadSheetsLibrary` removes it from the phone.
 2. **The backup.** `pending` in `src/backup.ts` sends every key the phone no longer holds as removed. The room stores the removal, and every other phone removes the song.
@@ -110,8 +112,9 @@ This was read in the code at `61f18be`. It was not run. Cooks 2 and 3 each prove
 4. **A band song or a gig pack.** The old sheet calls `song.body.map` and `song.bassNotes.map`. Without those fields the page throws and shows "Something went wrong showing this page."
 5. **A song card in a DM.** `songMessageIn` returns null and the card reads "A song this app can't show." That one fails kindly today.
 6. **Updates.** The service worker serves the newest build to a fresh open, network first. Nothing reloads a page that is already open. A tab or a home-screen app left open keeps running the old code.
+7. **A library that is gone.** This one was run, with that build's own `src/backup.ts` and `src/storage.ts` over a stand-in for the room. When the key `leadSheetsLibrary` is removed, the old build shows the built-in songs alone. Its next backup then sends every song of the player's as removed: 3 of 3 in the run, and the room held none afterwards. An open tab runs that backup by itself, on a timer and each time it comes to the front (`runBackup` in `src/App.tsx`). With the key left in place the same run sent nothing. With the key and the backup state `leadSheetsBackup` both removed it sent nothing either, because `syncBackup` returns before it calls the server when there is no state.
 
-Items 1 to 3 are how a format change loses songs. Section 3 is built around them.
+Items 1 to 3 and 7 are how a format change loses songs. Section 3 is built around them. The first draft of this plan removed the old key after copying it. Item 7 is why it no longer does.
 
 ### Limits a song meets
 
@@ -131,7 +134,7 @@ The brief gave the planner room to reorder, merge or split cooks and to swap met
 
 1. **The three cooks are grouped another way.** The brief had codec with Nashville, then the bass removal, then all storage. This plan has codec with Nashville and the bass removal, then the Worker, then the phone. Nashville math and the bass table are one change seen from two sides: the table's cells call the same function, and `scripts/check-music.ts` tests both. Split, cook 1 would rewrite cases that cook 2 deletes. Storage is the risky part, and it has a natural seam: the Worker must take the new shape before any phone sends it. Two smaller cooks there are easier to verify than one large one.
 2. **Nothing stored is rewritten when it is read, on the phone as on the server.** The brief said this for server rows. The phone needs it more. Backup compares stored bytes. If a new build rewrote every song on load, every song would look edited on every phone. Each phone would upload its whole library, two phones that held the same song would each keep "a second copy from the other phone", and the marks that keep one account's songs away from the next account on a shared phone (`leadSheetsLeftBy`) would stop matching. So an old-shape song stays as stored until the player saves it again. "Converts on read" means in memory.
-3. **The library moves to a new `localStorage` key.** An old tab drops any song it cannot read and writes the shorter library back (measured item 1). No shape under the old key survives that. Under a new key an old tab never sees a ChordPro song.
+3. **The library lives under a new `localStorage` key, and the old key is left as it is.** An old tab drops any song it cannot read and writes the shorter library back (measured item 1). No shape under the old key survives that. Under a new key an old tab never sees a ChordPro song. The old key stays untouched, because an old tab that finds it gone sends every song to the backup as removed (measured item 7). The phone's backup state gets a new key for the same reason: two builds that share one record of what was synced undo each other's work.
 4. **A phone says which shape it reads, and the Worker answers an old phone in the old shape.** The brief said a writer writes only the new shape. That holds for everything at rest. A reply to an old build is a view of the stored text, made on the way out. Without it an old phone that opens a band or downloads a gig pack shows an error page (measured item 4), and a gig is the wrong place for that.
 5. **An old build may not sync an account that a ChordPro build has synced.** This is the only server rule that stops measured items 2 and 3. The old build shows its sync as failed and loses nothing. A reload gives it the new build.
 6. **A song card in a DM is written in the sender's shape.** A card is stored once and sent as stored to both phones over the live socket, so the Worker cannot shape it for each reader. A ChordPro build's card holds ChordPro. An old build's card stays as it is today. Otherwise every card sent between cook 2 and cook 3 would read "A song this app can't show" on every phone.
@@ -144,13 +147,16 @@ The brief gave the planner room to reorder, merge or split cooks and to swap met
 13. **An old-shape song keeps an empty `bassNotes` list until cook 3.** The sketch removed the field in its second cook. Every type and every read goes in cook 1. But an old build refuses a stored song without the field (measured item 1), so every place that stores or sends an old-shape song still gives it a `bassNotes` list, empty when the song has none. The field ends with the old shape.
 14. **The 12,000 limit is measured on the text.** `MAX_SONG_CHARS` counts JSON today. Counted on ChordPro text, the same number gives a real song more room: the text of the 30 measured songs that hold a chart is 71 to 98 percent of their JSON without the bass table. A song in the old shape is still held to the old measure, so nothing that passes today is refused (section 3).
 15. **Download .cho is a follow-up.** The writer makes it a few lines of code. But a file can leave the app, so the button must respect Private copies and the band-only rule. That is decision T6 and its own small cook.
-16. **No check for the plan itself.** The two earlier plans each added a `check:*-plan` script. This brief forbids a `package.json` edit, so the plan's tables are checked by hand in the report.
+16. **The plan has a check, added in the fix pass.** The first draft had none, because the brief forbids a `package.json` edit. The self-check then found gaps no reader caught by eye: phone files that read a song and that no cook owned, and a chart line the format had no bytes for. `check:chordpro-plan` holds those shut with one `package.json` line, as the two earlier plans did. It brings `scripts/chordpro-plan-reference.ts`, the prototype codec as code, so the written examples of section 1 are run and not only read. Cook 1 deletes the reference when the real codec exists.
+17. **The phone reads a song at the door, and no screen type changes.** The brief said only that a reader accepts both shapes. A compile of the build at `61f18be` with every reply typed as "this song may be text" stops in seven files, and two of them were in no cook's list. Section 3 names each one ("Where a song enters and leaves the phone"), and the check repeats the compile.
 
 ### Things in the brief or the repo that look wrong
 
 - The brief's "about 78 KB" for the export measured 73 KB. The ChordPro number matched.
 - The sketch says "`bassNotes` and other dropped fields". No other field is dropped. Every other field of `Song` has a directive in section 1.
 - The sketch keeps `convertNoteNames` by not naming it. Its only caller is the bass cell, so it goes too.
+- The sketch puts the bass table in `src/sheet.tsx` near line 140. At `61f18be` the heading is at `src/sheet.tsx:58` and `BassTable` starts at `src/sheet.tsx:116`. The cooks go by the names, so nothing depends on the number.
+- Two Worker routes have no caller on the phone at `61f18be`: `/api/bands/library/edit-song` and `/api/bands/pack`. Only checks call them. The first draft of the map said the phone reads their replies. Cook 2 still shapes both replies (W5, W6). No phone case names them.
 - **`N.C.` is drawn wrong today.** In Nashville a chart row's `N.C.` shows as `N.1.` in the key of C, and transposed up 2 it shows as `N.D.`. A long chord is cut in two: `Bm7b5` shows as `7 7b5` and `C7sus4` as `17sus4`. The row's pattern in `src/music.ts` is narrower than `parseChord`. Smart paste writes these chords, so a pasted chart can show this now. Cook 1 fixes it as rule 8 of section 2, because a number rule that is wrong on a real row is not done.
 - Bass-player wording lives outside the table: the built-in songs' notes, the page description in `index.html`, one line in Settings, and the capo rule D6 ("a bass has no capo"). Decisions T3 to T5 cover them.
 - `CLAUDE.md` lists "a minter for `my-setlist` codes" as an obsolete pattern that is refused on purpose. `worker/codes.ts` holds that minter at `61f18be`, and the copy code depends on it. Cook 2 treats the code as the truth and leaves the line of `CLAUDE.md` for its owner.
@@ -192,7 +198,7 @@ The writer gives one text for one song, always the same bytes. The reader takes 
 
 ### The text as a whole
 
-- Lines are joined by `\n`. There is no blank line and no line break at the end.
+- Lines are joined by `\n`, with no line break at the end. The writer puts no empty line between two directives or between two sections. An empty line inside a section is a chart line: a line with no field in a section that is not a grid, or an empty bar row in a grid.
 - The song's facts come first, one directive a line, in the order of the table below.
 - Then each section, in chart order.
 - A directive is `{name}` or `{name: value}`, with one space after the colon. The value runs to the last `}` on the line, and spaces inside it are kept.
@@ -244,6 +250,8 @@ A section of the chart is one or more ChordPro sections in a row. The first carr
 
 The kind is worked out from the heading each time, so it holds no fact of its own. It is there for other apps, which draw a chorus their own way. The reader looks at two things only: `grid` or not, and label or no label. A section with no lines is written as an empty section of its kind, so it comes back.
 
+An empty heading is written `label=""`. That is still a label, so it starts a new section of the chart. Only a start with no `label` at all carries on the section before it.
+
 ### Chart lines
 
 A chart line holds up to four fields. Each field has one written form.
@@ -254,7 +262,13 @@ A chart line holds up to four fields. Each field has one written form.
 | `bars` | the row as it is | a grid |
 | `note` | `{comment: …}` | whichever section is open. A note that opens a section goes with the line after it. |
 
-A chart line with more than one of these is written in that order, with `{x_join}` on its own line before the second and the third. The reader adds the joined text to the line before it and starts no new line. A chart line with no field at all is written as an empty sung line.
+A chart line with more than one of these is written in that order: the sung line, then the bar row, then the note. Each part after the first has `{x_join}` on its own line before it. The reader adds the text that follows `{x_join}` to the chart line before it and starts no new line.
+
+A sung line and a bar row cannot share a ChordPro section. So a chart line that holds both crosses from one section to the next. The writer ends the section the sung line is in, starts a grid with no label, and writes `{x_join}` as the first line of that grid, before the bar row. The reader keeps a waiting `{x_join}` across the end and the start. A start with no label carries on the same section of the chart, so the section still holds the same number of lines. The same switch, without `{x_join}`, stands between two chart lines whenever a sung line follows a bar row or a bar row follows a sung line.
+
+A chart line with no field at all is written as an empty sung line: one empty line of text, in a section that is not a grid.
+
+A note that opens a section has no ChordPro section to sit in yet. The writer skips every line after it that holds a note alone, and looks at the first other line. A bar row with no sung line starts a grid. Any other line starts the heading's own kind, and that includes a line with no field. When there is no other line, the heading's own kind.
 
 **The sung line keeps every chord on its syllable.** Each run of characters between spaces in the chord row is a token. The writer puts the token in brackets at the token's own column in the words. Where the column is past the end of the words, spaces fill the gap. The reader counts the word characters it has read and puts each token back at that count. So the chord row comes back with the same columns, which is top rule 1 of `CLAUDE.md`.
 
@@ -271,6 +285,169 @@ text     "[D]Fold an[A]other one for me   [E]"
 A token that `isChord` accepts is written `[A]`. Any other token is written with a star, `[*x2]`, which the format calls an annotation, so another app does not try to transpose it. The reader drops one leading star. Spaces at the end of the words and of the chord row are not kept, which is what `printOf` ignores too.
 
 A sung line with brackets and no words comes back as a chord row alone. A sung line with no brackets comes back as words alone.
+
+### Every mix of the four fields, written
+
+This block is the format for chart lines, byte for byte. Each example starts with `line` and one chart line under the heading VERSE 1, or with `section` and one whole section. The lines under it are the exact text the writer gives for that section. A row of four dashes parts two examples and is not part of either. `check:chordpro-plan` writes each example with the reference and reads it back. Cases C5 and C6 hold the real codec to the same text.
+
+```text
+line {}
+{start_of_verse: label="VERSE 1"}
+
+{end_of_verse}
+----
+line {"chords":"C     G"}
+{start_of_verse: label="VERSE 1"}
+[C]      [G]
+{end_of_verse}
+----
+line {"lyrics":"la la la"}
+{start_of_verse: label="VERSE 1"}
+la la la
+{end_of_verse}
+----
+line {"chords":"C     G","lyrics":"la la la"}
+{start_of_verse: label="VERSE 1"}
+[C]la la [G]la
+{end_of_verse}
+----
+line {"bars":"| C | G |"}
+{start_of_grid: label="VERSE 1"}
+| C | G |
+{end_of_grid}
+----
+line {"chords":"C     G","bars":"| C | G |"}
+{start_of_verse: label="VERSE 1"}
+[C]      [G]
+{end_of_verse}
+{start_of_grid}
+{x_join}
+| C | G |
+{end_of_grid}
+----
+line {"lyrics":"la la la","bars":"| C | G |"}
+{start_of_verse: label="VERSE 1"}
+la la la
+{end_of_verse}
+{start_of_grid}
+{x_join}
+| C | G |
+{end_of_grid}
+----
+line {"chords":"C     G","lyrics":"la la la","bars":"| C | G |"}
+{start_of_verse: label="VERSE 1"}
+[C]la la [G]la
+{end_of_verse}
+{start_of_grid}
+{x_join}
+| C | G |
+{end_of_grid}
+----
+line {"note":"Hold the last bar."}
+{start_of_verse: label="VERSE 1"}
+{comment: Hold the last bar.}
+{end_of_verse}
+----
+line {"chords":"C     G","note":"Hold the last bar."}
+{start_of_verse: label="VERSE 1"}
+[C]      [G]
+{x_join}
+{comment: Hold the last bar.}
+{end_of_verse}
+----
+line {"lyrics":"la la la","note":"Hold the last bar."}
+{start_of_verse: label="VERSE 1"}
+la la la
+{x_join}
+{comment: Hold the last bar.}
+{end_of_verse}
+----
+line {"chords":"C     G","lyrics":"la la la","note":"Hold the last bar."}
+{start_of_verse: label="VERSE 1"}
+[C]la la [G]la
+{x_join}
+{comment: Hold the last bar.}
+{end_of_verse}
+----
+line {"bars":"| C | G |","note":"Hold the last bar."}
+{start_of_grid: label="VERSE 1"}
+| C | G |
+{x_join}
+{comment: Hold the last bar.}
+{end_of_grid}
+----
+line {"chords":"C     G","bars":"| C | G |","note":"Hold the last bar."}
+{start_of_verse: label="VERSE 1"}
+[C]      [G]
+{end_of_verse}
+{start_of_grid}
+{x_join}
+| C | G |
+{x_join}
+{comment: Hold the last bar.}
+{end_of_grid}
+----
+line {"lyrics":"la la la","bars":"| C | G |","note":"Hold the last bar."}
+{start_of_verse: label="VERSE 1"}
+la la la
+{end_of_verse}
+{start_of_grid}
+{x_join}
+| C | G |
+{x_join}
+{comment: Hold the last bar.}
+{end_of_grid}
+----
+line {"chords":"C     G","lyrics":"la la la","bars":"| C | G |","note":"Hold the last bar."}
+{start_of_verse: label="VERSE 1"}
+[C]la la [G]la
+{end_of_verse}
+{start_of_grid}
+{x_join}
+| C | G |
+{x_join}
+{comment: Hold the last bar.}
+{end_of_grid}
+----
+section {"heading":"","lines":[{"lyrics":"la la la"}]}
+{start_of_part: label=""}
+la la la
+{end_of_part}
+----
+section {"heading":"OUTRO","lines":[]}
+{start_of_part: label="OUTRO"}
+{end_of_part}
+----
+section {"heading":"INTRO","lines":[{"note":"Band in."},{"bars":"| C | G |"}]}
+{start_of_grid: label="INTRO"}
+{comment: Band in.}
+| C | G |
+{end_of_grid}
+----
+section {"heading":"INTRO","lines":[{"note":"Count it off."},{"lyrics":"la la la"}]}
+{start_of_part: label="INTRO"}
+{comment: Count it off.}
+la la la
+{end_of_part}
+----
+section {"heading":"INTRO","lines":[{"bars":"| C | G |"},{"chords":"C     G"},{"bars":"| G | C |"}]}
+{start_of_grid: label="INTRO"}
+| C | G |
+{end_of_grid}
+{start_of_part}
+[C]      [G]
+{end_of_part}
+{start_of_grid}
+| G | C |
+{end_of_grid}
+----
+section {"heading":"SOLO","lines":[{"note":"Guitar takes it."}]}
+{start_of_part: label="SOLO"}
+{comment: Guitar takes it.}
+{end_of_part}
+```
+
+A sung line with a bar row is a shape no song in the two real files holds. It is in the format because a chart line may hold any mix, and an editor or a paste can make one.
 
 ### Escaping
 
@@ -290,7 +467,7 @@ The reader's rule is one line: a backslash and any character give that character
 The codec reads what its own writer wrote. For anything else it follows three rules, so that a later build can add to the format without breaking this one.
 
 - A directive it does not know, above the first section, is kept as it is in `Song.kept` (a new optional `string[]`) and written back after the known facts. A build from before a new fact carries that fact through an edit. The writer writes a kept entry only when the reader would keep it again: one line, a whole directive, a name the reader does not know. Any other entry is left out, so a kept line can never open a section or replace a fact.
-- A directive it does not know inside a section is skipped.
+- A directive it does not know is skipped once the first section has started, inside a section or between two.
 - A line that starts with `#`, and any text outside a section, is skipped.
 
 `readPaste` stays the reader for text from anywhere else: a web page, a file, another app's ChordPro.
@@ -349,8 +526,8 @@ Each case is one named `ok` or `FAIL` line of `scripts/check-chordpro.ts`. Every
 - C2. For every one of those songs, the Worker's own `printOf` gives the same print before and after. The check bundles `worker/room-library.ts` with esbuild and calls the real function. This plan tried it: 31 of 31.
 - C3. A chord inside a word, a chord past the end of the words, and a chord row that starts with spaces each come back at the same column.
 - C4. The worked example above is written exactly as shown, and reads back as described.
-- C5. Each of the four line fields alone, each pair, and all four together keep the line count. A line with no field keeps it too.
-- C6. A section that mixes bar rows and sung lines comes back as one section. A section with no lines, and a section with an empty heading, come back.
+- C5. Every mix of the four line fields, 16 with the line that has none, is written exactly as "Every mix of the four fields, written" shows it, and reads back as one line with the same fields. The check reads the examples from this file.
+- C6. A section that mixes bar rows and sung lines comes back as one section. A section with no lines, and a section with an empty heading, come back. Each `section` example of "Every mix of the four fields, written" is written exactly as shown.
 - C7. A token that is not a chord (`x2`, `N.C.`, `(hold)`) comes back in place, and is written with a star only when `isChord` refuses it.
 - C8. Every character in the escaping table comes back in every field that can hold it.
 - C9. Each fact alone: a minor key, a key label that differs, a tempo with a fraction, a time signature with words, a length of 59, 60 and 3,601 seconds, and a length with a fraction.
@@ -465,7 +642,7 @@ Each side has one reader and one writer, and every place in the map calls them.
 
 1. **Read both, write one.** A reader takes either shape. A writer writes ChordPro. The text the Worker stores is always the writer's own text, so two phones that share the same chart store the same bytes.
 2. **Reading rewrites nothing.** A song saved before this work keeps its exact bytes, on the phone and on the server, until someone saves it again. Backup compares bytes, and so do the marks that keep one account's songs away from the next account on a shared phone. No row is touched in bulk.
-3. **An old build is never handed a song it cannot read.** Three parts do this: the new library key, the reply made in the shape the phone asks for, and the backup rule. They are described after the map.
+3. **An old build is never handed a song it cannot read.** Three parts do this: the new keys, the reply made in the shape the phone asks for, and the backup rule. And an old build is never left without what it could read: its own keys stay as they are. All of it is described after the map.
 
 ### The map
 
@@ -473,33 +650,80 @@ Every place a song rests or travels, found by reading each caller of `songIn`, `
 
 | # | Place | Old reader | New writer | Cook | Proved by |
 |---|---|---|---|---|---|
-| 1 | The phone's library: `localStorage` `leadSheetsLibrary`, moved to `leadSheetsLibraryV2` | `songFromStored` reads an old-shape song as it is. The old key is carried over once, byte for byte. | Each save of one song writes that song as `{ id, copy?, chordpro }`. Other songs keep their bytes. | 3 | P1 to P5 |
-| 2 | A backup row: `leadSheetsSong.<id>` on the phone, `backup_items` in the player's own room | The Worker stores the value as bytes and never opens it. The phone reads a pulled row with `songFromStored`. | The phone sends the bytes its library holds. | 3, rule in 2 | P6, P7, W9, W10 |
+| 1 | The phone's library: `localStorage` `leadSheetsLibraryV2`, first filled from `leadSheetsLibrary` | `songFromStored` reads an old-shape song as it is. The old key's value is copied once, byte for byte, and the old key is left as it is. | Each save of one song writes that song as `{ id, copy?, chordpro }`. Other songs keep their bytes. | 3 | P1 to P5, P17 |
+| 2 | A backup row: `leadSheetsSong.<id>` on the phone, `backup_items` in the player's own room | The Worker stores the value as bytes and never opens it. The phone reads a pulled row with `songFromStored`. | The phone sends the bytes its library holds. It keeps its record of what was synced under `leadSheetsBackupV2`. | 3, rule in 2 | P1, P6, P7, W9, W10 |
 | 3 | Songs set aside for another account: `leadSheetsSetAside.<account>` | The same bytes as a backup row, kept as they are. | The same. | 3 | P8 |
 | 4 | A band song: `band_songs.song` in the band's room | `storedSong` reads a row of old JSON. | `share-song` and `edit-song` store `songText(song)`, whichever shape arrived. | 2 | W1 to W4 |
 | 5 | A band song's title for a note: `bandSongTitle` in `worker/room-notes.ts` | Calls `storedSong`. | writes nothing | 2 | W4 |
-| 6 | Replies that carry a band song: `/api/bands/library`, `share-song`, `edit-song` and its 409 `current` | The phone reads either shape. | The Worker answers in the shape the phone asked for. | 2 | W5, W6 |
-| 7 | Band songs kept on the phone: IndexedDB `bandSongs`, filled by `/api/bands/pack` | The phone reads either shape from the store. | The store keeps what the reply gave. | 2 and 3 | W5, P9 |
+| 6 | Replies that carry a band song: `/api/bands/library`, `share-song`, `edit-song` and its 409 `current`, `/api/bands/pack` | The phone reads the library reply in either shape, for a member and for a guest. It reads only the song's id from the `share-song` reply, and it has no call to `edit-song` or `/api/bands/pack` at `61f18be`. | The Worker answers in the shape the phone asked for. | 2 and 3 | W5, W6, P14, P15 |
+| 7 | Band songs kept on the phone: IndexedDB `bandSongs`, filled from the `/api/bands/library` reply by `holdBandSongs` | The phone reads either shape from the store. | The store keeps what the reply gave. | 2 and 3 | W5, P9 |
 | 8 | A gig pack: `/api/bands/gig/pack`, kept in IndexedDB `gigPacks`, for a member and for a guest | The same as row 7. A pack downloaded before the update still opens. | The same. | 2 and 3 | W5, P9 |
 | 9 | A song card in a DM: `/api/chat/send-song`, stored in the DM room's `messages.body` | `songMessageIn` in `src/send-song-model.ts` reads either shape. | The Worker stores the card in the sender's shape (change 6). | 2 and 3 | W7, P10 |
 | 10 | A send waiting for a network: `localStorage` `leadSheetsChatQueue` | A send queued before the update goes out as it is. `songIn` takes it. | A new send holds `{ chordpro }`. | 3 | P10 |
 | 11 | A copy code's charts: the mint request for a `my-setlist` code, stored in `setlist_sends.songs` | `storedSong` reads each item of an old row. | The Worker stores `{ chordpro, print, shareId }` for each song. The print is the one computed today. | 2 | W8 |
-| 12 | The charts a scanner adds: the reply of `/api/chat/setlist-copy` | The phone reads either shape. | The Worker answers in the shape the phone asked for. The card's `titles` come from the parsed songs. | 2 | W8 |
+| 12 | The charts a scanner adds: the reply of `/api/chat/setlist-copy` | The phone reads either shape, in `src/setlist-code.tsx`, before it adds a chart to My Songs. | The Worker answers in the shape the phone asked for. The card's `titles` come from the parsed songs. | 2 and 3 | W8, P16 |
 | 13 | A band file: `/api/bands/export` and the import that reads it | Import takes a file of either shape through `songIn`. | Export always writes `{ chordpro }`. A file is at rest, and a download cannot say what it reads. | 2 | W11 |
 | 14 | A new song on the phone: `ownSong` in `src/song-text.ts`, used by the editor, smart paste, song search and bulk import | none | It builds the in-memory model, as today. The library writes the text when it saves. | 3 | P2 |
-| 15 | What the phone sends: `content` in `src/band-library.tsx`, used by share, edit, send and the copy code | none | It gives `{ chordpro }`. | 3 | P11 |
+| 15 | What the phone sends: share to a band, send to a friend, and the mint request of a copy code. Each calls `content` in `src/band-library.tsx` today. | none | Each calls a new function, `sent`, which gives `{ chordpro }`. `content` keeps its meaning, because the editor and bulk import call it to copy a song in memory. | 3 | P11, P2 |
 | 16 | The built-in songs: `data/library.json`, and the copy of them inside the library value | It is the app's own data and stays JSON (change 12). An unedited built-in song never syncs and is replaced by the build's copy on every load. | An edited built-in song is the player's song and is saved as row 1 says. | 1 and 3 | N11, P3 |
 
 Places that were checked and hold no chart: `leadSheetsSongDraft` (a song's view settings and timings), `leadSheetsSongData`, `leadSheetsScrollVersions`, `leadSheetsSentSongs` (share ids), `song_copies` (prints), `shares`, `band_setlists` (song ids), `song_notes`, and the live gig feed (song ids and positions).
 
+### Where a song enters and leaves the phone
+
+The map was drawn from the Worker's side. This table is the phone's side of it: every file of the build at `61f18be` where a song comes in from a reply, a phone store or a card, and every file that calls `content`. Two sweeps found them, and `check:chordpro-plan` repeats both.
+
+1. **The compile.** Everything `api()` returns, everything `getFromPhone` and `allOnPhone` read, and the parsed text of a song card is typed as "this song may be text". The compiler then stops in seven files. Each takes a song in.
+2. **The callers.** Five files call `content`. Three send what it gives. Two use it to copy a song in memory.
+
+The shapes, named before the code:
+
+```ts
+/** A song as a reply, a phone store or a card may hold it. A store filled before the update, and a card from an old build, hold the old object. */
+type WireSong = SentSong | SongContent;
+/** The door. Text is parsed, once for the same text. The old object comes back as it is. In src/band-library-model.ts. */
+function songFromSent(song: WireSong): SongContent;
+/** What the phone sends. In src/band-library.tsx, next to `content`, which keeps its meaning. */
+function sent(song: Song): SentSong;
+```
+
+The rule is one line: **a song is read through `songFromSent` at the door, in the file that makes the call or reads the store.** Past the door every screen holds `SongContent`, as today. So `BandSong`, `GigPackSong`, `SongMessage` and `SetlistCopy` keep `song: SongContent`, and the screens behind a door do not change. The other way was tried: with "may be text" written into those four types instead, twelve files stop compiling, and `src/gig-plan.tsx`, `src/gig-songs.tsx` and `src/stage-bar.tsx` are among them. A phone store keeps what the reply gave (map rows 7 and 8), so the two stored types say `WireSong` and a read from a store is a door.
+
+| File | Where the song comes in or goes out | After cook 3 | Cases |
+|---|---|---|---|
+| `src/bands.tsx` | In: `api("/api/bands/library")`, twice. In: `allOnPhone("bandSongs")` and `allOnPhone("gigPacks")`. | Each reads through `songFromSent`. `holdBandSongs` is handed the reply's songs as they came, so the store keeps text. | P9, P14 |
+| `src/guest-rooms.tsx` | In: `api("/api/bands/library")` for a guest's Band setlists. | Reads through `songFromSent`. | P15 |
+| `src/gig-pack.ts` | In: `api("/api/bands/gig/pack")`, and `getFromPhone("gigPacks")`. | Reads through `songFromSent`. The store keeps the reply as it came. | P9 |
+| `src/band-setlist-view.tsx` | In: `getFromPhone("bandSongs")`. | Reads through `songFromSent`. | P9, P14 |
+| `src/library-lists.tsx` | In: `allOnPhone("bandSongs")`, for search across bands. | Reads through `songFromSent`. | P9 |
+| `src/send-song-model.ts` | In: `songMessageIn`, the text of a song card. | `songMessageIn` takes a card of either shape and gives the model. | P10 |
+| `src/setlist-code.tsx` | In: `api("/api/chat/setlist-copy")`. Out: the mint request of a copy code. | The reply's charts are read through `songFromSent` before `songYouHave` and `addOwnSong` see them. The request calls `sent`. | P16, P11 |
+| `src/band-library.tsx` | Out: `share-song`. | Calls `sent`. `sent` and `content` both live here. | P11 |
+| `src/send-song.tsx` | Out: the send to a friend, which also waits in `leadSheetsChatQueue`. | Calls `sent`. | P11, P10 |
+| `src/song-editor.tsx` | Neither. It calls `content` to copy a song for the preview and for a save. | No change. `content` still gives the model. | P2 |
+| `src/song-import.tsx` | Neither. It calls `content` for Replace in bulk import. | No change. `content` still gives the model. | P2 |
+| `src/phone-db.ts` | The types of what the two stores hold, and what `holdBandSongs` takes. | Types only: a stored song is `WireSong`. No store, key or version changes. | P9 |
+
 ### Keeping an old build safe
 
-**The new key.** `LIBRARY_KEY` becomes `leadSheetsLibraryV2`. On each load, if `leadSheetsLibrary` exists:
+**The new keys, and the old ones left alone.** The new build keeps the library under `leadSheetsLibraryV2` and its backup state under `leadSheetsBackupV2`. It never writes a key the old build reads. An old tab keeps the library and the backup state it had, so it has nothing to report as removed (measured item 7).
 
-- When the new key is empty, the old value is copied to it as it is, then the old key is removed. No song is converted, so no backup print changes. If the browser refuses the copy for space, the old key is removed first and put back if the write still fails. If neither way works, this load shows the library from the old key and the next load tries again.
-- When both exist, an old tab wrote the old key after the move. Each song and setlist of the player's under the old key is compared with the new key. The same id with the same bytes is skipped. Anything else is added under a new id, and a setlist added in the same pass points at the new ids. Then the old key is removed. A late edit from an old tab shows as a second copy. Nothing is overwritten and nothing is dropped.
+| Key the old build reads | What the new build does to it |
+|---|---|
+| `leadSheetsLibrary` | Left as it is. The new build reads it when the page opens and each time another tab writes it. |
+| `leadSheetsBackup` | Left as it is. The new build reads it once, to fill `leadSheetsBackupV2`. |
 
-An old tab never sees the new key, so it cannot filter it.
+Both rows have one exception, the account change described below.
+
+- **The first open.** When `leadSheetsLibraryV2` is empty and the old key holds a library, the old value is copied to the new key as the same string. The old backup state is copied to `leadSheetsBackupV2` the same way. No song is converted, so no backup print changes and nothing looks edited. The new build also notes a print of every song and setlist it copied, under `leadSheetsLibraryTaken`.
+- **Taking in what an old tab wrote.** When the page opens, and when the browser reports a write to the old key from another tab (the `storage` event), the new build looks at each song and setlist of the player's under the old key. One whose print is in `leadSheetsLibraryTaken` was taken in before and is skipped, whatever the new key has done with it since. So a song deleted in the new build does not come back, and a song edited in the new build gets no second copy. One with a new print was added or edited in an old tab. It is skipped when the new key holds the same id with the same bytes. It is added under its own id when the new key does not hold that id. Otherwise it is added under a new id, with a copy of the per-song settings filed under the old id, and a setlist taken in during the same pass points at the new id. Then its print is noted. A late edit from an old tab shows as a second copy. A song the old tab removed stays in the new key. Nothing is overwritten and nothing is dropped. Case P4.
+- **Whose it is.** A song taken in is stored with the bytes the old tab wrote, so the mark `leadSheetsLeftBy` holds for its key still fits it when it keeps its id. When it moves to a new id, a mark that fits the old-key value is copied to the new key's row. With no mark that fits, it belongs to whoever uses the phone now, which is the rule `leftByOthers` applies today to a value changed after its account left. So on a phone that keeps My Songs per account, the next account neither sees nor backs up a late edit the last account made. Case P4.
+- **An account change.** When the new build signs an account in, signs it out, or meets another account, it takes in what the old key holds one last time, for the account that is leaving. Then it removes `leadSheetsLibrary`, `leadSheetsBackup` and `leadSheetsLibraryTaken` in the same turn of script as its own `leave` and `arrive`. An old tab is then left with no backup state, so its `syncBackup` returns before it calls the server (measured item 7), and with no song of the last account to show or send. Case P8.
+- **A phone with no room for two libraries.** If the browser refuses the first copy for space, the new build takes the old keys' place instead: it removes `leadSheetsBackup` and `leadSheetsLibrary` in one turn of script, writes the new keys, and puts the old ones back if a write still fails. If neither way works, this load shows the library from the old key, refuses a save with the message a full phone gets today, and the next load tries again. Case P17.
+
+The per-song keys (`leadSheetsSongDraft.<id>`, `leadSheetsSongData.<id>`, `leadSheetsScrollVersions.<id>`) and the marks (`leadSheetsLeftBy`, `leadSheetsSetAside.<account>`) keep their names, and both builds use them. A song has the same id under both library keys, so its settings mean the same in both builds.
+
+An old tab never sees the new keys, so it cannot filter the library or undo a sync. The follow-up `chordpro-old-shape-end` removes the old keys for good.
 
 **The shape a phone asks for.** A ChordPro build sends the header `X-Song-Shape: chordpro` on every call, from the one `api` function in `src/sign-in-methods.ts`. The Worker reads it in one helper. A caller that sends it gets `{ chordpro }`. A caller that does not gets the old object, built from the stored text, with an empty `bassNotes` list so the old build's own test passes. This view is made on the way out and stored nowhere.
 
@@ -532,21 +756,25 @@ Lines of `scripts/check-chordpro-worker.ts`, which starts the Worker as `scripts
 
 ### Required cases for the phone (cook 3)
 
-Lines of `scripts/check-chordpro-phone.ts`. Storage cases run in Node on a bundle of `src/storage.ts` and `src/backup.ts`, as `scripts/check-storage.ts` does. Screen cases run in the browser.
+Lines of `scripts/check-chordpro-phone.ts`. Storage cases run in Node on a bundle of `src/storage.ts` and `src/backup.ts`, as `scripts/check-storage.ts` does. Screen cases run in the browser. P14 to P17 were added in the fix pass: P14 to P16 for the places of the table "Where a song enters and leaves the phone" that had no case, P17 for a phone with no room for two libraries.
 
-- P1. A library stored by the build at `61f18be` under the old key opens with every song and setlist. The new key holds the old value byte for byte, and the old key is gone.
-- P2. Saving one song writes that song as `{ id, copy?, chordpro }` and leaves every other song's bytes alone. A new song from the editor, from smart paste and from bulk import is stored as text.
+- P1. A library stored by the build at `61f18be` under the old key opens with every song and setlist. The new key holds the old value byte for byte, and `leadSheetsBackupV2` holds the old backup state byte for byte. Both old keys are unchanged.
+- P2. Saving one song writes that song as `{ id, copy?, chordpro }` and leaves every other song's bytes alone. A new song from the editor, from smart paste and from bulk import is stored as text. So is an edit saved in the editor and a Replace in bulk import, the two places that call `content` to copy a song in memory.
 - P3. An edited built-in song is stored as text. Removing the edit brings the built-in song back.
-- P4. With both keys present, a song under the old key with new bytes is added under a new id, one with the same bytes is skipped, a setlist follows its songs, and the old key is removed. A refused write for space leaves the old key as it was.
-- P5. The build at `61f18be`, bundled, runs `loadLibrary` and a save in the same `localStorage` after the move. The new key is unchanged.
+- P4. Taking in what an old tab wrote, with both keys present. A song this phone took in before is skipped, so a song deleted in the new build stays deleted and a song edited in the new build gets no second copy. A song the old tab added keeps its id. A song the old tab edited is added under a new id with a copy of its per-song settings, and a setlist follows its songs. A song the old tab removed stays. The old key's bytes are unchanged afterwards, and a second pass adds nothing. A song added under a new id carries the mark `leadSheetsLeftBy` held for it, so on a phone that keeps My Songs per account the next account neither sees it nor backs it up.
+- P5. The build at `61f18be`, bundled, runs `loadLibrary`, a save and a backup in the same `localStorage` after the new build has opened and saved a song as text. The new build's keys are unchanged, the old build sends no song as removed, and the new build then takes in the song the old build saved.
 - P6. Two phones on one account, one holding the old shape and one the new, sync both ways. No "second copy" appears, and an unedited song is not uploaded.
 - P7. Every `api` call carries the header, the backup call too.
-- P8. An account switch on a shared phone with mixed shapes: the first account's songs are set aside and come back with the same bytes, and the second account sees none of them.
+- P8. An account switch on a shared phone with mixed shapes: the first account's songs are set aside and come back with the same bytes, and the second account sees none of them. After the switch `leadSheetsLibrary`, `leadSheetsBackup` and `leadSheetsLibraryTaken` are gone, and the build at `61f18be`, bundled, then sends no backup request.
 - P9. A gig pack and a kept band song stored in the old shape before the update open on the sheet. So do ones stored as text.
 - P10. A song card of either shape opens and adds to My Songs. A send queued in the old shape before the update is delivered once.
-- P11. Share to a band, edit a band song, send to a friend and mint a copy code each send `{ chordpro }`.
+- P11. Share to a band, send to a friend and mint a copy code each send `{ chordpro }`. The phone has no call that edits a band song at `61f18be`.
 - P12. Opening a library of 500 made-up songs parses each text once. A second `loadLibrary` with no change parses none. The check prints the time.
 - P13. A song saved as text and opened again draws every chord over the same syllable as before the save, measured the way `scripts/check-chords.ts` measures it.
+- P14. A band's library. A new phone opens a band that holds one song stored as text and one stored as old JSON. Both show in the band's Songs with title and artist, a search for a word of the lyrics finds each, each opens on the sheet, and each is named in a band setlist and on the gig plan.
+- P15. A guest whose pass shows the band's setlists sees every song's title, for a song stored as text and for one stored as old JSON. No row reads "A song the band took out".
+- P16. A scanner on this build taps Add to My Songs on a setlist card. Each chart lands in My Songs with its title and its chart, stored as text with its copy mark, and the setlist holds them. A scanner who already has a song of the same title and artist is asked what the phone asks today. A code minted before the update, whose charts rest as old JSON, adds the same way.
+- P17. A phone with no room for two libraries. A `localStorage` that refuses the first copy ends with the library under the new key and neither `leadSheetsLibrary` nor `leadSheetsBackup` under the old ones, and the build at `61f18be`, bundled, then sends no backup request. A `localStorage` that refuses every write leaves both old keys as they were.
 
 ## 4. Risks
 
@@ -557,10 +785,13 @@ Each risk names what the plan does about it and the case that proves it. A risk 
 | R1 | A share's print changes | The share rule reads a chart as a new one. A Private copy could pass as the player's own, or a built-in chart could stop being common. | `printOf` is not edited. It runs on the parsed chart, and the codec promises the same chart back. | C1, C2, W12 |
 | R2 | A cached old build sends the old shape | A share or a send from a phone that has not reloaded is refused. | The Worker reads both shapes until the date of decision T8. | W2, W7, W8 |
 | R3 | A cached old build is handed text | Its sheet throws, or its library drops the song and writes the shorter library back. | The reply is made in the shape the phone asks for. The library lives under a key the old build never reads. | W5, W6, P5 |
+| R3a | A new build is handed text at a place nobody listed | A guest's setlist reads "A song the band took out" on every row, or a scanned copy code adds songs with no title and no chart. | Every place a song enters the phone is in one table, found by a compile, and each has a case. `check:chordpro-plan` repeats the compile. | P9, P10, P14, P15, P16 |
 | R4 | A cached old build syncs a backup it cannot read | It sends the songs as removed, and every phone on the account removes them. | The backup rule refuses it once a ChordPro build has synced. | W9, W10 |
 | R5 | A song is rewritten because it was read | Every phone uploads its whole library. Two phones each keep "a second copy from the other phone". On a shared phone the next account sees the last account's songs. | Reading rewrites nothing (rule 2). | P1, P2, P6, P8, W3 |
-| R6 | The move to the new key runs out of space | The browser refuses to hold two copies of a large library at once. | The old key is removed first and put back if the write fails. The two steps run in one turn of script with nothing between. | P4 |
-| R7 | An old tab keeps saving under the old key | Its saves are invisible to the new build. | Every load of the new build takes in what the old key holds, as new songs, and removes the key. | P4, P5 |
+| R6 | The phone has no room for two libraries | The browser refuses the first copy. | The new build takes the old keys' place: it removes the old library and the old backup state in one turn of script, writes the new keys, and puts the old ones back if a write still fails. With no backup state an old tab sends nothing. | P17 |
+| R7 | An old tab keeps saving under the old key | Its saves are invisible to the new build. | The new build takes in what is new under the old key when it opens and when another tab writes there. It notes what it took in, so nothing comes in twice and a deleted song stays deleted. | P4, P5 |
+| R7a | An old tab finds its library gone | Its next backup sends every song as removed, and every phone on the account removes them (measured item 7: 3 of 3). | The new build never writes or removes a key the old build reads while the account stays. It keeps its own library and its own backup state under new keys. | P1, P5 |
+| R7b | The account on the phone changes while an old tab is open | The old tab backs up what the last account left under the old key to the next account. | At every account change the new build removes the old library, the old backup state and its notes of what it took in. An old tab with no backup state sends nothing. | P8 |
 | R8 | The size limit moves | A song that saved yesterday is refused today. | The old shape keeps the old measure. Text is smaller for every real song measured. | W13 |
 | R9 | A request grows past the Directory's 16,384 chars | A send with a long chart and its timings is refused. | The same send is smaller as text than it is today. No limit changes. | W13 |
 | R10 | A song card from a new build reaches an old build | The card reads "A song this app can't show." | It fails kindly today, and a reload shows it. The card is not converted, because one stored card goes to both phones. | W7, P10 |
@@ -572,7 +803,7 @@ Each risk names what the plan does about it and the case that proves it. A risk 
 | R16 | The phone spends too long parsing | The song list opens slowly with a large library. | A parsed song is kept by its text, so a song is parsed once a session. | P12 |
 | R17 | The Worker is deployed after the phone | A share from a new phone is refused `bad-request`. | The deploy steps put the Worker first. Nothing is lost if they are swapped, and the next deploy fixes it. | unproven by a script |
 | R18 | A band file from the new Worker is loaded into an older Worker | The import is refused. | It is refused kindly, with no change to the band. Preview and Live run the same Worker after a deploy. | W11 covers the new Worker only |
-| R19 | Checks seed the old key | 20 checks write `leadSheetsLibrary` to set up a phone. | The move takes that value in, so a check that only seeds keeps working. A check that reads the key back after a save is changed in cook 3. | `npm run verify` in cook 3 |
+| R19 | Checks seed the old key | 20 checks write `leadSheetsLibrary` to set up a phone. | The first copy takes that value in, so a check that only seeds keeps working. A check that reads the key back after a save is changed in cook 3. | `npm run verify` in cook 3 |
 | R20 | Cook 1 changes what an old tab sees in the same key | An old tab and a new tab each write their own built-in songs into the library on load, one with bass tables and one without. | The player's own songs are untouched by that, and each build still passes the other's test. | N11 |
 | R21 | Another chord app reads the file differently | A label, a backslash or a grid row shows oddly elsewhere. | Not needed by these three cooks. It matters for Download .cho, and that cook tries a real app first. | unproven |
 
@@ -596,6 +827,7 @@ The cooks do not run side by side. Cook 2 imports the codec of cook 1. Cook 3 ne
 - Commit 1 holds the tests alone, and each new case fails on it. A case marked "guard" is green on both sides and says so. Later commits do not weaken a case. A case that is wrong goes in `QUESTIONS.md`, which is a shared log, so add the entry at the top.
 - The required cases are the lettered cases of the named section of `docs/PLAN-chordpro-backbone.md`. Each case prints one named `ok` or `FAIL` line.
 - The format is section 1 of the plan, to the byte. A cook that finds the format wrong stops and writes the case in `QUESTIONS.md`. It does not change the writer on its own, because two builds must write the same bytes.
+- `npm run check:chordpro-plan` stays green. It reads this plan and the three briefs, runs the written examples of section 1, and repeats the sweep of section 3. A cook that needs a table or an example of the plan changed stops and writes the reason in `QUESTIONS.md`.
 - One codec. No cook adds a second reader or writer of the stored form, changes a rule in `src/song-paste.ts`, or adds a second chord rule.
 - `printOf` and `worker/share-guard.ts` are not edited. What the share rule decides today, it decides after each cook.
 - Nothing stored is rewritten because it was read. No statement updates rows in bulk.
@@ -610,9 +842,9 @@ The cooks do not run side by side. Cook 2 imports the codec of cook 1. Cook 3 ne
 | `CLAUDE.md` rule | What it means for these cooks | Cases |
 |---|---|---|
 | Signed out | A signed-out visitor's library moves to the new key and saves as text like anyone's. No cook adds a sheet or a wall. A backup refusal reaches only a signed-in phone. | P1, P2 |
-| Second phone or account switch on a shared phone | Two phones in different shapes sync with no second copy. An account switch sets songs aside and brings them back with the same bytes, and the next account sees none. The backup rule marks one account, never the phone. | P6, P8, W10 |
-| Old, expired, reset or wrong links | No link or code changes. A copy code minted before the update still gives its charts. An old build that meets text fails kindly: a card it cannot show, or a backup that says it failed. | W8, W10, P10 |
-| Offline or slow network | A send queued before the update is delivered once after it. A gig pack downloaded before the update opens with no network. | P9, P10 |
+| Second phone or account switch on a shared phone | Two phones in different shapes sync with no second copy. An account switch sets songs aside and brings them back with the same bytes, and the next account sees none. The old build's keys go at the switch, and a late edit from an old tab keeps its owner. The backup rule marks one account, never the phone. | P4, P6, P8, W10 |
+| Old, expired, reset or wrong links | No link or code changes. A copy code minted before the update still gives its charts, and a scanner on the new build adds them. An old build that meets text fails kindly: a card it cannot show, or a backup that says it failed. | W8, W10, P10, P16 |
+| Offline or slow network | A send queued before the update is delivered once after it. A gig pack downloaded before the update opens with no network. A guest's setlists keep their Try again when the library call fails. | P9, P10, P15 |
 | Empty states and error states | A song with no chart, a section with no lines and a text of nothing each read back. The reader never throws. A song over the limit gets the same refusal as today. | C6, C12, W13 |
 
 ### 5.1 Brief: `chordpro-codec`
@@ -620,15 +852,15 @@ The cooks do not run side by side. Cook 2 imports the codec of cook 1. Cook 3 ne
 ```text
 ## HANDOFF
 GOAL: A pure codec in src/chordpro.ts writes any song as ChordPro text and reads it back with the same facts, the same chart and the same print. Nashville numbers come from the key and the chord alone, so a minor chord always shows its m (F#m in A is 6m). The bass-note table and every read of bassNotes are gone from the sheet.
-DECIDED: one cook, branch cook/chordpro-codec off mls-int-20261113; the format is plan section 1, to the byte; the codec reads only what its own writer wrote and shares isChord with src/song-text.ts; Nashville is the eight rules of plan section 2 (a minor key counts from its own root, a seventh or sus shows the bare number); nothing stored or sent changes shape in this cook; a song this build saves or sends still carries an empty bassNotes list, so a build from before this cook reads it; CLAUDE.md's first line, the index.html description and the Settings note take the words of decision T4.
+DECIDED: one cook, branch cook/chordpro-codec off mls-int-20261113; the format is plan section 1, to the byte; the codec reads only what its own writer wrote and shares isChord with src/song-text.ts; Nashville is the eight rules of plan section 2 (a minor key counts from its own root, a seventh or sus shows the bare number); nothing stored or sent changes shape in this cook; a song this build saves or sends still carries an empty bassNotes list, so a build from before this cook reads it; CLAUDE.md's first line, the index.html description and the Settings note take the words of decision T4; the plan's reference codec, scripts/chordpro-plan-reference.ts, is replaced by src/chordpro.ts and deleted, and check:chordpro-plan then runs the real codec.
 REJECTED: any change to what is stored or sent; worker edits; a change to a rule in src/song-paste.ts; a second chord rule; turning data/library.json into text; a Download .cho button; showing 7, sus or dim on a number (decision T2); real lyrics in a fixture; new libraries; edits outside the owned files.
-DONE MEANS: cases C1 to C14 and N1 to N12 of the plan each have a named check line; each failed on the tests-only commit and passes now, apart from the guards N5, N11 and N12, which are green on both; the report shows the size totals C14 prints and the list of old cases removed with the bass table; npm run verify is green, with any failure rerun once and explained.
+DONE MEANS: cases C1 to C14 and N1 to N12 of the plan each have a named check line; each failed on the tests-only commit and passes now, apart from the guards N5, N11 and N12, which are green on both; the report shows the size totals C14 prints and the list of old cases removed with the bass table; npm run check:chordpro-plan passes with src/chordpro.ts in place of the reference; npm run verify is green, with any failure rerun once and explained.
 SOURCE: docs/PLAN-chordpro-backbone.md sections 1 and 2.
 NEEDS OWNER: none to start. Terry looks at one song with F#m and one minor-key song on a phone before merge. Decisions T1 to T4 have recommended answers, and the cook builds those.
 ```
 
 - **Tests first.** Commit 1 is `scripts/check-chordpro.ts` with its `package.json` line, and the new N cases in `scripts/check-music.ts`, `scripts/check-one-copy.ts` and `scripts/check-chords.ts`. Nothing else.
-- **Owned files.** `src/chordpro.ts`, new. `src/music.ts`, `src/sheet.tsx`, `src/styles.css`, `src/types.ts`, `src/storage.ts` and `src/band-library.tsx` for the test of a stored song and the empty list, `src/song-text.ts`, `src/band-library-model.ts` for the moved type, `data/library.json`, three lines of wording, and the checks that named the table.
+- **Owned files.** `src/chordpro.ts`, new. `src/music.ts`, `src/sheet.tsx`, `src/styles.css`, `src/types.ts`, `src/storage.ts` and `src/band-library.tsx` for the test of a stored song and the empty list, `src/song-text.ts`, `src/band-library-model.ts` for the moved type, `data/library.json`, three lines of wording, and the checks that named the table. `scripts/chordpro-plan-reference.ts` is deleted, and `scripts/check-chordpro-plan.ts` takes the real codec in its place.
 - **Checks.** `npm run verify`. Removing a block from the sheet moves everything under it, so every check that pins a position on the sheet is in play.
 
 ### 5.2 Brief: `chordpro-worker`
@@ -652,16 +884,16 @@ NEEDS OWNER: none to start. Nothing is deployed by the cook. The owner's deploy 
 ```text
 ## HANDOFF
 GOAL: The phone saves every song as ChordPro text, reads both shapes, tells the Worker it reads text, and keeps its library under a key an older tab cannot damage. A player sees the same songs, setlists, bands and backups as before, on every phone and across an account switch.
-DECIDED: one cook, branch cook/chordpro-phone off mls-int-20261113 after chordpro-worker has merged; a stored song is { id, copy?, chordpro } and the screens keep the parsed Song model; the library key becomes leadSheetsLibraryV2 and the old key is carried over as plan section 3 says, byte for byte on the first load; saving one song rewrites that song alone, and reading rewrites nothing; api() sends X-Song-Shape: chordpro on every call; share, edit, send and the copy code send { chordpro }; every reader on the phone takes both shapes; a parsed song is kept by its text so a song is parsed once; the empty bassNotes list of cook 1 ends here.
-REJECTED: converting the library on load; a second library value kept beside the first; writing the old shape anywhere; any worker edit; any edit to printOf or the share rule; a change to a screen's layout; a Download .cho button; new libraries; edits outside the owned files.
-DONE MEANS: cases P1 to P13 of the plan each have a named check line that failed on the tests-only commit and passes now; the report shows the time P12 prints and every earlier check that read the old key and why it changed; npm run verify is green, with the auth-family checks under the lock and any failure rerun once and explained.
-SOURCE: docs/PLAN-chordpro-backbone.md sections 1 and 3, and risks R3 to R7, R10, R14, R16 and R19.
+DECIDED: one cook, branch cook/chordpro-phone off mls-int-20261113 after chordpro-worker has merged; a stored song is { id, copy?, chordpro } and the screens keep the parsed Song model; the library lives under leadSheetsLibraryV2 and the backup state under leadSheetsBackupV2, each first filled byte for byte from the old key; the keys the old build reads are left as they are until the account on the phone changes, and what an old tab saves there is taken in as plan section 3 says; saving one song rewrites that song alone, and reading rewrites nothing; api() sends X-Song-Shape: chordpro on every call; a song from a reply, a phone store or a card is read through one function at the door, in each file the plan's table names, and no screen type changes; share, send and the copy code send { chordpro } through one function next to content, which keeps its meaning; a parsed song is kept by its text so a song is parsed once; the empty bassNotes list of cook 1 ends here.
+REJECTED: converting the library on load; writing or removing a key the old build reads while the account stays; writing the old shape anywhere; any worker edit; any edit to printOf or the share rule; a change to a screen's layout; a Download .cho button; new libraries; edits outside the owned files.
+DONE MEANS: cases P1 to P17 of the plan each have a named check line that failed on the tests-only commit and passes now; npm run check:chordpro-plan still passes; the report shows the time P12 prints and every earlier check that read the old key and why it changed; npm run verify is green, with the auth-family checks under the lock and any failure rerun once and explained.
+SOURCE: docs/PLAN-chordpro-backbone.md sections 1 and 3, and risks R3 to R7 with R3a, R7a and R7b, R10, R14, R16 and R19.
 NEEDS OWNER: Terry's answer to decision T7 before merge, not before the start. The owner deploys the Worker of chordpro-worker before this build reaches a phone.
 ```
 
 - **Tests first.** Commit 1 is `scripts/check-chordpro-phone.ts` and its `package.json` line.
-- **Owned files.** `src/storage.ts`, `src/backup.ts`, `src/sign-in-methods.ts`, `src/band-library.tsx`, `src/band-library-model.ts`, `src/send-song-model.ts`, `src/gig-pack.ts`, the readers of the two IndexedDB stores, `src/types.ts`, `src/data-kinds.ts`, two rows of `scripts/check-one-copy.ts`, and the earlier checks that read the old key.
-- **Checks.** `npm run verify`. The checks closest to the change are `check:storage`, `check:backup`, `check:band-library`, `check:send-song`, `check:setlist-code`, `check:chords`, `check:offline`, `check:song-import`, `check:new-song` and `check:privacy`.
+- **Owned files.** `src/storage.ts`, `src/backup.ts`, `src/backup-keys.ts`, `src/sign-in-methods.ts`, every file with a change in the table "Where a song enters and leaves the phone" (`src/bands.tsx`, `src/guest-rooms.tsx`, `src/gig-pack.ts`, `src/band-setlist-view.tsx`, `src/library-lists.tsx`, `src/send-song-model.ts`, `src/setlist-code.tsx`, `src/band-library.tsx`, `src/send-song.tsx`, `src/phone-db.ts` for types), `src/band-library-model.ts`, `src/types.ts`, `src/data-kinds.ts`, four rows of `scripts/check-one-copy.ts`, and the earlier checks that read the old key.
+- **Checks.** `npm run verify`. The checks closest to the change are `check:chordpro-plan`, `check:storage`, `check:backup`, `check:band-library`, `check:send-song`, `check:setlist-code`, `check:guest`, `check:chords`, `check:offline`, `check:song-import`, `check:new-song` and `check:privacy`.
 
 ## 6. Seams with held work, and follow-ups
 
@@ -676,13 +908,14 @@ No cook here edits held work. These are the files both sides touch, read from th
 | Bulk import, a ChordPro file | A `.cho` file from another app goes through `readPaste`, as the bulk-import plan says. That stays. A file this app wrote could go to `chordProToSong` and come back exact. | Part of the follow-up `chordpro-export`, which decides how a file says it is this app's own. |
 | chord-grab | `chord-grab-app` owns `src/sheet.tsx`, `src/song-text.ts`, `src/storage.ts` and `src/data-kinds.ts` for the credit line and its key. `chord-grab-worker` owns `src/sign-in-methods.ts`. The credit is `Song.sourceNote`, which the text holds as `{x_source_note}`. | The credit of a grabbed song survives a save as text (C9 covers the field). The `api` header of cook 3 and chord-grab's change sit in the same function. `check:privacy` after both sides add keys. |
 | The smart paste rules | `CAPO_VIEW` and every rule of `src/song-paste.ts` stay as they are. | `check:song-paste` after each cook. |
+| Any held cook that reads a band song, a gig pack or a song card | The table "Where a song enters and leaves the phone" describes the build at `61f18be`. A held cook that lands before cook 3 can add a place the table lacks, such as a new `api()` call that returns a song. | Cook 3 types the four song replies as "may be text" on its own base and lets `tsc` list the doors (its second High hint). Any door the table lacks goes in `QUESTIONS.md` and through `songFromSent`. |
 
 ### Follow-ups, none queued
 
 | Follow-up | What it does | Waits for |
 |---|---|---|
 | `chordpro-export` | A Download .cho button on a song the player made, and reading the app's own file back exactly. It first opens the file in one real chord app and records what that app shows. | cook 3, and decision T6 |
-| `chordpro-old-shape-end` | Removes the old-shape answer, the `bassNotes` filler and the old-object branch of `songIn`. The readers of stored rows stay, because old rows may rest for years. | 30 days after cook 3 reaches Live (decision T8) |
+| `chordpro-old-shape-end` | Removes the old-shape answer, the `bassNotes` filler and the old-object branch of `songIn`. On the phone it removes `leadSheetsLibrary`, `leadSheetsBackup`, `leadSheetsLibraryTaken` and the code that takes in an old tab's saves. The readers of stored rows stay, because old rows may rest for years. | 30 days after cook 3 reaches Live (decision T8) |
 | Old rows, counted | A read-only count of stored songs still in the old shape, per room, to decide whether anything more is ever needed. It rewrites nothing. | cook 3 on Live |
 | Nashville for the rest of the chord | Shows the 7, the sus or the dim on a number, in the spelling Terry picks. | decision T2, after cook 1 is seen on a phone |
 | Minor keys from the relative major | One function in `src/music.ts`. | decision T1, only on a no |
@@ -694,13 +927,17 @@ No cook here edits held work. These are the files both sides touch, read from th
 
 This plan measured what it could on the laptop. The list below is what it did not prove.
 
-- **What an old build does.** The six behaviours under "What an old build does with a song it cannot read" were read in the code at `61f18be`. None was run. Cases N11, W5, W7, W10 and P5 run that build's own code for the first time.
-- **The codec is a prototype.** The numbers come from a throwaway script kept outside the repo. Cook 1 writes the real module, and C1, C2 and C14 repeat the measurements. If a real case disagrees with the prototype, the case is right.
+- **What an old build does.** Six of the seven behaviours under "What an old build does with a song it cannot read" were read in the code at `61f18be` and not run. The seventh, a library that is gone, was run. Cases N11, W5, W7, W10, P5, P8 and P17 run that build's own code against the real cooks for the first time.
+- **An account change made inside an old tab.** The new build removes the old keys when it sees the account change. An old tab that signs one account out and another in by itself, before any new-build page has looked, was reasoned and not run. That tab marks what the first account left with its own `leave`, as it does today. It cannot mark songs that only the new key holds, so the next new-build page does that with its own `leave` before it shows or backs up anything.
+- **An old tab in the middle of a backup.** A backup already on its way when the old keys go keeps its state in memory for the rest of that run. After a sign-out its next request has no session and is refused. After a full-phone move it could send one more request. The run is a few requests long, so the window is seconds. Named, not removed.
+- **Two new songs with one id.** A song added in an old tab and a song added in the new build can take the same id, because each counts from its own library. The new build then takes the old tab's song in under a new id with a copy of the per-song settings under the old one, which may hold the other song's. No chart is lost. A fresh song seldom has settings yet.
+- **The codec is a reference, not the app's module.** The numbers come from `scripts/chordpro-plan-reference.ts`, which `check:chordpro-plan` runs on every written example of section 1. Cook 1 writes the real module, and C1, C2 and C14 repeat the measurements on it. If a required case and the reference disagree, the cook stops and writes the case in `QUESTIONS.md`, because the bytes are frozen.
 - **No other chord app has read the text.** The format follows the reference pages. Three things may show oddly elsewhere: a section name written as `label="…"` in an app from before that form, a backslash before a bracket, and a grid row with no bar line. Characters such as `<` and `&` may also be read as markup by some apps. None of this matters until a file leaves the app, which is the follow-up `chordpro-export`.
-- **Nothing ran on a phone.** Parse time, the size of the library value and the moment of the key move were measured or reasoned on the laptop. P12 prints a time on the check's browser, not on a phone.
-- **How much `localStorage` a phone gives.** The plan assumes about 5 MB for one site, from memory. The key move is written to work when two copies do not fit (R6), so the number does not decide anything.
+- **Nothing ran on a phone.** Parse time, the size of the library value and the first copy to the new key were measured or reasoned on the laptop. P12 prints a time on the check's browser, not on a phone.
+- **How much `localStorage` a phone gives.** The plan assumes about 5 MB for one site, from memory. The first copy has a path for a phone where two copies do not fit (R6, P17), so the number does not decide anything.
 - **Worker time.** The cost of building the old-shape answer for a large band was not measured on a Worker (R15).
 - **The order of deploys.** No script can prove the Worker goes out before the phone build (R17). The plan relies on the owner's deploy steps and on a kind refusal when they are swapped.
-- **A power cut during the key move.** In the one case where two copies do not fit, the old key is removed a moment before the new one is written. A phone that loses power between those two steps, with no backup, would lose its library. The steps are two lines in one turn of script. The risk is named, not removed.
+- **A power cut on a phone with no room for two libraries.** In that one case the old keys are removed a moment before the new ones are written. A phone that loses power between those steps, with no backup, would lose its library. The steps are a few lines in one turn of script. The risk is named, not removed.
+- **The space two libraries take.** Until the follow-up `chordpro-old-shape-end`, a phone holds its library twice: the old key as it was, and the new key. For the 31 real songs that is about 75,000 chars more. A phone near its limit takes the one-library path of P17.
 - **The checks that pin the sheet.** `scripts/check-ux-metronome-sheet.ts` pins positions under the bass table, and other checks may too. The plan did not run the full suite with the table gone. Cook 1 does.
 - **How many checks compare a Worker reply to a short made-up song.** After cook 2 an old-shape reply is a whole song with every fact filled. The plan did not count the checks this changes. Cook 2 lists each in its report.

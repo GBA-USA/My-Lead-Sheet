@@ -157,13 +157,17 @@ const fenced_off = paths(phoneBrief.split("\n").find((line) => line.startsWith("
 check(entering.length > 0 && sending.length > 0, `the sweep of ${BASE} finds where a song enters the phone (${entering.join(", ") || "nowhere"}) and each caller of \`content\` (${sending.join(", ") || "none"})`);
 for (const file of [...new Set([...entering, ...sending])].sort()) {
   const row = doorFiles.get(file);
+  // A caller of `content` that only copies a song in memory needs a case that it still works, and no edit.
+  const unchanged = !entering.includes(file) && (row?.["After cook 3"] ?? "").startsWith("No change");
   const problems = [
     !row && "the plan's table of where a song enters and leaves the phone has no row for it",
-    !owned.has(file) && `${PHONE_BRIEF} does not own it`,
-    fenced_off.includes(file) && `${PHONE_BRIEF} lists it under Do not touch`,
+    !unchanged && !owned.has(file) && `${PHONE_BRIEF} does not own it`,
+    !unchanged && fenced_off.includes(file) && `${PHONE_BRIEF} lists it under Do not touch`,
+    unchanged && owned.has(file) && `the plan says it does not change and ${PHONE_BRIEF} owns it`,
     row && !idsIn(row.Cases ?? "").some((id) => id.startsWith("P") && cases.has(id)) && "its row names no P case the plan holds",
   ].filter(Boolean);
-  check(problems.length === 0, `${file} ${entering.includes(file) ? "takes a song in" : "calls `content`"} at ${BASE}: the plan gives it a row, a P case, and the phone cook owns it${problems.length ? ` (${problems.join("; ")})` : ""}`);
+  const wants = unchanged ? "the plan gives it a row and a P case, and says it does not change" : "the plan gives it a row, a P case, and the phone cook owns it";
+  check(problems.length === 0, `${file} ${entering.includes(file) ? "takes a song in" : "calls `content`"} at ${BASE}: ${wants}${problems.length ? ` (${problems.join("; ")})` : ""}`);
 }
 for (const [file, row] of doorFiles) {
   if (entering.includes(file) || sending.includes(file)) continue;

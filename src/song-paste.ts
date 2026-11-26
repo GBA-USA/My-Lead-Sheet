@@ -46,7 +46,7 @@ const SUFFIXES = SPELLINGS.map(([pasted, stored]) => [pasted.slice(1), stored.sl
 const EXTENSIONS = /^(?:(?:sus|add|b|#)\d+)*$/;
 
 /** The chart's spelling of a pasted chord token, or null when the token is no chord. */
-function storedChord(token: string): string | null {
+export function storedChord(token: string): string | null {
   if (/^(?:N\.?C\.?|N\/C)$/i.test(token)) return "N.C.";
   const parts = token
     .replace(/\*+$/, "")
@@ -70,7 +70,7 @@ const REPEAT = /^\(?(?:x\s*(\d+)|(\d+)\s*x)\)?$/i;
 type ChordRow = { chords: PlacedChord[]; notes: string[] };
 
 /** A line where every token is a chord or a row mark, with at least one chord. A mark such as (x2) becomes a note. */
-function chordRowOf(line: string): ChordRow | null {
+export function chordRowOf(line: string): ChordRow | null {
   const chords: PlacedChord[] = [];
   const notes: string[] = [];
   for (const match of line.matchAll(TOKEN)) {

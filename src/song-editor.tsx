@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { content } from "./band-library";
 import { tempoChoices } from "./bpm-detect";
 import { useEscape } from "./hooks";
@@ -12,14 +12,56 @@ import { BpmField, parseBpm, SongDataEditor } from "./song-data-editor";
 import { chordsSearchUrl, lengthText, pasteLookup, type CatalogSong, type Lookup } from "./song-search.js";
 // @ts-expect-error TS5097: song-search.ts holds the same stem, so only ".tsx" names this file in tsc, Vite and esbuild.
 import { browserSearcher, SongSearch, WebSearchLink } from "./song-search.tsx";
+import type { Draft } from "./song-import.js";
 import { CAPO_VIEW, capoNote, readPaste, type CapoView, type LeftOut, type Pasted } from "./song-paste";
 import { KEY_ROOTS, ownSong, parseSheet, sectionsToText, sheetProblem, type SongFacts, type SongMeta } from "./song-text";
 import { addOwnSong, removeOwnSong, replaceOwnSong, saveSongData, songByRef, withSongData } from "./storage";
 import type { ChartSection, KeyMode, Song, SongData } from "./types";
 import "./song-editor.css";
 
-/** Which song sheet is open over the page: timing, a new song, the open song's chart, a paste from the start panel, or Delete. */
-export type SongEdit = "timing" | "new" | "chart" | "delete" | { paste: string };
+/** Which song sheet is open over the page: timing, a new song, the open song's chart, the Delete question, Import files, or a paste from the start panel. */
+export type SongEdit = "timing" | "new" | "chart" | "delete" | "import" | { paste: string };
+
+/**
+ * Import files and its readers load on the first tap, so the main script keeps its size. The service worker holds
+ * every built file, so it opens offline too. Code that still cannot load shows why, and the next tap loads again.
+ */
+const loadImport = () =>
+  lazy(() =>
+    // @ts-expect-error TS5097: song-import.ts holds the same stem, so only ".tsx" names this file in tsc, Vite and esbuild.
+    import("./song-import.tsx").then(
+      (module: { SongImport: (props: ImportProps) => ReactNode }) => ({ default: module.SongImport }),
+      () => ({ default: ImportUnloaded }),
+    ),
+  );
+type ImportProps = { songs: Song[]; files: File[]; editor: (start: Draft, done: (songId: number | null) => void) => ReactNode; onClose: () => void };
+let SongImport = loadImport();
+
+const NOT_LOADED = "Import files couldn't load. Check your connection and try again.";
+
+function ImportUnloaded({ onClose }: ImportProps) {
+  const titleId = useId();
+  const close = () => {
+    SongImport = loadImport();
+    onClose();
+  };
+  useEscape(close);
+  return (
+    <div className="song-data-backdrop" onClick={close}>
+      <div className="song-data" role="alertdialog" aria-modal="true" aria-labelledby={titleId} onClick={(event) => event.stopPropagation()}>
+        <h2 id={titleId}>Import files</h2>
+        <p className="song-editor-problem" role="alert">
+          {NOT_LOADED}
+        </p>
+        <div className="song-data-actions">
+          <button type="button" onClick={close}>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const NOT_SAVED = "This phone couldn't save the song. Free some space and try again.";
 const BAD_BPM = "BPM must be a whole number the metronome can play";
@@ -122,6 +164,8 @@ export function SongEditors({
   editing,
   song,
   songs,
+  userId,
+  files = [],
   onSongData,
   onTempo,
   onClose,
@@ -129,11 +173,31 @@ export function SongEditors({
   editing: SongEdit | null;
   song: Song | undefined;
   songs: Song[];
+  /** The signed-in account. Import files belongs to it, and closes when it changes. */
+  userId: string | null;
+  /** Files dropped on the page, for Import files to read first. */
+  files?: File[];
   onSongData: (song: Song, data: SongData) => void;
   /** The open song's tempo was saved; `song` is the song as it was. */
   onTempo: (song: Song, tempo: number | null) => void;
   onClose: () => void;
 }) {
+  // The pile belongs to the account that picked it. Another account, or none, closes the sheet with no question.
+  const owner = useRef(userId);
+  useEffect(() => {
+    if (owner.current === userId) return;
+    owner.current = userId;
+    if (editing === "import") onClose();
+  }, [userId]);
+  if (editing === "import") {
+    if (!userId || owner.current !== userId) return null;
+    const editor = (start: Draft, done: (songId: number | null) => void): ReactNode => <SongEditor songs={songs} start={start} onSaved={done} onClose={() => done(null)} />;
+    return (
+      <Suspense fallback={null}>
+        <SongImport key={userId} songs={songs} files={files} editor={editor} onClose={onClose} />
+      </Suspense>
+    );
+  }
   if (editing === "new") return <SongEditor songs={songs} onClose={onClose} />;
   if (!song) return null;
   if (editing === "chart") return <SongEditor song={song} songs={songs} onTempo={(tempo) => onTempo(song, tempo)} onClose={onClose} />;
@@ -145,9 +209,12 @@ export function SongEditors({
   return null;
 }
 
-/** Initial editor state, including a paste handed in from the start panel. */
-function initialEditor(song: Song | undefined, initialPaste: string | undefined) {
-  const base = formOf(song);
+/**
+ * Initial editor state: the open song, or a draft such as a row of Import files (a field the file named none of takes
+ * the form's default), plus a paste handed in from the start panel.
+ */
+function initialEditor(song: Song | undefined, initialPaste: string | undefined, draft: Draft | undefined) {
+  const base = draft ? { ...draft, keyRoot: draft.keyRoot || "C", timeSignature: draft.timeSignature || "4/4" } : formOf(song);
   if (initialPaste === undefined) return { form: base, paste: null as Paste | null, short: false, note: "", wordsBelow: false };
   if (!initialPaste.trim()) return { form: base, paste: null as Paste | null, short: false, note: "Paste your sheet into the box.", wordsBelow: false };
   const pasted = readPaste(initialPaste);
@@ -171,33 +238,39 @@ function initialEditor(song: Song | undefined, initialPaste: string | undefined)
 function SongEditor({
   song,
   songs,
+  start,
+  onSaved,
   initialPaste,
   onTempo,
   onClose,
 }: {
   song?: Song;
   songs: Song[];
+  /** A new song's fields to start from, such as a row of Import files. */
+  start?: Draft;
+  /** Takes a new song's id in place of opening it. */
+  onSaved?: (id: number) => void;
   initialPaste?: string;
   onTempo?: (tempo: number | null) => void;
   onClose: () => void;
 }) {
   const titleId = useId();
   const ids = { title: useId(), artist: useId(), key: useId(), mode: useId(), time: useId(), chart: useId(), hint: useId(), details: useId() };
-  const [start] = useState(() => initialEditor(song, initialPaste));
-  const [form, setForm] = useState(() => start.form);
-  const [short, setShort] = useState(() => start.short);
-  const [wordsBelow, setWordsBelow] = useState(() => start.wordsBelow);
+  const [initial] = useState(() => initialEditor(song, initialPaste, start));
+  const [form, setForm] = useState(() => initial.form);
+  const [short, setShort] = useState(() => initial.short);
+  const [wordsBelow, setWordsBelow] = useState(() => initial.wordsBelow);
   /** Whether the player wants the details open. With no title they are open either way. */
-  const [detailsWanted, setDetailsWanted] = useState(() => !start.form.title.trim());
+  const [detailsWanted, setDetailsWanted] = useState(() => !initial.form.title.trim());
   const [lookup, setLookup] = useState<Lookup>({ kind: "idle" });
   /** The guess the player tapped, as the fields held it then. Its length is stored while they still do. */
   const [took, setTook] = useState<{ title: string; artist: string; lengthSec: number | null } | null>(null);
   const searcher = useMemo(browserSearcher, []);
   const titleRef = useRef<HTMLInputElement>(null);
   const [problem, setProblem] = useState("");
-  const [pasteNote, setPasteNote] = useState(() => start.note);
+  const [pasteNote, setPasteNote] = useState(() => initial.note);
   const [have, setHave] = useState<Song | null>(null);
-  const [pasting, setPasting] = useState<Paste | null>(() => start.paste);
+  const [pasting, setPasting] = useState<Paste | null>(() => initial.paste);
   /** How many pastes the editor has taken. Each one brings the preview into view; a switch of the same paste does not. */
   const [taken, setTaken] = useState(0);
   const touched = useRef(new Set<keyof Form>());
@@ -231,8 +304,8 @@ function SongEditor({
   useEscape(onClose);
   useEffect(() => searcher.stop, [searcher]);
   useEffect(() => {
-    if (start.note) chartRef.current?.focus();
-  }, [start.note]);
+    if (initial.note) chartRef.current?.focus();
+  }, [initial.note]);
   useEffect(() => {
     if (!taken) return;
     previewRef.current?.scrollIntoView({ block: "start" });
@@ -338,6 +411,7 @@ function SongEditor({
     if (!song) {
       const id = addOwnSong(stored());
       if (id === null) return setProblem(NOT_SAVED);
+      if (onSaved) return onSaved(id);
       window.location.hash = songHref(id, "songs");
       return;
     }

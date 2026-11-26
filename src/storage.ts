@@ -338,6 +338,28 @@ export function addOwnSong(song: Omit<Song, "ref" | "id">): number | null {
   return writeOwnSong(raw, id, song) ? id : null;
 }
 
+/**
+ * Adds songs to My Songs in one write, each under a new id, and tells every screen once. Gives the id of each, or null
+ * in its place for a song with no title or one this phone can't show. Null when the browser refused the write, and
+ * then nothing was added.
+ */
+export function addOwnSongs(songs: Omit<Song, "ref" | "id">[]): (number | null)[] | null {
+  const raw = readRaw(LIBRARY_KEY);
+  const first = freeOwnId(raw, SONG_ROW, []);
+  const changes = new Map<string, string>();
+  const ids = songs.map((song) => {
+    const item = { ...song, id: first + changes.size };
+    // A song this phone could not show is never written, so it holds no id another song could take.
+    if (typeof song.title !== "string" || !song.title.trim() || !isSong(item)) return null;
+    changes.set(`${SONG_ROW}.${item.id}`, JSON.stringify({ item }));
+    return item.id;
+  });
+  if (changes.size === 0) return ids;
+  if (!writeRaw(LIBRARY_KEY, withOwnLibraryItems(raw, changes))) return null;
+  storageChanged();
+  return ids;
+}
+
 /** Adds a setlist of own songs under a new id. Null when the browser refused the write. */
 export function addOwnSetlist(setlist: Omit<StoredSetlist, "id">): number | null {
   const raw = readRaw(LIBRARY_KEY);

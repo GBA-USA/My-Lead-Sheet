@@ -62,6 +62,7 @@ export function App() {
     [stored, songData],
   );
   const [editing, setEditing] = useState<SongEdit | null>(null);
+  const [dropped, setDropped] = useState<File[]>([]);
   const [teaching, setTeaching] = useState<Teaching | null>(null);
   const [hash, setHash] = useState(() => window.location.hash);
   const [textIndex, setTextIndex] = useStored(loadTextScaleIndex);
@@ -200,7 +201,8 @@ export function App() {
     document.getElementById("sheet-scroll")?.scrollTo(0, 0);
     setMenu(null);
     setScrollSheet(false);
-    setEditing(null);
+    // Import files closes itself on a change of page, asking first when rows are unsaved.
+    setEditing((now) => (now === "import" ? now : null));
     setTeaching(null);
     const now = parseHash(window.location.hash).name;
     if (now !== "bands" && now !== "messages") setNotice("");
@@ -364,7 +366,7 @@ export function App() {
         />
       ) : null}
 
-      <SongEditors editing={editing} song={activeSong} songs={stored.songs} onSongData={saveData} onTempo={retempo} onClose={() => setEditing(null)} />
+      <SongEditors editing={editing} song={activeSong} songs={stored.songs} userId={account?.userId ?? null} files={dropped} onSongData={saveData} onTempo={retempo} onClose={() => setEditing(null)} />
 
       {accountOpen ? (
         <AccountSheet
@@ -414,7 +416,7 @@ export function App() {
         {performance.scrolling && learned && motion.kind === "learned" ? (
           <LearnedCues learned={learned} clock={clock} rate={motion.rate} metronomeOn={metronome.playing} />
         ) : null}
-        {route.name === "songs" ? <SongList songs={library.songs} userId={account?.userId ?? null} onAdd={account ? () => setEditing("new") : undefined} /> : null}
+        {route.name === "songs" ? <SongList songs={library.songs} userId={account?.userId ?? null} onAdd={account ? () => setEditing("new") : undefined} onImport={account ? (files) => { if (editing && editing !== "import") return; setDropped(files); setEditing("import"); } : undefined} /> : null}
         {route.name === "setlists" ? <SetlistList setlists={library.setlists} songs={library.songs} onShowCode={account ? setSetlistCode : undefined} /> : null}
         {route.name === "settings" ? (
           <SettingsScreen

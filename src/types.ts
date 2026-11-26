@@ -2,13 +2,6 @@
 
 export type KeyMode = "major" | "minor";
 
-export interface BassNote {
-  chord: string;
-  nashville: string;
-  bassNote: string;
-  position: string;
-}
-
 /** A chart line carries whichever of these the export stored. Spacing in `chords` / `lyrics` is the alignment. */
 export interface ChartLine {
   chords?: string;
@@ -44,9 +37,9 @@ export interface Song {
   atAGlance: string;
   howToPlay: string;
   practiceTip: string;
-  bassNotes: BassNote[];
   body: ChartSection[];
   copy?: CopyMark;
+  kept?: string[];
 }
 
 /** Set on a song or setlist added from a band or a friend: the server's record of the copy, which a later share names so the server can check it. `from` names the friend who sent it. */

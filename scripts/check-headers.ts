@@ -3,16 +3,17 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { extname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { build as bundle } from "esbuild";
 import { build } from "vite";
 import type { LibraryFile } from "../src/types.ts";
 
 const CHROME = process.env.CHROME ?? "/usr/bin/google-chrome";
 const WIDTHS = [320, 390, 768];
-/** Set SHOTS to a folder to save the Bass table at every width and scale for the first song. */
+/** Set SHOTS to a folder to save the sheet at every width and scale for the first song. */
 const shots = process.env.SHOTS;
 
-const root = new URL("..", import.meta.url).pathname;
+const root = fileURLToPath(new URL("..", import.meta.url));
 const seed = JSON.parse(readFileSync(join(root, "data/library.json"), "utf8")) as LibraryFile;
 const storage = await bundle({ entryPoints: [join(root, "src/storage.ts")], bundle: true, write: false, format: "esm", platform: "node", logLevel: "silent" });
 const { TEXT_SCALES, TEXT_SCALE_KEY } = (await import(`data:text/javascript,${encodeURIComponent(storage.outputFiles[0].text)}`)) as typeof import("../src/storage.ts");
@@ -80,14 +81,13 @@ sessionId = (await send("Target.attachToTarget", { targetId, flatten: true })).s
 
 /** Resolves once the sheet for `title` is drawn with its fonts loaded. */
 const shown = (title: string) => `new Promise((resolve) => {
-  const ready = () => document.querySelector(".sheet-name")?.textContent === ${JSON.stringify(title)} && document.querySelector(".bass th");
+  const ready = () => document.querySelector(".sheet-name")?.textContent === ${JSON.stringify(title)} && document.querySelector(".sheet .chart");
   const wait = () => (ready() ? document.fonts.ready.then(() => requestAnimationFrame(() => requestAnimationFrame(resolve))) : setTimeout(wait, 10));
   wait();
 })`;
 
 /**
- * Every word of every Bass table header must sit on one line inside its cell's content box,
- * and the table must fit the sheet without overflowing sideways.
+ * Every sheet has no bass table, its section labels fit, and the sheet does not overflow sideways.
  */
 const measure = `(() => {
   const inner = (el) => {
@@ -96,23 +96,12 @@ const measure = `(() => {
     return { left: rect.left + parseFloat(style.paddingLeft), right: rect.right - parseFloat(style.paddingRight) };
   };
   const problems = [];
-  const table = document.querySelector(".sheet .bass");
-  for (const th of table.querySelectorAll("th")) {
-    const cell = inner(th);
-    const walker = document.createTreeWalker(th, NodeFilter.SHOW_TEXT);
-    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-      for (const word of node.data.matchAll(/\\S+/g)) {
-        const range = document.createRange();
-        range.setStart(node, word.index);
-        range.setEnd(node, word.index + word[0].length);
-        const lines = new Set([...range.getClientRects()].filter((rect) => rect.width > 0).map((rect) => Math.round(rect.top)));
-        const box = range.getBoundingClientRect();
-        if (lines.size > 1) problems.push(\`"\${word[0]}" splits across \${lines.size} lines\`);
-        if (box.left < cell.left - 0.5 || box.right > cell.right + 0.5) problems.push(\`"\${word[0]}" spills out of its column\`);
-      }
-    }
+  if (document.querySelector(".sheet table")) problems.push("sheet still renders a table");
+  const sheet = inner(document.querySelector(".sheet"));
+  for (const label of document.querySelectorAll(".sheet .sheet-label, .sheet .chart-heading")) {
+    const box = label.getBoundingClientRect();
+    if (box.right > sheet.right + 0.5) problems.push(\`"\${label.textContent}" spills past the sheet\`);
   }
-  if (table.getBoundingClientRect().right > inner(document.querySelector(".sheet")).right + 0.5) problems.push("the table is wider than the sheet");
   const scroller = document.querySelector(".scroll");
   if (document.documentElement.scrollWidth > innerWidth || scroller.scrollWidth > scroller.clientWidth) problems.push("the sheet overflows sideways");
   return problems;
@@ -139,12 +128,10 @@ try {
         }
         if (shots && song === seed.songs[0]) {
           const clip = await evaluate<object>(`(() => {
-            const table = document.querySelector(".bass");
-            table.scrollIntoView({ block: "start" });
-            const top = table.getBoundingClientRect().top;
-            const rows = table.querySelectorAll("tr");
-            const bottom = rows[Math.min(rows.length - 1, 2)].getBoundingClientRect().bottom;
-            return { x: 0, y: top - 8, width: innerWidth, height: bottom - top + 16, scale: 1 };
+            const sheet = document.querySelector(".sheet");
+            sheet.scrollIntoView({ block: "start" });
+            const r = sheet.getBoundingClientRect();
+            return { x: 0, y: r.top, width: innerWidth, height: Math.min(r.height, 500), scale: 1 };
           })()`);
           const shot = await send("Page.captureScreenshot", { format: "png", clip });
           mkdirSync(shots, { recursive: true });
@@ -166,4 +153,4 @@ if (failures) {
   console.error(`${failures} header check(s) failed across ${views} views`);
   process.exit(1);
 }
-console.log(`headers ok: no Bass table header word splits or spills, and the table fits, across ${seed.songs.length} songs x ${WIDTHS.length} widths x ${TEXT_SCALES.length} text scales (${views} views)`);
+console.log(`headers ok: no table and no sheet sideways overflow across ${seed.songs.length} songs x ${WIDTHS.length} widths x ${TEXT_SCALES.length} text scales (${views} views)`);

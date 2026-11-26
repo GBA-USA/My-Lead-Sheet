@@ -99,7 +99,6 @@ function renders(library: Library): string | null {
       void song.artist.length;
       displayKeyLabel(song, 1);
       for (const section of song.body) for (const line of section.lines) displayChordLine(line.chords ?? "", song, 1, "nashville");
-      for (const note of song.bassNotes) void note.position.length;
     }
     for (const setlist of library.setlists) setlist.songRefs.map((ref) => ref.length);
     return null;
@@ -150,7 +149,7 @@ const broken = stored() as unknown as { songs: Record<string, unknown>[]; setlis
 delete broken.songs.find((song) => song.id === 10)!.keyLabel;
 broken.songs.find((song) => song.id === 8)!.keyRoot = "H";
 broken.songs.push({ ...clone(seed.songs[0]), id: 99, title: "My Own Song" });
-broken.songs.push({ id: 98, title: "Half a song", bassNotes: [], body: [] });
+broken.songs.push({ id: 98, title: "Half a song", body: [] });
 delete broken.setlists[0].songIds;
 broken.setlists[1].songIds = ["10", 11];
 putStored(broken);

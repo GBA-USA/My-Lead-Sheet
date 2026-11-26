@@ -19,7 +19,7 @@ import type { ShareChoice } from "./share-rule";
 import { BandSetlistCode, CodeOfferButton } from "./setlist-code";
 import { codeOffer } from "./setlist-code-model";
 import { api } from "./sign-in-methods";
-import { loadLibrary, songByRef } from "./storage";
+import { loadLibrary, songByRef, withBassNotes } from "./storage";
 import type { Setlist, Song } from "./types";
 import "./band-library.css";
 
@@ -57,7 +57,7 @@ export const CHOICES: Record<ShareChoice, { label: string; line: string }> = {
   public: { label: "Public", line: "They can pass it on." },
 };
 
-export const content = ({ ref: _ref, id: _id, copy: _copy, ...song }: Song): SongContent => song;
+export const content = ({ ref: _ref, id: _id, copy: _copy, ...song }: Song): SongContent => withBassNotes(song);
 export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 export const titleOf = (song: BandSong | undefined) => song?.song.title ?? "A song no longer in the band";
 const lockFor = (item: { sharedAs: ShareChoice }) =>

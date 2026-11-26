@@ -231,7 +231,6 @@ if (site) {
       atAGlance: "",
       howToPlay: "",
       practiceTip: "",
-      bassNotes: [],
       body: [],
       ...overrides,
     });

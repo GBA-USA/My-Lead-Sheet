@@ -1075,8 +1075,8 @@ if (site) {
         "title, artist and length from the pick",
       );
       assert.deepEqual(
-        [song.keyRoot, song.keyMode, song.tempo, song.timeSignature, song.body, song.bassNotes, song.copy],
-        ["C", "major", null, "4/4", [], [], undefined],
+        [song.keyRoot, song.keyMode, song.tempo, song.timeSignature, song.body, song.copy],
+        ["C", "major", null, "4/4", [], undefined],
         "every other field at the New song defaults, and no copy mark",
       );
       for (const field of ["keyNote", "tempoNote", "feel", "sourceNote", "atAGlance", "howToPlay", "practiceTip"]) assert.equal(song[field], "", `${field} is empty`);

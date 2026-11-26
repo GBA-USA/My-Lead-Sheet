@@ -4,7 +4,7 @@ import { clampScrollPercent, isNotation, pitchClass, type Notation } from "./mus
 import { parsePersonal, type PersonalDefaults } from "./personal-settings-model";
 import { CHOICE_WORDS, type RouteChoice } from "./routes";
 import type { HeardCell, Learned, Mark, ScrollPlan, Span, Tempo } from "./scroll-timing";
-import type { BassNote, ChartLine, ChartSection, CopyMark, Library, LibraryFile, Song, SongData, SongRef } from "./types";
+import type { ChartLine, ChartSection, CopyMark, Library, LibraryFile, Song, SongData, SongRef } from "./types";
 
 export const LIBRARY_KEY = "leadSheetsLibrary";
 export const TEXT_SCALE_KEY = "leadSheetsTextScale";
@@ -109,7 +109,6 @@ const isSong = shaped<StoredSong>({
   atAGlance: isString,
   howToPlay: isString,
   practiceTip: isString,
-  bassNotes: listOf(shaped<BassNote>({ chord: isString, nashville: isString, bassNote: isString, position: isString })),
   body: listOf(
     shaped<ChartSection>({
       heading: isString,
@@ -124,7 +123,13 @@ const isSong = shaped<StoredSong>({
     }),
   ),
   copy: optional(isCopy),
+  kept: optional(listOf(isString)),
 });
+
+/** Gives a stored or sent song an empty `bassNotes` list when it has none, so a tab running the prior build still reads it. */
+export function withBassNotes<T extends object>(song: T): T {
+  return Array.isArray((song as { bassNotes?: unknown }).bassNotes) ? song : { ...song, bassNotes: [] };
+}
 const isSetlist = shaped<StoredSetlist>({ id: isId, name: isString, songIds: listOf(isId), copy: optional(isCopy) });
 
 /** Fingerprint of each seed item as it was stored, by id. An item whose stored copy no longer matches was edited. */
@@ -326,7 +331,7 @@ export function takeSongIds(ids: number[]) {
 function writeOwnSong(raw: string | null, id: number, song: Omit<Song, "ref" | "id">): boolean {
   // A song from another phone is read here first, so a title that is no text is refused the same way, not thrown on.
   if (typeof song.title !== "string" || !song.title.trim()) return false;
-  if (!writeRaw(LIBRARY_KEY, withOwnLibraryItems(raw, new Map([[`${SONG_ROW}.${id}`, JSON.stringify({ item: { ...song, id } })]])))) return false;
+  if (!writeRaw(LIBRARY_KEY, withOwnLibraryItems(raw, new Map([[`${SONG_ROW}.${id}`, JSON.stringify({ item: withBassNotes({ ...song, id }) })]])))) return false;
   storageChanged();
   return loadLibrary().songs.some((stored) => stored.id === id);
 }
@@ -348,7 +353,7 @@ export function addOwnSongs(songs: Omit<Song, "ref" | "id">[]): (number | null)[
   const first = freeOwnId(raw, SONG_ROW, []);
   const changes = new Map<string, string>();
   const ids = songs.map((song) => {
-    const item = { ...song, id: first + changes.size };
+    const item = withBassNotes({ ...song, id: first + changes.size });
     // A song this phone could not show is never written, so it holds no id another song could take.
     if (typeof song.title !== "string" || !song.title.trim() || !isSong(item)) return null;
     changes.set(`${SONG_ROW}.${item.id}`, JSON.stringify({ item }));

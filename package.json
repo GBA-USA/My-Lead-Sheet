@@ -21,6 +21,7 @@
                     "check:chat":  "tsc -p worker \u0026\u0026 node --experimental-strip-types scripts/check-chat.ts",
                     "check:chat-songs":  "tsc -p worker \u0026\u0026 node --experimental-strip-types scripts/check-chat-songs.ts",
                     "check:chord-grab-plan":  "node --experimental-strip-types scripts/check-chord-grab-plan.ts",
+                    "check:chordpro-plan":  "node --experimental-strip-types scripts/check-chordpro-plan.ts",
                     "check:chords":  "node --experimental-strip-types scripts/check-chords.ts",
                     "check:ci-deep":  "node --experimental-strip-types scripts/check-ci-deep.ts",
                     "check:codes":  "tsc -p worker \u0026\u0026 node --experimental-strip-types scripts/check-codes.ts",

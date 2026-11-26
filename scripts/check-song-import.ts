@@ -846,6 +846,10 @@ const SCREEN_CASES = {
   B8: "B8. with the write refused by a full store, the saved rows are marked, the rest stay, the message shows, and a second Save after space is freed adds each remaining song once",
   U9: "U9. closing with unsaved rows asks once, and Escape closes through the same question",
   U11: "U11. a drag of two files onto My Songs opens the sheet with two rows",
+  U14: "U14. a file dropped on My Songs while + Add a song holds a typed song is taken by the page, opens no sheet, and leaves the typed song open",
+  U15: "U15. a change of page with unsaved rows keeps the sheet and asks first, for Open on the editor's You already have and for the phone's back; Leave then shows the page, and with nothing unsaved a change of page closes the sheet",
+  B6c: "B6c. Replace changes the chart and keeps the tempo and length the player set when the file has none",
+  U16: "U16. Try the other reading swaps the row's sheet, a second tap swaps back, and Save stores the reading shown",
   B9s: "B9b. on the sheet, Reading N of 40 shows while a pile reads, Stop keeps the rows that are done and reads no more, and a pick after it reads again",
   U12: "U12. with two ready rows showing, a 401 ends the session and the sheet closes with no question; a second account then sees it closed, opens Import files on Choose files with no row, and holds no song from the pile",
   P1: "perf 1. the main script stays within 15 KB gzipped of the branch point",
@@ -1425,6 +1429,157 @@ if (site) {
         "two rows",
       );
       await closeImport();
+    });
+
+    const editor = `document.querySelector(".song-editor[role=dialog]")`;
+    const editorField = (label: string) => `[...(${editor}?.querySelectorAll("label") ?? [])].find((l) => l.textContent.trim() === ${js(label)})?.control`;
+    const typeInto = async (expression: string, value: string) => {
+      const set = await s.evaluate<boolean>(`(() => {
+        const el = ${expression};
+        if (!el) return false;
+        const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+        Object.getOwnPropertyDescriptor(proto, "value").set.call(el, ${js(value)});
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        return true;
+      })()`);
+      assert.ok(set, "a field to type in");
+      await sleep(150);
+    };
+    const pairsIn = (scope: string) => s.evaluate<string>(`[...document.querySelectorAll(${js(`${scope} .chart .pair`)})].map((p) => p.querySelector(".chords")?.textContent + "|" + (p.querySelector(".lyrics")?.textContent ?? "")).join("\\n")`);
+
+    await check(SCREEN_CASES.U14, async () => {
+      await closeImport();
+      await onSongs();
+      await tapIn(button("+ Add a song"), "+ Add a song");
+      await app.until(`!!${editor}`, "the new-song editor");
+      await typeInto(editorField("Title"), "Half Typed Song");
+      await typeInto(`${editor}.querySelector("textarea")`, "[Verse 1]\n[G]Words I typed by [C]hand\n");
+      const taken = await s.evaluate<boolean>(`(() => {
+        const data = new DataTransfer();
+        data.items.add(new File([${js(chartOf("Dropped Over Editor"))}], "dropped-over.txt", { type: "text/plain" }));
+        document.body.dispatchEvent(new DragEvent("dragover", { dataTransfer: data, bubbles: true, cancelable: true }));
+        return !document.body.dispatchEvent(new DragEvent("drop", { dataTransfer: data, bubbles: true, cancelable: true }));
+      })()`);
+      await sleep(800);
+      const seen = await s.evaluate<{ editor: boolean; sheet: boolean; title: string | null }>(`({ editor: !!${editor}, sheet: !!${sheet}, title: ${editorField("Title")}?.value ?? null })`);
+      await closeImport();
+      await s.evaluate(`${button("Cancel", editor)}?.click()`);
+      await app.until(`!${editor}`, "the editor closed");
+      assert.equal(taken, true, "the page takes the drop, so the browser does not open the file");
+      assert.deepEqual(seen, { editor: true, sheet: false, title: "Half Typed Song" }, "the typed song stays open and no sheet opens");
+    });
+
+    await check(SCREEN_CASES.U15, async () => {
+      // Open on the editor's You already have, inside the flow.
+      await openImport();
+      await pick([write("have-it.txt", chartOf("Pebble Have It"))]);
+      await allRead(1);
+      await tapIn(button("Save 1 song", sheet), "Save 1 song");
+      await closeImport();
+      const [have] = await songsTitled("Pebble Have It");
+      assert.ok(have, "the song the player already has");
+      await openImport();
+      await pick([write("have-it-again.txt", chartOf("Pebble Have It").replace("Pebbles", "Cobbles")), write("not-yet.txt", chartOf("Pebble Not Yet"))]);
+      await allRead(2);
+      await tapIn(`[...document.querySelectorAll(".song-import-open")].find((b) => b.textContent.trim() === "have-it-again.txt")`, "the have-it-again.txt row");
+      await tapIn(button("Edit", sheet), "Edit");
+      await app.until(`!!${editor}`, "the editor on the row");
+      await tapIn(button("Save", editor), "Save in the editor");
+      await app.until(`(${editor}?.textContent ?? "").includes("You already have")`, "the editor's You already have line", 4000);
+      await s.evaluate(`[...${editor}.querySelectorAll("a")].find((a) => a.textContent.trim() === "Open").click()`);
+      await app.until(`location.hash.startsWith("#/song/${have.id}")`, "the page of the song the player has");
+      await sleep(400);
+      const asked = await s.evaluate<{ sheet: boolean; question: string; rows: number; editor: boolean }>(
+        `({ sheet: !!${sheet}, question: ${sheet}?.querySelector(".song-import-ask")?.textContent ?? "", rows: document.querySelectorAll(".song-import-row").length, editor: !!${editor} })`,
+      );
+      assert.equal(asked.sheet, true, `the sheet stays after Open (${js(asked)})`);
+      assert.ok(asked.question.includes("Leave without saving 2 songs?"), `it asks first (${js(asked)})`);
+      assert.equal(asked.rows, 2, "the rows are kept");
+      assert.equal(asked.editor, false, "the row's editor makes way for the question");
+      await tapIn(button("Leave", sheet), "Leave");
+      await app.until(`!${sheet}`, "the sheet closed by Leave");
+      await app.until(`document.querySelector(".sheet .sheet-name")?.textContent === "Pebble Have It"`, "the song Open asked for");
+      assert.equal((await songsTitled("Pebble Not Yet")).length, 0, "nothing saved by leaving");
+
+      // The phone's back, to the page before My Songs.
+      await s.evaluate(`location.hash = "#/setlists"`);
+      await sleep(300);
+      await openImport();
+      await pick([write("back-one.txt", chartOf("Pebble Back One"))]);
+      await allRead(1);
+      await s.evaluate(`history.back()`);
+      await app.until(`location.hash === "#/setlists"`, "the page before My Songs");
+      await sleep(400);
+      assert.ok((await s.evaluate<string>(`${sheet}?.querySelector(".song-import-ask")?.textContent ?? ""`)).includes("Leave without saving 1 song?"), "back asks first");
+      await tapIn(button("Stay", sheet), "Stay");
+      assert.deepEqual(
+        (await rowsOf()).map((row) => row.name),
+        ["back-one.txt"],
+        "Stay keeps the row",
+      );
+      await tapIn(button("Save 1 song", sheet), "Save 1 song");
+      await app.until(`(${sheet}?.querySelector(".song-import-done")?.textContent ?? "").includes("1 song saved")`, "1 song saved");
+      await s.evaluate(`location.hash = "#/songs"`);
+      await app.until(`!${sheet}`, "with nothing unsaved, a change of page closes the sheet");
+      assert.equal(await s.evaluate<boolean>(`!!document.querySelector(".song-import-ask")`), false, "with no question");
+      assert.equal((await songsTitled("Pebble Back One")).length, 1, "the saved row is in My Songs once");
+    });
+
+    await check(SCREEN_CASES.B6c, async () => {
+      await closeImport();
+      await onSongs();
+      const title = "Pebble Timed";
+      const id = await inPage<number>(
+        `__read.storage.addOwnSong({ ...__read.ownSong({ title: ${js(title)}, artist: "The Made Up Band", keyRoot: "A", keyMode: "major", tempo: 96, timeSignature: "4/4" }, [{ heading: "Verse 1", lines: [{ chords: "A", lyrics: "Zorble old words" }] }]), officialRuntimeSec: 200 })`,
+      );
+      assert.ok(id, "the own song is stored");
+      await s.send("Page.reload");
+      await app.library();
+      await openImport();
+      await pick([write("timed.txt", chartOf(title))]);
+      await allRead(1);
+      await tapIn(rowButton("timed.txt", "Replace"), "Replace on timed.txt");
+      await tapIn(`${sheet}.querySelector(".song-import-ask .is-danger")`, "Replace in the question");
+      await app.until(`document.querySelector(".song-import-row")?.dataset.mark === "saved"`, "the row saved");
+      const after = (await library()).find((song) => song.id === id) as (Song & { officialRuntimeSec: number | null }) | undefined;
+      await closeImport();
+      assert.ok(after, "the same id");
+      assert.ok(JSON.stringify(after.body).includes("Tumble along") && !JSON.stringify(after.body).includes("Zorble"), "the new chart");
+      assert.equal(after.tempo, 96, "the tempo the player set");
+      assert.equal(after.officialRuntimeSec, 200, "the length the player set");
+      assert.equal(after.title, title, "the title");
+    });
+
+    await check(SCREEN_CASES.U16, async () => {
+      const name = "willow-other.docx";
+      await openImport();
+      await pick([write(name, docx(documentXml(WILLOW.map((line) => line.replace("Willow Creek", "Willow Other")), "Arial")))]);
+      await allRead(1);
+      assert.ok((await rowsOf())[0].text.includes("Chords may sit over the wrong word."), "the fonts reason");
+      const shown = async () => {
+        await tapIn(`[...document.querySelectorAll(".song-import-open")].find((b) => b.textContent.trim() === ${js(name)})`, `the ${name} row`);
+        await app.until(`!!document.querySelector(".song-import-preview .chart .pair")`, "the row's sheet");
+        const text = await pairsIn(".song-import-preview");
+        await tapIn(button("Back to the list", sheet), "Back to the list");
+        return text;
+      };
+      const first = await shown();
+      await tapIn(rowButton(name, "Try the other reading"), "Try the other reading");
+      const second = await shown();
+      await tapIn(rowButton(name, "Try the other reading"), "Try the other reading again");
+      const third = await shown();
+      assert.notEqual(second, first, `the other reading is another sheet (${js([first, second])})`);
+      assert.ok(second.includes("G           C|Willow branches on the creek"), `the other reading keeps the typed columns (${js(second)})`);
+      assert.equal(third, first, "a second tap swaps back");
+      await tapIn(rowButton(name, "Try the other reading"), "Try the other reading a third time");
+      await tapIn(button("Save 1 song", sheet), "Save 1 song");
+      await app.until(`(${sheet}?.querySelector(".song-import-done")?.textContent ?? "").includes("1 song saved")`, "1 song saved");
+      await closeImport();
+      const [saved] = await songsTitled("Willow Other");
+      assert.ok(saved, "Willow Other is saved");
+      await s.evaluate(`location.hash = "#/song/${saved.id}"`);
+      await app.until(`!!document.querySelector(".sheet .chart .pair")`, "the saved sheet");
+      assert.equal(await pairsIn(".sheet"), second, "the saved sheet is the reading shown");
     });
 
     await check(SCREEN_CASES.B9s, async () => {

@@ -663,6 +663,20 @@ await check("B5. a row whose title and artist match a song in My Songs is flagge
   assert.equal(rowOf(storage.getItem("leadSheetsLibrary")!, firstId!), rowOf(rawBefore, firstId!), "its stored bytes are unchanged");
 });
 
+await check("B6t. Replace keeps the player's time and key when the file names none, takes the file's when it names them, and a new song with neither is 4/4 in C major", () => {
+  const { songOf, draftOf } = M();
+  const waltz = { ...songNamed("Pebble Waltz"), keyRoot: "G", keyMode: "minor" as const, keyLabel: "G minor", timeSignature: "3/4", tempo: 90, officialRuntimeSec: 180 };
+  const words = draftOf({ text: "Pebble Waltz\n\n[Verse 1]\nPebbles tumble down the creek\nOver moss and over stone\n" }, "waltz.txt");
+  assert.deepEqual([songOf(words, waltz).keyRoot, songOf(words, waltz).keyMode, songOf(words, waltz).keyLabel], ["G", "minor", "G minor"], "a file with no key and no chords keeps the player's G minor");
+  assert.deepEqual([songOf(words).keyRoot, songOf(words).keyMode, songOf(words).timeSignature], ["C", "major", "4/4"], "a new song from it is C major in 4/4");
+  const silent = draftOf({ text: chartOf("Pebble Waltz") }, "waltz.txt");
+  const timed = draftOf({ text: chartOf("Pebble Waltz").replace("Key: A", "Key: A\nTime: 6/8") }, "waltz.txt");
+  assert.equal(songOf(silent, waltz).timeSignature, "3/4", "a file with no time line keeps the player's 3/4");
+  assert.equal(songOf(timed, waltz).timeSignature, "6/8", "a file that names 6/8 gives 6/8");
+  assert.equal(songOf(silent).timeSignature, "4/4", "a new song from a file with no time line is 4/4");
+  assert.equal(songOf(timed).timeSignature, "6/8", "a new song from a file that names 6/8 is 6/8");
+});
+
 await check("B7. two files with the same bytes give one ready row and one skipped row; two with the same title and different bytes give one ready row and one flagged row", async () => {
   const same = await pileOf([picked("harbor.txt", HARBOR), picked("harbor copy.txt", HARBOR)]);
   const [first, second] = same.rows.map(ready);
@@ -848,7 +862,7 @@ const SCREEN_CASES = {
   U11: "U11. a drag of two files onto My Songs opens the sheet with two rows",
   U14: "U14. a file dropped on My Songs while + Add a song holds a typed song is taken by the page, opens no sheet, and leaves the typed song open",
   U15: "U15. a change of page with unsaved rows keeps the sheet and asks first, for Open on the editor's You already have and for the phone's back; Leave then shows the page, and with nothing unsaved a change of page closes the sheet",
-  B6c: "B6c. Replace changes the chart and keeps the tempo and length the player set when the file has none",
+  B6c: "B6c. Replace changes the chart and keeps the tempo, time and length the player set when the file has none",
   U16: "U16. Try the other reading swaps the row's sheet, a second tap swaps back, and Save stores the reading shown",
   B9s: "B9b. on the sheet, Reading N of 40 shows while a pile reads, Stop keeps the rows that are done and reads no more, and a pick after it reads again",
   U12: "U12. with two ready rows showing, a 401 ends the session and the sheet closes with no question; a second account then sees it closed, opens Import files on Choose files with no row, and holds no song from the pile",
@@ -1537,7 +1551,7 @@ if (site) {
       await onSongs();
       const title = "Pebble Timed";
       const id = await inPage<number>(
-        `__read.storage.addOwnSong({ ...__read.ownSong({ title: ${js(title)}, artist: "The Made Up Band", keyRoot: "A", keyMode: "major", tempo: 96, timeSignature: "4/4" }, [{ heading: "Verse 1", lines: [{ chords: "A", lyrics: "Zorble old words" }] }]), officialRuntimeSec: 200 })`,
+        `__read.storage.addOwnSong({ ...__read.ownSong({ title: ${js(title)}, artist: "The Made Up Band", keyRoot: "A", keyMode: "major", tempo: 96, timeSignature: "3/4" }, [{ heading: "Verse 1", lines: [{ chords: "A", lyrics: "Zorble old words" }] }]), officialRuntimeSec: 200 })`,
       );
       assert.ok(id, "the own song is stored");
       await s.send("Page.reload");
@@ -1554,6 +1568,7 @@ if (site) {
       assert.ok(JSON.stringify(after.body).includes("Tumble along") && !JSON.stringify(after.body).includes("Zorble"), "the new chart");
       assert.equal(after.tempo, 96, "the tempo the player set");
       assert.equal(after.officialRuntimeSec, 200, "the length the player set");
+      assert.equal(after.timeSignature, "3/4", "the time the player set, since the file names none");
       assert.equal(after.title, title, "the title");
     });
 

@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { content } from "./band-library";
+import { tempoChoices } from "./bpm-detect";
 import { useEscape } from "./hooks";
 import { useMetronome } from "./metronome-view";
 import { songHref } from "./route";
@@ -8,17 +9,17 @@ import { YouHaveIt } from "./search-box";
 import { LeadSheet } from "./sheet";
 import { BpmField, parseBpm, SongDataEditor } from "./song-data-editor";
 // The half with no screen is "./song-search.js", as it is in song-search.tsx.
-import { lengthText, pasteLookup, type CatalogSong, type Lookup } from "./song-search.js";
+import { chordsSearchUrl, lengthText, pasteLookup, type CatalogSong, type Lookup } from "./song-search.js";
 // @ts-expect-error TS5097: song-search.ts holds the same stem, so only ".tsx" names this file in tsc, Vite and esbuild.
-import { browserSearcher, FindChords, SongSearch } from "./song-search.tsx";
+import { browserSearcher, SongSearch, WebSearchLink } from "./song-search.tsx";
 import { CAPO_VIEW, capoNote, readPaste, type CapoView, type LeftOut, type Pasted } from "./song-paste";
 import { KEY_ROOTS, ownSong, parseSheet, sectionsToText, sheetProblem, type SongFacts, type SongMeta } from "./song-text";
 import { addOwnSong, removeOwnSong, replaceOwnSong, saveSongData, songByRef, withSongData } from "./storage";
-import type { KeyMode, Song, SongData } from "./types";
+import type { ChartSection, KeyMode, Song, SongData } from "./types";
 import "./song-editor.css";
 
-/** Which song sheet is open over the page: timing, a new song, the open song's chart, or the Delete question. */
-export type SongEdit = "timing" | "new" | "chart" | "delete";
+/** Which song sheet is open over the page: timing, a new song, the open song's chart, a paste from the start panel, or Delete. */
+export type SongEdit = "timing" | "new" | "chart" | "delete" | { paste: string };
 
 const NOT_SAVED = "This phone couldn't save the song. Free some space and try again.";
 const BAD_BPM = "BPM must be a whole number the metronome can play";
@@ -78,20 +79,30 @@ function formWithPaste(form: Form, paste: Paste, open: (field: keyof Form) => bo
   return next;
 }
 
+const hasLyrics = (sections: ChartSection[]) => sections.some((section) => section.lines.some((line) => Boolean(line.lyrics?.trim())));
+const hasChords = (sections: ChartSection[]) => sections.some((section) => section.lines.some((line) => Boolean(line.chords?.trim() || line.bars?.trim())));
+
 /** A fact that differs from what the form holds, as one tap that takes it. */
 function chipsFor(form: Form, facts: SongFacts): { label: string; take: Partial<Form> }[] {
   const bpm = bpmOf(facts);
+  const altTempos =
+    bpm && bpm === form.bpm
+      ? tempoChoices(Number(bpm))
+          .filter((choice) => choice.feel !== "Suggested" && String(choice.bpm) !== form.bpm)
+          .map((choice) => ({ label: `Use ${choice.bpm} bpm (${choice.feel.toLowerCase()})`, take: { bpm: String(choice.bpm) } }))
+      : [];
   return [
     ...(facts.keyRoot && facts.keyMode && (facts.keyRoot !== form.keyRoot || facts.keyMode !== form.keyMode)
       ? [{ label: `Use ${facts.keyRoot} ${facts.keyMode}`, take: { keyRoot: facts.keyRoot, keyMode: facts.keyMode } }]
       : []),
     ...(bpm && bpm !== form.bpm ? [{ label: `Use ${bpm} bpm`, take: { bpm } }] : []),
+    ...altTempos,
     ...(facts.timeSignature && facts.timeSignature !== form.timeSignature ? [{ label: `Use ${facts.timeSignature}`, take: { timeSignature: facts.timeSignature } }] : []),
   ];
 }
 
 /** What the paste found and what it left out, in the player's words. */
-function pasteStatus({ view, pasted }: Paste): string {
+function pasteStatus({ view, pasted }: Paste, wordsBelow = false): string {
   if (view === "raw") return pasted.chart.trim() ? "It is in the box as pasted." : NOTHING;
   const { facts, leftOut } = pasted;
   const found = [
@@ -101,7 +112,8 @@ function pasteStatus({ view, pasted }: Paste): string {
     ...(facts.capo ? [`capo ${facts.capo}`] : []),
   ];
   const left = leftOut.map(({ count, what }) => `${count} ${count === 1 ? LEFT_OUT[what] : what}`);
-  const words = [found.length ? `Found ${found.join(", ")}.` : "Taken as words.", ...(left.length ? [`Left out ${list(left)}.`] : [])];
+  const lead = wordsBelow ? "Taken as words. Words go below the chart so the chords stay." : found.length ? `Found ${found.join(", ")}.` : "Taken as words.";
+  const words = [lead, ...(left.length ? [`Left out ${list(left)}.`] : [])];
   return words.join(" ");
 }
 
@@ -125,9 +137,30 @@ export function SongEditors({
   if (editing === "new") return <SongEditor songs={songs} onClose={onClose} />;
   if (!song) return null;
   if (editing === "chart") return <SongEditor song={song} songs={songs} onTempo={(tempo) => onTempo(song, tempo)} onClose={onClose} />;
+  if (typeof editing === "object" && editing !== null) {
+    return <SongEditor song={song} songs={songs} initialPaste={editing.paste} onTempo={(tempo) => onTempo(song, tempo)} onClose={onClose} />;
+  }
   if (editing === "delete") return <DeleteSong song={song} onClose={onClose} />;
   if (editing === "timing") return <SongDataEditor song={song} original={withSongData(songByRef(songs, song.ref)!, {})} onSave={(data) => onSongData(song, data)} onClose={onClose} />;
   return null;
+}
+
+/** Initial editor state, including a paste handed in from the start panel. */
+function initialEditor(song: Song | undefined, initialPaste: string | undefined) {
+  const base = formOf(song);
+  if (initialPaste === undefined) return { form: base, paste: null as Paste | null, short: false, note: "", wordsBelow: false };
+  if (!initialPaste.trim()) return { form: base, paste: null as Paste | null, short: false, note: "Paste your sheet into the box.", wordsBelow: false };
+  const pasted = readPaste(initialPaste);
+  const existing = base.chart;
+  if (!pasted.chart.trim()) {
+    const rawPaste: Paste = { raw: initialPaste, before: existing, view: "raw", pasted: { facts: {}, chart: "", leftOut: [] } };
+    return { form: formWithPaste(base, rawPaste, () => false), paste: rawPaste, short: false, note: "", wordsBelow: false };
+  }
+  const chordsOnlySong = Boolean(song && hasChords(song.body) && !hasLyrics(song.body));
+  const pastedSections = parseSheet(pasted.chart).sections;
+  const wordsBelow = Boolean(chordsOnlySong && hasLyrics(pastedSections) && !hasChords(pastedSections));
+  const next: Paste = { raw: initialPaste, before: wordsBelow ? existing : "", view: CAPO_VIEW, pasted };
+  return { form: formWithPaste(base, next, (field) => base[field].trim() === ""), paste: next, short: true, note: "", wordsBelow };
 }
 
 /**
@@ -135,21 +168,36 @@ export function SongEditors({
  * drawn below by the normal chart as it is typed. Nothing here talks to the server. A paste that leaves the title or
  * artist blank asks the public song catalog for them, and what it finds waits as guesses the player taps.
  */
-function SongEditor({ song, songs, onTempo, onClose }: { song?: Song; songs: Song[]; onTempo?: (tempo: number | null) => void; onClose: () => void }) {
+function SongEditor({
+  song,
+  songs,
+  initialPaste,
+  onTempo,
+  onClose,
+}: {
+  song?: Song;
+  songs: Song[];
+  initialPaste?: string;
+  onTempo?: (tempo: number | null) => void;
+  onClose: () => void;
+}) {
   const titleId = useId();
   const ids = { title: useId(), artist: useId(), key: useId(), mode: useId(), time: useId(), chart: useId(), hint: useId(), details: useId() };
-  const [form, setForm] = useState(() => formOf(song));
+  const [start] = useState(() => initialEditor(song, initialPaste));
+  const [form, setForm] = useState(() => start.form);
+  const [short, setShort] = useState(() => start.short);
+  const [wordsBelow, setWordsBelow] = useState(() => start.wordsBelow);
   /** Whether the player wants the details open. With no title they are open either way. */
-  const [detailsWanted, setDetailsWanted] = useState(() => !form.title.trim());
+  const [detailsWanted, setDetailsWanted] = useState(() => !start.form.title.trim());
   const [lookup, setLookup] = useState<Lookup>({ kind: "idle" });
   /** The guess the player tapped, as the fields held it then. Its length is stored while they still do. */
   const [took, setTook] = useState<{ title: string; artist: string; lengthSec: number | null } | null>(null);
   const searcher = useMemo(browserSearcher, []);
   const titleRef = useRef<HTMLInputElement>(null);
   const [problem, setProblem] = useState("");
-  const [pasteNote, setPasteNote] = useState("");
+  const [pasteNote, setPasteNote] = useState(() => start.note);
   const [have, setHave] = useState<Song | null>(null);
-  const [pasting, setPasting] = useState<Paste | null>(null);
+  const [pasting, setPasting] = useState<Paste | null>(() => start.paste);
   /** How many pastes the editor has taken. Each one brings the preview into view; a switch of the same paste does not. */
   const [taken, setTaken] = useState(0);
   const touched = useRef(new Set<keyof Form>());
@@ -182,6 +230,9 @@ function SongEditor({ song, songs, onTempo, onClose }: { song?: Song; songs: Son
 
   useEscape(onClose);
   useEffect(() => searcher.stop, [searcher]);
+  useEffect(() => {
+    if (start.note) chartRef.current?.focus();
+  }, [start.note]);
   useEffect(() => {
     if (!taken) return;
     previewRef.current?.scrollIntoView({ block: "start" });
@@ -225,6 +276,7 @@ function SongEditor({ song, songs, onTempo, onClose }: { song?: Song; songs: Son
   const takePaste = (raw: string, before: string) => {
     const pasted = readPaste(raw);
     const next: Paste = pasted.chart.trim() ? { raw, before, view: CAPO_VIEW, pasted } : { raw, before, view: "raw", pasted: { facts: {}, chart: "", leftOut: [] } };
+    setWordsBelow(false);
     show(next);
     setTaken((count) => count + 1);
     // A paste folds the details away, so the chart it brought has the screen. With no title they stay open.
@@ -275,6 +327,7 @@ function SongEditor({ song, songs, onTempo, onClose }: { song?: Song; songs: Son
     const refusal = sheetProblem(meta, parsed.sections) ?? (form.bpm.trim() && tempo == null ? BAD_BPM : null);
     if (refusal) {
       setProblem(refusal);
+      setShort(false);
       // The field the message is about comes into view: the title with the caret in it, or the folded BPM.
       if (untitled) pointAtTitle();
       else if (refusal === BAD_BPM) setDetailsWanted(true);
@@ -295,10 +348,47 @@ function SongEditor({ song, songs, onTempo, onClose }: { song?: Song; songs: Son
     onClose();
   };
 
+  const pasteSummary = (
+    <>
+      {fresh ? (
+        <div className="song-editor-paste">
+          <p className="song-editor-hint" role="status">
+            {pasteStatus(fresh, wordsBelow)}
+          </p>
+          <div className="song-editor-paste-actions">
+            {chipsFor(form, fresh.pasted.facts).map(({ label, take }) => (
+              <button key={label} type="button" onClick={() => takeChip(take)}>
+                {label}
+              </button>
+            ))}
+            {fresh.view !== "raw" && fresh.pasted.facts.capo ? (
+              <button type="button" aria-pressed={fresh.view === "shapes"} onClick={() => switchTo(fresh, fresh.view === "shapes" ? "sounding" : "shapes")}>
+                {fresh.view === "shapes" ? "Show chords as they sound" : "Show guitar shapes"}
+              </button>
+            ) : null}
+            {fresh.view !== "raw" && fresh.pasted.chart !== fresh.raw ? (
+              <button type="button" onClick={() => switchTo(fresh, "raw")}>
+                Use it as pasted
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+      {CAPO_NOTE.test(form.keyNote) ? (
+        <div className="song-editor-paste-actions song-editor-capo">
+          <span className="song-editor-hint">{form.keyNote}</span>
+          <button type="button" onClick={() => set("keyNote")("")}>
+            Remove capo note
+          </button>
+        </div>
+      ) : null}
+    </>
+  );
+
   return (
     <div className="song-editor-backdrop">
       <form
-        className="song-editor"
+        className={short ? "song-editor is-short" : "song-editor"}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -307,141 +397,116 @@ function SongEditor({ song, songs, onTempo, onClose }: { song?: Song; songs: Son
           save();
         }}
       >
-        <h2 id={titleId}>{song ? "Edit song" : "New song"}</h2>
-        {!song && !form.title && !form.artist && !form.chart ? <SongSearch songs={songs} /> : null}
-        <button
-          type="button"
-          className="song-editor-fold"
-          aria-expanded={detailsOpen}
-          aria-controls={ids.details}
-          aria-label={detailsOpen ? undefined : `Song details: ${summary}`}
-          onClick={() => setDetailsWanted(!detailsOpen)}
-        >
-          <span>{detailsOpen ? "Song details" : summary}</span>
-        </button>
-        <div className="song-editor-fields" id={ids.details} hidden={!detailsOpen}>
-          <div className="song-data-field">
-            <label htmlFor={ids.title}>Title</label>
-            <input
-              id={ids.title}
-              ref={titleRef}
-              autoComplete="off"
-              placeholder="Needed to save"
-              aria-required="true"
-              aria-invalid={untitled || undefined}
-              value={form.title}
-              onChange={(event) => set("title")(event.target.value)}
-            />
-          </div>
-          <div className="song-data-field">
-            <label htmlFor={ids.artist}>Artist</label>
-            <input id={ids.artist} autoComplete="off" value={form.artist} onChange={(event) => set("artist")(event.target.value)} />
-          </div>
-          <div className="song-data-field">
-            <label htmlFor={ids.key}>Key</label>
-            <span className="song-editor-key">
-              <select id={ids.key} value={form.keyRoot} onChange={(event) => set("keyRoot")(event.target.value)}>
-                {[...new Set([...KEY_ROOTS, form.keyRoot])].map((root) => (
-                  <option key={root}>{root}</option>
-                ))}
-              </select>
-              <select id={ids.mode} aria-label="Major or minor" value={form.keyMode} onChange={(event) => set("keyMode")(event.target.value === "minor" ? "minor" : "major")}>
-                <option value="major">major</option>
-                <option value="minor">minor</option>
-              </select>
-            </span>
-          </div>
-          <BpmField value={form.bpm} placeholder="bpm" onChange={set("bpm")} />
-          <div className="song-data-field">
-            <label htmlFor={ids.time}>Time signature</label>
-            <input id={ids.time} autoComplete="off" value={form.timeSignature} onChange={(event) => set("timeSignature")(event.target.value)} />
-          </div>
-        </div>
-
-        <div className="song-editor-chart">
-          <label htmlFor={ids.chart}>Chart</label>
-          <p className="song-editor-hint" id={ids.hint}>
-            A blank line starts a section, and a line like VERSE 1 or Chorus: names it. Put chords on the line above the words, or in brackets: [A]Honey, load [E]up.
-          </p>
-          {form.title.trim() || form.artist.trim() ? <FindChords title={form.title} artist={form.artist} /> : null}
-          <div className="song-editor-tools">
-            {SECTION_BUTTONS.map((name) => (
-              <button key={name} type="button" onClick={() => addSection(name)}>
-                + {name}
-              </button>
-            ))}
-            <button type="button" onClick={paste}>
-              Paste a sheet
+        <h2 id={titleId}>{short ? (wordsBelow ? "Add words" : "Paste chart") : song ? "Edit song" : "New song"}</h2>
+        {short ? (
+          pasteSummary
+        ) : (
+          <>
+            {!song && !form.title && !form.artist && !form.chart ? <SongSearch songs={songs} /> : null}
+            <button
+              type="button"
+              className="song-editor-fold"
+              aria-expanded={detailsOpen}
+              aria-controls={ids.details}
+              aria-label={detailsOpen ? undefined : `Song details: ${summary}`}
+              onClick={() => setDetailsWanted(!detailsOpen)}
+            >
+              <span>{detailsOpen ? "Song details" : summary}</span>
             </button>
-          </div>
-          {pasteNote ? <p className="song-editor-hint" role="status">{pasteNote}</p> : null}
-          {fresh ? (
-            <div className="song-editor-paste">
-              <p className="song-editor-hint" role="status">
-                {pasteStatus(fresh)}
-              </p>
-              <div className="song-editor-paste-actions">
-                {chipsFor(form, fresh.pasted.facts).map(({ label, take }) => (
-                  <button key={label} type="button" onClick={() => takeChip(take)}>
-                    {label}
-                  </button>
-                ))}
-                {fresh.view !== "raw" && fresh.pasted.facts.capo ? (
-                  <button type="button" aria-pressed={fresh.view === "shapes"} onClick={() => switchTo(fresh, fresh.view === "shapes" ? "sounding" : "shapes")}>
-                    {fresh.view === "shapes" ? "Show chords as they sound" : "Show guitar shapes"}
-                  </button>
-                ) : null}
-                {fresh.view !== "raw" && fresh.pasted.chart !== fresh.raw ? (
-                  <button type="button" onClick={() => switchTo(fresh, "raw")}>
-                    Use it as pasted
-                  </button>
-                ) : null}
+            <div className="song-editor-fields" id={ids.details} hidden={!detailsOpen}>
+              <div className="song-data-field">
+                <label htmlFor={ids.title}>Title</label>
+                <input
+                  id={ids.title}
+                  ref={titleRef}
+                  autoComplete="off"
+                  placeholder="Needed to save"
+                  aria-required="true"
+                  aria-invalid={untitled || undefined}
+                  value={form.title}
+                  onChange={(event) => set("title")(event.target.value)}
+                />
+              </div>
+              <div className="song-data-field">
+                <label htmlFor={ids.artist}>Artist</label>
+                <input id={ids.artist} autoComplete="off" value={form.artist} onChange={(event) => set("artist")(event.target.value)} />
+              </div>
+              <div className="song-data-field">
+                <label htmlFor={ids.key}>Key</label>
+                <span className="song-editor-key">
+                  <select id={ids.key} value={form.keyRoot} onChange={(event) => set("keyRoot")(event.target.value)}>
+                    {[...new Set([...KEY_ROOTS, form.keyRoot])].map((root) => (
+                      <option key={root}>{root}</option>
+                    ))}
+                  </select>
+                  <select id={ids.mode} aria-label="Major or minor" value={form.keyMode} onChange={(event) => set("keyMode")(event.target.value === "minor" ? "minor" : "major")}>
+                    <option value="major">major</option>
+                    <option value="minor">minor</option>
+                  </select>
+                </span>
+              </div>
+              <BpmField value={form.bpm} placeholder="bpm" onChange={set("bpm")} />
+              <div className="song-data-field">
+                <label htmlFor={ids.time}>Time signature</label>
+                <input id={ids.time} autoComplete="off" value={form.timeSignature} onChange={(event) => set("timeSignature")(event.target.value)} />
               </div>
             </div>
-          ) : null}
-          {CAPO_NOTE.test(form.keyNote) ? (
-            <div className="song-editor-paste-actions song-editor-capo">
-              <span className="song-editor-hint">{form.keyNote}</span>
-              <button type="button" onClick={() => set("keyNote")("")}>
-                Remove capo note
-              </button>
+
+            <div className="song-editor-chart">
+              <label htmlFor={ids.chart}>Chart</label>
+              <p className="song-editor-hint" id={ids.hint}>
+                A blank line starts a section, and a line like VERSE 1 or Chorus: names it. Put chords on the line above the words, or in brackets: [A]Honey, load [E]up.
+              </p>
+              {form.title.trim() || form.artist.trim() ? <WebSearchLink label="Find chords on the web" href={chordsSearchUrl(form.title, form.artist)} /> : null}
+              <div className="song-editor-tools">
+                {SECTION_BUTTONS.map((name) => (
+                  <button key={name} type="button" onClick={() => addSection(name)}>
+                    + {name}
+                  </button>
+                ))}
+                <button type="button" onClick={paste}>
+                  Paste a sheet
+                </button>
+              </div>
+              {pasteNote ? <p className="song-editor-hint" role="status">{pasteNote}</p> : null}
+              {pasteSummary}
+              <textarea
+                id={ids.chart}
+                ref={chartRef}
+                className="song-editor-text"
+                aria-describedby={ids.hint}
+                spellCheck={false}
+                autoCapitalize="off"
+                wrap="off"
+                rows={12}
+                placeholder={"VERSE 1\nA               E\nHoney, load up your questions"}
+                value={form.chart}
+                onChange={(event) => set("chart")(event.target.value)}
+                onPaste={(event) => {
+                  const text = event.clipboardData.getData("text/plain");
+                  const box = event.currentTarget;
+                  // A paste over the whole box takes its place, as a paste into an empty box does.
+                  const whole = box.selectionStart === 0 && box.selectionEnd === box.value.length;
+                  if (!text.trim() || (form.chart.trim() && !whole)) return;
+                  event.preventDefault();
+                  const chart = takePaste(text, "");
+                  // The browser's own edit, so Ctrl+Z brings back what the box held. Where insertText is gone, the state above still shows the chart.
+                  box.setSelectionRange(0, box.value.length);
+                  document.execCommand("insertText", false, chart);
+                }}
+              />
+              {parsed.warnings.length > 0 ? (
+                <ul className="song-editor-warnings">
+                  {parsed.warnings.map((warning) => (
+                    <li key={warning.line}>
+                      Line {warning.line}: {warning.message}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
             </div>
-          ) : null}
-          <textarea
-            id={ids.chart}
-            ref={chartRef}
-            className="song-editor-text"
-            aria-describedby={ids.hint}
-            spellCheck={false}
-            autoCapitalize="off"
-            wrap="off"
-            rows={12}
-            placeholder={"VERSE 1\nA               E\nHoney, load up your questions"}
-            value={form.chart}
-            onChange={(event) => set("chart")(event.target.value)}
-            onPaste={(event) => {
-              const text = event.clipboardData.getData("text/plain");
-              const box = event.currentTarget;
-              // A paste over the whole box takes its place, as a paste into an empty box does.
-              const whole = box.selectionStart === 0 && box.selectionEnd === box.value.length;
-              if (!text.trim() || (form.chart.trim() && !whole)) return;
-              event.preventDefault();
-              const chart = takePaste(text, "");
-              // The browser's own edit, so Ctrl+Z brings back what the box held. Where insertText is gone, the state above still shows the chart.
-              box.setSelectionRange(0, box.value.length);
-              document.execCommand("insertText", false, chart);
-            }}
-          />
-          {parsed.warnings.length > 0 ? (
-            <ul className="song-editor-warnings">
-              {parsed.warnings.map((warning) => (
-                <li key={warning.line}>
-                  Line {warning.line}: {warning.message}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
+          </>
+        )}
 
         <section className="song-editor-preview" aria-label="Preview" ref={previewRef}>
           <h3>Preview</h3>
@@ -450,7 +515,7 @@ function SongEditor({ song, songs, onTempo, onClose }: { song?: Song; songs: Son
               {untitled ? (
                 <div className="song-editor-paste-actions song-editor-capo">
                   <span className="song-editor-hint">This song needs a title before it can be saved.</span>
-                  <button type="button" onClick={pointAtTitle}>
+                  <button type="button" onClick={() => { setShort(false); pointAtTitle(); }}>
                     Add a title
                   </button>
                 </div>
@@ -495,8 +560,13 @@ function SongEditor({ song, songs, onTempo, onClose }: { song?: Song; songs: Son
           <button type="button" onClick={onClose}>
             Cancel
           </button>
+          {short ? (
+            <button type="button" onClick={() => setShort(false)}>
+              Edit text
+            </button>
+          ) : null}
           <button type="submit" className="is-primary">
-            Save
+            {short && wordsBelow ? "Add below the chart" : "Save"}
           </button>
         </div>
       </form>

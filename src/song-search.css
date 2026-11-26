@@ -55,7 +55,9 @@
 
 .song-search-row:focus-visible,
 .song-search-retry:focus-visible,
-.find-chords:focus-visible {
+.find-chords:focus-visible,
+.song-start-btn:focus-visible,
+.song-start-chip:focus-visible {
   outline: 2px solid var(--accent-text);
   outline-offset: 2px;
 }
@@ -67,15 +69,46 @@
   box-sizing: border-box;
   max-width: 100%;
   min-height: 48px;
-  padding: 0 20px;
+  padding: 8px 20px;
   border: var(--control-border);
   border-radius: 999px;
   background: var(--accent);
   color: var(--on-accent);
   font-weight: 700;
   font-size: 15px;
+  line-height: 1.25;
   text-align: center;
   text-decoration: none;
+  white-space: normal;
+}
+
+.find-chords.is-secondary,
+.song-start-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  max-width: 100%;
+  min-height: 48px;
+  padding: 8px 18px;
+  border: var(--control-border);
+  box-shadow: inset 0 0 0 1px var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  font-size: 15px;
+  line-height: 1.25;
+  text-align: center;
+  text-decoration: none;
+  white-space: normal;
+}
+
+.find-chords.is-secondary:hover,
+.song-start-btn:hover,
+.song-start-chip:hover {
+  background: var(--surface-2);
 }
 
 .song-search-start {
@@ -93,6 +126,64 @@
   margin: 0;
   color: var(--text-dim);
   font-size: 14px;
+  line-height: 1.45;
+}
+
+.song-search-start .song-start-lead {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.song-search-start.is-short .song-start-lead {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.song-start-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.song-start-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--divider);
+}
+
+.song-start-chip-label {
+  color: var(--text-dim);
+  font-size: 14px;
+}
+
+.song-start-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  max-width: 100%;
+  min-height: 44px;
+  padding: 6px 16px;
+  border: var(--control-border);
+  box-shadow: inset 0 0 0 1px var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+  text-align: center;
+  white-space: normal;
 }
 
 /* Inside New song the dialog already pads its edges. */

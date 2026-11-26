@@ -218,7 +218,7 @@ function SongEditor({
 }) {
   const titleId = useId();
   const ids = { title: useId(), artist: useId(), key: useId(), mode: useId(), time: useId(), chart: useId(), hint: useId(), details: useId() };
-  const [form, setForm] = useState(() => (start ? { ...start } : formOf(song)));
+  const [form, setForm] = useState(() => (start ? { ...start, keyRoot: start.keyRoot || "C", timeSignature: start.timeSignature || "4/4" } : formOf(song)));
   /** Whether the player wants the details open. With no title they are open either way. */
   const [detailsWanted, setDetailsWanted] = useState(() => !form.title.trim());
   const [lookup, setLookup] = useState<Lookup>({ kind: "idle" });

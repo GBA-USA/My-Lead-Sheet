@@ -863,6 +863,7 @@ const SCREEN_CASES = {
   U14: "U14. a file dropped on My Songs while + Add a song holds a typed song is taken by the page, opens no sheet, and leaves the typed song open",
   U15: "U15. a change of page with unsaved rows keeps the sheet and asks first, for Open on the editor's You already have and for the phone's back; Leave then shows the page, and with nothing unsaved a change of page closes the sheet",
   B6c: "B6c. Replace changes the chart and keeps the tempo, time and length the player set when the file has none",
+  B6e: "B6e. Edit on a row whose file names no key and no time opens the editor on C major in 4/4, and Save stores that",
   U16: "U16. Try the other reading swaps the row's sheet, a second tap swaps back, and Save stores the reading shown",
   B9s: "B9b. on the sheet, Reading N of 40 shows while a pile reads, Stop keeps the rows that are done and reads no more, and a pick after it reads again",
   U12: "U12. with two ready rows showing, a 401 ends the session and the sheet closes with no question; a second account then sees it closed, opens Import files on Choose files with no row, and holds no song from the pile",
@@ -1570,6 +1571,26 @@ if (site) {
       assert.equal(after.officialRuntimeSec, 200, "the length the player set");
       assert.equal(after.timeSignature, "3/4", "the time the player set, since the file names none");
       assert.equal(after.title, title, "the title");
+    });
+
+    await check(SCREEN_CASES.B6e, async () => {
+      const name = "pebble-words.txt";
+      await openImport();
+      await pick([write(name, "Pebble Words Chords\nby The Made Up Band\n\n[Verse 1]\nPebbles tumble down the creek\nOver moss and over stone\n")]);
+      await allRead(1);
+      await tapIn(`[...document.querySelectorAll(".song-import-open")].find((b) => b.textContent.trim() === ${js(name)})`, `the ${name} row`);
+      await tapIn(button("Edit", `document.querySelector(".song-import-preview")`), "Edit");
+      const editor = `document.querySelector(".song-editor[role=dialog]")`;
+      await app.until(`!!${editor}`, "the song editor");
+      const field = (label: string) => `[...${editor}.querySelectorAll("label")].find((l) => l.textContent.trim() === ${js(label)})?.control`;
+      assert.equal(await s.evaluate<string>(`${field("Key")}?.value`), "C", "the editor's key");
+      assert.equal(await s.evaluate<string>(`${field("Time signature")}?.value`), "4/4", "the editor's time");
+      await tapIn(button("Save", editor), "Save in the editor");
+      await app.until(`!${editor} && document.querySelector(".song-import-row")?.dataset.mark === "saved"`, "the row saved");
+      await closeImport();
+      const [saved] = await songsTitled("Pebble Words");
+      assert.ok(saved, "Pebble Words is saved");
+      assert.deepEqual([saved.keyLabel, saved.timeSignature], ["C major", "4/4"], "the saved key and time");
     });
 
     await check(SCREEN_CASES.U16, async () => {

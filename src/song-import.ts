@@ -31,7 +31,10 @@ export class Unread extends Error {
   }
 }
 
-/** The song a row would save. The same fields as the editor's form. */
+/**
+ * The song a row would save. The same fields as the editor's form. An empty `keyRoot` or `timeSignature` is a file that
+ * names none, so Replace keeps the player's.
+ */
 export type Draft = { title: string; artist: string; keyRoot: string; keyMode: KeyMode; bpm: string; timeSignature: string; chart: string; keyNote: string };
 
 /**
@@ -207,10 +210,10 @@ export function draftOf(extracted: Pick<Extracted, "text" | "title">, name: stri
   return {
     title: (facts.title?.trim() || extracted.title?.trim() || titleFromName(name)).slice(0, 200),
     artist: facts.artist?.trim() ?? "",
-    keyRoot: facts.keyRoot ?? "C",
+    keyRoot: facts.keyRoot ?? "",
     keyMode: facts.keyMode ?? "major",
     bpm: bpmText(facts.tempo),
-    timeSignature: facts.timeSignature ?? "4/4",
+    timeSignature: facts.timeSignature ?? "",
     chart,
     keyNote: facts.capo ? capoNote(facts.capo) : "",
   };
@@ -231,16 +234,18 @@ export const warningCount = (draft: Draft) => parseSheet(draft.chart).warnings.l
 
 /**
  * The song a draft saves, as the editor stores a new song. With `before`, the song it replaces: the chart, key and
- * time come from the file, and the title, artist, length and notes stay, the tempo too when the file gives none.
+ * time come from the file, and the title, artist, length and notes stay, the tempo, key and time too when the file gives
+ * none. A new song with no key or time is C major in 4/4.
  */
 export function songOf(draft: Draft, before?: Omit<Song, "ref" | "id">): Omit<Song, "ref" | "id"> {
+  const key = draft.keyRoot ? draft : (before ?? { keyRoot: "C", keyMode: "major" as const });
   const meta = {
     title: before?.title ?? draft.title,
     artist: before?.artist ?? draft.artist,
-    keyRoot: draft.keyRoot,
-    keyMode: draft.keyMode,
+    keyRoot: key.keyRoot,
+    keyMode: key.keyMode,
     tempo: parseBpm(draft.bpm) ?? before?.tempo ?? null,
-    timeSignature: draft.timeSignature,
+    timeSignature: draft.timeSignature || (before?.timeSignature ?? ""),
   };
   return { ...ownSong(meta, parseSheet(draft.chart).sections, before), keyNote: draft.keyNote || (before?.keyNote ?? "") };
 }

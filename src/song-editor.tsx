@@ -21,9 +21,46 @@ import "./song-editor.css";
 /** Which song sheet is open over the page: timing, a new song, the open song's chart, the Delete question, or Import files. */
 export type SongEdit = "timing" | "new" | "chart" | "delete" | "import";
 
-/** Import files and its readers load on the first tap, so the main script keeps its size. The service worker holds every built file, so it opens offline too. */
-// @ts-expect-error TS5097: song-import.ts holds the same stem, so only ".tsx" names this file in tsc, Vite and esbuild.
-const SongImport = lazy(() => import("./song-import.tsx").then((module) => ({ default: module.SongImport })));
+/**
+ * Import files and its readers load on the first tap, so the main script keeps its size. The service worker holds
+ * every built file, so it opens offline too. Code that still cannot load shows why, and the next tap loads again.
+ */
+const loadImport = () =>
+  lazy(() =>
+    // @ts-expect-error TS5097: song-import.ts holds the same stem, so only ".tsx" names this file in tsc, Vite and esbuild.
+    import("./song-import.tsx").then(
+      (module: { SongImport: (props: ImportProps) => ReactNode }) => ({ default: module.SongImport }),
+      () => ({ default: ImportUnloaded }),
+    ),
+  );
+type ImportProps = { songs: Song[]; files: File[]; editor: (start: Draft, done: (songId: number | null) => void) => ReactNode; onClose: () => void };
+let SongImport = loadImport();
+
+const NOT_LOADED = "Import files couldn't load. Check your connection and try again.";
+
+function ImportUnloaded({ onClose }: ImportProps) {
+  const titleId = useId();
+  const close = () => {
+    SongImport = loadImport();
+    onClose();
+  };
+  useEscape(close);
+  return (
+    <div className="song-data-backdrop" onClick={close}>
+      <div className="song-data" role="alertdialog" aria-modal="true" aria-labelledby={titleId} onClick={(event) => event.stopPropagation()}>
+        <h2 id={titleId}>Import files</h2>
+        <p className="song-editor-problem" role="alert">
+          {NOT_LOADED}
+        </p>
+        <div className="song-data-actions">
+          <button type="button" onClick={close}>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const NOT_SAVED = "This phone couldn't save the song. Free some space and try again.";
 const BAD_BPM = "BPM must be a whole number the metronome can play";

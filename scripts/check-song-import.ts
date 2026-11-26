@@ -1609,6 +1609,30 @@ if (site) {
       assert.ok(opened >= 10, "the sheet opened");
       assert.deepEqual(errors, []);
     });
+
+    await check("screen. when the sheet's code cannot load, Import files says why and Close returns to My Songs, and the next tap opens the sheet", async () => {
+      await s.send("Network.enable");
+      await s.send("Network.setBypassServiceWorker", { bypass: true });
+      await s.send("Network.setBlockedURLs", { urls: ["*song-import-*.js"] });
+      try {
+        await s.evaluate(`location.hash = "#/songs"`);
+        await s.send("Page.reload");
+        await app.library();
+        await app.until(`!!${importButton}`, "the Import files button", 10000);
+        await s.evaluate(`${importButton}.click()`);
+        const words = "Import files couldn't load. Check your connection and try again.";
+        await app.until(`(document.querySelector("[role=alertdialog]")?.textContent ?? "").includes(${js(words)})`, "the words for code that cannot load", 8000);
+        assert.equal(await s.evaluate<boolean>(`!!document.querySelector(".missing")`), false, "the page itself stays up");
+        await s.evaluate(`${button("Close", `document.querySelector("[role=alertdialog]")`)}.click()`);
+        await app.until(`!document.querySelector("[role=alertdialog]") && !!${importButton}`, "My Songs again", 5000);
+      } finally {
+        await s.send("Network.setBlockedURLs", { urls: [] });
+        await s.send("Network.setBypassServiceWorker", { bypass: false });
+      }
+      await s.evaluate(`${importButton}.click()`);
+      await app.until(`!!${sheet} && !!${button("Choose files", sheet)}`, "the sheet on the next tap", 8000);
+      await closeImport();
+    });
   } finally {
     await s.close();
   }

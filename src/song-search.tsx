@@ -3,9 +3,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { songHref } from "./route";
 import { songYouHave } from "./search";
 import { YouHaveIt } from "./search-box";
-import { catalogSearcher, chartSearchUrl, lengthText, type CatalogSong, type Floor, type SearchState } from "./song-search.js";
+import { catalogSearcher, lengthText, type CatalogSong, type Floor, type SearchState } from "./song-search.js";
 import { ownSong } from "./song-text";
-import { addOwnSong, madeHere } from "./storage";
+import { addOwnSong } from "./storage";
 import type { Song } from "./types";
 import "./song-search.css";
 
@@ -114,22 +114,11 @@ export function SongSearch({ songs }: { songs: Song[] }) {
   );
 }
 
-/** Opens a general web search for the song's chord chart in the player's own browser. The app never reads what it finds. */
-export function FindChords({ title, artist }: { title: string; artist: string }) {
+/** Opens a general web search in the player's own browser. The app never reads what it finds. */
+export function WebSearchLink({ label, href, secondary = false }: { label: string; href: string; secondary?: boolean }) {
   return (
-    <a className="find-chords" href={chartSearchUrl(title, artist)} target="_blank" rel="noopener noreferrer">
-      Find chords on the web
+    <a className={secondary ? "find-chords is-secondary" : "find-chords"} href={href} target="_blank" rel="noopener noreferrer">
+      {label}
     </a>
-  );
-}
-
-/** On a song the player made with nothing in its chart yet, such as one started from a search: where to find the words, and how to put them in. */
-export function NoWordsYet({ song }: { song: Song }) {
-  if (!madeHere(song) || song.body.length > 0) return null;
-  return (
-    <div className="song-search-start">
-      <p>No words yet. Find them on the web and copy them, then tap More, Edit and Paste a sheet. Learn this song, under the caret by the Scroll pill, can listen along too.</p>
-      <FindChords title={song.title} artist={song.artist} />
-    </div>
   );
 }

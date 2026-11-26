@@ -1,5 +1,5 @@
 import { tempoChoices } from "./bpm-detect";
-import { chordsSearchUrl, lyricsSearchUrl } from "./song-search.js";
+import { sheetSearchUrl } from "./song-search.js";
 // @ts-expect-error TS5097: song-search.ts holds the same stem, so only ".tsx" names this file in tsc, Vite and esbuild.
 import { WebSearchLink } from "./song-search.tsx";
 import { madeHere } from "./storage";
@@ -74,7 +74,7 @@ export function SongStartPanel({
       <section className="song-search-start is-short" aria-label="Add words">
         <p className="song-start-lead">Chords are in. Copy the words from anywhere, then paste them here.</p>
         <div className="song-start-actions">
-          {hasQuery ? <WebSearchLink label="Find lyrics on the web" href={lyricsSearchUrl(song.title, song.artist)} /> : null}
+          {hasQuery ? <WebSearchLink label="Find chord / lead sheet" href={sheetSearchUrl(song.title, song.artist)} /> : null}
           <button type="button" className="song-start-btn" onClick={paste}>
             Paste what you copied
           </button>
@@ -88,8 +88,7 @@ export function SongStartPanel({
     <section className="song-search-start" aria-label="Finish this sheet">
       <p className="song-start-lead">No words yet.</p>
       <div className="song-start-actions">
-        {hasQuery ? <WebSearchLink label="Find chords on the web" href={chordsSearchUrl(song.title, song.artist)} /> : null}
-        {hasQuery ? <WebSearchLink secondary label="Find lyrics on the web" href={lyricsSearchUrl(song.title, song.artist)} /> : null}
+        {hasQuery ? <WebSearchLink label="Find chord / lead sheet" href={sheetSearchUrl(song.title, song.artist)} /> : null}
         <button type="button" className="song-start-btn" onClick={paste}>
           Paste what you copied
         </button>

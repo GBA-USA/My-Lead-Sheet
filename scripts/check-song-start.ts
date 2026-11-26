@@ -38,6 +38,7 @@ const SEARCH_BASE = endpoints.chartSearch;
 type SongSearchMod = {
   chordsSearchUrl?: (title: string, artist: string) => string;
   lyricsSearchUrl?: (title: string, artist: string) => string;
+  sheetSearchUrl?: (title: string, artist: string) => string;
   chartSearchUrl?: (title: string, artist: string) => string;
 };
 
@@ -59,11 +60,17 @@ try {
 
 // ---------------------------------------------------------------------------------------------- S1 (unit)
 
-await check("S1. chordsSearchUrl and lyricsSearchUrl build general web search URLs from data/song-search.json, leaving out blank fields", () => {
+await check("S1. sheetSearchUrl (plus chordsSearchUrl and lyricsSearchUrl) build general web search URLs from data/song-search.json, leaving out blank fields", () => {
   assert.ok(searchMod, "src/song-search.ts loaded");
+  assert.equal(typeof searchMod.sheetSearchUrl, "function", "sheetSearchUrl is exported");
   assert.equal(typeof searchMod.chordsSearchUrl, "function", "chordsSearchUrl is exported");
   assert.equal(typeof searchMod.lyricsSearchUrl, "function", "lyricsSearchUrl is exported");
-  const { chordsSearchUrl, lyricsSearchUrl } = searchMod;
+  const { sheetSearchUrl, chordsSearchUrl, lyricsSearchUrl } = searchMod;
+  assert.equal(sheetSearchUrl("Paper Boats", "The Hollow Pines"), SEARCH_BASE + encodeURIComponent('"Paper Boats" "The Hollow Pines" chords lyrics'));
+  assert.equal(sheetSearchUrl("Paper Boats", ""), SEARCH_BASE + encodeURIComponent('"Paper Boats" chords lyrics'), "sheet blank artist left out");
+  assert.equal(sheetSearchUrl("", "The Hollow Pines"), SEARCH_BASE + encodeURIComponent('"The Hollow Pines" chords lyrics'), "sheet blank title left out");
+  assert.equal(sheetSearchUrl("  ", "   "), SEARCH_BASE + encodeURIComponent("chords lyrics"), "sheet both blank");
+  assert.ok(!/site(:|%3A)/i.test(sheetSearchUrl("Paper Boats", "The Hollow Pines")), "sheetSearchUrl is general search, never site-restricted");
   assert.equal(chordsSearchUrl("Paper Boats", "The Hollow Pines"), SEARCH_BASE + encodeURIComponent('"Paper Boats" "The Hollow Pines" chords'));
   assert.equal(chordsSearchUrl("Paper Boats", ""), SEARCH_BASE + encodeURIComponent('"Paper Boats" chords'), "blank artist left out");
   assert.equal(chordsSearchUrl("", "The Hollow Pines"), SEARCH_BASE + encodeURIComponent('"The Hollow Pines" chords'), "blank title left out");
@@ -153,13 +160,13 @@ const apiAddress = api.address();
 const apiBase = `http://127.0.0.1:${typeof apiAddress === "object" && apiAddress ? apiAddress.port : 0}`;
 
 const SCREEN_NAMES = [
-  "S2. own empty song shows start panel with No words yet and four controls (also signed out); built-in and band copy show none; blank title/artist hides web links",
-  "S3. Find chords on the web and Find lyrics on the web link to S1 URLs in a new tab and send no network request",
+  "S2. own empty song shows start panel with No words yet and three controls (also signed out); built-in and band copy show none; blank title/artist hides web link",
+  "S3. Find chord / lead sheet links to S1 URL in a new tab and sends no network request; old labels are gone",
   "S4. Paste what you copied opens short layout with status line and headings; Cancel keeps song unchanged; storage error stays open; Save shows chart and hides panel",
   "S5. clipboard refused opens full editor with Paste your sheet into the box.; empty-after-cleaning paste opens full editor with raw text",
   "S6. Edit text in short layout shows full editor with cleaned chart in box",
   "S7. song at 152 BPM shows chip for 76; one tap sets 76 on sheet and on metronome",
-  "S8. song with bar rows and no words shows short line; paste of words alone offers Add below the chart and bar rows stay",
+  "S8. song with bar rows and no words shows short line with Find chord / lead sheet and Paste what you copied; paste of words alone offers Add below the chart and bar rows stay",
   "S9. plan section 4 cases 1 to 4: Learn this song opens one LearnChooser, tempo row updates sheet BPM, one-copy guards helpers, listen review lists pasted headings",
   "S10. at 360 px and 390 px every control in panel and short layout is at least 44 px tall and not clipped",
 ];
@@ -279,24 +286,26 @@ if (site) {
     await app.library();
 
     await check(SCREEN_NAMES[0], async () => {
-      // Signed out: own empty song shows the start panel with No words yet and all 4 controls
+      // Signed out: own empty song shows the start panel with No words yet and all 3 controls in order
       await openSong(501);
       await app.until(`!!${PANEL}`, "start panel on own empty song (signed out)");
       const text = await s.evaluate<string>(`${PANEL}.textContent ?? ""`);
       assert.ok(text.includes("No words yet"), `panel says No words yet (${js(text)})`);
       assert.ok(text.includes("Listen to set the tempo and the length."), `panel carries exact listen line (${js(text)})`);
-      for (const label of ["Find chords on the web", "Find lyrics on the web", "Paste what you copied", "Learn this song"]) {
-        assert.ok(await s.evaluate<boolean>(`!!${controlIn(PANEL, label)}`), `panel has ${label}`);
-      }
+      const actionLabels = await s.evaluate<string[]>(
+        `[...(${PANEL}?.querySelectorAll(".song-start-actions a, .song-start-actions button") ?? [])].map((el) => el.textContent.trim())`,
+      );
+      assert.deepEqual(actionLabels, ["Find chord / lead sheet", "Paste what you copied", "Learn this song"], `panel has exact three controls in order (${js(actionLabels)})`);
       // Built-in song shows no panel
       await openSong(10);
       assert.equal(await s.evaluate<boolean>(`!!${PANEL}`), false, "built-in song shows no panel");
       // Copy from a band (even with empty body) shows no panel
       await openSong(502);
       assert.equal(await s.evaluate<boolean>(`!!${PANEL}`), false, "band copy shows no panel");
-      // Song with no title and no artist shows panel without the two web links
+      // Song with no title and no artist shows panel without the web link
       await openSong(503);
       await app.until(`!!${PANEL}`, "start panel on song with no title/artist");
+      assert.equal(await s.evaluate<boolean>(`!!${controlIn(PANEL, "Find chord / lead sheet")}`), false, "no Find chord / lead sheet link without title/artist");
       assert.equal(await s.evaluate<boolean>(`!!${controlIn(PANEL, "Find chords on the web")}`), false, "no Find chords link without title/artist");
       assert.equal(await s.evaluate<boolean>(`!!${controlIn(PANEL, "Find lyrics on the web")}`), false, "no Find lyrics link without title/artist");
       assert.ok(await s.evaluate<boolean>(`!!${controlIn(PANEL, "Paste what you copied")}`), "Paste what you copied still present");
@@ -306,28 +315,24 @@ if (site) {
     await check(SCREEN_NAMES[1], async () => {
       await openSong(501);
       await app.until(`!!${PANEL}`, "start panel");
-      const chords = await s.evaluate<{ tag: string; href: string; target: string; rel: string } | null>(
-        `(() => { const el = ${controlIn(PANEL, "Find chords on the web")}; return el ? { tag: el.tagName, href: el.href, target: el.target, rel: el.rel } : null; })()`,
+      const sheet = await s.evaluate<{ tag: string; href: string; target: string; rel: string } | null>(
+        `(() => { const el = ${controlIn(PANEL, "Find chord / lead sheet")}; return el ? { tag: el.tagName, href: el.href, target: el.target, rel: el.rel } : null; })()`,
       );
-      const lyrics = await s.evaluate<{ tag: string; href: string; target: string; rel: string } | null>(
-        `(() => { const el = ${controlIn(PANEL, "Find lyrics on the web")}; return el ? { tag: el.tagName, href: el.href, target: el.target, rel: el.rel } : null; })()`,
-      );
-      assert.ok(chords && chords.tag === "A", "Find chords on the web is an <a> link");
-      assert.equal(chords.href, SEARCH_BASE + encodeURIComponent('"Paper Boats" "The Hollow Pines" chords'));
-      assert.equal(chords.target, "_blank");
-      assert.ok(chords.rel.includes("noopener"), "rel includes noopener");
-      assert.ok(lyrics && lyrics.tag === "A", "Find lyrics on the web is an <a> link");
-      assert.equal(lyrics.href, SEARCH_BASE + encodeURIComponent('"Paper Boats" "The Hollow Pines" lyrics'));
-      assert.equal(lyrics.target, "_blank");
+      assert.ok(sheet && sheet.tag === "A", "Find chord / lead sheet is an <a> link");
+      assert.equal(sheet.href, SEARCH_BASE + encodeURIComponent('"Paper Boats" "The Hollow Pines" chords lyrics'));
+      assert.equal(sheet.target, "_blank");
+      assert.ok(sheet.rel.includes("noopener"), "rel includes noopener");
+      assert.equal(await s.evaluate<boolean>(`!!${controlIn(PANEL, "Find chords on the web")}`), false, "old Find chords on the web label is gone");
+      assert.equal(await s.evaluate<boolean>(`!!${controlIn(PANEL, "Find lyrics on the web")}`), false, "old Find lyrics on the web label is gone");
       const before = await s.evaluate<number>(`window.__calls.length`);
       // Tap link while preventing actual tab navigation in headless Chrome, verify zero fetch requests leave page
       await s.evaluate(`(() => {
-        const el = ${controlIn(PANEL, "Find chords on the web")};
+        const el = ${controlIn(PANEL, "Find chord / lead sheet")};
         el.addEventListener("click", (e) => e.preventDefault(), { once: true });
         el.click();
       })()`);
       await sleep(200);
-      assert.equal(await s.evaluate<number>(`window.__calls.length`), before, "tapping Find chords on the web sends no request");
+      assert.equal(await s.evaluate<number>(`window.__calls.length`), before, "tapping Find chord / lead sheet sends no request");
     });
 
     await check(SCREEN_NAMES[2], async () => {
@@ -437,9 +442,16 @@ if (site) {
     await check(SCREEN_NAMES[6], async () => {
       await openSong(505);
       await app.until(`!!${PANEL}`, "short line on chords-only song");
-      assert.ok(await s.evaluate<boolean>(`!!${controlIn(PANEL, "Find lyrics on the web")}`), "short line has Find lyrics on the web");
+      const shortLink = await s.evaluate<{ tag: string; href: string; target: string } | null>(
+        `(() => { const el = ${controlIn(PANEL, "Find chord / lead sheet")}; return el ? { tag: el.tagName, href: el.href, target: el.target } : null; })()`,
+      );
+      assert.ok(shortLink && shortLink.tag === "A", "short line has Find chord / lead sheet");
+      assert.equal(shortLink.href, SEARCH_BASE + encodeURIComponent('"Chords Only Song" "The Hollow Pines" chords lyrics'));
+      assert.equal(shortLink.target, "_blank");
       assert.ok(await s.evaluate<boolean>(`!!${controlIn(PANEL, "Paste what you copied")}`), "short line has Paste what you copied");
+      assert.equal(await s.evaluate<boolean>(`!!${controlIn(PANEL, "Find lyrics on the web")}`), false, "short line omits Find lyrics on the web");
       assert.equal(await s.evaluate<boolean>(`!!${controlIn(PANEL, "Find chords on the web")}`), false, "short line omits Find chords on the web");
+      assert.equal(await s.evaluate<boolean>(`!!${controlIn(PANEL, "Learn this song")}`), false, "short line omits Learn this song");
 
       await clipboard(WORDS_ONLY);
       await s.evaluate(`${controlIn(PANEL, "Paste what you copied")}.click()`);
@@ -482,9 +494,9 @@ if (site) {
       await app.until(`!${DIALOG}`, "chooser closes after picking BPM");
       await app.until(`(document.querySelector(".sheet .meta")?.textContent ?? "").includes(${js(chosen)})`, `sheet shows new BPM ${chosen}`);
 
-      // Plan section 4 case 3: check-one-copy guards lyricsSearchUrl, readPaste, and LearnChooser
+      // Plan section 4 case 3: check-one-copy guards sheetSearchUrl, lyricsSearchUrl, readPaste, and LearnChooser
       const oneCopySrc = readFileSync(join(root, "scripts", "check-one-copy.ts"), "utf8");
-      for (const symbol of ["lyricsSearchUrl", "readPaste", "LearnChooser"]) {
+      for (const symbol of ["sheetSearchUrl", "lyricsSearchUrl", "readPaste", "LearnChooser"]) {
         assert.ok(oneCopySrc.includes(symbol), `scripts/check-one-copy.ts guards ${symbol}`);
       }
 
@@ -527,13 +539,13 @@ if (site) {
         // 1. Full start panel with BPM chip (song 504 -> reset to 152 or use 508/510)
         await openSong(508);
         await app.until(`!!${PANEL}`, `panel at ${width} px`);
-        for (const label of ["Find chords on the web", "Find lyrics on the web", "Paste what you copied", "Learn this song"]) {
+        for (const label of ["Find chord / lead sheet", "Paste what you copied", "Learn this song"]) {
           await glove(controlIn(PANEL, label), `panel ${label}`, width);
         }
         // Check BPM chip in panel (508 now has BPM from S9, or check 509's 76 chip)
         await openSong(509);
         await app.until(`!!${PANEL}`, `short line at ${width} px`);
-        for (const label of ["Find lyrics on the web", "Paste what you copied"]) {
+        for (const label of ["Find chord / lead sheet", "Paste what you copied"]) {
           await glove(controlIn(PANEL, label), `chords-only ${label}`, width);
         }
         await glove(chipContaining(PANEL, "76"), "BPM 76 chip", width);
@@ -570,7 +582,7 @@ await check("S11. check:one-copy passes with src/App.tsx <= 500 lines and src/so
   const appLines = readFileSync(join(root, "src", "App.tsx"), "utf8").split("\n").length;
   assert.ok(appLines <= 500, `src/App.tsx has ${appLines} lines (limit 500)`);
   const oneCopySrc = readFileSync(join(root, "scripts", "check-one-copy.ts"), "utf8");
-  for (const symbol of ["lyricsSearchUrl", "readPaste", "LearnChooser"]) {
+  for (const symbol of ["sheetSearchUrl", "lyricsSearchUrl", "readPaste", "LearnChooser"]) {
     assert.ok(oneCopySrc.includes(symbol), `scripts/check-one-copy.ts guards ${symbol}`);
   }
   execFileSync(process.execPath, ["--experimental-strip-types", join(root, "scripts", "check-one-copy.ts")], { cwd: root, stdio: "pipe" });

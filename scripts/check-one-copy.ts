@@ -67,9 +67,44 @@ check(!["parseHash", "SongList", "SetlistList", "SongBody", "Tab"].some((name) =
 check(lines("worker/directory-account.ts") <= 600, `worker/directory-account.ts is at most 600 lines (has ${lines("worker/directory-account.ts")})`);
 check(!["handleDirectoryRequest", "signedIn", "readBody", "Context", "Reply"].some((name) => defines("worker/directory-account.ts", name)), "the Directory request plumbing lives outside the account routes");
 check(
-  ["worker/codes.ts", "worker/directory-friends.ts"].every((file) => /import \{[^}]*\bsignedIn\b[^}]*\} from "\.\/directory-http"/.test(text.get(file) ?? "")),
+  ["worker/codes.ts", "worker/directory-friends.ts"].every((file) => /import \{[^}]*\bsignedIn\b[^}]*\} from "\.\/directory-http"/.test(text.get(file)! ?? "")),
   "codes and friends routes take signedIn from directory-http, not from the account routes",
 );
+
+// N9: Removed bass table names appear in none of music.ts, sheet.tsx, types.ts, styles.css
+{
+  const css = readFileSync(join(root, "src/styles.css"), "utf8");
+  const musicGone = [
+    "splitAliases",
+    "aliasMap",
+    "songUsesMinorSuffix",
+    "SIMPLE_DEGREE",
+    "convertNoteNames",
+    "displayBassNote",
+    "OPEN_STRINGS",
+    "ORDINALS",
+    "easiestPlace",
+    "displayPlace",
+    "nashvilleNumber",
+    "displayChordCell",
+    "BassNote",
+  ].filter((name) => new RegExp(`\\b${name}\\b`).test(text.get("src/music.ts") ?? ""));
+  const sheetGone = ["Your bass notes", "BassTable", "displayBassNote", "displayChordCell", "displayPlace", "nashvilleNumber"].filter((name) =>
+    (text.get("src/sheet.tsx") ?? "").includes(name),
+  );
+  const typesGone = ["BassNote", "bassNotes"].filter((name) => new RegExp(`\\b${name}\\b`).test(text.get("src/types.ts") ?? ""));
+  const cssHasBass = /\.bass\b/.test(css);
+  const leftover = [
+    ...musicGone.map((n) => `src/music.ts:${n}`),
+    ...sheetGone.map((n) => `src/sheet.tsx:${n}`),
+    ...typesGone.map((n) => `src/types.ts:${n}`),
+    ...(cssHasBass ? ["src/styles.css:.bass"] : []),
+  ];
+  check(
+    leftover.length === 0,
+    `N9: src/music.ts, src/sheet.tsx, src/types.ts and src/styles.css name none of the removed bass-table items${leftover.length ? ` (found: ${leftover.join(", ")})` : ""}`,
+  );
+}
 
 if (failures > 0) {
   console.log(`${failures} failed`);

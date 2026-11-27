@@ -192,6 +192,16 @@ const CASES: Case[] = [
   { name: "L26 no price control and no outside load passes", files: {}, expect: "clean" },
   { name: "L28 a lowercase id like unlock or pay and a Hold to unlock button are not price controls", files: { "dist/assets/index-abc.js": `x("button",{...Z("unlock",f,{attrs:{"data-stage":"unlock"}}),children:"Hold to unlock"});const k="pay";` }, expect: "clean" },
   { name: "L29 an Unlock Pro label with no renewal words fails", files: { "dist/assets/index-abc.js": `x("button",{children:"Unlock Pro"})` }, expect: { rule: "price-control-without-renewal-terms", file: "dist/assets/index-abc.js" } },
+  { name: "L30 a Worker HTML response with a <style> @import of an outside sheet fails", files: { "worker/landing.ts": "const page = `<html><style>@import url(\"https://fonts.example.net/a.css\");</style></html>`;" }, expect: { rule: "css-remote-load", file: "worker/landing.ts" } },
+  { name: "L31 a Worker HTML response with an @font-face from an outside host fails", files: { "worker/landing.ts": "const page = `<style>@font-face{font-family:A;src:url(https://fonts.example.net/a.woff2)}</style>`;" }, expect: { rule: "css-remote-load", file: "worker/landing.ts" } },
+  { name: "L32 a Worker HTML response with an outside <img> fails", files: { "worker/landing.ts": "const page = `<p><img src=\"https://px.example.net/p.gif\"></p>`;" }, expect: { rule: "third-party-embed", file: "worker/landing.ts" } },
+  { name: "L33 a Worker HTML response with an outside <iframe> fails", files: { "worker/landing.ts": "const page = `<iframe src=\"https://embed.example.net/x\"></iframe>`;" }, expect: { rule: "third-party-embed", file: "worker/landing.ts" } },
+  { name: "L34 a protocol-relative outside script injected by the bundle fails until it gets an audit row", files: { "dist/assets/i.js": `s=document.createElement("script");s.src="//cdn.example.net/x.js";document.head.append(s)` }, expect: { rule: "unlisted-third-party-url", file: "dist/assets/i.js" } },
+  { name: "L35 a lowercase subscribe now button with no renewal words fails", files: { "dist/index.html": CLEAN_INDEX.replace(`<div id="root"></div>`, `<button>subscribe now</button>`) }, expect: { rule: "price-control-without-renewal-terms", file: "dist/index.html" } },
+  { name: "L36 a Go Premium label in the bundle with no renewal words fails", files: { "dist/assets/index-abc.js": `x("button",{children:"Go Premium"})` }, expect: { rule: "price-control-without-renewal-terms", file: "dist/assets/index-abc.js" } },
+  { name: "L37 an analytics import in a .jsx file fails", files: { "src/a.jsx": `import "@sentry/react";` }, expect: { rule: "tracker-import", file: "src/a.jsx" } },
+  { name: "L38 a session-replay require in a .cjs file fails", files: { "worker/a.cjs": `const LR = require("logrocket");` }, expect: { rule: "tracker-import", file: "worker/a.cjs" } },
+  { name: "L39 new URL to an audited host, a same-origin <img>, a local url() and a tapped outside link pass", files: { "src/search.ts": `const u = new URL("https://musicbrainz.org/ws/2/recording");\nconst v = x.url("https://musicbrainz.org/ws/2/recording");`, "worker/landing.ts": "const page = `<style>@font-face{src:url(./a.woff2)}</style><img src=\"/icon.png\"><a href=\"https://www.google.com/search?q=x\">Search</a>`;" }, expect: "clean" },
 ];
 
 let failures = 0;
@@ -238,6 +248,42 @@ function runPathCases() {
   }
 }
 
+const SIGNED_IN = /\bsignedIn\(c\)/;
+const STORES_PROFILE = /\binsertPasskey\(|\bstorePassword\(|"google-link"|INSERT INTO (?:users|passkeys|passwords|google_logins)\b|UPDATE users SET (?!session_version\b)/;
+
+function todoRows(root: string): Map<number, string> {
+  const rows = new Map<number, string>();
+  for (const line of readFileSync(path.join(root, "LEGAL-TODO.md"), "utf8").split(/\r?\n/)) {
+    const row = /^\|\s*(\d+)\s*\|/.exec(line);
+    if (row) rows.set(Number(row[1]), line);
+  }
+  return rows;
+}
+
+function routesThatStoreProfileAfterSignUp(source: string): string[] {
+  const keys = [...source.matchAll(/^\s*async "([A-Z]+ \/api\/[^"]+)"\(/gm)];
+  return keys
+    .filter((key, i) => {
+      const body = source.slice(key.index, keys[i + 1]?.index ?? source.length);
+      return SIGNED_IN.test(body) && STORES_PROFILE.test(body);
+    })
+    .map((key) => key[1].split(" ")[1]);
+}
+
+function runDocCases() {
+  const rows = todoRows(ROOT);
+  for (const known of KNOWN_URLS) {
+    const cited = /LEGAL-TODO row (\d+)/.exec(known.why);
+    if (!cited) continue;
+    const host = new URL(known.prefix).hostname.replace(/^www\./, "");
+    const row = rows.get(Number(cited[1])) ?? "";
+    report(row.toLowerCase().includes(host), `D1 the KNOWN_URLS row for ${host} cites a LEGAL-TODO row that names it`, `row ${cited[1]} does not mention ${host}`);
+  }
+  const routes = routesThatStoreProfileAfterSignUp(readFileSync(path.join(ROOT, "worker", "directory-account.ts"), "utf8"));
+  const missing = routes.filter((route) => !(rows.get(1) ?? "").includes(route));
+  report(routes.length > 0 && missing.length === 0, `D2 LEGAL-TODO row 1 names every signed-in route that stores a profile field (${routes.join(", ")})`, `row 1 is missing ${missing.join(", ") || "(no routes found)"}`);
+}
+
 const ITEMS: { name: string; rules: string[] }[] = [
   { name: "R0 the build exists", rules: ["no-build"] },
   { name: "R2 no outside font, stylesheet or script in index.html, public, dist, the Worker pages or the privacy page", rules: ["font-or-cdn-host", "third-party-script", "third-party-link", "css-remote-load", "remote-script-import"] },
@@ -262,5 +308,6 @@ const started = Date.now();
 runRealTree();
 runCases();
 runPathCases();
+runDocCases();
 console.log(`check:legal-audit ${failures ? `failed ${failures}` : "passed"} in ${((Date.now() - started) / 1000).toFixed(1)} s`);
 process.exit(failures ? 1 : 0);

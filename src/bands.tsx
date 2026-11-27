@@ -11,7 +11,7 @@ import { ScanCode, ShowCode, shareLink, useCode } from "./codes";
 import { downloadPack, packsOnPhone, type GigPack } from "./gig-pack";
 import { DraftOffer, draftsIn, dropDraft, GigCard, GigPlanForm, keepDraft, newGigId, PastGigCard, planAgainHref, readDraft, type SendFailure } from "./gig-plan";
 import { fitDraft, newDraft, planBody, type GigDraft, type GigList, type GigView, type KeptDraft } from "./gig-plan-model";
-import { useCloseOnSong, useEscape, useKeyboardInset } from "./hooks";
+import { useCloseOnSong, useEscape, useGigRefresh, useKeyboardInset } from "./hooks";
 import { NextGigCard, nextGig } from "./next-gig-card";
 import { allOnPhone, clearBand, heldFor, holdBandSongs, keepBandsOnPhone, type CachedBandSong } from "./phone-db";
 import { Room } from "./room";
@@ -447,8 +447,9 @@ function BandScreen({ me, bandId, section: asked, landing, inbox, onMessage, onS
 
   useEffect(() => {
     reloadLibrary().catch(loaded);
-    loadGigs().catch(loaded);
   }, []);
+  /** The gigs on open and again while the page stays up, so a gig going live or ending reaches the card and Band status with no reload. */
+  useGigRefresh((alive) => void loadGigs().catch((caught) => alive() && loaded(caught)), []);
 
   /** The band as it is now, each time the page comes back from Invite, settings or a form, so Members shows who joined meanwhile. */
   useEffect(() => {
@@ -459,7 +460,8 @@ function BandScreen({ me, bandId, section: asked, landing, inbox, onMessage, onS
     if (band && rawSongs) holdBandSongs(me, bandId, band.name, rawSongs).catch(() => {});
   }, [band?.name, rawSongs]);
 
-  /** A lineup phone fetches a pack it lacks, or one older than the plan, as soon as it sees the gig. A failure waits for Get ready. */
+  /** A lineup phone fetches a pack it lacks, or one older than the plan, as soon as it sees the gig or a new plan. A failure waits for Get ready. */
+  const planRevs = (gigs ?? []).map((item) => `${item.gig.gigId}:${item.packRev}:${item.gig.lineup.includes(me)}`).join();
   useEffect(() => {
     for (const item of gigs ?? []) {
       if (!item.gig.lineup.includes(me) || (packs[item.gig.gigId]?.packRev ?? 0) >= item.packRev) continue;
@@ -468,7 +470,7 @@ function BandScreen({ me, bandId, section: asked, landing, inbox, onMessage, onS
         () => {},
       );
     }
-  }, [gigs]);
+  }, [planRevs]);
 
   const getReady = (item: GigView) =>
     run(async () => {

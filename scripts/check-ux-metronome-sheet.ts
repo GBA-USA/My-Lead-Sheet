@@ -44,7 +44,8 @@ const seed = JSON.parse(readFileSync(join(root, "data/library.json"), "utf8")) a
  * card's children, and the metronome block's height with its 12 px top margin (the shift when the block is removed).
  * Chord y re-measured in Chrome on Linux (the CI runner) after the bass table was removed; x, the card's children and the block are unchanged.
  * The source line, Feel and the labelled notes now sit in the closed Song info panel, so the card reads title, meta,
- * Song info row, chart, each directly under the one before, and those blocks are not laid out.
+ * Song info row, chart, each directly under the one before, and those blocks are not laid out. Opening the panel moves
+ * the first chord down by exactly the panel's added height, and closing it puts the chord back.
  */
 const SHEET_ORDER = [".sheet-title", ".meta", ".song-info", ".chart"];
 const IN_SONG_INFO = [".source", ".feel", ".sheet-label"];
@@ -516,6 +517,25 @@ try {
       for (const [selector, left] of Object.entries(card.lefts)) assert.ok(near(left, base.left), `at ${pixels} px ${selector} keeps its left edge (${left.toFixed(2)})`);
       const line = seed.songs.find((song) => song.id === SONG)!.body.flatMap((section) => section.lines).find((each) => each.chords !== undefined && each.lyrics !== undefined)!;
       assert.equal(chordAnchors([card.row])[0], chordAnchors([{ chords: line.chords!, lyrics: line.lyrics }])[0], `at ${pixels} px the first chord stays on its syllable`);
+      const chordAndInfo = `(() => {
+        const sheet = document.querySelector("article.sheet").getBoundingClientRect();
+        const chords = document.querySelector(".chart .pair .chords");
+        const r = document.createRange();
+        r.setStart(chords.firstChild, chords.textContent.search(/\\S/));
+        r.setEnd(chords.firstChild, chords.textContent.search(/\\S/) + 1);
+        return { y: r.getBoundingClientRect().top - sheet.top, info: document.querySelector("article.sheet > .song-info").getBoundingClientRect().height };
+      })()`;
+      const toggle = async () => {
+        await phone.evaluate(`document.querySelector("article.sheet > .song-info > .song-info-row").click()`);
+        await sleep(150);
+      };
+      const shut = await phone.evaluate<{ y: number; info: number }>(chordAndInfo);
+      await toggle();
+      const open = await phone.evaluate<{ y: number; info: number }>(chordAndInfo);
+      await toggle();
+      const again = await phone.evaluate<{ y: number; info: number }>(chordAndInfo);
+      assert.ok(open.info > shut.info + 0.5 && near(open.y - shut.y, open.info - shut.info), `at ${pixels} px opening Song info moves the first chord down by exactly what the panel adds (chord ${(open.y - shut.y).toFixed(2)}, panel ${(open.info - shut.info).toFixed(2)})`);
+      assert.ok(near(again.y, shut.y) && near(again.y, card.y), `at ${pixels} px closing Song info puts the first chord back (${again.y.toFixed(2)}, closed ${shut.y.toFixed(2)})`);
     }
     await phone.width(390);
   });

@@ -36,6 +36,8 @@ import { openSite } from "./chrome.ts";
  * "This gig is for tonight's lineup".
  */
 
+const packSongTitle = (song: { title?: string; chordpro?: string }) => (typeof song.chordpro === "string" ? /^\{title: (.*)\}$/m.exec(song.chordpro)?.[1] ?? "" : song.title);
+
 type Reply = { status: number; body: Record<string, any> };
 type GigView = { gig: GigPlan; receipts: { userId: string; packRev: number; at: number }[] };
 type Player = Awaited<ReturnType<typeof passwordPlayer>>;
@@ -299,7 +301,7 @@ try {
     await app.until(`${card(g1)}?.textContent.includes("Downloaded ✓")`, "Downloaded ✓ after Get ready", 15000);
     const packs = await eventually(packsOnPhone, (list) => list.some((p) => p.gig.gigId === g1), "the pack in the phone's gigPacks store");
     const mine = packs.find((p) => p.gig.gigId === g1)!;
-    assert.deepEqual(mine.songs.map((s) => s.song.title), SET_SONGS.map((s) => s.title), "the pack holds the setlist's songs in order");
+    assert.deepEqual(mine.songs.map((s) => packSongTitle(s.song)), SET_SONGS.map((s) => s.title), "the pack holds the setlist's songs in order");
     assert.equal(typeof mine.secret, "string", "with the gig secret, since Sam is on the lineup");
     await tap(SET_SONGS[1].title, card(g1));
     await app.until(`location.hash === ${js(`#/gig/${bandId}/${g1}/1`)} && document.querySelector(".sheet .sheet-name")?.textContent === ${js(SET_SONGS[1].title)}`, "a song button opening the gig-mode sheet at that song");

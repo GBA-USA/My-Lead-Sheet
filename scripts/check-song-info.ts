@@ -49,6 +49,7 @@ const NAMES = {
   I8: "I8 song change closes: Next in Live, A to B and back to A, and the next gig song all start closed",
   I9: "I9 key and view apply inside: At a glance A D E F#m reads B E F# G#m two steps up and 1 4 5 6m in Nashville",
   I10: "I10 reading position held: opening and closing during auto-scroll keeps the chart row at the reading line within 2 px",
+  I16: "I16 the pill starts the closed sheet: on built-in song 10 at 1280 x 800 with Song info closed, the chart moves within 1.2 s of the Scroll pill",
   I11: "I11 keyboard and motion: a button with aria-expanded and aria-controls, Enter and Space toggle it with focus kept, no transition with reduced motion",
   I12: "I12 odd text: an apostrophe, curly quotes and typed markup show as the same characters and make no element",
   I13: "I13 fits at 360 px: one meta line, a row at least 44 px tall, no sideways scroll closed or open",
@@ -453,6 +454,25 @@ try {
     assert.equal(held.length, 2, `one reading per tap (${js(held)})`);
     held.forEach(({ before, after, text }, i) => assert.ok(Math.abs(after - before) <= 2, `${i ? "closing" : "opening"} keeps ${js(text.slice(0, 30))} at the reading line (${before.toFixed(1)} -> ${after.toFixed(1)})`));
   }
+
+  await check(NAMES.I16, async () => {
+    const scroller = `document.getElementById("sheet-scroll")`;
+    await s.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 2, mobile: false });
+    try {
+      await openSong(10);
+      await closedRow("built-in song 10");
+      assert.equal(await s.evaluate<number>(`${scroller}.scrollTop`), 0, "the sheet opens at the top");
+      await s.evaluate(`document.querySelector(".scroll-pill").click()`);
+      await sleep(1200);
+      const on = await s.evaluate<boolean>(`document.querySelector(".scroll-pill")?.getAttribute("aria-pressed") === "true"`);
+      const top = await s.evaluate<number>(`${scroller}.scrollTop`);
+      assert.ok(on && top > 0, `1.2 s after the pill the scroll is ${on ? "on" : "off"} at top ${top}`);
+    } finally {
+      await s.evaluate(`document.querySelector(".scroll-pill")?.getAttribute("aria-pressed") === "true" && document.querySelector(".scroll-pill").click()`);
+      await s.send("Emulation.setDeviceMetricsOverride", { width: WIDTH, height: HEIGHT, deviceScaleFactor: 2, mobile: true });
+      await settle(300);
+    }
+  });
 
   await check(NAMES.I11, async () => {
     await openSong(901);

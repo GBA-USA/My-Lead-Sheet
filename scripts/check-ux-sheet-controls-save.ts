@@ -502,10 +502,6 @@ try {
       await evaluate(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }))`);
       await settle();
       expect(!(await evaluate<boolean>(`!!${DIALOG}`)), "Escape left the Scroll sheet open");
-      // The song's own pace holds the sung line at the sheet's middle, so a chart whose first rows sit above the middle
-      // stays put until the song reaches them. Closed, Song info leaves this chart that high at 1280 px; opened, it puts
-      // the source, feel and How to play back above the chart, so the first rows start below the middle as before.
-      await tap("Song info", `document.querySelector("article.sheet")`);
       await evaluate(`document.querySelector(".scroll-pill").click()`);
       await settle(1200);
       const top = await evaluate<number>(`document.getElementById("sheet-scroll").scrollTop`);

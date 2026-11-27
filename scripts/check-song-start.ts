@@ -207,11 +207,11 @@ if (site) {
       );
     const seedSong = async (song: Record<string, unknown>) => {
       await s.evaluate(`(() => {
-        const lib = JSON.parse(localStorage.getItem("leadSheetsLibrary") || "{}");
+        const lib = JSON.parse(localStorage.getItem("leadSheetsLibraryV2") || "{}");
         lib.songs = (lib.songs || []).filter((each) => each.id !== ${js(song.id)});
         lib.songs.push(${js(song)});
         lib.lastSongId = Math.max(lib.lastSongId || 0, ${js(song.id)});
-        localStorage.setItem("leadSheetsLibrary", JSON.stringify(lib));
+        localStorage.setItem("leadSheetsLibraryV2", JSON.stringify(lib));
       })()`);
     };
     const blankSong = (id: number, overrides: Record<string, unknown> = {}) => ({
@@ -362,7 +362,7 @@ if (site) {
       await s.evaluate(`(() => {
         window.__realSetItem = Storage.prototype.setItem;
         Storage.prototype.setItem = function (k, v) {
-          if (k === "leadSheetsLibrary") throw new DOMException("full", "QuotaExceededError");
+          if (k === "leadSheetsLibraryV2") throw new DOMException("full", "QuotaExceededError");
           return window.__realSetItem.call(this, k, v);
         };
       })()`);

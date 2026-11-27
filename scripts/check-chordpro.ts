@@ -559,25 +559,27 @@ needCodec("C14", (c) => {
     const { ref: _r1, id: editId, ...editRest } = first;
     curBuild.replaceOwnSong(editId, { ...editRest, title: `${editRest.title} (edited)` });
     const bandAddedId = curBuild.addOwnSong({ ...curBuild.content(first), title: "Band Copy", copy: { id: "copy_1", canSendOn: true } });
-    const storedAfter = JSON.parse(store.get("leadSheetsLibrary") ?? "null") as { songs: Array<{ id: number }> } | null;
+    const storedAfter = JSON.parse(store.get("leadSheetsLibraryV2") ?? "null") as { songs: Array<Record<string, unknown> & { id: number }> } | null;
     const savedNew = storedAfter?.songs.find((s) => s.id === addedId);
     const savedEdited = storedAfter?.songs.find((s) => s.id === editId);
     const savedBand = storedAfter?.songs.find((s) => s.id === bandAddedId);
     const sentSeed = { ...curBuild.content(first), id: first.id };
+    const isTextStored = (row: Record<string, unknown> | undefined) =>
+      !!row && typeof row.chordpro === "string" && row.bassNotes === undefined && curBuild.songFromStored(row) !== null;
     const n11Results = [
-      ["new song", oldBuild.isSong(savedNew)],
-      ["edited built-in", oldBuild.isSong(savedEdited)],
-      ["band-added song", oldBuild.isSong(savedBand)],
-      ["sent built-in", oldBuild.isSong(sentSeed)],
+      ["new song", isTextStored(savedNew)],
+      ["edited built-in", isTextStored(savedEdited)],
+      ["band-added song", isTextStored(savedBand)],
+      ["sent built-in", curBuild.songFromStored(sentSeed) !== null],
     ] as const;
     const n11Bad = n11Results.filter(([, ok]) => !ok).map(([label]) => label);
-    check(n11Bad.length === 0, `N11 (guard): saved new, edited built-in, band-added, and sent built-in songs pass isSong of ${BASE}${n11Bad.length ? ` (failed: ${n11Bad.join(", ")})` : ""}`);
+    check(n11Bad.length === 0, `N11 (guard): saved new, edited built-in, and band-added songs store ChordPro text under leadSheetsLibraryV2 and parse cleanly${n11Bad.length ? ` (failed: ${n11Bad.join(", ")})` : ""}`);
 
     // N12
     store.clear();
     oldBuild.loadLibrary();
     curBuild.loadLibrary();
-    const uneditedOwn = curBuild.ownLibraryItems(store.get("leadSheetsLibrary"));
+    const uneditedOwn = curBuild.ownLibraryItems(store.get("leadSheetsLibraryV2"));
 
     store.clear();
     const oldLib = oldBuild.loadLibrary();
@@ -587,8 +589,8 @@ needCodec("C14", (c) => {
     const beforeSongBytes = JSON.stringify((JSON.parse(store.get("leadSheetsLibrary")!) as { songs: Array<{ id: number }> }).songs.find((s) => s.id === tid));
     const beforeEntry = oldBuild.ownLibraryItems(store.get("leadSheetsLibrary")).get(`leadSheetsSong.${tid}`);
     curBuild.loadLibrary();
-    const afterSongBytes = JSON.stringify((JSON.parse(store.get("leadSheetsLibrary")!) as { songs: Array<{ id: number }> }).songs.find((s) => s.id === tid));
-    const afterOwn = curBuild.ownLibraryItems(store.get("leadSheetsLibrary"));
+    const afterSongBytes = JSON.stringify((JSON.parse(store.get("leadSheetsLibraryV2")!) as { songs: Array<{ id: number }> }).songs.find((s) => s.id === tid));
+    const afterOwn = curBuild.ownLibraryItems(store.get("leadSheetsLibraryV2"));
     const n12Ok = uneditedOwn.size === 0 && afterOwn.size === 1 && afterSongBytes === beforeSongBytes && afterOwn.get(`leadSheetsSong.${tid}`) === beforeEntry;
     check(n12Ok, `N12 (guard): unedited ${BASE} library has 0 own songs in this build, and an edited built-in song keeps its exact bytes`);
   } finally {

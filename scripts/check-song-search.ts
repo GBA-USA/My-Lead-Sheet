@@ -939,7 +939,25 @@ if (site) {
     const catalog = (recordings: object[] | null) =>
       s.evaluate(`window.__mb.payload = ${recordings ? js({ ...EMPTY, count: recordings.length, recordings }) : "null"}`);
     const recording = (id: string, title: string, artist: string, length: number) => ({ id, score: 100, title, length, "artist-credit": [{ name: artist, joinphrase: "" }], "first-release-date": "2014" });
-    const stored = () => s.evaluate<Record<string, unknown>[]>(`JSON.parse(localStorage.getItem("leadSheetsLibrary") ?? "{}").songs ?? []`);
+    const codecBundle = await build({
+      entryPoints: [join(root, "src/chordpro.ts")],
+      bundle: true,
+      write: false,
+      format: "esm",
+      platform: "neutral",
+      logLevel: "silent",
+    });
+    const { chordProToSong } = (await import(
+      `data:text/javascript;base64,${Buffer.from(codecBundle.outputFiles[0].text).toString("base64")}`
+    )) as { chordProToSong(text: string): Record<string, unknown> };
+    const stored = async (): Promise<Record<string, unknown>[]> => {
+      const raw = await s.evaluate<Record<string, unknown>[]>(`JSON.parse(localStorage.getItem("leadSheetsLibraryV2") ?? "{}").songs ?? []`);
+      return raw.map((entry) =>
+        typeof entry.chordpro === "string"
+          ? ({ ...chordProToSong(entry.chordpro), id: entry.id, ...(entry.copy ? { copy: entry.copy } : {}) } as Record<string, unknown>)
+          : entry,
+      );
+    };
     const hashId = () => s.evaluate<number | null>(`(() => { const m = location.hash.match(/^#\\/song\\/(\\d+)/); return m ? Number(m[1]) : null; })()`);
     type Box = { left: number; right: number; top: number; bottom: number; h: number; w: number; clipped: boolean; inner: number; page: number };
     const measure = (expression: string) =>
@@ -1301,7 +1319,7 @@ if (site) {
         const real = Storage.prototype.setItem;
         window.__realSetItem = real;
         Storage.prototype.setItem = function (key, value) {
-          if (key === "leadSheetsLibrary") throw new DOMException("full", "QuotaExceededError");
+          if (key === "leadSheetsLibraryV2") throw new DOMException("full", "QuotaExceededError");
           return real.call(this, key, value);
         };
       })()`);

@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import { BandLibraryTab, LIBRARY_MESSAGES, plural } from "./band-library";
-import type { BandLibrary, BandSetlist } from "./band-library-model";
+import { songFromSent, type BandLibrary, type BandSetlist, type WireBandLibrary, type WireBandSong } from "./band-library-model";
 import { BandSetlistView, dropSetlists, holdSetlists } from "./band-setlist-view";
 import { BandSettings } from "./band-settings";
 import type { BandPreview, BandSummary, BandView } from "./bands-model";
@@ -345,6 +345,7 @@ function BandScreen({ me, bandId, section: asked, landing, inbox, onMessage, onS
   const [view, setView] = useState<PageView>({ name: "band" });
   const [band, setBand] = useState<BandView | null>(null);
   const [library, setLibrary] = useState<BandLibrary | null>(null);
+  const [rawSongs, setRawSongs] = useState<WireBandSong[] | null>(null);
   const [gigs, setGigs] = useState<GigView[] | null>(null);
   const [past, setPast] = useState<GigView[]>([]);
   const [packs, setPacks] = useState<Record<string, GigPack>>({});
@@ -390,8 +391,23 @@ function BandScreen({ me, bandId, section: asked, landing, inbox, onMessage, onS
   const loaded = (caught: unknown) => {
     if (!unreachable(caught)) return failed(caught);
     const mine = heldFor(me) ? allOnPhone("bandSongs") : Promise.resolve([]);
-    mine.then((all) => setCached(all.filter((item) => item.bandId === bandId)), () => setCached([]));
-    if (heldFor(me)) allOnPhone("gigPacks").then((all) => setPacks(Object.fromEntries(all.filter((pack) => pack.gig.bandId === bandId).map((pack) => [pack.gig.gigId, pack]))), () => {});
+    mine.then(
+      (all) => setCached(all.filter((item) => item.bandId === bandId).map((item) => ({ ...item, song: songFromSent(item.song) }))),
+      () => setCached([]),
+    );
+    if (heldFor(me)) {
+      allOnPhone("gigPacks").then(
+        (all) =>
+          setPacks(
+            Object.fromEntries(
+              all
+                .filter((pack) => pack.gig.bandId === bandId)
+                .map((pack) => [pack.gig.gigId, { ...pack, songs: pack.songs.map((s) => ({ ...s, song: songFromSent(s.song) })) }]),
+            ),
+          ),
+        () => {},
+      );
+    }
   };
 
   const run = async (work: () => Promise<void>) => {
@@ -409,7 +425,9 @@ function BandScreen({ me, bandId, section: asked, landing, inbox, onMessage, onS
   };
 
   const reloadLibrary = async () => {
-    const next = await api<BandLibrary>("/api/bands/library", { bandId });
+    const raw = await api<WireBandLibrary>("/api/bands/library", { bandId });
+    const next: BandLibrary = { ...raw, songs: raw.songs.map((item) => ({ ...item, song: songFromSent(item.song) })) };
+    setRawSongs(raw.songs);
     setLibrary(next);
     holdSetlists(me, bandId, next);
     return next;
@@ -438,8 +456,8 @@ function BandScreen({ me, bandId, section: asked, landing, inbox, onMessage, onS
   }, [view.name]);
 
   useEffect(() => {
-    if (band && library) holdBandSongs(me, bandId, band.name, library.songs).catch(() => {});
-  }, [band?.name, library]);
+    if (band && rawSongs) holdBandSongs(me, bandId, band.name, rawSongs).catch(() => {});
+  }, [band?.name, rawSongs]);
 
   /** A lineup phone fetches a pack it lacks, or one older than the plan, as soon as it sees the gig. A failure waits for Get ready. */
   useEffect(() => {
@@ -855,7 +873,12 @@ function PlanGig({ me, bandId, gigId, setlistId, onSignedOut, onDone }: PlanProp
 
   useEffect(() => {
     setProblem(null);
-    Promise.all([api<BandView>("/api/bands/open", { bandId }), api<BandLibrary>("/api/bands/library", { bandId })]).then(([band, library]) => setLoaded({ band, library, opening: openingFor(band, library) }), refused);
+    Promise.all([
+      api<BandView>("/api/bands/open", { bandId }),
+      api<WireBandLibrary>("/api/bands/library", { bandId }).then(
+        (raw): BandLibrary => ({ ...raw, songs: raw.songs.map((item) => ({ ...item, song: songFromSent(item.song) })) }),
+      ),
+    ]).then(([band, library]) => setLoaded({ band, library, opening: openingFor(band, library) }), refused);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- PlanGigScreen is keyed by owner, band and gig, so bandId is fixed; refused is a new closure each render
   }, [round]);
 

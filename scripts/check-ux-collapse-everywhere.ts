@@ -192,7 +192,7 @@ try {
   await site.send("Page.navigate", { url: `${origin}/#/songs` });
   await app.library();
   const extra = seed.setlists.flatMap((set, n) => [0, 1, 2].map((copy) => ({ id: 900 + n * 3 + copy, name: `${set.name} take ${copy + 2}` })));
-  await site.evaluate(`(() => { const stored = JSON.parse(localStorage.getItem("leadSheetsLibrary")); const first = stored.setlists[0]; stored.setlists = stored.setlists.filter((set) => set.id < 900).concat(${js(extra)}.map((set) => ({ ...first, ...set }))); localStorage.setItem("leadSheetsLibrary", JSON.stringify(stored)); })()`);
+  await site.evaluate(`(() => { const stored = JSON.parse(localStorage.getItem("leadSheetsLibraryV2")); const first = stored.setlists[0]; stored.setlists = stored.setlists.filter((set) => set.id < 900).concat(${js(extra)}.map((set) => ({ ...first, ...set }))); localStorage.setItem("leadSheetsLibraryV2", JSON.stringify(stored)); })()`);
   await site.evaluate(`window.__beforeReload = true; location.reload()`);
   await app.until(`!window.__beforeReload && !!document.querySelector(".shell-header")`, "the reload");
   await app.library();

@@ -452,7 +452,7 @@ try {
 
   await check("the collapse works on the player's own songs, locked songs, and band songs", async () => {
     await phone(412);
-    await site.evaluate(`(() => { const stored = JSON.parse(localStorage.getItem("leadSheetsLibrary")); stored.songs = stored.songs.filter((song) => song.id !== 901); stored.songs.push(${js({ ...seed.songs.find((song) => song.id === TIMED), id: 901, title: "Mike's Fire Away", copy: { id: "copy-dm", canSendOn: false, from: { name: "Mike" } } })}); localStorage.setItem("leadSheetsLibrary", JSON.stringify(stored)); })()`);
+    await site.evaluate(`(() => { const stored = JSON.parse(localStorage.getItem("leadSheetsLibraryV2")); stored.songs = stored.songs.filter((song) => song.id !== 901); stored.songs.push(${js({ ...seed.songs.find((song) => song.id === TIMED), id: 901, title: "Mike's Fire Away", copy: { id: "copy-dm", canSendOn: false, from: { name: "Mike" } } })}); localStorage.setItem("leadSheetsLibraryV2", JSON.stringify(stored)); })()`);
     await site.evaluate(`window.__beforeReload = true; location.reload()`);
     await app.until(`!window.__beforeReload && !!document.querySelector(".shell-header")`, "the reload");
     await openBand();

@@ -645,7 +645,7 @@ await check("B5. a row whose title and artist match a song in My Songs is flagge
   const firstId = st.addOwnSong(songNamed("Quarry Song"));
   assert.ok(firstId !== null, "the first song is saved");
   const before = JSON.stringify(st.loadLibrary().songs.find((song) => song.id === firstId));
-  const rawBefore = storage.getItem("leadSheetsLibrary")!;
+  const rawBefore = storage.getItem("leadSheetsLibraryV2")!;
   let pile = await pileOf([picked("quarry.rtf", rtfOf(QUARRY))], {}, st.loadLibrary().songs);
   const row = ready(pile.rows[0]);
   assert.equal(row.state.duplicate?.by, "library", "flagged as a song you have");
@@ -660,7 +660,7 @@ await check("B5. a row whose title and artist match a song in My Songs is flagge
   assert.equal(songs.length, 2, "two songs of that title");
   assert.equal(JSON.stringify(st.loadLibrary().songs.find((song) => song.id === firstId)), before, "the first song is unchanged");
   const rowOf = (raw: string, id: number) => JSON.stringify((JSON.parse(raw).songs as { id: number }[]).find((song) => song.id === id));
-  assert.equal(rowOf(storage.getItem("leadSheetsLibrary")!, firstId!), rowOf(rawBefore, firstId!), "its stored bytes are unchanged");
+  assert.equal(rowOf(storage.getItem("leadSheetsLibraryV2")!, firstId!), rowOf(rawBefore, firstId!), "its stored bytes are unchanged");
 });
 
 await check("B6t. Replace keeps the player's time and key when the file names none, takes the file's when it names them, and a new song with neither is 4/4 in C major", () => {
@@ -1002,7 +1002,25 @@ if (site) {
         `[...document.querySelectorAll(".song-import-row")].map((row) => ({ name: row.querySelector(".song-import-open, .song-import-name")?.textContent.trim() ?? "", mark: row.querySelector(".song-import-mark")?.textContent.trim() ?? "", text: row.textContent }))`,
       );
     const saveLabel = () => s.evaluate<string>(`(${sheet}?.querySelector(".song-import-bottom .is-primary")?.textContent ?? "").trim()`);
-    const library = () => s.evaluate<{ id: number; title: string; artist: string; body: Song["body"] }[]>(`JSON.parse(localStorage.getItem("leadSheetsLibrary") ?? "{}").songs ?? []`);
+    const codecBundle = await build({
+      entryPoints: [join(fileURLToPath(new URL("..", import.meta.url)), "src/chordpro.ts")],
+      bundle: true,
+      write: false,
+      format: "esm",
+      platform: "neutral",
+      logLevel: "silent",
+    });
+    const { chordProToSong } = (await import(
+      `data:text/javascript;base64,${Buffer.from(codecBundle.outputFiles[0].text).toString("base64")}`
+    )) as { chordProToSong(text: string): { title: string; artist: string; body: Song["body"] } };
+    const library = async (): Promise<{ id: number; title: string; artist: string; body: Song["body"] }[]> => {
+      const raw = await s.evaluate<Array<Record<string, unknown>>>(`JSON.parse(localStorage.getItem("leadSheetsLibraryV2") ?? "{}").songs ?? []`);
+      return raw.map((entry) =>
+        typeof entry.chordpro === "string"
+          ? { id: entry.id as number, ...chordProToSong(entry.chordpro) }
+          : (entry as unknown as { id: number; title: string; artist: string; body: Song["body"] }),
+      );
+    };
     const songsTitled = async (title: string) => (await library()).filter((song) => song.title === title);
     const importButton = button("Import files");
     const onSongs = async () => {
@@ -1345,7 +1363,7 @@ if (site) {
       assert.equal(after[0].id, lanterns.id, "the same id");
       assert.ok(JSON.stringify(after[0].body).includes("tight"), "the new chart");
       assert.ok(!JSON.stringify(after[0].body).includes("Em"), "the old chart is gone");
-      const setlists = await s.evaluate<{ name: string; songIds: number[] }[]>(`JSON.parse(localStorage.getItem("leadSheetsLibrary")).setlists`);
+      const setlists = await s.evaluate<{ name: string; songIds: number[] }[]>(`JSON.parse(localStorage.getItem("leadSheetsLibraryV2")).setlists`);
       assert.deepEqual(setlists.find((each) => each.name === "Friday Set")?.songIds, [lanterns.id], "its place in the setlist");
       await closeImport();
     });
@@ -1383,7 +1401,7 @@ if (site) {
         const real = Storage.prototype.setItem;
         window.__realSetItem = real;
         Storage.prototype.setItem = function (key, value) {
-          if (key === "leadSheetsLibrary" && (String(value).match(/Ferrous/g) ?? []).length > 1) throw new DOMException("full", "QuotaExceededError");
+          if (key === "leadSheetsLibraryV2" && (String(value).match(/Ferrous/g) ?? []).length > 1) throw new DOMException("full", "QuotaExceededError");
           return real.call(this, key, value);
         };
       })()`);
@@ -1673,7 +1691,7 @@ if (site) {
         "two ready rows",
       );
       // The session ends: backup is on for this account, and the server now answers 401.
-      await s.evaluate(`localStorage.setItem("leadSheetsBackup", ${js(js({ account: ACCOUNT.userId, pulled: 0, synced: {}, at: null }))})`);
+      await s.evaluate(`localStorage.setItem("leadSheetsBackupV2", ${js(js({ account: ACCOUNT.userId, pulled: 0, synced: {}, at: null }))})`);
       server.backup = 401;
       server.me = null;
       await s.evaluate(`document.dispatchEvent(new Event("visibilitychange"))`);
@@ -1762,16 +1780,16 @@ if (site) {
         const times = await inPage<{ one: number; many: number; ones: number; manys: number }>(`(() => {
           const { addOwnSong, addOwnSongs } = __read.storage;
           const song = (n) => __read.ownSong({ title: "Timing Pebble " + n, artist: "The Made Up Band", keyRoot: "A", keyMode: "major", tempo: null, timeSignature: "4/4" }, [{ heading: "Verse 1", lines: [{ chords: "A       E", lyrics: "Pebbles tumble down the creek " + n }] }]);
-          const saved = localStorage.getItem("leadSheetsLibrary");
+          const saved = localStorage.getItem("leadSheetsLibraryV2");
           let at = performance.now();
           let ones = 0;
           for (let n = 0; n < 100; n += 1) if (addOwnSong(song(n)) !== null) ones += 1;
           const one = performance.now() - at;
-          localStorage.setItem("leadSheetsLibrary", saved);
+          localStorage.setItem("leadSheetsLibraryV2", saved);
           at = performance.now();
           const manys = (addOwnSongs(Array.from({ length: 100 }, (_, n) => song(n))) ?? []).filter((id) => id !== null).length;
           const many = performance.now() - at;
-          localStorage.setItem("leadSheetsLibrary", saved);
+          localStorage.setItem("leadSheetsLibraryV2", saved);
           return { one, many, ones, manys };
         })()`);
         console.log(`     100 addOwnSong calls ${Math.round(times.one)} ms, one addOwnSongs ${Math.round(times.many)} ms, ${(times.one / times.many).toFixed(1)} times faster, at 4x CPU slowdown`);
@@ -1787,13 +1805,13 @@ if (site) {
     await check(SCREEN_CASES.P4, async () => {
       const result = await inPage<{ first: number; second: number; refused: boolean; size: number }>(`(() => {
         const { addOwnSongs } = __read.storage;
-        const saved = localStorage.getItem("leadSheetsLibrary");
+        const saved = localStorage.getItem("leadSheetsLibraryV2");
         const song = (n) => __read.ownSong({ title: "Store Pebble " + n, artist: "The Made Up Band", keyRoot: "A", keyMode: "major", tempo: 96, timeSignature: "4/4" }, [{ heading: "Verse 1", lines: [{ chords: "A       E", lyrics: "Pebbles tumble down the creek " + n }, { chords: "D       A", lyrics: "Over moss and over stone " + n }] }, { heading: "Chorus", lines: [{ chords: "E   D", lyrics: "Tumble along " + n }] }]);
         const first = (addOwnSongs(Array.from({ length: 100 }, (_, n) => song(n))) ?? []).filter((id) => id !== null).length;
         const ids = addOwnSongs(Array.from({ length: 200 }, (_, n) => song(100 + n)));
-        const size = (localStorage.getItem("leadSheetsLibrary") ?? "").length;
+        const size = (localStorage.getItem("leadSheetsLibraryV2") ?? "").length;
         const second = (ids ?? []).filter((id) => id !== null).length;
-        localStorage.setItem("leadSheetsLibrary", saved);
+        localStorage.setItem("leadSheetsLibraryV2", saved);
         return { first, second, refused: ids === null, size };
       })()`);
       console.log(`     200 songs on top of 100: ${result.refused ? "refused" : "stored"}, library ${(result.size / 1024).toFixed(1)} KB`);

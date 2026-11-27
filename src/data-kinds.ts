@@ -11,7 +11,17 @@ export const PRIVACY_HREF = "privacy.html";
 export const APP_NAME = "Groovist";
 
 export const DATA_KINDS: readonly DataKind[] = [
-  { key: "leadSheetsLibrary", place: "phone", what: "Your songs and setlists, including any changes you make to them." },
+  { key: "leadSheetsLibraryV2", place: "phone", what: "Your songs and setlists, including any changes you make to them." },
+  {
+    key: "leadSheetsLibrary",
+    place: "phone",
+    what: "The earlier place your songs and setlists were stored, kept as it was for a page opened before the update and removed when the account on this phone changes.",
+  },
+  {
+    key: "leadSheetsLibraryTaken",
+    place: "phone",
+    what: "Short fingerprints of songs and setlists already taken in from the earlier library key, so changes made in a still-open older tab are not added twice. Removed when the account on this phone changes.",
+  },
   { key: "leadSheetsTheme", place: "phone", what: "The look you picked: stage, day, one of the two colorblind-safe looks, or high contrast." },
   { key: "leadSheetsTextScale", place: "phone", what: "The text size you picked for sheets." },
   {
@@ -53,9 +63,14 @@ export const DATA_KINDS: readonly DataKind[] = [
     what: "A link you opened while signed out, such as a friend or band invite, with the time it arrived, kept so it can finish once you sign in or create an account. Removed when it is used or refused, when you close the sign-in screen, or after a day.",
   },
   {
-    key: "leadSheetsBackup",
+    key: "leadSheetsBackupV2",
     place: "phone",
     what: "While you are signed in: which account this phone backs up to, and what it last sent and received, so it only sends changes. Removed when you sign out.",
+  },
+  {
+    key: "leadSheetsBackup",
+    place: "phone",
+    what: "The earlier place your backup state was stored, kept as it was for a page opened before the update and removed when the account on this phone changes.",
   },
   {
     key: "leadSheetsLeftBy",

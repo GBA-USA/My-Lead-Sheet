@@ -47,6 +47,10 @@ const ONE_COPY: { what: string; pattern: RegExp; home: string | string[]; dir?: 
   { what: "smart paste reader", pattern: /\b(?:function|const)\s+readPaste\b/, home: "src/song-paste.ts", dir: "src/" },
   { what: "Learn this song chooser definition", pattern: /\b(?:function|const)\s+LearnChooser\b/, home: "src/learn-chooser.tsx", dir: "src/" },
   { what: "Learn this song chooser mount", pattern: /<LearnChooser\b/, home: "src/scroll-sheet.tsx", dir: "src/" },
+  { what: "reading a stored song on the phone", pattern: /\b(?:function|const)\s+songFromStored\b/, home: "src/storage.ts", dir: "src/" },
+  { what: "writing a stored song on the phone", pattern: /\b(?:function|const)\s+songToStored\b/, home: "src/storage.ts", dir: "src/" },
+  { what: "reading a song at the phone's door", pattern: /\b(?:function|const)\s+songFromSent\b/, home: "src/band-library-model.ts", dir: "src/" },
+  { what: "shaping a song the phone sends", pattern: /\b(?:function\s+sent\s*\(|const\s+sent\s*=\s*\()/, home: "src/band-library.tsx", dir: "src/" },
 ];
 
 for (const { what, pattern, home, dir, pending } of ONE_COPY) {

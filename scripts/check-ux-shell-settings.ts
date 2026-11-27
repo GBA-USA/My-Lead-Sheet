@@ -1,5 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { build } from "esbuild";
 import { startApi } from "./api-session.ts";
 import { PASSWORD_PEPPER } from "./app-page.ts";
 import { openSite } from "./chrome.ts";
@@ -379,8 +381,21 @@ async function openSettingsIfNeeded() {
   if (!(await evaluate<boolean>(`!!${SETTINGS}`))) await openSettings();
 }
 
+const codecBundle = await build({
+  entryPoints: [join(fileURLToPath(new URL("..", import.meta.url)), "src/chordpro.ts")],
+  bundle: true,
+  write: false,
+  format: "esm",
+  platform: "neutral",
+  logLevel: "silent",
+});
+const { chordProToSong } = (await import(
+  `data:text/javascript;base64,${Buffer.from(codecBundle.outputFiles[0].text).toString("base64")}`
+)) as { chordProToSong(text: string): { keyLabel: string } };
+
 async function liveKeyWritten() {
-  return evaluate<string>(`(() => { const l = JSON.parse(localStorage.getItem("leadSheetsLibrary")); const set = l.setlists.find((s) => s.id === 1); return l.songs.find((s) => s.id === set.songIds[0]).keyLabel; })()`);
+  const song = await evaluate<Record<string, unknown>>(`(() => { const l = JSON.parse(localStorage.getItem("leadSheetsLibraryV2")); const set = l.setlists.find((s) => s.id === 1); return l.songs.find((s) => s.id === set.songIds[0]); })()`);
+  return typeof song?.chordpro === "string" ? chordProToSong(song.chordpro).keyLabel : String(song?.keyLabel ?? "");
 }
 
 if (failures) {

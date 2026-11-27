@@ -275,7 +275,7 @@ async function appChecks(site: Awaited<ReturnType<typeof openSite>>, base: strin
   );
   assert.deepEqual(refusal(tried), [403, "band-only"], "and Sam's direct copy-song is refused");
   assert.equal(
-    await site.evaluate<number>(`JSON.parse(localStorage.getItem("leadSheetsLibrary") ?? '{"songs":[]}').songs.filter((song) => song.title === "Back Porch Blues").length`),
+    await site.evaluate<number>(`JSON.parse(localStorage.getItem("leadSheetsLibraryV2") ?? '{"songs":[]}').songs.filter((song) => song.title === "Back Porch Blues" || (typeof song.chordpro === "string" && song.chordpro.includes("{title: Back Porch Blues}"))).length`),
     0,
     "nothing of it is in My Songs",
   );

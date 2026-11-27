@@ -1,4 +1,4 @@
-/** Types taken from lead-sheets-data-export.json. Do not add a parallel model. */
+/** In-memory chart model the screens draw. Songs are stored and sent as ChordPro text (`src/chordpro.ts`). Do not add a parallel model. */
 
 export type KeyMode = "major" | "minor";
 

@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore, type KeyboardEvent } from "react";
-import { bandSongRef } from "./band-library-model";
+import { bandSongRef, songFromSent } from "./band-library-model";
 import { PRIVACY_HREF } from "./data-kinds";
 import { GigSong } from "./gig-plan";
 import type { useMetronome } from "./metronome-view";
@@ -148,7 +148,7 @@ export function SongList({ songs, userId, onAdd, onImport }: { songs: Song[]; us
     if (!searching || (userId && !heldFor(userId))) return setHeld([]);
     let current = true;
     allOnPhone("bandSongs").then(
-      (rows) => current && setHeld(rows),
+      (rows) => current && setHeld(rows.map((item) => ({ ...item, song: songFromSent(item.song) }))),
       () => current && setHeld([]),
     );
     return () => {

@@ -1017,6 +1017,27 @@ try {
     await waitFor("the visitor back in the app", 8000, () => evaluate<boolean>(`!document.querySelector(".account-sheet") && !!document.querySelector(".shell-header")`));
     await closeAll();
   });
+
+  // ---- Added after the build (the brief allows new cases; K1 to K18 above are as in the tests-only commit) ----------
+
+  await check("K19 downloaded after the screen loaded: a Connected player who fetches tonight's set later reads Downloaded, not Not yet", async () => {
+    await pageAs(lee);
+    const band = await newBand("Late Fetch");
+    const gigId = await planGig(band, "Late fetch");
+    await leaderStarts(band, gigId);
+    const adaSock = await (await openSock(ada, band.bandId)).join(gigId);
+    adaSock.startBeats();
+    await packFor(ada, band, gigId);
+    await openPanel();
+    await panelReads([[ada, "Connected"]], 8000, "Ada Connected once she downloads");
+    const adaText = await evaluate<string>(
+      `[...document.querySelectorAll(${js(`${SHEET} .band-status-row`)})].find((row) => row.querySelector(".band-status-name")?.textContent.trim() === ${js(ada.name)})?.textContent ?? ""`,
+    );
+    assert.ok(adaText.includes("Downloaded") && !adaText.includes("Not yet"), `Ada, Connected with tonight's set, reads Downloaded, not Not yet (${adaText})`);
+    await closePanel();
+    await endPageGig(band, gigId);
+    await closeAll();
+  });
 } finally {
   await closeAll();
   await site.close();

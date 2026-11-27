@@ -242,6 +242,12 @@ test("a known song layout reaches screen center at the expected beat times withi
   assert(off.length === 0, `lines of 1, 2, 6 and 8 bars in one chart each get their own length, not a section average: ${off.join("; ")}`);
 });
 
+const CHORD_VIEW_PILL = /<div[^>]* role="radiogroup"[^>]* aria-label="Chord view"[^>]*>[\s\S]*?<\/div>/;
+
+function offersAlbumOrRadio(html: string): boolean {
+  return /album|radio/i.test(html.replace(CHORD_VIEW_PILL, (pill) => pill.replace(/ role="radio(group)?"/g, "")));
+}
+
 test("the pace comes from the song alone; there is no album or radio-edit choice", () => {
   const clientHeight = 700;
   const centers = (runtime: number | null) => {
@@ -259,7 +265,16 @@ test("the pace comes from the song alone; there is no album or radio-edit choice
   const names = Object.keys(app).filter((name) => picker.test(name));
   assert(names.length === 0, `scroll-timing exports no album or radio-edit choice (${names.join(", ")})`);
   const html = app.renderToStaticMarkup(app.createElement(app.SongControls, controlsProps(true)));
-  assert(!picker.test(html), "the song controls offer no album or radio-edit choice");
+  assert(!offersAlbumOrRadio(html), "the song controls offer no album or radio-edit choice");
+  const pill = html.match(CHORD_VIEW_PILL)?.[0] ?? "";
+  assert(pill !== "", "the song controls hold the Chord view pill this case sets aside");
+  const planted: [string, string][] = [
+    ["a Pace radio group with Full and Short", `${html}<div role="radiogroup" aria-label="Pace"><button role="radio" aria-checked="true">Full</button><button role="radio" aria-checked="false">Short</button></div>`],
+    ["a Radio edit button", `${html}<button type="button">Radio edit</button>`],
+    ["an Album part inside the Chord view pill", html.replace(pill, () => pill.replace(/<\/div>$/, () => `<button type="button" role="radio" aria-checked="false">Album</button></div>`))],
+    ["a second group also named Chord view", html.replace(pill, () => pill + pill)],
+  ];
+  for (const [name, markup] of planted) assert(offersAlbumOrRadio(markup), `${name} still counts as an album or radio-edit choice`);
 });
 
 test("the current lyric+chord line is at the vertical midpoint, with lines ahead below and lines just played above", () => {

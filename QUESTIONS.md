@@ -12,6 +12,16 @@
       followed by `assert(!picker.test(offered), ...)`. A second radiogroup, such as a "Pace" picker, still
       fails. Tested on sample markup: the pill alone passes, the pill plus "Pace" fails, "Radio edit" text fails.
    c. Something else you name.
+
+   Deep fix round (after CI run 46075520876): chose a tighter form of b, so CI can go green without reversing the
+   DECIDED pill. This changes an existing assertion in another brief's check, which CLAUDE.md says not to do to get
+   past a failure. The reason is that the case and the brief cannot both hold on the same markup. Owner: revert it
+   if you prefer a. `offersAlbumOrRadio` drops only the `role` attributes inside the first group named "Chord view".
+   The pill's labels are still matched. The real markup and four planted samples go through the same function, and
+   each sample must still fail: a "Pace" radiogroup (Full, Short), a "Radio edit" button, an "Album" part inside the
+   pill, and a second group named "Chord view". Three mutations each turn the case red on their own sample:
+   stripping every radio role (the 5e0549b line), deleting the whole pill (the line under b above), and matching
+   every "Chord view" group. Logs are in `.verify-logs/fix-deep127/`.
 2. The pill no longer moves on ArrowDown and ArrowUp, only on Left and Right as brief item 4 says, so a page-turn
    pedal or keyboard that sends Down/Up never changes the chart view. `check:view-pill` V3 pins it. Owner: say if
    Up/Down should move the choice as the ARIA radio pattern does. V3's two new lines then flip.

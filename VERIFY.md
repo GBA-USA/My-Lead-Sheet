@@ -1,5 +1,10 @@
-VERDICT: FAIL
-P0 | CLASS=other | scripts/check-scroll-sync.ts:262 | Open, waiting on the owner. The line is restored byte for byte to its text before 5e0549b, so the case "there is no album or radio-edit choice" fails again on the pill's DECIDED `role="radio"`. QUESTIONS.md item 1 gives the owner three choices and a tested narrower line to name. This round does not bend the case again.
+# p2-view-pill deep fix round (PR 127, CI Deep verify run 46075520876 at f63b714)
+
+- check:scroll-sync. Red at f63b714: exit 1 on "there is no album or radio-edit choice", because the raw-markup `/album|radio/i` match reads the DECIDED pill's `role="radio"` as a radio-edit choice (`.verify-logs/fix-deep127/red-scroll-sync-f63b714.log`). Fix in the check only, QUESTIONS.md item 1: `offersAlbumOrRadio` sets aside the role attributes of the one "Chord view" group, and four planted choices must still fail. Green: 11 of 11 ok, exit 0 (`green-scroll-sync.log`). Mutants `strip-all-roles`, `delete-pill` and `every-chord-view-group` each exit 1 on their own sample (`mutant-*.log`). No `src/` change.
+- check:spike-server. Not caused by this PR. `git diff 6fdff5a f63b714 -- spike worker` is empty. It passes here at f63b714, exit 0. In CI it needed its retry on mls-int run 46058335766 and on p2-song-info run 46071174653, and passed on the first try in the same shard slot in run 46070754795. Under 16 CPU burners on this box it failed, exit 1, with "room counted 280 leader messages, leader sent 281" (`spike-server-under-load.log`). That is one of the two CI messages. The other is "relayed-ping spread p95 <= 8 ms", which measures runner timing. Not changed here. It can redden CI again whatever this PR holds. Follow-up for the spike owner (inferred from the code, not traced): `spike/server/drill.mjs:166` reads `/stats` while followers are still pinging, so pongs the leader sends after that read count in `leaderSent` and not in `stats.leader`.
+
+VERDICT: FAIL (superseded by the deep fix round above)
+P0 | CLASS=other | scripts/check-scroll-sync.ts:262 | Closed by the deep fix round, QUESTIONS.md item 1. The quick round restored the line byte for byte and left the case red for the owner.
 Nits:
 P3 | CLASS=layout-width | src/styles.css:683 | Not changed. Folded under 430 px, the pill parts are unequal (46, 57 and 72 px), and from 430 to 539 px the text is 11 px. A layout change is not a small fix here. Left for the owner.
 P3 | CLASS=layout-width | src/styles.css:640 | Not changed. Folded at 360 px a long key reads "A (pra?". Same reason.

@@ -11,7 +11,10 @@ type Paths = Pick<typeof path, "relative" | "sep">;
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SCANNED = ["dist", "public", "src", "worker", "functions", "index.html"];
 const SCRIPT_FILE = /\.[cm]?[jt]sx?$/i;
-const TEXT_FILE = /\.(?:html?|css|[cm]?[jt]sx?|webmanifest|json)$/i;
+const TEXT_FILE = /\.(?:html?|css|[cm]?[jt]sx?|webmanifest|json|svg)$/i;
+const NOT_TEXT = /\.(?:woff2?|ttf|otf|eot|ico|png|jpe?g|gif|webp|avif|bmp|mp3|wav|ogg|m4a|flac|mp4|webm|pdf|zip|gz|br|wasm|map)$/i;
+const isRead = (file: string) => (file.startsWith("dist/") ? !NOT_TEXT.test(file) : TEXT_FILE.test(file));
+const URL_AUDITED = /^(?:dist|worker|functions)\//;
 const SKIPPED = /(^|\/)(node_modules|\.wrangler)(\/|$)/;
 
 const FONT_OR_CDN_HOST =
@@ -37,7 +40,8 @@ const KNOWN_URLS: { prefix: string; why: string }[] = [
   { prefix: "https://www.google.com/search?q=", why: "a web search the player opens by tapping, nothing loads by itself" },
   { prefix: "https://musicbrainz.org/ws/2/recording", why: "song search sends the typed title when the player searches; LEGAL-TODO row 5" },
 ];
-const ABSOLUTE_URL = /(?:\bhttps?:|(?<=["'\x60(=]\s*))\/\/[a-z0-9.-]+\.[a-z]{2,}[^\s"'\x60<>)\\]*/gi;
+const URL_TAIL = String.raw`(?::\d+)?[^\s"'\x60<>)\\]*`;
+const ABSOLUTE_URL = new RegExp(String.raw`\bhttps?:\/\/(?:[a-z0-9-]+(?:\.[a-z0-9-]+)*|\[[0-9a-f:.]+\])${URL_TAIL}|(?<=["'\x60(=]\s*)\/\/(?:(?:[a-z0-9-]+\.)+[a-z]{2,}|\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-f:.]+\])${URL_TAIL}`, "gi");
 const isKnownUrl = (url: string) => KNOWN_URLS.some(({ prefix }) => url.startsWith(url.startsWith("//") ? prefix.replace(/^https?:/, "") : prefix));
 
 const CONTROL_WORDS = /^\s*(?:subscribe|upgrade|(?:go|get|try|join) (?:pro|premium|plus)|buy|pay|purchase|checkout|start (?:your |a )?(?:free )?trial|unlock (?:pro|premium|plus|all|everything|the full))\b/i;
@@ -90,8 +94,8 @@ function importRules({ file, text }: Page): Finding[] {
     .map((name) => ({ file, rule: "tracker-import", text: name }));
 }
 
-function distUrlRules({ file, text }: Page): Finding[] {
-  if (!file.startsWith("dist/") || !/\.(?:[cm]?js|html?|css)$/i.test(file)) return [];
+function urlRules({ file, text }: Page): Finding[] {
+  if (!URL_AUDITED.test(file)) return [];
   return matches(text, ABSOLUTE_URL)
     .filter((url) => !isKnownUrl(url))
     .map((url) => ({ file, rule: "unlisted-third-party-url", text: url }));
@@ -138,9 +142,9 @@ function packageRules(root: string): Finding[] {
 function scan(root: string, extra: Page[] = []): Finding[] {
   const out: Finding[] = [];
   if (!existsSync(path.join(root, "dist", "index.html"))) out.push({ file: "dist/index.html", rule: "no-build", text: "run npm run build first" });
-  const files = [...new Set(SCANNED.flatMap((entry) => walk(root, entry)))].filter((file) => TEXT_FILE.test(file));
+  const files = [...new Set(SCANNED.flatMap((entry) => walk(root, entry)))].filter((file) => isRead(relPath(root, file)));
   const pages = [...files.map((file) => ({ file: relPath(root, file), text: readFileSync(file, "utf8") })), ...extra];
-  for (const page of pages) out.push(...loadRules(page), ...importRules(page), ...distUrlRules(page), ...priceRules(page));
+  for (const page of pages) out.push(...loadRules(page), ...importRules(page), ...urlRules(page), ...priceRules(page));
   return [...out, ...packageRules(root)];
 }
 
@@ -273,18 +277,21 @@ function todoRows(root: string): Map<number, string> {
 }
 
 function routesThatStoreProfileAfterSignUp(source: string): string[] {
-  const keys = [...source.matchAll(/^\s*async "([A-Z]+ \/api\/[^"]+)"\(/gm)];
+  const keys = [...source.matchAll(/^\s*(?:async\s+)?"([A-Z]+ \/api\/[^"]+)"\s*[(:]/gm)];
   return keys
     .filter((key, i) => {
-      const body = source.slice(key.index, keys[i + 1]?.index ?? source.length);
+      const objectEnd = source.slice(key.index).search(/^\}/m);
+      const end = Math.min(keys[i + 1]?.index ?? source.length, objectEnd < 0 ? source.length : key.index + objectEnd);
+      const body = source.slice(key.index, end);
       return SIGNED_IN.test(body) && STORES_PROFILE.test(body);
     })
     .map((key) => key[1].split(" ")[1]);
 }
 
 function profileRoutes(root: string): string[] {
-  const file = path.join(root, "worker", "directory-account.ts");
-  return existsSync(file) ? routesThatStoreProfileAfterSignUp(readFileSync(file, "utf8")) : [];
+  return walk(root, "worker")
+    .filter((file) => SCRIPT_FILE.test(file))
+    .flatMap((file) => routesThatStoreProfileAfterSignUp(readFileSync(file, "utf8")));
 }
 
 const PLANTED_PROFILE_ROUTES = `export const ROUTES: Record<string, Route> = {
@@ -323,7 +330,7 @@ function runDocCases() {
 const ITEMS: { name: string; rules: string[] }[] = [
   { name: "R0 the build exists", rules: ["no-build"] },
   { name: "R2 no outside font, stylesheet, script, image or frame in index.html, public, dist, the Worker pages or the privacy page", rules: ["font-or-cdn-host", "third-party-script", "third-party-link", "third-party-embed", "css-remote-load", "remote-script-import"] },
-  { name: "R2b every outside URL in the built bundle has an audit row", rules: ["unlisted-third-party-url"] },
+  { name: "R2b every outside URL in the build, the Worker and functions has an audit row", rules: ["unlisted-third-party-url"] },
   { name: "R3 no analytics or session-replay package, import or snippet", rules: ["tracker-package", "tracker-import", "tracker-sign"] },
   { name: "R5 no Subscribe or price control without renewal terms beside it", rules: ["price-control-without-renewal-terms"] },
 ];

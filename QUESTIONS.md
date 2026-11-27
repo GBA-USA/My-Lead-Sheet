@@ -1,3 +1,15 @@
+# p2-song-info: check:ux-metronome-sheet's chord x pin cannot pass on the Windows laptop
+
+The brief asks every listed check to exit 0 before the push, and says pixel pins come from Linux. One case of
+check:ux-metronome-sheet ("the chart's first chord moves up by exactly the block's height…") pins the first chord's x
+at 109.59 px at 390 px. On the laptop it reads 112.00, at this branch and on the untouched base 4d4ba74. The chart font
+is the app's own IBM Plex Mono file. Linux draws it at 7.8 px a character, and Windows Edge at a whole 8.0 px:
+16 + 12 x 8.0 = 112.0 against 16 + 12 x 7.8 = 109.6. Four browser flags and `text-rendering: geometricPrecision` leave
+it at 8.0 px. Every other case of the check passes on the laptop, including the one this cook edited, with that one
+line skipped. Re-pinning on Windows or loosening the line would break the brief's rules, so neither was done.
+Owner: say if the Linux Deep verify's result for this check settles it, or if you want the chart font rendering
+changed (src/styles.css, not this cook's file).
+
 # song-paste-import fix pass 3: a whole-box paste can be undone, and only a new paste scrolls
 
 1. A paste the app takes now goes into the box as the browser's own edit (`insertText` over the whole box), so one

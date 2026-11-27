@@ -1,7 +1,20 @@
+# p2-song-info: check:ux-metronome-sheet's closed-panel chord y and tops are Windows numbers
+
+The case now called "with Song info closed, the chart's first chord and the card's blocks sit exactly at their pinned
+places" pins the first chord's y and the tops of .meta, .song-info and .chart as exact numbers (0.5 px). It replaced a
+chain of relations that a 60 px margin on .meta, .sheet-title or .chart passed. The numbers were measured in Edge on
+Windows, since there is no Linux box here: chord y 199.30 at 390 px and 179.56 at 1280 px. Why they should hold on
+Linux: the app bundles Inter and IBM Plex Mono (src/main.tsx), every line height on the path is unitless, and on the
+untouched base 4d4ba74 at 1280 px Windows reads the Linux pins to 0.01 px (chord y 370.64, .feel 131.73, .sheet-label
+194.80). At 390 px the base differs only by whole wrapped lines of the source, Feel and notes prose, which this branch
+moves into the closed panel. The case prints a `note at <width> px` line with what it measured on every run.
+Owner: if the Linux Deep verify fails this case on y or a top, its note lines are the Linux numbers to pin instead.
+
 # p2-song-info: check:ux-metronome-sheet's chord x pin cannot pass on the Windows laptop
 
 The brief asks every listed check to exit 0 before the push, and says pixel pins come from Linux. One case of
-check:ux-metronome-sheet ("the chart's first chord moves up by exactly the block's height…") pins the first chord's x
+check:ux-metronome-sheet ("the chart's first chord moves up by exactly the block's height…", renamed in fix pass 2 to
+"with Song info closed, the chart's first chord and the card's blocks sit exactly at their pinned places") pins the first chord's x
 at 109.59 px at 390 px. On the laptop it reads 112.00, at this branch and on the untouched base 4d4ba74. The chart font
 is the app's own IBM Plex Mono file. Linux draws it at 7.8 px a character, and Windows Edge at a whole 8.0 px:
 16 + 12 x 8.0 = 112.0 against 16 + 12 x 7.8 = 109.6. Four browser flags and `text-rendering: geometricPrecision` leave

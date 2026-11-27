@@ -40,23 +40,22 @@ const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
 const seed = JSON.parse(readFileSync(join(root, "data/library.json"), "utf8")) as { songs: (SongContent & { id: number })[] };
 
 /**
- * Measured on the base (addc5a2) at `#/song/10`, relative to `article.sheet`: the first chord glyph, the tops of the
- * card's children, and the metronome block's height with its 12 px top margin (the shift when the block is removed).
- * Chord y re-measured in Chrome on Linux (the CI runner) after the bass table was removed; x, the card's children and the block are unchanged.
- * The source line, Feel and the labelled notes now sit in the closed Song info panel, so the card reads title, meta,
- * Song info row, chart, each directly under the one before, and those blocks are not laid out. With no Linux number for
- * the new chord y, the case pins it as a chain from the title's pinned top: the title and meta are exactly their lines,
- * the closed Song info is exactly its 44 px row, and the chord sits as far inside the chart as in a copy of the chart
- * outside the sheet, so nothing scoped to the sheet moves it. Opening the panel moves
- * the first chord down by exactly the panel's added height, and closing it puts the chord back.
+ * At `#/song/10` with Song info closed, relative to `article.sheet`: the first chord glyph, the left edge, and the
+ * tops of the card's children, which read title, meta, Song info row, chart. The source line, Feel and the labelled
+ * notes sit in the closed panel and are not laid out.
+ * x is Chrome on Linux (the CI runner), measured on the base (addc5a2). The y and the tops were measured in Edge on
+ * Windows (p2-song-info, Nov 27 2026), with no Linux run to hand. The app bundles Inter and IBM Plex Mono and every line
+ * height here is unitless, so the two systems agree on tops unless a line wraps differently. On the base (4d4ba74) at
+ * 1280 px Windows reads the Linux pins to 0.01 px (chord y 370.64), and at 390 px it differs only by whole wrapped lines
+ * of the prose that now sits in the closed panel. The title and meta wrap alike on both. The case logs what it
+ * measured on every run, so a Linux run shows its own numbers.
  */
-const SHEET_ORDER = [".sheet-title", ".meta", ".song-info", ".chart"];
 const IN_SONG_INFO = [".source", ".feel", ".sheet-label"];
 /** The Song info row is a 44 px tap target (the brief's number, not a measurement). Its one text line is shorter. */
 const ROW_TAP = 44;
-const BASE: Record<number, { chord: { x: number; y: number }; block: number; left: number; above: Record<string, number>; below: Record<string, number> }> = {
-  390: { chord: { x: 109.59, y: 930.99 }, block: 158.38, left: 16, above: { ".sheet-title": 20, ".source": 87.88, ".meta": 166.19 }, below: { ".feel": 354.81, ".sheet-label": 507.81 } },
-  1280: { chord: { x: 121.59, y: 512.83 }, block: 142.19, left: 28, above: { ".sheet-title": 28, ".source": 68.14, ".meta": 101.48 }, below: { ".feel": 273.92, ".sheet-label": 336.99 } },
+const CARD: Record<number, { chord: { x: number; y: number }; left: number; tops: Record<string, number> }> = {
+  390: { chord: { x: 109.59, y: 199.3 }, left: 16, tops: { ".sheet-title": 20, ".meta": 84.88, ".song-info": 112.48, ".chart": 159.67 } },
+  1280: { chord: { x: 121.59, y: 179.56 }, left: 28, tops: { ".sheet-title": 28, ".meta": 65.14, ".song-info": 92.75, ".chart": 139.94 } },
 };
 
 /** Counts every click the page starts, records every body it sends, and stands in for the battery named in sessionStorage. */
@@ -480,11 +479,11 @@ try {
     assert.ok(!(await phone.has("Save", HEADER)), "Save goes away after Revert");
   });
 
-  await check("the chart's first chord moves up by exactly the block's height and nothing else moves", async () => {
+  await check("with Song info closed, the chart's first chord and the card's blocks sit exactly at their pinned places", async () => {
     for (const pixels of [390, 1280]) {
       await phone.width(pixels);
       await phone.fresh();
-      const base = BASE[pixels];
+      const pin = CARD[pixels];
       const card = await phone.evaluate<{
         x: number;
         y: number;
@@ -492,10 +491,7 @@ try {
         tops: Record<string, number>;
         lefts: Record<string, number>;
         folded: Record<string, boolean>;
-        gaps: { from: string; to: string; gap: number; margin: number; adjacent: boolean }[];
-        heights: Record<string, { height: number; lines: number; lineHeight: number }>;
-        inside: { sheet: number; alone: number };
-        closed: { info: number; row: number; chartEdge: number };
+        closed: { info: number; row: number };
       }>(`(() => {
         const sheet = document.querySelector("article.sheet").getBoundingClientRect();
         const chords = document.querySelector(".chart .pair .chords");
@@ -508,7 +504,7 @@ try {
         const at = [...text.matchAll(/\\S+/g)].map((chord) => Math.round((range(chords.firstChild, chord.index, chord.index + 1).left - left) / advance));
         const glyph = range(chords.firstChild, text.search(/\\S/), text.search(/\\S/) + 1);
         const tops = {}, lefts = {}, folded = {};
-        for (const selector of ${js([...SHEET_ORDER, ...IN_SONG_INFO])}) {
+        for (const selector of ${js([...Object.keys(pin.tops), ...IN_SONG_INFO])}) {
           const el = document.querySelector("article.sheet > " + selector) ?? document.querySelector("article.sheet > .song-info > .song-info-panel > " + selector);
           folded[selector] = !!el.closest(".song-info-panel") && el.getClientRects().length === 0;
           if (folded[selector]) continue;
@@ -516,50 +512,18 @@ try {
           tops[selector] = box.top - sheet.top;
           lefts[selector] = box.left - sheet.left;
         }
-        const gaps = [];
-        for (let i = 1; i < ${js(SHEET_ORDER)}.length; i += 1) {
-          const prev = document.querySelector("article.sheet > " + ${js(SHEET_ORDER)}[i - 1]), next = document.querySelector("article.sheet > " + ${js(SHEET_ORDER)}[i]);
-          const margin = Math.max(parseFloat(getComputedStyle(prev).marginBottom), parseFloat(getComputedStyle(next).marginTop));
-          gaps.push({ from: ${js(SHEET_ORDER)}[i - 1], to: ${js(SHEET_ORDER)}[i], gap: next.getBoundingClientRect().top - prev.getBoundingClientRect().bottom, margin, adjacent: prev.nextElementSibling === next });
-        }
-        const style = (el) => getComputedStyle(el);
-        const lines = (el) => {
-          const r = document.createRange();
-          r.selectNodeContents(el);
-          const tops = [...r.getClientRects()].map((box) => box.top).sort((a, b) => a - b);
-          return tops.filter((top, i) => i === 0 || top - tops[i - 1] > parseFloat(style(el).lineHeight) / 2).length;
-        };
-        const heights = {};
-        for (const selector of [".sheet-title", ".meta"]) {
-          const el = document.querySelector("article.sheet > " + selector);
-          heights[selector] = { height: el.getBoundingClientRect().height, lines: lines(el), lineHeight: parseFloat(style(el).lineHeight) };
-        }
         const info = document.querySelector("article.sheet > .song-info");
-        const infoRow = info.querySelector(".song-info-row");
-        const chart = document.querySelector("article.sheet > .chart");
-        const host = document.createElement("div");
-        const sheetStyle = style(document.querySelector("article.sheet"));
-        host.style.cssText = "position: absolute; left: 0; top: 0; visibility: hidden; width: " + chart.getBoundingClientRect().width + "px; font-family: " + sheetStyle.fontFamily + "; font-size: " + sheetStyle.fontSize + "; line-height: " + sheetStyle.lineHeight;
-        host.append(chart.cloneNode(true));
-        document.body.append(host);
-        const twin = host.firstElementChild, twinChords = twin.querySelector(".pair .chords");
-        const twinGlyph = range(twinChords.firstChild, twinChords.textContent.search(/\\S/), twinChords.textContent.search(/\\S/) + 1);
-        const inside = { sheet: glyph.top - chart.getBoundingClientRect().top, alone: twinGlyph.top - twin.getBoundingClientRect().top };
-        host.remove();
-        const closed = { info: info.getBoundingClientRect().height, row: infoRow.getBoundingClientRect().height, chartEdge: parseFloat(style(chart).paddingTop) + parseFloat(style(chart).borderTopWidth) };
-        return { x: glyph.left - sheet.left, y: glyph.top - sheet.top, row: { chords: text, lyrics: lyric, at }, tops, lefts, folded, gaps, heights, inside, closed };
+        const closed = { info: info.getBoundingClientRect().height, row: info.querySelector(".song-info-row").getBoundingClientRect().height };
+        return { x: glyph.left - sheet.left, y: glyph.top - sheet.top, row: { chords: text, lyrics: lyric, at }, tops, lefts, folded, closed };
       })()`);
+      console.log(`note at ${pixels} px: first chord x ${card.x.toFixed(2)} y ${card.y.toFixed(2)}, tops ${js(card.tops)}`);
       const near = (a: number, b: number) => Math.abs(a - b) < 0.5;
-      assert.ok(near(card.x, base.chord.x), `at ${pixels} px the first chord keeps its x (${card.x.toFixed(2)}, base ${base.chord.x})`);
-      assert.ok(card.y < base.chord.y - base.block - 0.5, `at ${pixels} px the first chord moved up by more than the block, since the song's notes went into the closed Song info panel (moved up ${(base.chord.y - card.y).toFixed(2)} px, the block was ${base.block} px)`);
-      assert.ok(near(card.tops[".sheet-title"], base.above[".sheet-title"]), `at ${pixels} px .sheet-title above the block stays at ${base.above[".sheet-title"]} (now ${card.tops[".sheet-title"].toFixed(2)})`);
-      for (const each of card.gaps) assert.ok(each.adjacent && near(each.gap, each.margin), `at ${pixels} px ${each.to} sits directly under ${each.from}, nothing between (gap ${each.gap.toFixed(2)}, margin ${each.margin.toFixed(2)})`);
-      for (const [selector, each] of Object.entries(card.heights)) assert.ok(near(each.height, each.lines * each.lineHeight), `at ${pixels} px ${selector} is exactly its ${each.lines} line${each.lines === 1 ? "" : "s"} tall (${each.height.toFixed(2)}, a line is ${each.lineHeight.toFixed(2)})`);
+      assert.ok(near(card.x, pin.chord.x), `at ${pixels} px the first chord keeps its x (${card.x.toFixed(2)}, base ${pin.chord.x})`);
+      assert.ok(near(card.y, pin.chord.y), `at ${pixels} px the first chord sits at y ${pin.chord.y} (now ${card.y.toFixed(2)})`);
+      for (const [selector, top] of Object.entries(pin.tops)) assert.ok(near(card.tops[selector], top), `at ${pixels} px ${selector} sits at ${top} (now ${card.tops[selector]?.toFixed(2)})`);
       assert.ok(near(card.closed.info, card.closed.row) && near(card.closed.row, ROW_TAP), `at ${pixels} px the closed Song info is exactly its row, and the row is the brief's ${ROW_TAP} px tap height (block ${card.closed.info.toFixed(2)}, row ${card.closed.row.toFixed(2)})`);
-      assert.equal(card.closed.chartEdge, 0, `at ${pixels} px the chart adds no padding or border above its first section`);
-      assert.ok(near(card.inside.sheet, card.inside.alone), `at ${pixels} px the first chord sits exactly as far inside the chart as in a copy of the chart outside the sheet (${card.inside.sheet.toFixed(2)}, copy ${card.inside.alone.toFixed(2)})`);
       for (const selector of IN_SONG_INFO) assert.ok(card.folded[selector], `at ${pixels} px ${selector} is inside the closed Song info panel and not laid out`);
-      for (const [selector, left] of Object.entries(card.lefts)) assert.ok(near(left, base.left), `at ${pixels} px ${selector} keeps its left edge (${left.toFixed(2)})`);
+      for (const [selector, left] of Object.entries(card.lefts)) assert.ok(near(left, pin.left), `at ${pixels} px ${selector} keeps its left edge (${left.toFixed(2)})`);
       const line = seed.songs.find((song) => song.id === SONG)!.body.flatMap((section) => section.lines).find((each) => each.chords !== undefined && each.lyrics !== undefined)!;
       assert.equal(chordAnchors([card.row])[0], chordAnchors([{ chords: line.chords!, lyrics: line.lyrics }])[0], `at ${pixels} px the first chord stays on its syllable`);
       const chordAndInfo = `(() => {

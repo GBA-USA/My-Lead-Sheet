@@ -43,7 +43,11 @@ const seed = JSON.parse(readFileSync(join(root, "data/library.json"), "utf8")) a
  * Measured on the base (addc5a2) at `#/song/10`, relative to `article.sheet`: the first chord glyph, the tops of the
  * card's children, and the metronome block's height with its 12 px top margin (the shift when the block is removed).
  * Chord y re-measured in Chrome on Linux (the CI runner) after the bass table was removed; x, the card's children and the block are unchanged.
+ * The source line, Feel and the labelled notes now sit in the closed Song info panel, so the card reads title, meta,
+ * Song info row, chart, each directly under the one before, and those blocks are not laid out.
  */
+const SHEET_ORDER = [".sheet-title", ".meta", ".song-info", ".chart"];
+const IN_SONG_INFO = [".source", ".feel", ".sheet-label"];
 const BASE: Record<number, { chord: { x: number; y: number }; block: number; left: number; above: Record<string, number>; below: Record<string, number> }> = {
   390: { chord: { x: 109.59, y: 930.99 }, block: 158.38, left: 16, above: { ".sheet-title": 20, ".source": 87.88, ".meta": 166.19 }, below: { ".feel": 354.81, ".sheet-label": 507.81 } },
   1280: { chord: { x: 121.59, y: 512.83 }, block: 142.19, left: 28, above: { ".sheet-title": 28, ".source": 68.14, ".meta": 101.48 }, below: { ".feel": 273.92, ".sheet-label": 336.99 } },
@@ -486,19 +490,29 @@ try {
         const advance = range(lyrics.firstChild, 0, lyric.length).width / lyric.length;
         const at = [...text.matchAll(/\\S+/g)].map((chord) => Math.round((range(chords.firstChild, chord.index, chord.index + 1).left - left) / advance));
         const glyph = range(chords.firstChild, text.search(/\\S/), text.search(/\\S/) + 1);
-        const tops = {}, lefts = {};
-        for (const selector of ${js([...Object.keys(base.above), ...Object.keys(base.below)])}) {
-          const box = document.querySelector("article.sheet > " + selector).getBoundingClientRect();
+        const tops = {}, lefts = {}, folded = {};
+        for (const selector of ${js([...SHEET_ORDER, ...IN_SONG_INFO])}) {
+          const el = document.querySelector("article.sheet > " + selector) ?? document.querySelector("article.sheet > .song-info > .song-info-panel > " + selector);
+          folded[selector] = !!el.closest(".song-info-panel") && el.getClientRects().length === 0;
+          if (folded[selector]) continue;
+          const box = el.getBoundingClientRect();
           tops[selector] = box.top - sheet.top;
           lefts[selector] = box.left - sheet.left;
         }
-        return { x: glyph.left - sheet.left, y: glyph.top - sheet.top, row: { chords: text, lyrics: lyric, at }, tops, lefts };
+        const gaps = [];
+        for (let i = 1; i < ${js(SHEET_ORDER)}.length; i += 1) {
+          const prev = document.querySelector("article.sheet > " + ${js(SHEET_ORDER)}[i - 1]), next = document.querySelector("article.sheet > " + ${js(SHEET_ORDER)}[i]);
+          const margin = Math.max(parseFloat(getComputedStyle(prev).marginBottom), parseFloat(getComputedStyle(next).marginTop));
+          gaps.push({ from: ${js(SHEET_ORDER)}[i - 1], to: ${js(SHEET_ORDER)}[i], gap: next.getBoundingClientRect().top - prev.getBoundingClientRect().bottom, margin, adjacent: prev.nextElementSibling === next });
+        }
+        return { x: glyph.left - sheet.left, y: glyph.top - sheet.top, row: { chords: text, lyrics: lyric, at }, tops, lefts, folded, gaps };
       })()`);
       const near = (a: number, b: number) => Math.abs(a - b) < 0.5;
       assert.ok(near(card.x, base.chord.x), `at ${pixels} px the first chord keeps its x (${card.x.toFixed(2)}, base ${base.chord.x})`);
-      assert.ok(near(card.y, base.chord.y - base.block), `at ${pixels} px the first chord moved up ${(base.chord.y - card.y).toFixed(2)} px, the block was ${base.block} px`);
-      for (const [selector, top] of Object.entries(base.above)) assert.ok(near(card.tops[selector], top), `at ${pixels} px ${selector} above the block stays at ${top} (now ${card.tops[selector].toFixed(2)})`);
-      for (const [selector, top] of Object.entries(base.below)) assert.ok(near(card.tops[selector], top - base.block), `at ${pixels} px ${selector} moves up by the block (${top} to ${card.tops[selector].toFixed(2)})`);
+      assert.ok(card.y < base.chord.y - base.block - 0.5, `at ${pixels} px the first chord moved up by more than the block, since the song's notes went into the closed Song info panel (moved up ${(base.chord.y - card.y).toFixed(2)} px, the block was ${base.block} px)`);
+      assert.ok(near(card.tops[".sheet-title"], base.above[".sheet-title"]), `at ${pixels} px .sheet-title above the block stays at ${base.above[".sheet-title"]} (now ${card.tops[".sheet-title"].toFixed(2)})`);
+      for (const each of card.gaps) assert.ok(each.adjacent && near(each.gap, each.margin), `at ${pixels} px ${each.to} sits directly under ${each.from}, nothing between (gap ${each.gap.toFixed(2)}, margin ${each.margin.toFixed(2)})`);
+      for (const selector of IN_SONG_INFO) assert.ok(card.folded[selector], `at ${pixels} px ${selector} is inside the closed Song info panel and not laid out`);
       for (const [selector, left] of Object.entries(card.lefts)) assert.ok(near(left, base.left), `at ${pixels} px ${selector} keeps its left edge (${left.toFixed(2)})`);
       const line = seed.songs.find((song) => song.id === SONG)!.body.flatMap((section) => section.lines).find((each) => each.chords !== undefined && each.lyrics !== undefined)!;
       assert.equal(chordAnchors([card.row])[0], chordAnchors([{ chords: line.chords!, lyrics: line.lyrics }])[0], `at ${pixels} px the first chord stays on its syllable`);

@@ -50,6 +50,7 @@ const NAMES = {
   I9: "I9 key and view apply inside: At a glance A D E F#m reads B E F# G#m two steps up and 1 4 5 6m in Nashville",
   I10: "I10 reading position held: opening and closing during auto-scroll keeps the chart row at the reading line within 2 px",
   I16: "I16 the pill starts the closed sheet: on built-in song 10 at 1280 x 800 with Song info closed, the chart moves within 1.2 s of the Scroll pill",
+  I17: "I17 reading position held from the top: on built-in song 10 scrolled from the top, opening Song info 1 s into the scroll keeps the reading row within 2 px of an untouched scroll for every frame of the next 600 ms, at 390 x 844 and 1280 x 800",
   I11: "I11 keyboard and motion: a button with aria-expanded and aria-controls, Enter and Space toggle it with focus kept, no transition with reduced motion",
   I12: "I12 odd text: an apostrophe, curly quotes and typed markup show as the same characters and make no element",
   I13: "I13 fits at 360 px: one meta line, a row at least 44 px tall, no sideways scroll closed or open",
@@ -469,6 +470,68 @@ try {
       assert.ok(on && top > 0, `1.2 s after the pill the scroll is ${on ? "on" : "off"} at top ${top}`);
     } finally {
       await s.evaluate(`document.querySelector(".scroll-pill")?.getAttribute("aria-pressed") === "true" && document.querySelector(".scroll-pill").click()`);
+      await s.send("Emulation.setDeviceMetricsOverride", { width: WIDTH, height: HEIGHT, deviceScaleFactor: 2, mobile: true });
+      await settle(300);
+    }
+  });
+
+  await check(NAMES.I17, async () => {
+    const scroller = `document.getElementById("sheet-scroll")`;
+    const pill = `document.querySelector(".scroll-pill")`;
+    /** Song 10 from the top, Scroll on for 1 s, then the reading row's drift each frame for 600 ms, after a real tap on the row when `tap`. */
+    const drifts = async (tap: boolean) => {
+      await openSong(10);
+      await closedRow("built-in song 10");
+      await s.evaluate(`${scroller}.scrollTop = 0`);
+      await settle(300);
+      await s.evaluate(`${pill}.click()`);
+      await sleep(1000);
+      await s.evaluate(`(() => {
+        const sheet = ${scroller};
+        const line = sheet.getBoundingClientRect().top + sheet.clientHeight / 2;
+        const row = [...sheet.querySelectorAll(".chart .pair, .chart .bars")].reduce((best, el) => (Math.abs(el.getBoundingClientRect().top - line) < Math.abs(best.getBoundingClientRect().top - line) ? el : best));
+        const before = row.getBoundingClientRect().top;
+        window.__drift = { done: false, frames: [] };
+        const start = () => {
+          const t0 = performance.now();
+          const look = () => {
+            const ms = performance.now() - t0;
+            window.__drift.frames.push({ ms, drift: row.getBoundingClientRect().top - before });
+            if (ms < 600) requestAnimationFrame(look);
+            else window.__drift.done = true;
+          };
+          requestAnimationFrame(look);
+        };
+        if (${tap}) window.addEventListener("click", start, { once: true });
+        else start();
+      })()`);
+      if (tap) {
+        const box = await s.evaluate<{ x: number; y: number }>(`(() => { const r = ${ROW}.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+        for (const type of ["mousePressed", "mouseReleased"]) await s.send("Input.dispatchMouseEvent", { type, x: box.x, y: box.y, button: "left", clickCount: 1 });
+      }
+      await app.until(`window.__drift.done`, "600 ms of frames", 5000);
+      const frames = await s.evaluate<{ ms: number; drift: number }[]>(`window.__drift.frames`);
+      const on = await s.evaluate<boolean>(`${pill}?.getAttribute("aria-pressed") === "true"`);
+      if (tap) assert.equal((await rowState())!.expanded, "true", "the panel opened");
+      await s.evaluate(`${pill}?.getAttribute("aria-pressed") === "true" && ${pill}.click()`);
+      await settle(300);
+      assert.ok(on, `auto-scroll ${tap ? "keeps running after the tap" : "runs"}`);
+      return frames;
+    };
+    try {
+      for (const [width, height, mobile] of [[390, 844, true], [1280, 800, false]] as const) {
+        await s.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 2, mobile });
+        const still = await drifts(false);
+        const held = await drifts(true);
+        const untouched = (ms: number) => still.reduce((best, frame) => (Math.abs(frame.ms - ms) < Math.abs(best.ms - ms) ? frame : best)).drift;
+        const worst = held.reduce((most, frame) => (Math.abs(frame.drift - untouched(frame.ms)) > Math.abs(most.drift - untouched(most.ms)) ? frame : most));
+        assert.ok(
+          Math.abs(worst.drift - untouched(worst.ms)) <= 2,
+          `at ${width} x ${height} the row is ${worst.drift.toFixed(1)} px from where it was ${Math.round(worst.ms)} ms after the tap, an untouched scroll ${untouched(worst.ms).toFixed(1)} px`,
+        );
+      }
+    } finally {
+      await s.evaluate(`${pill}?.getAttribute("aria-pressed") === "true" && ${pill}.click()`);
       await s.send("Emulation.setDeviceMetricsOverride", { width: WIDTH, height: HEIGHT, deviceScaleFactor: 2, mobile: true });
       await settle(300);
     }

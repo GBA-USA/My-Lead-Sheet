@@ -1,4 +1,34 @@
 VERDICT: FAIL
+P2 | CLASS=other | scripts/check-legal-audit.ts:282 | The fix round weakened its own red case instead of fixing the doc. At 8ef171c D1 required the cited row to contain the host `musicbrainz.org` (red.log:53). 384ecc9 changed the matcher to the bare word `musicbrainz`. LEGAL-TODO.md has 0 occurrences of `musicbrainz.org`, so the 8ef171c D1 still fails on head with "row 5 does not mention musicbrainz.org". The fix brief required "the same case passes". The brief says a wrong case goes to QUESTIONS.md, not a looser matcher.
+P2 | CLASS=other | scripts/check-legal-audit.ts:40 | The second prior P2 is only closed for DNS names. `ABSOLUTE_URL` needs a letter TLD (`\.[a-z]{2,}`), so a planted `dist/assets/i.js` with `s=document.createElement("script");s.src="https://203.0.113.5/x.js";document.head.append(s)` gives 0 findings (measured on a temp copy of the scanner). An injected script from an unlisted IP-literal host passes R2 and R2b, and LEGAL-TODO.md:15 still says the check "fails if any of those change".
+P2 | CLASS=other | C:\Users\guard\cooks\EDGE-CASES.md:- | The fix round added no EDGE-CASES.md row (REVIEW.md P2). The file was last written Nov 27 04:40, before 384ecc9 (12:21), and has no row for "a scanner keyed on file extension misses HTML built in a .ts file" or "protocol-relative URL". The repo has no EDGE-CASES.md.
+Nits:
+P3 | CLASS=other | scripts/check-legal-audit.ts:94 | `distUrlRules` reads only .js, .html and .css. Planting `dist/manifest.webmanifest` with `{"icons":[{"src":"https://cdn.example.net/i.png"}]}` gives 0 findings, and the browser fetches manifest icons from that host.
+P3 | CLASS=other | scripts/check-legal-audit.ts:71 | A Worker page in a .ts file with an inline `<script>` that sets `s.src='https://cdn.example.net/x.js'` or calls `navigator.sendBeacon('https://px.example.net/p')` gives 0 findings. The URL audit covers only dist/. Today's only Worker page (worker/codes.ts:202) has no inline script.
+P3 | CLASS=other | scripts/check-legal-audit.ts:286 | D2 reads only worker/directory-account.ts. A signed-in profile route added in another Worker file (for example `POST /api/me/rename` in worker/directory.ts) passes D2 while LEGAL-TODO row 1 goes stale.
+P3 | CLASS=other | VERIFY.md:1 | The diff replaces the base branch's VERIFY.md, which held another cook's chordpro findings. The merge into origin/mls-int-20261113 will drop them.
+P3 | PRE-EXISTING | CLASS=other | scripts/check-privacy.ts:9 | `new URL("..", import.meta.url).pathname` is `/C:/...` on Windows, so check:privacy fails on the laptop (EC-06). Off-limits to this cook, listed as LEGAL-TODO row 7.
+
+# Fix pass 2
+
+Goal: every finding above is reproduced by a case that fails at `f6e1e5e`, then fixed until the same case passes, with no case edited in between.
+
+Commit `f6e1e5e` holds the cases alone. On it `check:legal-audit` printed 9 FAIL and exit 1 (`.verify-logs/legal-fix2/red.log`). After `8e7856f` it prints 59 ok, "passed" and exit 0 on a fresh `npm run build` (`.verify-logs/legal-fix2/green.log`). `git diff f6e1e5e -- scripts/check-legal-audit.ts` changes no case, no `report(...)` line and no D1 or D3 matcher. Only scanner code and the R2b label differ.
+
+- First P2. D1 is back to the 8ef171c lines byte for byte. It needs the cited row to contain the host `musicbrainz.org`. On the head it failed with "row 5 does not mention musicbrainz.org". The fix is in the doc. LEGAL-TODO row 5 now says "MusicBrainz (`musicbrainz.org`)". The loosened matcher from `384ecc9` is gone.
+- Second P2. L40 plants the reviewer's `s.src="https://203.0.113.5/x.js"`. L41 plants a protocol-relative IPv4 with a port. L42 plants an IPv6 host and a one-word host. The root cause was a matcher keyed on host shape (a letter TLD). After a scheme, `ABSOLUTE_URL` now takes any host, a name, an IPv4 or a bracketed IPv6, with an optional port. A protocol-relative URL needs a dotted name or an IP, so `//` comments stay out. L47 shows a version string such as `"1.2.3.4"` and local paths still pass.
+- Third P2. `C:\Users\guard\cooks\EDGE-CASES.md` gains EC-12 to EC-15. They cover a scanner keyed on file extension, a protocol-relative or IP-literal URL, a matcher keyed on host shape, and a fix round that loosened its own red case. That folder is not a git repo, so the rows are not in any commit. Before, `grep -c -i -E 'file extension|protocol-relative|host shape|loosen'` counted 0 (`.verify-logs/legal-fix2/red-docs.log`). After, it counts 4 (`green-docs.log`). No check case reads that file, because CI has no copy of it.
+- First P3. L43 plants the reviewer's `dist/manifest.webmanifest` icon. L44 plants an SVG `<image href>` from an outside host. The class is a scanner keyed on file extension. In `dist/` every file is now read unless it is binary or a source map (`NOT_TEXT`). The URL rule has no extension filter of its own. Outside `dist/`, `TEXT_FILE` gains `.svg`.
+- Second P3. L45 (an inline script sets `s.src`) and L46 (`navigator.sendBeacon`) plant a Worker page in `worker/landing.ts`. The URL audit now covers `worker/` and `functions/` as well as `dist/`. Both hold no outside URL today. A server-side fetch added there later needs an audit row too.
+- Third P3. D3 plants `worker/directory.ts` with `POST /api/me/rename` in the `async "…"(c)` form and `POST /api/me/handle` in the `"…": Object.assign(async …)` form of `worker/codes.ts:117`. D2 now reads every script file under `worker/` and takes both forms. A route's body ends at the next route or at the `}` that closes its object, so the last route does not take in the helpers below it. On the real tree D2 still finds the same three routes, which row 1 names.
+- Fourth P3. This file now keeps the base branch's VERIFY.md verbatim at the end, under its own heading. Fix pass 1's findings and notes stay above it. Before, `git diff 4d4ba74 HEAD -- VERIFY.md` removed 15 base lines. After, it removes 0.
+- Fifth P3, pre-existing. Not changed. `scripts/check-privacy.ts` is off-limits to this cook and is already LEGAL-TODO row 7.
+
+Also run on this Windows laptop, all exit 0: `npm run build`, `check:portable`, `check:one-copy`. No file under `src/` or `worker/` changed.
+
+# Self-check pass 1 and fix pass 1 (as committed at 577a046)
+
+VERDICT: FAIL
 P2 | CLASS=other | scripts/check-legal-audit.ts:75 | The brief names "the Worker's HTML responses" and `@import url(http`, but `css-remote-load` runs only on .css/.html files, and the Worker's only HTML page is built in a .ts file (`worker/codes.ts:202`). A planted `worker/landing.ts` with `<style>@import url("https://fonts.example.net/a.css")</style>`, an `@font-face src:url(https://fonts.example.net/a.woff2)`, `<img src="https://px.example.net/p.gif">` or `<iframe src="https://embed.example.net/x">` gives 0 findings (measured on a temp copy of the scanner). Only `<link>`, `<script>` and the listed hosts are caught there, and R2 passes while claiming to cover the Worker pages.
 P2 | CLASS=other | scripts/check-legal-audit.ts:38 | R2b says "every outside URL in the built bundle has an audit row", but `ABSOLUTE_URL` needs `https?://`. Planting `dist/assets/i.js` with `s=document.createElement("script");s.src="//cdn.example.net/x.js"` gives 0 findings, so a dependency that injects a protocol-relative script from an unlisted host passes R2 and R2b. LEGAL-TODO.md:16 then claims "check:legal-audit fails if any of those change".
 Nits:
@@ -23,3 +53,40 @@ Commit `8ef171c` holds the cases alone. On it the check printed 11 FAIL and exit
 - Fifth P3, pre-existing. Not changed. `scripts/check-privacy.ts` is off-limits to this cook and is already LEGAL-TODO row 7.
 
 Also run, all exit 0: `npm run build`, `check:portable`, `check:one-copy`. No file under `src/` or `worker/` changed.
+
+# Base branch VERIFY.md (chordpro-phone cook, kept verbatim for the merge into mls-int-20261113)
+
+VERDICT: FAIL
+P2 | CLASS=data-shape | docs/cooks/chordpro-phone.md:45 | Map row 12 says the phone reads the `/api/chat/setlist-copy` reply in either shape, but `src/setlist-code.tsx` is not an owned file and no P case covers a scan. After cook 3 the new phone sends the header and gets `{ chordpro }`, so `src/setlist-code.tsx:210` runs `addOwnSong({ ...item.song, copy })` on a value with no title or body and `:238` calls `songYouHave(songs, item.song)` on text. Scanning a copy code adds nothing usable. Only W8, on the Worker side, proves row 12.
+P2 | CLASS=data-shape | docs/cooks/chordpro-phone.md:45 | `src/guest-rooms.tsx:16` fetches `/api/bands/library` itself, and `:41` reads `item.song.title`. The file is not owned and no P case covers it. After cook 3 the reply is `{ chordpro }`, so every row of a guest's setlist reads "A song the band took out".
+P2 | CLASS=data-shape | docs/PLAN-chordpro-backbone.md:257 | The format gives no written form for a chart line that holds a sung line (chords or lyrics) plus `bars`. A sung line lives only in a non-grid section and a bar row only in a grid (table at :251-255), and `{x_join}` across `{end_of_verse}{start_of_grid}` is not defined. Yet C5 requires "each pair", and the brief freezes the format "to the byte". So cook 1 must invent bytes for `{lyrics:"la", bars:"| A |"}` (same for chords alone in a grid section). The brief's pass condition "every line kind" has no evidence for this one.
+Nits:
+P3 | docs/PLAN-chordpro-backbone.md:195 | "There is no blank line" contradicts :257 "a chart line with no field is written as an empty sung line", which is a blank line. C5 catches a wrong reading, but the spec should say it.
+P3 | docs/PLAN-chordpro-backbone.md:225 | An empty heading (C6) has to be `label=""` so it differs from a start with no label (a continuation). The spec never writes that form.
+P3 | docs/PLAN-chordpro-backbone.md:500 | The both-keys merge adds an old tab's late edit under a new id but never says which account owns it in per-account mode (`leadSheetsLeftBy`).
+P3 | docs/PLAN-chordpro-backbone.md:153 | The plan lists `src/sheet.tsx` "near line 140" for the table from the brief. The heading is at :58 and `BassTable` at :116. Harmless, the plan names symbols.
+
+# Fix pass 1
+
+Goal: every finding above is reproduced by a check case that fails at `b7db81f`, then fixed in the plan and the briefs until the same case passes.
+
+Check: `npm run check:chordpro-plan` (`scripts/check-chordpro-plan.ts`, with the plan's reference codec in `scripts/chordpro-plan-reference.ts`). Commit `90ebafe` holds the check alone. It printed 20 FAIL and exit 1 on the plan as it stood (`.verify-logs/fix1/red-at-b7db81f.log`). After the fix it prints 34 ok, "all passed" and exit 0 (`.verify-logs/fix1/green.log`). Seven one-line mutations of the fixed docs each turn it red again, 7 of 7 (`.verify-logs/fix1/mutate.mjs`, `mutate.log`).
+
+- First and second P2, as one class. The root cause was a map written by hand from memory of the code. The check now finds the places itself: it types the four song replies as "may be text" on the tree at `61f18be`, runs `tsc`, and greps the callers of `content`. That gives 7 files where a song comes in and 5 that send one. `src/setlist-code.tsx` and `src/guest-rooms.tsx` are two of them, and `src/bands.tsx`, `src/library-lists.tsx`, `src/band-setlist-view.tsx` and `src/send-song.tsx` were missing as well. The plan gains the table "Where a song enters and leaves the phone", one door function `songFromSent`, one sender `sent`, and cases P14 to P16. The phone brief owns every file the table changes.
+- Third P2. The plan gains "Every mix of the four fields, written": 22 examples, all 16 mixes of chords, lyrics, bars and note, plus five section shapes. A sung line with a bar row ends the sung section, starts a grid with no label, then `{x_join}`, then the row. The check writes each example with the reference codec and compares bytes, then reads it back. C5 and C6 read the same block.
+- First P3. "The text as a whole" now says where an empty line may stand: one empty text line is a chart line with no field.
+- Second P3. An empty heading is written `label=""`. The example block holds it.
+- Third P3. "Whose it is" says a song taken in from an old tab carries the `leadSheetsLeftBy` mark of the old id. P4 proves it.
+- Fourth P3. The plan names `src/sheet.tsx:58` and `src/sheet.tsx:116`. The check reads both lines at `61f18be`.
+
+## Found while reproducing, beyond the list
+
+The plan removed the old library key after its move. The old build's `pending` in `src/backup.ts` sends every synced key that is missing on the phone as removed, and an old tab backs up on a timer. Run against the old build's real code at `61f18be`: with the key removed, the next backup of an old tab sends 3 of 3 songs as removed. With the key left as it is, it sends none. With both old keys removed in one turn, it sends nothing at all. The plan now keeps the new library under `leadSheetsLibraryV2` and `leadSheetsBackupV2` and never writes or removes a key the old build reads while the account stays. The check runs this simulation on every run, and mutation M1 proves it bites. New risks R3a, R7a and R7b, case P17 and five lines of section 7 say what stays unproven.
+
+The fuzz also broke one rule of the first format: a note that opened a section looked only at the next line, and a note, a line with no field and a bar row then changed on a second writing. The rule now skips note-alone lines and reads the first other line. 20,000 of 20,000 made-up songs and 31 of 31 real songs hold on the reference.
+
+## Against the brief
+
+The cook brief says no `package.json` edit and docs only. This pass adds one `check:*` line and two files under `scripts/`, because the fix-pass brief asks for a check case per finding and `CLAUDE.md` allows a cook exactly that line. `check:chord-grab-plan` and `check:bulk-import-plan` set the same precedent. No file under `src/` or `worker/` changed.
+
+Also run after the fix, all exit 0: `npm run build`, `check:portable`, `check:one-copy`, `check:chord-grab-plan`, `check:bulk-import-plan`.

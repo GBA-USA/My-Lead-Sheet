@@ -22,6 +22,7 @@ import type { ShareChoice } from "./share-rule";
 import { BandSetlistCode, CodeOfferButton } from "./setlist-code";
 import { codeOffer } from "./setlist-code-model";
 import { api } from "./sign-in-methods";
+import { SongRowText } from "./song-row";
 import { loadLibrary, songByRef } from "./storage";
 import type { Setlist, Song } from "./types";
 import "./band-library.css";
@@ -371,8 +372,8 @@ export function BandLibraryTab({ band, me, tab, library, reload, busy, run, noti
               {shown.map((item) => (
                 <li key={item.songId}>
                   <button type="button" className="band-library-row" onClick={() => onOpenSong(item)}>
-                    <span className="band-library-name">{item.song.title}</span>
-                    {byline(item, `${item.song.artist} · `)}
+                    <SongRowText song={item.song} facts titleClass="band-library-name" />
+                    {byline(item)}
                   </button>
                   <span className="friends-actions">{lockFor(item)}</span>
                 </li>

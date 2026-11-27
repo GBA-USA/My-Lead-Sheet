@@ -73,6 +73,29 @@ it at 8.0 px. Every other case of the check passes on the laptop, including the 
 line skipped. Re-pinning on Windows or loosening the line would break the brief's rules, so neither was done.
 Owner: say if the Linux Deep verify's result for this check settles it, or if you want the chart font rendering
 changed (src/styles.css, not this cook's file).
+# c23 fix: Band status opens for the admin and the leader on a live gig, and says what it is waiting for
+
+What ships in PR #107: the faces strip and the Band status panel on the band page and the gig view. Before and after
+a gig, anyone in the band can open it and it reads the planned route, Downloaded ✓ or Not yet (from the pack receipts),
+and "Sync and timing show during a live gig." During a live gig, only the band's admin and the gig's leader can open
+it. Members and the backup see the faces as pictures.
+
+What does not ship here: no live feed reaches any phone yet. There is no Room feed, heartbeat, roster push or room
+copy of the leader's statuses. So on a live gig the panel lists the lineup with Downloaded and the line "Live sync and
+timing will show once players are connected." It shows no route, sync bars, In time or Heard time. The rings, route
+words, ratings, amber for out of sync and the counting Heard time are built and checked against a test feed only.
+p6-gig-check-in adds the feed, starting after this merge.
+
+Decided already (Terry t644u, CoS STATUS.md): the roster is the leader and the admins only; the 15-second heartbeat
+belongs to check-in; merge on green. Nothing here waits on the owner.
+
+1. A live gig whose leader has left the band has no leader on the strip. Only the admin can open Band status then.
+   Owner: say if the backup should take over.
+2. The gig view and the band page both ask for the gig again every 15 seconds while they stay open, and at once when
+   the app shows again. So a member or the backup on either screen learns the gig went live within 15 seconds, and
+   their open panel shuts then. A member on the gig view whose leader ends the gig reads "That gig is over." and
+   "Back to the band" within 15 seconds. There is still no live feed until p6-gig-check-in. Owner: say if 15 seconds
+   is too slow before that feed tells phones sooner.
 
 # song-paste-import fix pass 3: a whole-box paste can be undone, and only a new paste scrolls
 

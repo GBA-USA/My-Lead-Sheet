@@ -1,3 +1,22 @@
+# p2-song-info self-check fix pass 1: the Scroll pill moves the closed-panel sheet at once (supersedes item 2 below)
+
+The self-check failed item 2 below: the tap on Song info hid a real change, since a player opens the sheet closed. The tap
+is gone, and the case fails at 1280 px without the fix, as on CI. The fix is in `src/scroll-timing.ts` `sungTrack`, a file
+outside this cook's owned list (CLAUDE.md "stay inside the files your brief owns"); nothing in the owned files decides
+where the song's own pace starts. A chart whose first line starts above the sheet's middle used to hold still until the
+song reached the middle. Now its sung line starts where the chart puts it and eases down to the middle while the sheet
+moves at half the song's pace. A chart whose first line starts at or below the middle gets the same path as before.
+Measured in Edge on song 10, Song info closed (first move after the pill, scrollTop 1.2 s after it):
+
+| Window | First row / middle | Before | After |
+| --- | --- | --- | --- |
+| 1280x800 | 192 / 279 px | 2.53 s, 0 px | 0.19 s, 4 px |
+| 390x844 | 207 / 304 px | 0.45 s, 1 px | 0.12 s, 10 px |
+| 360x740 | 207 / 252 px | 0.06 s, 36 px | 0.06 s, 35 px |
+
+By 10 s both trees are at the same place (62, 141, 192 px), so the change only affects the opening. Owner: say if you
+would rather keep the old hold, which reverts the three lines in `sungTrack` and leaves `check:song-info` I16 and the Scroll pill case red.
+
 # p2-song-info Deep verify fix: two check edits in check:ux-sheet-controls-save, one expected to be a product fix
 
 Deep verify run 46043279728 failed three checks. check:metronome and check:teach were a product bug: Song info's mount

@@ -1,3 +1,13 @@
+# p6-gig-check-in, step-up retry: 2026-11-27: UI rule 2, Band status has two doors on a live gig's screen
+
+**Rule 2** (one control, one home). The brief asks for both: the faces strip opens Band status (K18, C23's door), and
+the leader's warning has "a way to open the roster" (item 4), which is the warning's See who. So on a live gig's screen
+the leader can reach Band status from two places. I kept both, because the brief names both and K7 and K18 check
+both, and the warning shows on every screen while the faces strip shows only on the gig's screen. **Asking:** keep
+both, or should See who go and the warning point only at the faces strip? No code waits on this.
+
+---
+
 # p6-gig-check-in, step-up retry: 2026-11-27: K3 is still the only red case, and still waits on the answer below
 
 The four fixes listed under "Where the build stands" below are in. The retry did not edit the check. With the one-line

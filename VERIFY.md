@@ -4,7 +4,9 @@ Nits:
 P3 | CLASS=laptop-only | scripts/check-mirror.ts:299 | Case 1 "each tab's band clock is within 8 ms" fails on this Windows laptop: 26.84 ms, then 8.52 ms alone, 13.05 ms with this cook's heartbeat switched off, and 45.35 ms on the merge base 640f930 with none of this cook's code. Not caused by this cook; the Linux Deep verify decides.
 P3 | CLASS=laptop-only | scripts/check-gig.ts:12 | Stops at start: esbuild cannot resolve `/C:/.../src/gig-state.ts` from `new URL(...).pathname`. Neither file is changed by this cook.
 P3 | CLASS=laptop-only | scripts/check-gig-plan.ts, scripts/check-ux-gig-view.ts | Both stop at start with `ENOENT C:\C:\...\data\library.json` (a `new URL(...).pathname` path on Windows), on this branch and on the merge base alike. src/gig-view.tsx is covered here only by K1, K2, K12 and K18.
-P3 | CLASS=ui-rule-2 | src/gig-check-in.tsx:133 | Band status opens from the faces strip (K18) and from the warning's See who (brief item 4). Both are asked for by the brief; the warning is a notice with its own way in, not a second menu, so I read rule 2 as kept. Named here for the judge.
+P3 | CLASS=ui-rule-2 | src/gig-check-in.tsx:133 | Band status opens from the faces strip (K18) and from the warning's See who (brief item 4). Both are asked for by the brief. Asked in QUESTIONS.md (top entry), not ruled on here.
+P3 | CLASS=flaky-unlisted | scripts/check-api.ts | One earlier run failed "room stamps rx 1795814628063 <= tx 1795814628063 inside the round trip" (.verify-logs/r3-check:api.log); the next run and the final run passed. Not on CLAUDE.md's flaky list; named for CoS.
+P3 | CLASS=proof | scripts/check-gig-check-in.ts K19 | Added after the build for the Downloaded fix in 435476d: red with the fix removed, green with it (.verify-logs/k19-red.log, k19-green.log). K1 to K18 unchanged (the diff from 60875a9 has no removed line).
 
 # What was checked (assume it is wrong, look for it)
 

@@ -565,6 +565,7 @@ interface Scroller {
  * played above; a chart that starts higher eases its sung line down to the middle. The even pace started from the
  * top of the chord section holds there for its first 2 seconds, so the first chords can be read, and plays the rest a
  * touch faster to still end on time. A taught version keeps its own timing, and a resume or a live take does not hold.
+ * When what sits above the chart grows or shrinks mid-run, the path moves with the chart and keeps its shape.
  * `onProgress` hears how far through its path each timed frame is.
  */
 export function runScroll(
@@ -577,14 +578,18 @@ export function runScroll(
   onProgress?: (progress: number) => void,
 ): () => void {
   const limit = () => Math.max(0, el.scrollHeight - el.clientHeight);
+  /** Where the chart starts as this run begins. */
+  let origin: number | undefined;
   /** Null for the page speed. */
   const track = (current: Motion): Path | null => {
     const max = limit();
-    const clamp = (at: number) => Math.min(max, Math.max(0, at));
     const found = section();
+    origin ??= found?.start;
+    const shift = found && origin !== undefined ? found.start - origin : 0;
+    const clamp = (at: number) => Math.min(max, Math.max(0, shift, at));
     const sung = current.kind === "learned" ? undefined : current.sung;
-    const points = sung ? sungPoints(sung.sections, found?.laid?.() ?? []) : [];
-    if (sung && points.length) return { ...sungTrack(points, el.clientHeight * SUNG_READING, clamp), rate: sung.rate, sung: true };
+    const points = sung ? sungPoints(sung.sections, found?.laid?.() ?? []).map(({ at, y }) => ({ at, y: y - shift })) : [];
+    if (sung && points.length) return { ...sungTrack(points, el.clientHeight * SUNG_READING, (at) => clamp(at + shift)), rate: sung.rate, sung: true };
     if (current.kind === "pace") return null;
     const box = found ?? { start: 0, end: max };
     if (current.kind === "learned") return { ...learnedTrack(current.arrivals, (box.lines?.() ?? [box.start, box.end]).map(clamp)), rate: current.rate };

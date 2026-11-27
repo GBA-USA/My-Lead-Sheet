@@ -218,6 +218,12 @@ const CASES: Case[] = [
   { name: "L45 a Worker page whose inline script injects an outside script fails", files: { "worker/landing.ts": "const page = `<script>const s=document.createElement('script');s.src='https://cdn.example.net/x.js';document.head.append(s)</script>`;" }, expect: { rule: "unlisted-third-party-url", file: "worker/landing.ts" } },
   { name: "L46 a Worker page whose inline script sends a beacon outside fails", files: { "worker/landing.ts": "const page = `<script>navigator.sendBeacon('https://px.example.net/p')</script>`;" }, expect: { rule: "unlisted-third-party-url", file: "worker/landing.ts" } },
   { name: "L47 a same-origin manifest, a Worker page script with local paths and a version number pass", files: { "dist/manifest.webmanifest": `{"start_url":"./","icons":[{"src":"./icon-192.png"}]}`, "dist/assets/v.js": `const v="1.2.3.4",p="/api/me",q="./x.js";`, "worker/landing.ts": "const page = `<script>location.href='/?open=band'</script>`;" }, expect: "clean" },
+  { name: "L48 a websocket to an outside host fails until it gets an audit row", files: { "dist/assets/i.js": `new WebSocket("wss://px.example.net/s")` }, expect: { rule: "unlisted-third-party-url", file: "dist/assets/i.js" } },
+  { name: "L49 an outside STUN server in an ICE config fails until it gets an audit row", files: { "dist/assets/i.js": `new RTCPeerConnection({iceServers:[{urls:"stun:stun.example.net:3478"}]})` }, expect: { rule: "unlisted-third-party-url", file: "dist/assets/i.js" } },
+  { name: "L50 an outside TURN relay at an IP address fails", files: { "dist/assets/i.js": `const ice=[{urls:'turn:203.0.113.5:3478'}]` }, expect: { rule: "unlisted-third-party-url", file: "dist/assets/i.js" } },
+  { name: "L51 an outside fetch to an IPv6 address fails", files: { "dist/assets/i.js": `fetch("https://[2001:db8::1]/p")` }, expect: { rule: "unlisted-third-party-url", file: "dist/assets/i.js" } },
+  { name: "L52 an outside fetch to a one-word host fails", files: { "dist/assets/i.js": `fetch("http://tracker:9000/p")` }, expect: { rule: "unlisted-third-party-url", file: "dist/assets/i.js" } },
+  { name: "L53 an object key named stun and the audited STUN server pass", files: { "dist/assets/i.js": `f({stun:C.stun});g({stun:EN});const s=["stun:stun.cloudflare.com:3478"];` }, expect: "clean" },
 ];
 
 let failures = 0;

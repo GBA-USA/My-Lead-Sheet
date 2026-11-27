@@ -8,4 +8,4 @@ P3 | CLASS=other | src/song-info.tsx:18 | The scroll hold needs a scroll heard i
 P3 | CLASS=other | src/song-info.tsx:53 | The gig band-follow scroll is not traced through a toggle, and I8 has no reconnect step.
 P3 | CLASS=other | src/song-info.css:1 | The `.sheet > .meta` font override sits in song-info.css, not styles.css (ownership limit).
 P3 | CLASS=other | src/sheet.tsx:268 | The font-settle refit stops after 60 frames. Only check:chords covers it.
-P3 PRE-EXISTING | CLASS=layout-width | scripts/check-ux-metronome-sheet.ts:521 | The chord x reads 112.00 on Windows Edge against the Linux pin 109.59, and it is red at base 4d4ba74 too. QUESTIONS.md asks the owner (commit 4522ff5).
+P3 PRE-EXISTING | CLASS=layout-width | scripts/check-ux-metronome-sheet.ts:521 | The chord x reads 112.00 on Windows Edge against the Linux pin 109.59. Re-run at 755f5e8 and on a fresh worktree of origin/mls-int-20261113 (4d4ba74): both exit 1 with 16 ok and this one line FAIL (.verify-logs/p3/hb.txt, base-metronome.log). No WSL or Docker here, so the Linux Deep verify judges it. QUESTIONS.md asks the owner (commit 4522ff5).

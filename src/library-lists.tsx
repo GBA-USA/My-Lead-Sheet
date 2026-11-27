@@ -14,8 +14,9 @@ import { LeadSheet } from "./sheet";
 // @ts-expect-error TS5097: song-search.ts holds the same stem, so only ".tsx" names this file in tsc, Vite and esbuild.
 import { SongSearch } from "./song-search.tsx";
 import { SongStartPanel } from "./song-start";
+import { CopyNote, SongRowText } from "./song-row";
 import { hasTiming } from "./song-version";
-import { songByRef, tempoText } from "./storage";
+import { songByRef } from "./storage";
 import type { Library, Setlist, Song, SongRef } from "./types";
 
 const TABS: [TabName, string][] = [
@@ -60,21 +61,6 @@ function Tab({ name, selected, children }: { name: TabName; selected: boolean; c
   );
 }
 
-/** Where a copy came from, and the lock when it was shared Private, so it can't be passed on. Nothing for the player's own songs. */
-function CopyNote({ song }: { song: Song }) {
-  if (!song.copy) return null;
-  return (
-    <span className="song-copy-note">
-      {song.copy.from ? `From ${song.copy.from.name}` : "From a band"}
-      {song.copy.canSendOn ? null : (
-        <span role="img" aria-label="Private">
-          {" "}🔒
-        </span>
-      )}
-    </span>
-  );
-}
-
 export function SongBody({
   library,
   songRef,
@@ -107,23 +93,9 @@ export function SongBody({
   }
   return (
     <>
-      <CopyNote song={song} />
+      <CopyNote copy={song.copy} />
       <SongStartPanel song={song} onPaste={onPaste} onLearn={onLearn} onBpm={onBpm} />
       <LeadSheet song={song} scale={scale} semitones={semitones} notation={notation} metronome={metronome} />
-    </>
-  );
-}
-
-function SongRowText({ song }: { song: Song }) {
-  return (
-    <>
-      <span className="song-title">{song.title}</span>
-      <span className="song-artist">{song.artist}</span>
-      <CopyNote song={song} />
-      <span className="song-meta">
-        <span className="song-key">{song.keyLabel}</span>
-        <span> · {song.tempo == null ? "Tempo —" : tempoText(song.tempo)}</span>
-      </span>
     </>
   );
 }
@@ -210,14 +182,16 @@ export function SongList({ songs, userId, onAdd, onImport }: { songs: Song[]; us
       <SearchBox label="Search songs" value={query} onChange={setQuery} />
       {onAdd && !searching ? (
         <>
-          <button type="button" className="song-list-add" onClick={onAdd}>
-            + Add a song
-          </button>
-          {onImport ? (
-            <button type="button" className="song-list-add" onClick={() => onImport([])}>
-              Import files
+          <div className="song-list-actions">
+            <button type="button" className="song-list-add" onClick={onAdd}>
+              + Add a song
             </button>
-          ) : null}
+            {onImport ? (
+              <button type="button" className="song-list-add" onClick={() => onImport([])}>
+                Import files
+              </button>
+            ) : null}
+          </div>
           <SongSearch songs={songs} />
         </>
       ) : null}
@@ -275,8 +249,7 @@ export function SetlistList({ setlists, songs, onShowCode }: { setlists: Setlist
                           <a className="song-row setlist-row" href={songHref(song.id, "setlists")}>
                             <span className="setlist-num">{index + 1}</span>
                             <span className="setlist-copy">
-                              <span className="song-title">{song.title}</span>
-                              <span className="song-artist">{song.artist}</span>
+                              <SongRowText song={song} facts />
                             </span>
                           </a>
                         ) : (

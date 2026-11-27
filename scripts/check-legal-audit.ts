@@ -39,9 +39,14 @@ const KNOWN_URLS: { prefix: string; why: string }[] = [
   { prefix: "https://react.dev/errors/", why: "React's own error help text, never fetched" },
   { prefix: "https://www.google.com/search?q=", why: "a web search the player opens by tapping, nothing loads by itself" },
   { prefix: "https://musicbrainz.org/ws/2/recording", why: "song search sends the typed title when the player searches; LEGAL-TODO row 5" },
+  { prefix: "stun:stun.cloudflare.com:3478", why: "a live-gig link or Test now asks this STUN server for the phone's public address; LEGAL-TODO row 8" },
 ];
 const URL_TAIL = String.raw`(?::\d+)?[^\s"'\x60<>)\\]*`;
-const ABSOLUTE_URL = new RegExp(String.raw`\bhttps?:\/\/(?:[a-z0-9-]+(?:\.[a-z0-9-]+)*|\[[0-9a-f:.]+\])${URL_TAIL}|(?<=["'\x60(=]\s*)\/\/(?:(?:[a-z0-9-]+\.)+[a-z]{2,}|\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-f:.]+\])${URL_TAIL}`, "gi");
+const DOTTED_OR_IP = String.raw`(?:[a-z0-9-]+\.)+[a-z]{2,}|\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-f:.]+\]`;
+const ABSOLUTE_URL = new RegExp(
+  String.raw`\b(?:https?|wss?):\/\/(?:[a-z0-9-]+(?:\.[a-z0-9-]+)*|\[[0-9a-f:.]+\])${URL_TAIL}|(?<=["'\x60(=]\s*)\/\/(?:${DOTTED_OR_IP})${URL_TAIL}|(?<=["'\x60]\s*)(?:stuns?|turns?):(?:${DOTTED_OR_IP})${URL_TAIL}`,
+  "gi",
+);
 const isKnownUrl = (url: string) => KNOWN_URLS.some(({ prefix }) => url.startsWith(url.startsWith("//") ? prefix.replace(/^https?:/, "") : prefix));
 
 const CONTROL_WORDS = /^\s*(?:subscribe|upgrade|(?:go|get|try|join) (?:pro|premium|plus)|buy|pay|purchase|checkout|start (?:your |a )?(?:free )?trial|unlock (?:pro|premium|plus|all|everything|the full))\b/i;
@@ -286,9 +291,7 @@ function routesThatStoreProfileAfterSignUp(source: string): string[] {
   const keys = [...source.matchAll(/^\s*(?:async\s+)?"([A-Z]+ \/api\/[^"]+)"\s*[(:]/gm)];
   return keys
     .filter((key, i) => {
-      const objectEnd = source.slice(key.index).search(/^\}/m);
-      const end = Math.min(keys[i + 1]?.index ?? source.length, objectEnd < 0 ? source.length : key.index + objectEnd);
-      const body = source.slice(key.index, end);
+      const body = source.slice(key.index, keys[i + 1]?.index ?? source.length);
       return SIGNED_IN.test(body) && STORES_PROFILE.test(body);
     })
     .map((key) => key[1].split(" ")[1]);
@@ -316,10 +319,18 @@ function runDocCases() {
   const rows = todoRows(ROOT);
   for (const known of KNOWN_URLS) {
     const cited = /LEGAL-TODO row (\d+)/.exec(known.why);
-    if (!cited) continue;
+    if (!cited || !new URL(known.prefix).hostname) continue;
     const host = new URL(known.prefix).hostname.replace(/^www\./, "");
     const row = rows.get(Number(cited[1])) ?? "";
     report(row.toLowerCase().includes(host), `D1 the KNOWN_URLS row for ${host} cites a LEGAL-TODO row that names it`, `row ${cited[1]} does not mention ${host}`);
+  }
+  for (const known of KNOWN_URLS) {
+    const cited = /LEGAL-TODO row (\d+)/.exec(known.why);
+    const url = new URL(known.prefix);
+    if (!cited || url.hostname) continue;
+    const host = url.pathname.split(":")[0];
+    const row = rows.get(Number(cited[1])) ?? "";
+    report(host !== "" && row.toLowerCase().includes(host), `D4 the KNOWN_URLS row for ${host}, which has no // host, cites a LEGAL-TODO row that names it`, `row ${cited[1]} does not mention ${host}`);
   }
   const routes = profileRoutes(ROOT);
   const missing = routes.filter((route) => !(rows.get(1) ?? "").includes(route));

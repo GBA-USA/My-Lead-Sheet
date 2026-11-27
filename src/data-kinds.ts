@@ -109,6 +109,11 @@ export const DATA_KINDS: readonly DataKind[] = [
     place: "server",
     what: "Your backup, in a room only your account can open: the songs and setlists you added or changed, your timing versions, the runtime, tempo and time signature you entered, the scroll speed and Notes or Nashville choice for each song, and your text size, plus the Screen on choice an older version of the app kept. Your phones sync it when you are signed in.",
   },
+  {
+    key: "backup_shape",
+    place: "server",
+    what: "In your backup room, a single mark set once a newer build of the app has synced your backup, so an older build cannot overwrite or remove songs it cannot read.",
+  },
   { key: "session_floors", place: "server", what: "In each band or chat room, the oldest sign-in it still lets in for each person, after they signed out everywhere." },
   { key: "meta", place: "server", what: "For each band: its name, who made it and when, and whether Scroll with the leader is on." },
   {

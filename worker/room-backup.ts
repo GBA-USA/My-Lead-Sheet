@@ -1,4 +1,5 @@
 import { MAX_VALUE_CHARS, PER_ACCOUNT, backupKindOf, songIdOf, validBackupKey } from "../src/backup-keys";
+import { CHORDPRO_SHAPE, wantsChordPro } from "./directory-http";
 import { readJsonObject, Refused } from "./refused";
 
 /** Each account's own backup lives in one Room. The Worker derives this name from the session, never from the request. */
@@ -49,10 +50,16 @@ export async function handleBackup(request: Request, storage: DurableObjectStora
   try {
     if (roomName !== selfRoomId(userId)) throw new Refused("not-your-backup", 403);
     const { since, changes } = await readRequest(request);
+    const chordpro = wantsChordPro(request);
     const sql = storage.sql;
     const reply = storage.transactionSync(() => {
       sql.exec(`CREATE TABLE IF NOT EXISTS backup_items (key TEXT PRIMARY KEY, kind TEXT NOT NULL, value TEXT, rev INTEGER NOT NULL)`);
       sql.exec(`CREATE INDEX IF NOT EXISTS backup_items_by_rev ON backup_items (rev)`);
+      sql.exec(`CREATE TABLE IF NOT EXISTS backup_shape (id INTEGER PRIMARY KEY CHECK (id = 1), shape TEXT NOT NULL)`);
+      if (chordpro) sql.exec(`INSERT OR IGNORE INTO backup_shape (id, shape) VALUES (1, ?)`, CHORDPRO_SHAPE);
+      else if (sql.exec<{ shape: string }>(`SELECT shape FROM backup_shape WHERE id = 1`).toArray()[0]?.shape === CHORDPRO_SHAPE) {
+        throw new Refused("update-app", 409);
+      }
       const current = (key: string) => sql.exec<Row>(`SELECT key, value, rev FROM backup_items WHERE key = ?`, key).toArray()[0];
       const size = () =>
         sql.exec<{ n: number; bytes: number }>(`SELECT count(*) AS n, coalesce(sum(length(CAST(key AS BLOB)) + coalesce(length(CAST(value AS BLOB)), 0)), 0) AS bytes FROM backup_items`).one();

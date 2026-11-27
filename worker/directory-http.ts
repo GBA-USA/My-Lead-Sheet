@@ -4,6 +4,12 @@ import { CLEARED_COOKIE, needsRenewal, readSession, sessionCookie, signSession, 
 
 const MAX_BODY_BYTES = 16 * 1024;
 
+export const SONG_SHAPE_HEADER = "X-Song-Shape";
+export const CHORDPRO_SHAPE = "chordpro";
+
+/** Whether the caller asked for ChordPro song replies (`X-Song-Shape: chordpro`). Any other value or none means the old shape. */
+export const wantsChordPro = (request: Request) => request.headers.get(SONG_SHAPE_HEADER) === CHORDPRO_SHAPE;
+
 export type User = { user_id: string; handle: string; display_name: string; session_version: number };
 
 export const userById = (sql: SqlStorage, userId: string) => sql.exec<User>(`SELECT * FROM users WHERE user_id = ?`, userId).toArray()[0];

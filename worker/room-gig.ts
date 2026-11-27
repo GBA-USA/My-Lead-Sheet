@@ -3,12 +3,12 @@ import { DETAIL_LIMITS, gigLine, KIND_WORDS, type GigDetails, type GigKind, type
 import { CHOICE_WORDS, type RouteChoice } from "../src/routes";
 import { randomBytes, toBase64Url, utf8 } from "./bytes";
 import { liveCode } from "./codes";
-import { signedIn, who, type Context, type Person, type Route, type User } from "./directory-http";
+import { signedIn, wantsChordPro, who, type Context, type Person, type Route, type User } from "./directory-http";
 import { deliver } from "./directory-inbox";
 import { fromRoom, Refused, roomRefused as refused } from "./refused";
 import { addColumns, chatRoom, type Posted } from "./room-chat";
 import { firstName, guestGigsOf, guestOpens, liveGuestGigs, type GuestOpens } from "./room-guest";
-import { bandSongsOnly, isText, MAX_SETLIST_SONGS } from "./room-library";
+import { bandSongsOnly, isText, MAX_SETLIST_SONGS, songForCaller, storedSong } from "./room-library";
 import { bandIdIn, bandIdsOf, inRoom, roomOf, type RoomStore } from "./room-members";
 import { hmacKey } from "./session";
 
@@ -313,7 +313,7 @@ export const gigRoom = {
     if (!playing && !guest && me.role !== "admin") throw refused("not-on-lineup");
     const songs = songsOf(row).flatMap((songId): PackSong[] => {
       const song = band.sql.exec<{ song: string }>(`SELECT song FROM band_songs WHERE song_id = ?`, songId).toArray()[0];
-      return song ? [{ songId, song: JSON.parse(song.song), bandTiming: null }] : [];
+      return song ? [{ songId, song: storedSong(song.song), bandTiming: null }] : [];
     });
     if (playing) {
       band.sql.exec(
@@ -539,7 +539,9 @@ export const GIG_ROUTES: Record<string, Route> = {
 
   async "POST /api/bands/gig/pack"(c) {
     const { room, gigId, me } = inGig(c);
-    return { body: await fromRoom(room.gigPack(me, gigId, c.now)) };
+    const pack = await fromRoom(room.gigPack(me, gigId, c.now));
+    const chordpro = wantsChordPro(c.request);
+    return { body: { ...pack, songs: pack.songs.map((item) => ({ ...item, song: songForCaller(item.song, chordpro) })) } };
   },
 
   async "POST /api/bands/gig/code"(c) {

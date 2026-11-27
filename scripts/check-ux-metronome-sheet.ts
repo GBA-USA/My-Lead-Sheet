@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { SongContent } from "../src/band-library-model.ts";
 import { startApi } from "./api-session.ts";
 import { appPage, PASSWORD_PEPPER } from "./app-page.ts";
@@ -28,8 +29,8 @@ import { openSite, type Site } from "./chrome.ts";
  * Sound and Dot are `sound` and `indicator` in `leadSheetsMetronome`, this phone's own settings.
  */
 
-const root = new URL("..", import.meta.url).pathname;
-execFileSync(join(root, "node_modules/.bin/tsc"), ["-p", "worker"], { cwd: root, stdio: "inherit" });
+const root = fileURLToPath(new URL("..", import.meta.url));
+execFileSync(process.execPath, [join(root, "node_modules/typescript/bin/tsc"), "-p", "worker"], { cwd: root, stdio: "inherit" });
 
 const SONG = 10;
 const SONG_BPM = 78;
@@ -41,10 +42,11 @@ const seed = JSON.parse(readFileSync(join(root, "data/library.json"), "utf8")) a
 /**
  * Measured on the base (addc5a2) at `#/song/10`, relative to `article.sheet`: the first chord glyph, the tops of the
  * card's children, and the metronome block's height with its 12 px top margin (the shift when the block is removed).
+ * Chord y re-measured in Chrome on Linux (the CI runner) after the bass table was removed; x, the card's children and the block are unchanged.
  */
 const BASE: Record<number, { chord: { x: number; y: number }; block: number; left: number; above: Record<string, number>; below: Record<string, number> }> = {
-  390: { chord: { x: 109.59, y: 1471.02 }, block: 158.38, left: 16, above: { ".sheet-title": 20, ".source": 87.88, ".meta": 166.19 }, below: { ".feel": 354.81, ".sheet-label": 507.81, ".bass": 528.42 } },
-  1280: { chord: { x: 121.59, y: 870.05 }, block: 142.19, left: 28, above: { ".sheet-title": 28, ".source": 68.14, ".meta": 101.48 }, below: { ".feel": 273.92, ".sheet-label": 336.98, ".bass": 357.59 } },
+  390: { chord: { x: 109.59, y: 930.99 }, block: 158.38, left: 16, above: { ".sheet-title": 20, ".source": 87.88, ".meta": 166.19 }, below: { ".feel": 354.81, ".sheet-label": 507.81 } },
+  1280: { chord: { x: 121.59, y: 512.83 }, block: 142.19, left: 28, above: { ".sheet-title": 28, ".source": 68.14, ".meta": 101.48 }, below: { ".feel": 273.92, ".sheet-label": 336.99 } },
 };
 
 /** Counts every click the page starts, records every body it sends, and stands in for the battery named in sessionStorage. */

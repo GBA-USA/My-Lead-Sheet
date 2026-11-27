@@ -1,9 +1,9 @@
+import type { SongContent } from "./chordpro";
 import { matchingSongs } from "./search";
 import type { ShareChoice } from "./share-rule";
 import type { Song, SongRef } from "./types";
 
-/** A chart as it travels and is stored outside a phone: a `Song` without this phone's `ref` and `id`. */
-export type SongContent = Omit<Song, "ref" | "id" | "copy">;
+export type { SongContent } from "./chordpro";
 
 /** What every band item says about how it arrived. `canSendOn` is the server's answer for the caller, so the phone only hides buttons with it. */
 type Shared = { sharedBy: string; sharedByName: string; sharedAt: number; updatedAt: number; rev: number; sharedAs: ShareChoice; canSendOn: boolean; localId: number | null };

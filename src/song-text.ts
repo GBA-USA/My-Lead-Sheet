@@ -221,7 +221,6 @@ export function ownSong(meta: SongMeta, sections: ChartSection[], before?: Omit<
     atAGlance: "",
     howToPlay: "",
     practiceTip: "",
-    bassNotes: [],
     ...before,
     title: meta.title.trim(),
     artist: meta.artist.trim(),

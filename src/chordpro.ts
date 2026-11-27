@@ -1,29 +1,10 @@
-// The plan's reference for a song's stored text: docs/PLAN-chordpro-backbone.md section 1, as code. Not app code.
-// check:chordpro-plan runs the plan's written examples through it, so the format is frozen by bytes and not by prose.
-// The chordpro-codec cook deletes this file and points that check at src/chordpro.ts, so the repo holds one codec.
-import { isChord } from "../src/song-text.ts";
+import { isChord } from "./song-text";
+import type { ChartLine, ChartSection, Song } from "./types";
 
-export type PlanLine = { chords?: string; lyrics?: string; bars?: string; note?: string };
-export type PlanSection = { heading: string; lines: PlanLine[] };
-export type PlanSong = {
-  title: string;
-  artist: string;
-  keyLabel: string;
-  keyRoot: string;
-  keyMode: "major" | "minor";
-  keyNote: string;
-  tempo: number | null;
-  tempoNote: string;
-  timeSignature: string;
-  officialRuntimeSec: number | null;
-  feel: string;
-  sourceNote: string;
-  atAGlance: string;
-  howToPlay: string;
-  practiceTip: string;
-  body: PlanSection[];
-  kept?: string[];
-};
+/** A song as it travels and rests: the chart and its facts, without this phone's `ref`, `id` and `copy`. */
+export type SongContent = Omit<Song, "ref" | "id" | "copy">;
+/** A song on its way to or from the Worker. Cook 1 exports the type and uses it nowhere. */
+export type SentSong = { chordpro: string };
 
 type TextFact = "keyNote" | "tempoNote" | "feel" | "sourceNote" | "atAGlance" | "howToPlay" | "practiceTip";
 const NOTE_FACTS: [string, TextFact][] = [
@@ -33,7 +14,11 @@ const NOTE_FACTS: [string, TextFact][] = [
   ["x_how_to_play", "howToPlay"],
   ["x_practice_tip", "practiceTip"],
 ];
-const TEXT_FACTS = new Map<string, TextFact>([["x_key_note", "keyNote"], ["x_tempo_note", "tempoNote"], ...NOTE_FACTS]);
+const TEXT_FACTS = new Map<string, TextFact>([
+  ["x_key_note", "keyNote"],
+  ["x_tempo_note", "tempoNote"],
+  ...NOTE_FACTS,
+]);
 const KNOWN = new Set(["title", "artist", "key", "x_key_label", "tempo", "time", "x_time", "duration", "x_join", ...TEXT_FACTS.keys()]);
 const DIRECTIVE = /^\{([a-z_0-9]+)(?:: (.*))?\}$/s;
 
@@ -44,10 +29,11 @@ const lineStart = (text: string) => text.replace(/^[{#]/, "\\$&");
 const brackets = (text: string) => escaped(text).replace(/[[\]]/g, "\\$&");
 
 const kindOf = (heading: string) => /^\s*(verse|chorus|bridge)\b/i.exec(heading)?.[1].toLowerCase() ?? "part";
-const duration = (seconds: number) => (Number.isInteger(seconds) ? `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}` : String(seconds));
-const isSung = (line: PlanLine) => line.chords !== undefined || line.lyrics !== undefined;
-const isBarsAlone = (line: PlanLine) => line.bars !== undefined && !isSung(line);
-const isNoteAlone = (line: PlanLine) => line.note !== undefined && line.bars === undefined && !isSung(line);
+const duration = (seconds: number) =>
+  Number.isInteger(seconds) ? `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}` : String(seconds);
+const isSung = (line: ChartLine) => line.chords !== undefined || line.lyrics !== undefined;
+const isBarsAlone = (line: ChartLine) => line.bars !== undefined && !isSung(line);
+const isNoteAlone = (line: ChartLine) => line.note !== undefined && line.bars === undefined && !isSung(line);
 
 /** A chord row over its words as one text line: each token of the row in brackets at its own column. */
 function sungLine(chords = "", lyrics = ""): string {
@@ -64,11 +50,12 @@ function sungLine(chords = "", lyrics = ""): string {
 
 /** Whether the reader would keep this entry again: one line, a whole directive, a name it does not know. */
 function keepable(entry: string): boolean {
-  const name = entry.includes("\n") ? undefined : DIRECTIVE.exec(entry)?.[1];
+  const name = /[\r\n]/.test(entry) ? undefined : DIRECTIVE.exec(entry)?.[1];
   return name !== undefined && !KNOWN.has(name) && !/^(start|end)_of_/.test(name);
 }
 
-export function songToChordPro(song: PlanSong): string {
+/** Writes any song as deterministic ChordPro text. */
+export function songToChordPro(song: SongContent): string {
   const out: string[] = [];
   const put = (name: string, value: string) => out.push(`{${name}: ${escaped(value)}}`);
   put("title", song.title);
@@ -125,7 +112,7 @@ export function songToChordPro(song: PlanSong): string {
   return out.join("\n");
 }
 
-function readSungLine(text: string): PlanLine {
+function readSungLine(text: string): ChartLine {
   let lyrics = "";
   let chords = "";
   let anyChord = false;
@@ -153,17 +140,35 @@ function readSungLine(text: string): PlanLine {
   return { ...(anyChord ? { chords } : {}), ...(lyrics !== "" || !anyChord ? { lyrics } : {}) };
 }
 
-export function chordProToSong(text: string): PlanSong {
-  const song: PlanSong = { title: "", artist: "", keyLabel: "", keyRoot: "C", keyMode: "major", keyNote: "", tempo: null, tempoNote: "", timeSignature: "", officialRuntimeSec: null, feel: "", sourceNote: "", atAGlance: "", howToPlay: "", practiceTip: "", body: [] };
+/** Reads ChordPro text written by `songToChordPro` back into a `SongContent`. Never throws. */
+export function chordProToSong(text: string): SongContent {
+  const song: SongContent = {
+    title: "",
+    artist: "",
+    keyLabel: "",
+    keyRoot: "C",
+    keyMode: "major",
+    keyNote: "",
+    tempo: null,
+    tempoNote: "",
+    timeSignature: "",
+    officialRuntimeSec: null,
+    feel: "",
+    sourceNote: "",
+    atAGlance: "",
+    howToPlay: "",
+    practiceTip: "",
+    body: [],
+  };
   const kept: string[] = [];
-  let section: PlanSection | null = null;
+  let section: ChartSection | null = null;
   let inSection = false;
   let grid = false;
   let join = false;
   let time: string | undefined;
   let xTime: string | undefined;
   let keyLabel: string | undefined;
-  const add = (fields: PlanLine) => {
+  const add = (fields: ChartLine) => {
     const last = section!.lines[section!.lines.length - 1];
     if (join && last) Object.assign(last, fields);
     else section!.lines.push(fields);

@@ -1,4 +1,4 @@
-import type { BassNote, KeyMode, Song } from "./types";
+import type { KeyMode, Song } from "./types";
 
 /** Notes shows letter names. Nashville shows numbers and does not follow transpose. Chords only shows letter names and no lyrics. */
 export const NOTATIONS = ["notes", "nashville", "chords"] as const;
@@ -47,12 +47,12 @@ for (const [name, pc] of [
   PITCH[name] = pc;
 }
 
-/** A chord token, not a word. Quality stays attached so Am7 is not read as Am plus a 7. */
-const CHORD_RE =
-  /(?<![A-Za-z])([A-G](?:#|b)?(?:(?:maj|min|dim|aug|sus|add|m)\d*|\d+)?(?:\/[A-G](?:#|b)?)?)(?![A-Za-z])/g;
+/** A chord token matching `parseChord`, not a word. `N.C.` is stepped over as its own token so its `C` is never read as a chord. */
+const CHORD_TOKEN =
+  "[A-G](?:#|b)?(?:maj|min|dim|aug|sus|add|m)?(?:6\\/9|\\d+)?(?:(?:sus|add|b|#)\\d+)*(?:\\/[A-G](?:#|b)?)?";
+const CHORD_RE = new RegExp(`(?<![A-Za-z])(?:N\\.C\\.|${CHORD_TOKEN})(?![A-Za-z])`, "g");
 
 const NOTE_RE = /(?<![A-Za-z])([A-G](?:#|b)?)(?![A-Za-z#b])/g;
-const SIMPLE_DEGREE = /^(?:b|#)?\d+m?$/;
 
 export interface ParsedChord {
   root: string;
@@ -107,47 +107,12 @@ export function parseChord(symbol: string): ParsedChord | null {
   return { root: match[1], quality, bass: match[3], minor };
 }
 
-function splitAliases(chordField: string): string[] {
-  if (chordField.includes(" / ")) return chordField.split(" / ").map((part) => part.trim());
-  return [chordField.trim()];
-}
-
-function aliasMap(song: Song): Map<string, string> {
-  const map = new Map<string, string>();
-  for (const row of song.bassNotes) {
-    if (row.chord.includes("pattern notes")) continue;
-    for (const alias of splitAliases(row.chord)) {
-      if (parseChord(alias)) map.set(alias, row.nashville.trim());
-    }
-  }
-  return map;
-}
-
-function songUsesMinorSuffix(song: Song): boolean {
-  for (const row of song.bassNotes) {
-    if (row.chord.includes("pattern notes")) continue;
-    for (const alias of splitAliases(row.chord)) {
-      const parsed = parseChord(alias);
-      if (parsed?.minor && /m$/.test(row.nashville.trim())) return true;
-    }
-  }
-  return false;
-}
-
-/** Chart token → Nashville number. Slash bass notes are scale degrees (C/E → 1/3). */
+/** Chart token → Nashville number from key and chord alone. Minor chords keep `m`; slash bass notes are scale degrees (C/E → 1/3, Am/G → 6m/5). */
 export function toNashvilleSymbol(symbol: string, song: Song): string {
   const parsed = parseChord(symbol);
   if (!parsed) return symbol;
-  const minorM = songUsesMinorSuffix(song);
-  if (parsed.bass) {
-    const mark = parsed.minor && minorM ? "m" : "";
-    return `${degree(parsed.root, song.keyRoot)}${mark}/${degree(parsed.bass, song.keyRoot)}`;
-  }
-  const stored = aliasMap(song).get(symbol);
-  if (stored && SIMPLE_DEGREE.test(stored)) return stored;
-  const num = degree(parsed.root, song.keyRoot);
-  if (parsed.minor && minorM) return `${num}m`;
-  return num;
+  const num = `${degree(parsed.root, song.keyRoot)}${parsed.minor ? "m" : ""}`;
+  return parsed.bass ? `${num}/${degree(parsed.bass, song.keyRoot)}` : num;
 }
 
 function spell(note: string, semitones: number, flats: boolean): string {
@@ -208,62 +173,13 @@ export function displayChordLine(
   return replaceChordTokens(line, (token) => transposeChordSymbol(token, semitones, flats));
 }
 
-export function convertNoteNames(text: string, tonic: string): string {
-  return text.replace(NOTE_RE, (note) => degree(note, tonic));
-}
-
 export function transposeNoteNames(text: string, semitones: number, flats: boolean): string {
   if (mod12(semitones) === 0) return text;
   return text.replace(NOTE_RE, (note) => spell(note, semitones, flats));
 }
 
-export function displayBassNote(note: string, song: Song, semitones: number, notation: Notation): string {
-  if (notation === "nashville") return convertNoteNames(note, song.keyRoot);
-  if (mod12(semitones) === 0) return note;
-  const { flats } = transposedKey(song, semitones);
-  return transposeNoteNames(note, semitones, flats);
-}
-
 /** Whether text names a chord or a note, so it reads in the song's own key. */
-export const namesChords = (text: string): boolean => text.search(CHORD_RE) >= 0;
-
-const OPEN_STRINGS: [string, string][] = [
-  ["E", "Open E string (top / 4th string)"],
-  ["A", "Open A string (3rd string)"],
-  ["D", "Open D string (2nd string)"],
-  ["G", "Open G string (1st string)"],
-];
-const ORDINALS = ["", "1st", "2nd", "3rd", "4th", "5th"];
-
-/** The open string if the note is one, else the first of E, A, D, G that has it at fret 5 or lower. */
-function easiestPlace(note: string): string {
-  const pc = pitchClass(note);
-  const open = OPEN_STRINGS.find(([string]) => PITCH[string] === pc);
-  if (open) return open[1];
-  const [string] = OPEN_STRINGS.find(([string]) => mod12(pc - PITCH[string]) <= 5)!;
-  return `${string} string, ${ORDINALS[mod12(pc - PITCH[string])]} fret`;
-}
-
-/** The stored place in the song's own key. Transposed, the place of each note the bass cell names, labelled when it names two. */
-export function displayPlace(row: BassNote, song: Song, semitones: number): string {
-  if (mod12(semitones) === 0) return row.position;
-  const shown = transposeNoteNames(row.bassNote, semitones, transposedKey(song, semitones).flats);
-  const notes = [...shown.matchAll(NOTE_RE)].map(([note]) => note);
-  return notes.length === 1 ? easiestPlace(notes[0]) : notes.map((note) => `${note}: ${easiestPlace(note)}`).join("; ");
-}
-
-/**
- * The table's Nashville number. A slash chord gets the key-relative bass (G/B in C → 5/7),
- * because its stored text is a teaching phrase ("5, 3rd in bass"), which the table shows as a hint.
- */
-export function nashvilleNumber(row: BassNote, song: Song): string {
-  return parseChord(row.chord.trim())?.bass ? toNashvilleSymbol(row.chord.trim(), song) : row.nashville;
-}
-
-export function displayChordCell(row: BassNote, song: Song, semitones: number, notation: Notation): string {
-  if (notation === "nashville") return nashvilleNumber(row, song);
-  return displayChordLine(row.chord, song, semitones, "notes");
-}
+export const namesChords = (text: string): boolean => [...text.matchAll(CHORD_RE)].some((match) => match[0] !== "N.C.");
 
 /**
  * The whole-page scroll for a song without a runtime and BPM. 100% = the song's stored BPM × 0.25 pixels

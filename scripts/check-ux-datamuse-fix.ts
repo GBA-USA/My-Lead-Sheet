@@ -1,10 +1,11 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import type { LibraryFile } from "../src/types.ts";
 import { openSite } from "./chrome.ts";
 
-const root = new URL("..", import.meta.url).pathname;
+const root = fileURLToPath(new URL("..", import.meta.url));
 const seed = JSON.parse(readFileSync(join(root, "data/library.json"), "utf8")) as LibraryFile;
 const FIRE_AWAY = 1;
 const THE_MIDDLE = 4;
@@ -53,15 +54,13 @@ async function openSong(id: number) {
   await until(`document.readyState === "complete"`, "the app");
   await evaluate(`localStorage.clear()`);
   await send("Page.navigate", { url: `${site.origin}/?load=${(loads += 1)}#/song/${id}` });
-  await until(`!!document.querySelector("table.bass tbody tr") && !!document.querySelector("#chord-section .chart-heading")`, `song ${id}`);
+  await until(`!!document.querySelector("#chord-section .chart-heading")`, `song ${id}`);
 }
 async function transposeUp() {
   const found = await evaluate<boolean>(`(() => { const b = document.querySelector("button[aria-label='Transpose up']"); b?.click(); return !!b; })()`);
   expect(found, "a Transpose up button");
   await pause(120);
 }
-const placeHeader = () => evaluate<string>(`document.querySelector("table.bass thead th:last-child").textContent`);
-const places = () => evaluate<string[]>(`[...document.querySelectorAll("table.bass tbody tr")].map((tr) => tr.lastElementChild.textContent)`);
 const noteLines = () => evaluate<string[]>(`[...document.querySelectorAll("#chord-section .chart-note")].map((p) => p.textContent)`);
 
 await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
@@ -72,7 +71,6 @@ await test("bass string numbers are G 1st, D 2nd, A 3rd, E 4th in every song", a
     [...text.matchAll(/\b([EADG]) string \((?:top \/ )?(\d)(?:st|nd|rd|th) string\)/g)].filter((m) => number[m[1]] !== m[2]).map((m) => `${at}: "${m[0]}"`),
   );
   expect(wrong.length === 0, `${wrong.length} wrong string numbers, e.g. ${wrong.slice(0, 3).join("; ")}`);
-  expect(songTexts.some(([, text]) => /Open A string \(3rd string\)/.test(text)), "no song names the open A string as the 3rd string");
 });
 
 await test("while transposed, a note line that names chords or a key shows the original key hint", async () => {
@@ -94,38 +92,6 @@ await test("while transposed, a note line that names chords or a key shows the o
 await test("slash-chord bass hints use one wording", async () => {
   const over = songTexts.filter(([, text]) => /\b\d+ over \d+\b/.test(text)).map(([at, text]) => `${at}: "${text}"`);
   expect(over.length === 0, `"N over 3" wording left: ${over.join("; ")}`);
-  const chainBreaker = seed.songs.find((song) => song.id === CHAIN_BREAKER)!;
-  const slash = Object.fromEntries(chainBreaker.bassNotes.map((row) => [row.chord, row.nashville]));
-  expect(slash["G/B"] === "5, 3rd in bass" && slash["C/E"] === "1, 3rd in bass", `Chain Breaker slash rows read ${js(slash)}`);
-  await openSong(CHAIN_BREAKER);
-  const numbers = await evaluate<string[]>(`[...document.querySelectorAll("table.bass tbody tr")].map((tr) => tr.children[1].textContent)`);
-  expect(numbers.includes("5/7 (5, 3rd in bass)") && numbers.includes("1/3 (1, 3rd in bass)"), `the table's Nashville cells read ${js(numbers)}`);
-});
-
-await test("while transposed, the bass table's Easiest place column names a place for the transposed note", async () => {
-  await openSong(GIVE_ME_ONE_REASON);
-  const stored = seed.songs.find((song) => song.id === GIVE_ME_ONE_REASON)!.bassNotes.map((row) => row.position);
-  expect(js(await places()) === js(stored), `in its own key the column reads ${js(await places())}, not the stored ${js(stored)}`);
-  await transposeUp();
-  const giveMe = await places();
-  expect(js(giveMe) === js(["Open G string (1st string)", "A string, 3rd fret", "Open D string (2nd string)"]), `F# up to G: G7, C7, D7 places read ${js(giveMe)}`);
-  expect(!(await placeHeader()).includes("original key"), `the transposed column still says ${await placeHeader()}`);
-
-  await openSong(FIRE_AWAY);
-  await transposeUp();
-  const fire = await places();
-  expect(
-    js(fire) === js(["A string, 1st fret", "E string, 1st fret", "Open G string (1st string)", "D string, 1st fret", "A string, 3rd fret"]),
-    `A up to Bb: Bb, F, Gm, Eb, Cm places read ${js(fire)}`,
-  );
-
-  await openSong(NO_HALF_STEPPIN);
-  await transposeUp();
-  const pattern = (await places()).slice(3);
-  expect(
-    js(pattern) === js(["F: E string, 1st fret; Ab: E string, 4th fret", "Bb: A string, 1st fret; Db: A string, 4th fret", "C: A string, 3rd fret; Eb: D string, 1st fret"]),
-    `A up to Bb: the two-note pattern rows read ${js(pattern)}`,
-  );
 });
 
 await test("a band setlist code that never ends does not show an Ends date", async () => {

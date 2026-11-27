@@ -8,13 +8,9 @@ import {
   metronomePadAction,
 } from "../src/metronome.ts";
 import {
-  convertNoteNames,
   degree,
-  displayBassNote,
-  displayChordCell,
   displayChordLine,
   displayKeyLabel,
-  nashvilleNumber,
   originalKey,
   parseChord,
   scrollPixelsPerSecond,
@@ -28,20 +24,6 @@ const library = JSON.parse(readFileSync(new URL("../data/library.json", import.m
 function fail(message: string): never {
   console.error(message);
   process.exit(1);
-}
-
-const leading = /^(b|#)?\d+/;
-
-for (const song of library.songs) {
-  for (const row of song.bassNotes) {
-    if (row.chord.includes("pattern notes")) continue;
-    const symbol = row.chord.includes(" / ") ? row.chord.split(" / ")[0].trim() : row.chord.trim();
-    const rootNote = parseChord(symbol)?.root;
-    if (!rootNote) fail(`${song.id} could not parse ${symbol}`);
-    const got = degree(rootNote, song.keyRoot);
-    const expect = row.nashville.trim().match(leading)?.[0];
-    if (got !== expect) fail(`${song.title} ${symbol} degree ${got} != stored ${row.nashville}`);
-  }
 }
 
 const chain = library.songs.find((song) => song.id === 10);
@@ -61,21 +43,13 @@ if (/[A-G]/.test(nashvilleChorus)) fail(`chorus still has letters:\n${nashvilleC
 
 if (toNashvilleSymbol("C/E", chain) !== "1/3") fail("C/E");
 if (toNashvilleSymbol("F/G", chain) !== "4/5") fail("F/G");
-if (toNashvilleSymbol("Am7", chain) !== "6") fail("Am7");
 if (toNashvilleSymbol("Gsus4", chain) !== "5") fail("Gsus4");
 
 const fire = library.songs.find((song) => song.id === 1)!;
 const truth = library.songs.find((song) => song.id === 8)!;
-if (toNashvilleSymbol("F#m", fire) !== "6") fail("Fire Away F#m");
 if (toNashvilleSymbol("Gm", truth) !== "6m") fail("Truth Gm");
 
 const possum = library.songs.find((song) => song.id === 7)!;
-if (convertNoteNames("D (F# in bass)", possum.keyRoot) !== "b7 (2 in bass)") {
-  fail(`prose bass ${convertNoteNames("D (F# in bass)", possum.keyRoot)}`);
-}
-if (convertNoteNames("Bass rests until the last bar", chain.keyRoot) !== "Bass rests until the last bar") {
-  fail("plain prose changed");
-}
 
 const original = chorus.lines[0].chords ?? "";
 const converted = displayChordLine(original, chain, 0, "nashville");
@@ -133,7 +107,6 @@ if (pace100 === performanceBpm * 0.25) fail("100% scroll followed the metronome 
 const east = library.songs.find((song) => song.id === 11)!;
 if (toNashvilleSymbol("A", east) !== "b3") fail("east A");
 if (toNashvilleSymbol("E", east) !== "b7") fail("east E");
-if (toNashvilleSymbol("F#m", east) !== "1") fail("east tonic");
 
 const problems: string[] = [];
 function expect(got: unknown, want: unknown, label: string) {
@@ -182,25 +155,10 @@ for (let semitones = 0; semitones < 12; semitones += 1) {
 expect(displayChordLine("D E F#m A D", east, 1, "notes"), "Eb F Gm Bb Eb", "G minor spells flats");
 expect(displayChordLine("D E F#m A D", east, 2, "notes"), "E F# G#m B E", "G# minor spells sharps");
 expect(displayChordLine("D E F#m A D", east, 9, "notes"), "B Db Ebm Gb B", "Eb minor spells flats");
-expect(displayBassNote("A", east, 1, "notes"), "Bb", "G minor bass note");
 
 expect(displayKeyLabel(half, 0), "A (practice version — recording key unverified)", "No Half Steppin' key");
 expect(displayKeyLabel(half, 1), "Bb major (practice version — recording key unverified)", "No Half Steppin' +1 key");
 expect(displayKeyLabel(possum, 1), "F major (F-centered)", "Possum Kingdom +1 key");
-
-const toTable = library.songs.find((song) => song.id === 9)!;
-const row = (song: Song, chord: string) => song.bassNotes.find((note) => note.chord === chord)!;
-expect(nashvilleNumber(row(chain, "G/B"), chain), "5/7", "Chain Breaker G/B table number");
-expect(nashvilleNumber(row(chain, "C/E"), chain), "1/3", "Chain Breaker C/E table number");
-expect(nashvilleNumber(row(toTable, "E/G#"), toTable), "5/7", "To The Table E/G# table number");
-expect(displayChordCell(row(chain, "G/B"), chain, 0, "nashville"), "5/7", "Chain Breaker G/B chord cell in Nashville");
-expect(displayChordCell(row(chain, "G/B"), chain, 1, "notes"), "Ab/C", "Chain Breaker G/B chord cell +1");
-expect(nashvilleNumber(row(half, "A7 pattern notes"), half), "5 / b7", "pattern notes keep stored degrees");
-for (const song of library.songs) {
-  for (const note of song.bassNotes) {
-    if (!parseChord(note.chord)?.bass) expect(nashvilleNumber(note, song), note.nashville, `${song.title} ${note.chord}`);
-  }
-}
 
 expect(originalKey(fire, 0), null, "untransposed has no original-key label");
 expect(originalKey(fire, 12), null, "an octave is not a transpose");
@@ -208,5 +166,120 @@ expect(originalKey(fire, 1), "A major", "Fire Away +1 original key");
 expect(originalKey(half, -2), "A major", "No Half Steppin' -2 original key");
 
 if (problems.length > 0) fail(problems.join("\n"));
+
+let nFailures = 0;
+const nCheck = (ok: boolean, label: string) => {
+  if (!ok) nFailures += 1;
+  console.log(`${ok ? "ok  " : "FAIL"} ${label}`);
+};
+const makeSong = (keyRoot: string, keyMode: "major" | "minor") =>
+  ({
+    ref: "local/999",
+    id: 999,
+    title: "Test",
+    artist: "Test",
+    keyLabel: `${keyRoot} ${keyMode}`,
+    keyRoot,
+    keyMode,
+    keyNote: "",
+    tempo: null,
+    tempoNote: "",
+    timeSignature: "4/4",
+    officialRuntimeSec: null,
+    feel: "",
+    sourceNote: "",
+    atAGlance: "",
+    howToPlay: "",
+    practiceTip: "",
+    bassNotes: [],
+    body: [],
+  }) as unknown as Song;
+const tokensOf = (line: string) => line.trim().split(/\s+/).filter(Boolean);
+const songA = makeSong("A", "major");
+const songC = makeSong("C", "major");
+const songEm = makeSong("E", "minor");
+const songFsm = makeSong("F#", "minor");
+const songFs = makeSong("F#", "major");
+
+nCheck(
+  toNashvilleSymbol("F#m", songA) === "6m" && toNashvilleSymbol("Am7", songC) === "6m",
+  "N1: F#m in A major is 6m and Am7 in C major is 6m with no bass table",
+);
+
+const n2Bad: string[] = [];
+for (const song of library.songs) {
+  for (const section of song.body) {
+    for (const line of section.lines) {
+      for (const row of [line.chords, line.bars]) {
+        if (!row) continue;
+        for (const token of row.split(/[\s|]+/).filter(Boolean)) {
+          const parsed = parseChord(token);
+          if (!parsed?.minor) continue;
+          const converted = toNashvilleSymbol(token, song);
+          const rootPart = converted.split("/")[0];
+          if (!rootPart.endsWith("m")) n2Bad.push(`${song.title}: ${token}->${converted}`);
+        }
+      }
+    }
+  }
+}
+nCheck(
+  n2Bad.length === 0,
+  `N2: every minor chord in all ${library.songs.length} built-in songs shows m${n2Bad.length ? ` (${n2Bad.length} without m, e.g. ${n2Bad[0]})` : ""}`,
+);
+
+nCheck(
+  toNashvilleSymbol("G/B", songC) === "5/7" && toNashvilleSymbol("C/E", songC) === "1/3" && toNashvilleSymbol("Am/G", songC) === "6m/5",
+  "N3: slash chords G/B -> 5/7, C/E -> 1/3, Am/G -> 6m/5 in C",
+);
+
+const n4Row = "G7  Gsus4  Cmaj7  Bdim  Caug  C6/9  C7sus4  Bm7b5";
+const n4Nash = tokensOf(displayChordLine(n4Row, songC, 0, "nashville"));
+const n4Notes = tokensOf(displayChordLine(n4Row, songC, 2, "notes"));
+nCheck(
+  JSON.stringify(n4Nash) === JSON.stringify(["5", "5", "1", "7", "1", "1", "1", "7m"]) &&
+    JSON.stringify(n4Notes) === JSON.stringify(["A7", "Asus4", "Dmaj7", "C#dim", "Daug", "D6/9", "D7sus4", "C#m7b5"]),
+  `N4: chord extensions in C map cleanly in Nashville and transpose up 2 in Notes (got ${JSON.stringify(n4Nash)} / ${JSON.stringify(n4Notes)})`,
+);
+
+const n5Nash = tokensOf(displayChordLine("Db  Eb  F#  Ab  Bb", songC, 0, "nashville"));
+nCheck(
+  JSON.stringify(n5Nash) === JSON.stringify(["b2", "b3", "b5", "b6", "b7"]),
+  "N5 (guard): Db, Eb, F#, Ab, Bb in C show b2, b3, b5, b6, b7",
+);
+
+nCheck(
+  toNashvilleSymbol("Em", songEm) === "1m" &&
+    toNashvilleSymbol("G", songEm) === "b3" &&
+    toNashvilleSymbol("Am", songEm) === "4m" &&
+    toNashvilleSymbol("D", songEm) === "b7" &&
+    toNashvilleSymbol("A", songFsm) === "b3" &&
+    toNashvilleSymbol("E", songFsm) === "b7" &&
+    toNashvilleSymbol("F#m", songFsm) === "1m",
+  "N6: minor keys E minor and F# minor count from their own root",
+);
+
+const n7Row = displayChordLine("A  N.C.  hold  D", songA, 0, "nashville");
+const n7BarsNotes = displayChordLine("| A | N.C. | D |", songA, 2, "notes");
+const n7BarsNash = displayChordLine("| A | N.C. | D |", songA, 0, "nashville");
+const n7Glance = displayChordLine("Intro (A D) then Verse, end on A.", songA, 0, "nashville");
+nCheck(
+  JSON.stringify(tokensOf(n7Row)) === JSON.stringify(["1", "N.C.", "hold", "4"]) &&
+    n7BarsNotes === "| B | N.C. | E |" &&
+    n7BarsNash.includes("N.C.") &&
+    !n7BarsNash.includes("N.1.") &&
+    n7Glance === "Intro (1 4) then Verse, end on 1.",
+  `N7: N.C. stays N.C. in Nashville and Transpose, words stay, At a glance converts chords (got ${JSON.stringify(n7Row)} / ${JSON.stringify(n7BarsNotes)})`,
+);
+
+const n8RowA = displayChordLine("A   F#m  D   Bm7  E", songA, 0, "nashville");
+const n8RowTight = displayChordLine("Cm D", songFs, 0, "nashville");
+const n8RowSlash = displayChordLine("Am/G C", songC, 0, "nashville");
+nCheck(
+  n8RowA === "1   6m   4   2m   5" && n8RowTight === "b5m b6" && n8RowSlash === "6m/5 1",
+  `N8: minor chords keep later chords at their columns and tokens never merge (got ${JSON.stringify(n8RowA)}, ${JSON.stringify(n8RowTight)}, ${JSON.stringify(n8RowSlash)})`,
+);
+
+if (nFailures > 0) fail(`${nFailures} N check(s) failed`);
 
 console.log("music ok: degrees match stored nashville, Chain Breaker is 1-4-5, transpose keeps numbers, spacing, spelling, caveats and slash numbers");

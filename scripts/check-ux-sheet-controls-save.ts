@@ -18,7 +18,8 @@ const CHAIN_BREAKER = 10;
 const TAKE_ME_OUT = 5;
 const WIDTHS = [390, 1280];
 /** U3b took the metronome block (158.38 px at 390, 142.19 px at 1280 with its margin) off the card, above the chart. */
-const FIRST_CHORD_IN_CARD: Record<number, { x: number; y: number }> = { 390: { x: 109.59, y: 1312.64 }, 1280: { x: 121.59, y: 727.86 } };
+/** Re-measured in Chrome on Linux (the CI runner) after chordpro-codec removed the bass table above the chart. */
+const FIRST_CHORD_IN_CARD: Record<number, { x: number; y: number }> = { 390: { x: 109.59, y: 772.61 }, 1280: { x: 121.59, y: 370.64 } };
 const js = (value: unknown) => JSON.stringify(value);
 const settle = (ms = 250) => new Promise((done) => setTimeout(done, ms));
 

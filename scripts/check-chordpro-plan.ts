@@ -3,9 +3,25 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
-import { chordProToSong, songToChordPro, type PlanLine, type PlanSection, type PlanSong } from "./chordpro-plan-reference.ts";
+import type { SongContent } from "../src/chordpro.ts";
+import type { ChartLine, ChartSection } from "../src/types.ts";
+
+type PlanLine = ChartLine;
+type PlanSection = ChartSection;
+type PlanSong = SongContent;
 
 const root = fileURLToPath(new URL("..", import.meta.url));
+const codecBundle = await build({
+  entryPoints: [join(root, "src/chordpro.ts")],
+  bundle: true,
+  write: false,
+  format: "esm",
+  platform: "neutral",
+  logLevel: "silent",
+});
+const { chordProToSong, songToChordPro } = (await import(
+  `data:text/javascript;base64,${Buffer.from(codecBundle.outputFiles[0].text).toString("base64")}`
+)) as typeof import("../src/chordpro.ts");
 const read = (file: string) => readFileSync(join(root, file), "utf8").replaceAll("\r\n", "\n");
 const PLAN = "docs/PLAN-chordpro-backbone.md";
 const PHONE_BRIEF = "docs/cooks/chordpro-phone.md";

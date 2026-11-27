@@ -1377,56 +1377,6 @@ a:focus-visible {
   margin-top: 0.45em;
 }
 
-.bass {
-  width: 100%;
-  border-collapse: collapse;
-  table-layout: fixed;
-  margin-top: 0.35em;
-}
-
-.bass th,
-.bass td {
-  text-align: left;
-  vertical-align: top;
-  padding: 0.45em 0.45em 0.45em 0;
-}
-
-/* Headers wrap only between words, so they stop growing once "Nashville" would no longer fit its 20% column. */
-.bass th {
-  font-size: min(0.72em, 3.3vw);
-  font-weight: 700;
-  color: var(--ink);
-  vertical-align: bottom;
-  border-bottom: 2px solid var(--ink);
-  padding-bottom: 0.4em;
-}
-
-.bass td {
-  overflow-wrap: break-word;
-  font-size: 0.94em;
-  border-bottom: 1px solid var(--paper-rule);
-  line-height: 1.35;
-}
-
-.bass th:nth-child(1),
-.bass td:nth-child(1) {
-  width: 22%;
-}
-
-.bass th:nth-child(2),
-.bass td:nth-child(2) {
-  width: 20%;
-}
-
-.bass th:nth-child(3),
-.bass td:nth-child(3) {
-  width: 14%;
-}
-
-.bass td.strong {
-  font-weight: 700;
-}
-
 .chart {
   display: flow-root;
   margin-top: 0.2em;

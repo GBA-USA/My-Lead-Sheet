@@ -22,7 +22,6 @@ const SONG_KEYS = [
   "atAGlance",
   "howToPlay",
   "practiceTip",
-  "bassNotes",
   "body",
 ];
 
@@ -64,12 +63,6 @@ for (const song of library.songs) {
   }
   if (song.keyMode !== "major" && song.keyMode !== "minor") fail(`song ${song.id} keyMode`);
   if (song.tempo !== null && !Number.isInteger(song.tempo)) fail(`song ${song.id} tempo`);
-  for (const note of song.bassNotes) {
-    const noteKeys = Object.keys(note);
-    if (noteKeys.join("|") !== "chord|nashville|bassNote|position") {
-      fail(`song ${song.id} bass note keys ${noteKeys.join(",")}`);
-    }
-  }
   for (const section of song.body) {
     if (Object.keys(section).join("|") !== "heading|lines") fail(`song ${song.id} section keys`);
     for (const line of section.lines) {
@@ -103,7 +96,6 @@ if (first.lyrics !== "If you've been walking the same old road for miles and mil
 if (!chain.feel.startsWith("Slow-building Southern gospel-rock ballad")) {
   fail("Chain Breaker feel changed");
 }
-if (chain.bassNotes[0].position !== "A string, 3rd fret") fail("Chain Breaker bass position changed");
 
 /**
  * No Half Steppin' moved its "THE FORM" reference block out of the body, so Learn counts only song sections.

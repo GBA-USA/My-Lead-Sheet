@@ -113,6 +113,7 @@ export function CheckInWarning({ me, bandId, gigId }: WarningProps) {
   const count = copy ? notReady(copy.rows, copy.packRev, me) : 0;
   const key = copyKey(me, gigId);
 
+  // Read again when the line comes back too, so a leader whose read failed with no signal gets See who once there is one.
   useEffect(() => {
     if (!leading) return;
     let live = true;
@@ -123,7 +124,7 @@ export function CheckInWarning({ me, bandId, gigId }: WarningProps) {
     return () => {
       live = false;
     };
-  }, [leading, bandId, gigId, copy?.packRev, copy?.rows.length]);
+  }, [leading, bandId, gigId, copy?.packRev, copy?.rows.length, copy?.line]);
 
   const players = copy && named ? livePlayers(withCheckIn(playersFrom(named.view, named.band, me), copy), me, NO_STATUSES, Date.now()) : null;
   const panel = sheetHost && players ? createPortal(<BandStatusPanel players={players} note={staleNote(copy)} onClose={() => setSheetHost(null)} />, sheetHost) : null;
@@ -178,8 +179,9 @@ export function TonightsPlayers(props: TonightProps) {
 }
 
 /**
- * Every current band member, the lineup ticked, the leader's own row fixed. Save sends the lineup only when the ticks
- * differ from the gig's, once, so a retry or a re-tick sends nothing new. Once the gig is live only an admin may change
+ * Every current band member, the lineup ticked, the leader's own row fixed. Save lays the ticks this player changed on
+ * the lineup as the server holds it then, so an admin's change made meanwhile stays, and sends it only when that
+ * differs, once, so a retry or a re-tick sends nothing new. Once the gig is live only an admin may change
  * it, so the leader reads the list with the line that says so. A failed save keeps the sheet open, says why and goes back
  * to the stored lineup.
  */
@@ -199,19 +201,23 @@ function TonightSheet({ me, band, view, status, onSaved, onClose }: TonightProps
 
   const save = async () => {
     if (saving.current) return;
-    const lineup = [...stored.filter((id) => ticks.includes(id)), ...members.map((member) => member.userId).filter((id) => ticks.includes(id) && !stored.includes(id))];
-    if (!lineup.includes(fixed)) lineup.unshift(fixed);
-    if (sameSet(lineup, stored)) return onClose();
+    const dropped = stored.filter((id) => !ticks.includes(id));
+    const added = members.map((member) => member.userId).filter((id) => ticks.includes(id) && !stored.includes(id));
+    if (dropped.length === 0 && added.length === 0) return onClose();
     saving.current = true;
     setBusy(true);
     setError("");
+    const ids = { bandId: view.gig.bandId, gigId: view.gig.gigId };
     try {
-      const saved = await api<GigView>("/api/bands/gig/lineup", { bandId: view.gig.bandId, gigId: view.gig.gigId, lineup });
-      onSaved(saved);
+      // This player's changes, laid on the lineup as the server holds it now, so a change an admin made meanwhile stays.
+      const fresh = await api<GigView>("/api/bands/gig/open", ids);
+      const lineup = [...fresh.gig.lineup.filter((id) => !dropped.includes(id)), ...added.filter((id) => !fresh.gig.lineup.includes(id))];
+      if (!lineup.includes(fixed)) lineup.unshift(fixed);
+      onSaved(sameSet(lineup, fresh.gig.lineup) ? fresh : await api<GigView>("/api/bands/gig/lineup", { ...ids, lineup }));
       onClose();
     } catch (caught) {
       setError(message(caught));
-      const again = await api<GigView>("/api/bands/gig/open", { bandId: view.gig.bandId, gigId: view.gig.gigId }).catch(() => null);
+      const again = await api<GigView>("/api/bands/gig/open", ids).catch(() => null);
       const back = again?.gig.lineup ?? stored;
       setStored(back);
       setTicks(back);

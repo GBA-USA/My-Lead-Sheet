@@ -89,6 +89,21 @@ function Chart({
     return () => observer.disconnect();
   }, []);
 
+  const [, refit] = useState(0);
+
+  useLayoutEffect(() => {
+    const size = chartFont(scale);
+    const used = charAdvance(size);
+    let left = FONT_SETTLE_FRAMES;
+    let frame = 0;
+    const look = () => {
+      if (charAdvance(size) !== used) refit((count) => count + 1);
+      else if ((left -= 1) > 0) frame = requestAnimationFrame(look);
+    };
+    frame = requestAnimationFrame(look);
+    return () => cancelAnimationFrame(frame);
+  }, [scale]);
+
   const playing = usePlayingLearned();
   const columns = chartColumns(width, chartFont(scale), charAdvance);
   const fontFor = (piece: ChartPiece) => `${fitChartFont(width, Math.max(piece.chords.length, piece.lyrics?.length ?? 0), scale, charAdvance)}px`;
@@ -244,6 +259,13 @@ function ChartRow({
     </>
   );
 }
+
+/**
+ * A canvas can measure the chart font with a stand-in for a moment after the page loads, before the system font is
+ * ready to it, while the rows already draw in the real font. For this many frames after mount the chart re-reads the
+ * advance and fits again once if it changed, since its width, and so its fit, would otherwise never be redone.
+ */
+const FONT_SETTLE_FRAMES = 60;
 
 let measureCanvas: CanvasRenderingContext2D | null | undefined;
 

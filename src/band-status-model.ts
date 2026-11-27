@@ -5,8 +5,8 @@ import { CHOICE_WORDS, ROUTE_WORDS, type LinkRoute, type RouteChoice } from "./r
 import { rateRoute, type Rating } from "./sync-rating";
 
 /**
- * What the leader's phone hears from one follower's ping replies (PLAN.md 7.5, 7.6). The leader's fan-out makes the
- * list and copies it to the room every 10 s for the admin. `heardAt` is on the clock the strip's `now` reads.
+ * What the leader's phone will hear from one follower's ping replies (PLAN.md 7.5, 7.6). Nothing produces this list
+ * yet: the live Room feed that carries it is p6-gig-check-in's work. `heardAt` is on the clock the strip's `now` reads.
  */
 export type PlayerStatus = { id: string; route: LinkRoute; spreadMs: number; p99Ms: number; lateRate: number; inTime: boolean; heardAt: number };
 

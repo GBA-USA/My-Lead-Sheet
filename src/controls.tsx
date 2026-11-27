@@ -60,7 +60,9 @@ export const NOTATION_LABELS: [Notation, string][] = [
   ["chords", "Chords only"],
 ];
 
-/** Rounded segmented radio group with equal parts, roving tabIndex, and arrow-key navigation. */
+const PILL_STEPS: Partial<Record<string, 1 | -1>> = { ArrowRight: 1, ArrowLeft: -1 };
+
+/** Rounded segmented radio group with equal parts, roving tabIndex, and Left/Right arrow-key navigation. */
 export function SegmentedPill<T extends string>({
   options,
   value,
@@ -81,12 +83,7 @@ export function SegmentedPill<T extends string>({
   );
 
   const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    const step =
-      event.key === "ArrowRight" || event.key === "ArrowDown"
-        ? 1
-        : event.key === "ArrowLeft" || event.key === "ArrowUp"
-          ? -1
-          : 0;
+    const step = PILL_STEPS[event.key];
     if (!step) return;
     event.preventDefault();
     const nextIndex = (activeIndex + step + options.length) % options.length;

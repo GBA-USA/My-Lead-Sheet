@@ -1,3 +1,21 @@
+# p2-view-pill fix round (PR 127): check:scroll-sync's "no radio-edit choice" case and the pill's ARIA role conflict
+
+1. The brief makes the view pill a real radio group (`role="radiogroup"`, three `role="radio"` parts). The
+   `check:scroll-sync` case "the pace comes from the song alone; there is no album or radio-edit choice" matches
+   `/album|radio/i` against the whole SongControls markup, so it reads the role as a radio-edit choice and fails.
+   5e0549b stripped the roles to go green, which no brief named, and a planted two-way "Pace" radiogroup then
+   passed (`.verify-logs/fix127/p0-pace-loosened.log`). This round restores the line byte for byte, so
+   `check:scroll-sync` fails on this one case until you decide. Owner: name one of these in the brief.
+   a. Keep the case as is and drop the radio roles from the pill. That reverses the DECIDED radio group.
+   b. Change the line to strip only the view pill itself, found by its accessible name, then match the rest:
+      `const offered = html.replace(/<div[^>]*role="radiogroup"[^>]*aria-label="Chord view"[^>]*>.*?<\/div>/s, "");`
+      followed by `assert(!picker.test(offered), ...)`. A second radiogroup, such as a "Pace" picker, still
+      fails. Tested on sample markup: the pill alone passes, the pill plus "Pace" fails, "Radio edit" text fails.
+   c. Something else you name.
+2. The pill no longer moves on ArrowDown and ArrowUp, only on Left and Right as brief item 4 says, so a page-turn
+   pedal or keyboard that sends Down/Up never changes the chart view. `check:view-pill` V3 pins it. Owner: say if
+   Up/Down should move the choice as the ARIA radio pattern does. V3's two new lines then flip.
+
 # c23 fix: Band status opens for the admin and the leader on a live gig, and says what it is waiting for
 
 What ships in PR #107: the faces strip and the Band status panel on the band page and the gig view. Before and after

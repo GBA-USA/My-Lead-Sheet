@@ -362,6 +362,14 @@ if (site) {
       assert.equal(s5.focused, "Nashville", `ArrowLeft moves back to Nashville (${js(s5.focused)})`);
       assert.equal(s5.firstChords, "1              6m", `sheet follows ArrowLeft to Nashville (${js(s5.firstChords)})`);
 
+      for (const [key, keyCode] of [["ArrowDown", 40], ["ArrowUp", 38]] as const) {
+        await pressKey(key, key, keyCode);
+        const held = await state();
+        assert.equal(held.focused, "Nashville", `${key} leaves focus on Nashville (${js(held.focused)})`);
+        assert.deepEqual(held.tabs.map((t) => t.checked), ["false", "true", "false"], `${key} leaves the choice on Nashville (${js(held.tabs)})`);
+        assert.equal(held.firstChords, "1              6m", `${key} leaves the sheet on Nashville (${js(held.firstChords)})`);
+      }
+
       await tapRadio("Chords");
     });
 
@@ -497,6 +505,8 @@ if (site) {
           pillTop: number;
           transposeBottom: number;
           pageWidth: number;
+          pillWidth: number;
+          controlsWidth: number;
         }>(`(() => {
           const pill = document.querySelector(".controls .notes-switch");
           const transpose = document.querySelector(".controls .transpose");
@@ -528,6 +538,12 @@ if (site) {
             pillTop: pr.top,
             transposeBottom: tr.bottom,
             pageWidth: document.documentElement.scrollWidth,
+            pillWidth: pr.width,
+            controlsWidth: (() => {
+              const c = pill.closest(".controls");
+              const cs = getComputedStyle(c);
+              return c.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+            })(),
           };
         })()`);
         assert.equal(geo.count, 3, `at ${width} px switch has 3 parts`);
@@ -539,6 +555,7 @@ if (site) {
         assert.ok(geo.pillLeft >= 0 && geo.pillRight <= width + 0.5, `at ${width} px bar is inside screen (${geo.pillLeft.toFixed(1)}..${geo.pillRight.toFixed(1)})`);
         assert.ok(geo.pageWidth <= width + 0.5, `at ${width} px page does not scroll sideways (${geo.pageWidth})`);
         assert.ok(geo.pillTop >= geo.transposeBottom - 0.5, `at ${width} px pill sits on its own row under Key (${geo.pillTop.toFixed(1)} >= ${geo.transposeBottom.toFixed(1)})`);
+        assert.ok(Math.abs(geo.pillWidth - geo.controlsWidth) <= 1, `at ${width} px pill takes the full width of the controls (${geo.pillWidth.toFixed(1)} of ${geo.controlsWidth.toFixed(1)})`);
       }
 
       // Very long key label at 360 px must not push the pill off screen.

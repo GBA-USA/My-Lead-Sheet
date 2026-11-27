@@ -1,3 +1,38 @@
+VERDICT: PASS
+Nits:
+P3 | PRE-EXISTING | CLASS=other | spike/server/drill.mjs:190 | check:spike-server failed both CI attempts at f63b714 on "relayed-ping spread p95 <= 8 ms" (87.7, 56.91 ms) and once on "room counted 278 leader messages, leader sent 281". This PR does not touch spike/ or worker/. No reproducing case for the spread failure and no fix here, so it can redden CI again. Details below.
+P3 | CLASS=layout-width | src/styles.css:683 | Not changed. Folded under 430 px, the pill parts are unequal (46, 57 and 72 px), and from 430 to 539 px the text is 11 px. A layout change is not a small fix here. Left for the owner.
+P3 | CLASS=layout-width | src/styles.css:640 | Not changed. Folded at 360 px a long key reads "A (pra?". Same reason.
+
+# p2-view-pill deep fix round (PR 127, CI Deep verify run 46075520876 at f63b714)
+
+- check:scroll-sync. Red at f63b714: exit 1 on "there is no album or radio-edit choice", because the raw-markup `/album|radio/i` match reads the DECIDED pill's `role="radio"` as a radio-edit choice (`.verify-logs/fix-deep127/red-scroll-sync-f63b714.log`). Fix in the check only, QUESTIONS.md item 1: `offersAlbumOrRadio` sets aside the role attributes of the one "Chord view" group, and four planted choices must still fail. Green: 11 of 11 ok, exit 0 (`green-scroll-sync.log`). Mutants `strip-all-roles`, `delete-pill` and `every-chord-view-group` each exit 1 on their own sample (`mutant-*.log`). No `src/` change.
+- check:spike-server. Not caused by this PR. `git diff 6fdff5a f63b714 -- spike worker` is empty. It passes here at f63b714, exit 0. In CI it needed its retry on mls-int run 46058335766 and on p2-song-info run 46071174653, and passed on the first try in the same shard slot in run 46070754795. Under 16 CPU burners on this box it failed, exit 1, with "room counted 280 leader messages, leader sent 281" (`spike-server-under-load.log`). That is one of the two CI messages. The other, "relayed-ping spread p95 <= 8 ms", failed both CI attempts (87.7 and 56.91 ms) but not here: 3.47 ms under the same burners. Its cause is inferred, not reproduced: the code is identical to base, and the check passes in the same shard slot in other runs. Not changed here. It can redden CI again whatever this PR holds. Follow-up for the spike owner (inferred from the code, not traced): `spike/server/drill.mjs:166` reads `/stats` while followers are still pinging, so pongs the leader sends after that read count in `leaderSent` and not in `stats.leader`.
+
+## Quick fix round verdict at f63b714 (superseded)
+
+Its P0 (scripts/check-scroll-sync.ts:262) is closed by the deep fix round, QUESTIONS.md item 1. The quick round restored the line byte for byte and left the case red for the owner. Its two P3 nits are carried into the verdict above.
+
+# p2-view-pill fix round (PR 127 laptop verify at 4efb12d)
+
+Goal: each finding of the PR 127 laptop verify gets a case that fails on 4efb12d, then the smallest fix that makes the same case pass. Logs are in `.verify-logs/fix127/` (gitignored).
+
+- P0, check:scroll-sync. Repro: a "Pace" radiogroup with Full and Short planted in SongControls. With the loosened 4efb12d line the case passes, exit 0 (`p0-pace-loosened.log`). With the restored line it fails, exit 1 (`p0-pace-restored.log`). `git diff 5e0549b^ -- scripts/check-scroll-sync.ts` is empty. Without the plant, the restored line also fails on the pill itself (`after-scroll-sync.log`, 1 failed). That conflict between the brief and the case is QUESTIONS.md item 1.
+- P2, Up/Down. Cases first: V3 now presses ArrowDown and ArrowUp on Nashville and expects focus, choice and sheet to stay on Nashville. On 4efb12d V3 fails with "ArrowDown leaves focus on Nashville ("Chords only")" (`red-view-pill.log`). The fix maps keys in one table, `PILL_STEPS` (Left -1, Right +1), in `src/controls.tsx`, as brief item 4 says. Up and Down stay free for page-turn pedals. After the fix check:view-pill prints 16 of 16 ok, three runs in a row, exit 0 (`green-view-pill-1..3.log`). Mutation: adding `ArrowDown: 1` to the table turns only V3 red (`mutant-down.log`). QUESTIONS.md item 2 lets the owner choose the ARIA Up/Down instead.
+- P2, EDGE-CASES.md. `C:\Users\guard\cooks\EDGE-CASES.md` gains EC-18 to EC-22: a themed color transition, a content regex matching an ARIA role, a long label beside a `flex: none` control, a breakpoint that does not fit at its own width, and a key handler taking keys no case presses. `grep -c -i -E "pill|transition|radio|long key|430"` counted 0 before and 5 after (`red-edge-cases.log`, `green-edge-cases.log`). The file is in no git repo, so no commit holds the rows.
+- P3, full width under 430 px. V6 now asserts that at 360 and 390 px the pill's width equals the controls' content width within 1 px. It passes on 4efb12d too, because the layout was right and only the assertion was missing.
+- P3, mutation proof strength (V6 `white-space`, V11 fill). Not changed. Both mutations already turn a case red.
+- P3, check-ux-chords-only and check-ux-sheet-controls-save edits. Not changed. The verify judged neither a loosening. An owner may name them.
+- P3, missing cook report. This section and the logs above are the evidence for this round. The earlier Gemini rounds are not re-run here.
+
+Also run after the fix, all exit 0: `npm run build`, `check:portable`, `check:one-copy`. `check:scroll-sync` exits 1 on the one restored case and passes its other cases.
+
+# Independent verify of PR 127 at 4efb12d
+
+Its findings and notes are in the fix-round brief and in `C:\Users\guard\cooks\wt-verify-pr127\VERIFY.md`. The prior file follows verbatim.
+
+# Prior VERIFY.md at 4efb12d (kept verbatim below)
+
 VERDICT: FAIL
 P2 | CLASS=other | scripts/check-legal-audit.ts:282 | The fix round weakened its own red case instead of fixing the doc. At 8ef171c D1 required the cited row to contain the host `musicbrainz.org` (red.log:53). 384ecc9 changed the matcher to the bare word `musicbrainz`. LEGAL-TODO.md has 0 occurrences of `musicbrainz.org`, so the 8ef171c D1 still fails on head with "row 5 does not mention musicbrainz.org". The fix brief required "the same case passes". The brief says a wrong case goes to QUESTIONS.md, not a looser matcher.
 P2 | CLASS=other | scripts/check-legal-audit.ts:40 | The second prior P2 is only closed for DNS names. `ABSOLUTE_URL` needs a letter TLD (`\.[a-z]{2,}`), so a planted `dist/assets/i.js` with `s=document.createElement("script");s.src="https://203.0.113.5/x.js";document.head.append(s)` gives 0 findings (measured on a temp copy of the scanner). An injected script from an unlisted IP-literal host passes R2 and R2b, and LEGAL-TODO.md:15 still says the check "fails if any of those change".
@@ -98,3 +133,29 @@ The fuzz also broke one rule of the first format: a note that opened a section l
 The cook brief says no `package.json` edit and docs only. This pass adds one `check:*` line and two files under `scripts/`, because the fix-pass brief asks for a check case per finding and `CLAUDE.md` allows a cook exactly that line. `check:chord-grab-plan` and `check:bulk-import-plan` set the same precedent. No file under `src/` or `worker/` changed.
 
 Also run after the fix, all exit 0: `npm run build`, `check:portable`, `check:one-copy`, `check:chord-grab-plan`, `check:bulk-import-plan`.
+
+# p2-view-pill VERIFY.md (PR 127 head, kept verbatim for the merge into mls-int-20261113)
+
+VERDICT: PASS
+
+Nits:
+P3 | CLASS=verification-scope | scripts/check-view-pill.ts:1 | Headless Chrome cannot launch inside this Windows sandbox, so V1ΓÇôV12, G1, the 9 mutations, and browser-based existing checks were statically verified (syntax check + TypeScript check + CSS cascade/contrast math) rather than executed live; full execution runs outside the sandbox via the harness and Linux Deep verify.
+P3 | CLASS=build-sandbox | package.json:7 | `tsc --noEmit` exited 0; `vite build` failed twice inside the sandbox with transient Windows sandbox `EPERM: operation not permitted, mkdir 'node_modules\.vite-temp'`. Must be confirmed outside the sandbox.
+P3 | CLASS=existing-check-layout | scripts/check-ux-chords-only.ts:304 | Updated open-state placement assertion at 360/390 px from beside-Key (with horizontal scroll) to own-row-below-Key with all three parts visible at once (`allSeen`), and kept folded-state beside-Key check intact; strictly tighter than before, reflecting the brief's DECIDED layout under 430 px.
+P3 | CLASS=existing-check-layout | scripts/check-ux-sheet-controls-save.ts:472 | Updated `.controls` row-count expectation from literal `2` to `pixels < 430 ? 3 : 2` (exact equality) at lines 472 and 590 because the view pill takes its own row under 430 px (390 px) while remaining 2 rows at 1280 px.
+P3 | CLASS=scope-boundary | src/bands.tsx:625-628 | When `/api/bands/open` fails offline, `offlineSongs` renders cached band songs using `<span className="band-library-name">{item.song.title}</span><small>{item.song.artist}</small>` without key/tempo. Left untouched because `src/bands.tsx` is outside the owned files for this cook.
+
+# Self-check summary (Phase 2)
+
+Reviewed all modified and added files (`src/song-row.tsx`, `src/song-row.css`, `src/library-lists.tsx`, `src/band-library.tsx`, `src/band-setlist-view.tsx`, `scripts/check-list-rows.ts`, `package.json`) against R1ΓÇôR10, the four song lists, signed-in/signed-out, empty/error states, 360 px layout rules, theme token usage, and the mutation table.
+
+- **Verified in Windows sandbox (after final edit):**
+  - `npx tsc --noEmit`: exit 0
+  - `npx tsc -p worker`: exit 0
+  - `npx vite build --configLoader native --outDir "$env:TEMP\vite-final"`: exit 0 (`170 modules transformed`)
+  - `npm run check:one-copy`: exit 0 (all checks ok)
+  - `npm run check:portable`: exit 0
+  - SSR component & route verification (Node `esbuild` + `react-dom/server`): all 16 routes of `check:screens` and rendered markup for R1, R2, R3, R4, R5, R6, R7, R9 (button wrapper & signed-out hiding), R10 (`withSongData`) passed; all 6 mutations turned their target cases red.
+- **Blocked by Windows sandbox / Windows path bugs (left for harness + Linux Deep verify):**
+  - `npm run build`, `check:list-rows`, `check:phone-layout`, `check:song-import`, `check:new-song`, `check:chordpro-phone`, `check:library-consistency` hit `EPERM: operation not permitted, mkdir` inside the worktree (`node_modules\.vite-temp` and `worker\.wrangler\tmp`) because the sandbox shell ACL on the worktree is `(S,X)`, and headless Edge (`CHROME`) cannot spawn renderer processes inside the Windows AppContainer sandbox.
+  - `check:search`, `check:band-library`, `check:ux-band-page`, `check:screens` fail at base on Windows due to pre-existing `new URL("..", import.meta.url).pathname` (`C:\C:\` / rollup `UNRESOLVED_ENTRY` / esbuild `resolveDir` errors).

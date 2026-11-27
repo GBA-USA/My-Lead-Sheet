@@ -1,15 +1,15 @@
 import { MAX_MESSAGE_CHARS, previewText, type ChatEntry, type ChatKind } from "../src/chat-model";
 import type { SongContent } from "../src/band-library-model";
-import type { SetlistCard, SetlistCopy } from "../src/setlist-code-model";
+import type { SetlistCard } from "../src/setlist-code-model";
 import type { ShareChoice } from "../src/share-rule";
 import type { SongData } from "../src/types";
 import { randomBytes, toBase64Url } from "./bytes";
 import { pairOf } from "./directory-friends";
-import { signedIn, userById, who, type Context, type Route, type User } from "./directory-http";
+import { signedIn, userById, wantsChordPro, who, type Context, type Route, type User } from "./directory-http";
 import { fromRoom, Refused } from "./refused";
 import type { Card, Posted } from "./room-chat";
 import { liveCode } from "./codes";
-import { choiceIn, guardContent, printOf, receivedCopy, record, selfRoom, setlistCopyFor, songIn } from "./room-library";
+import { choiceIn, guardContent, printOf, receivedCopy, record, selfRoom, setlistCopyFor, songForCaller, songIn } from "./room-library";
 
 const ROOM_ID = /^(band|dm)_[A-Za-z0-9_-]{22}$/;
 const MSG_ID = /^[A-Za-z0-9_-]{8,64}$/;
@@ -182,9 +182,9 @@ async function dmRoomFor(c: Context, me: User, other: User): Promise<string> {
 }
 
 /** Puts a stored post on every member's Messages list: the newest preview, and read up to it for the one who wrote it. */
-export function deliver(c: Context, roomId: string, posted: Posted) {
+export function deliver(c: Context, roomId: string, posted: Posted, summary = previewText(posted.message)) {
   const { message } = posted;
-  const preview = `${message.fromName}: ${previewText(message)}`.slice(0, PREVIEW_CHARS);
+  const preview = `${message.fromName}: ${summary}`.slice(0, PREVIEW_CHARS);
   for (const member of posted.members) {
     const title = posted.kind === "band" ? posted.title : (posted.members.find((other) => other.userId !== member.userId)?.name ?? "");
     c.sql.exec(
@@ -250,11 +250,11 @@ export const CHAT_ROUTES: Record<string, Route> = {
     const from = await guardContent(c, me.user_id, print, send.choice, send.copyId, null);
     const copyFor = (shareId: string) => receivedCopy(shareId, other.user_id, me.user_id, from, send.choice);
     const { userId: _to, choice, copyId: _copy, ...shown } = send;
-    const body = { ...shown, sharedAs: choice, reshareable: copyFor(send.shareId).reshareable };
+    const body = { ...shown, song: songForCaller(send.song, wantsChordPro(c.request)), sharedAs: choice, reshareable: copyFor(send.shareId).reshareable };
     const card = { kind: "song", ref: send.shareId, updateOf: send.updateOf } as const;
     const posted = await fromRoom(c.env.ROOM.getByName(roomId).chatPost(who(me), msgId, JSON.stringify(body), c.now, card));
     await fromRoom(selfRoom(c, other.user_id).receiveCopy(copyFor(posted.message.ref ?? send.shareId).chain, print));
-    deliver(c, roomId, posted);
+    deliver(c, roomId, posted, `🎵 ${send.song.title}`);
     return { body: { roomId, message: posted.message } };
   },
 
@@ -287,7 +287,8 @@ export const CHAT_ROUTES: Record<string, Route> = {
     if (!sent) throw new Refused("not-found", 404);
     const copy = setlistCopyFor(sent, me.user_id);
     if (copy.setlist[0].id !== mine.id) throw new Refused("not-found", 404);
-    return { body: { name: sent.name, songs: copy.songs.map((item) => ({ song: item.song, copyId: item.chain[0].id })), reshareable: copy.reshareable } satisfies SetlistCopy };
+    const chordpro = wantsChordPro(c.request);
+    return { body: { name: sent.name, songs: copy.songs.map((item) => ({ song: songForCaller(item.song, chordpro), copyId: item.chain[0].id })), reshareable: copy.reshareable } };
   },
 
   async "POST /api/chat/read"(c) {

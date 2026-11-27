@@ -6,6 +6,11 @@ export type SongContent = Omit<Song, "ref" | "id" | "copy">;
 /** A song on its way to or from the Worker. Cook 1 exports the type and uses it nowhere. */
 export type SentSong = { chordpro: string };
 
+/** Strips a leading UTF-8 BOM and turns CRLF or lone CR line breaks into plain `\n`. */
+export function normalizeChordPro(text: string): string {
+  return text.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
+}
+
 type TextFact = "keyNote" | "tempoNote" | "feel" | "sourceNote" | "atAGlance" | "howToPlay" | "practiceTip";
 const NOTE_FACTS: [string, TextFact][] = [
   ["x_feel", "feel"],

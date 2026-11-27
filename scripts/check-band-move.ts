@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { build } from "esbuild";
 import type { BandLibrary, BandSong, SongContent } from "../src/band-library-model.ts";
 import type { BandFile } from "../worker/room-export.ts";
 import { Phone, startApi } from "./api-session.ts";
@@ -10,6 +12,17 @@ import { downloadBandFile, importBandFile, moveBand, type Admin } from "./band-m
 import { openSite } from "./chrome.ts";
 
 const root = new URL("..", import.meta.url).pathname;
+const codecBundle = await build({
+  entryPoints: [join(fileURLToPath(new URL("..", import.meta.url)), "src/chordpro.ts")],
+  bundle: true,
+  write: false,
+  format: "esm",
+  platform: "neutral",
+  logLevel: "silent",
+});
+const { chordProToSong } = (await import(
+  `data:text/javascript;base64,${Buffer.from(codecBundle.outputFiles[0].text).toString("base64")}`
+)) as { chordProToSong(text: string): SongContent };
 const pass = (message: string) => console.log(`ok   ${message}`);
 
 const seed = JSON.parse(readFileSync(`${root}data/library.json`, "utf8")) as { songs: (SongContent & { id: number })[] };
@@ -53,8 +66,9 @@ const shareSetlist = (who: Player, bandId: string, name: string, songIds: string
 function arrivals(file: BandFile, lib: BandLibrary): Map<string, BandSong> {
   const map = new Map<string, BandSong>();
   for (const moved of file.songs) {
-    const found = lib.songs.find((item) => JSON.stringify(item.song) === JSON.stringify(moved.song));
-    assert.ok(found, `${moved.song.title} arrived`);
+    const parsed = { ...chordProToSong(moved.song.chordpro), bassNotes: [] };
+    const found = lib.songs.find((item) => JSON.stringify(item.song) === JSON.stringify(parsed));
+    assert.ok(found, `${parsed.title} arrived`);
     map.set(moved.id, found);
   }
   return map;
@@ -92,7 +106,7 @@ async function apiChecks() {
     const text = JSON.stringify(file);
     for (const absent of ["messages", "gigs", "members", "display_name", "Terry Bass\"", "Mike Keys\""]) assert.ok(!text.includes(absent), `the file carries no ${absent}`);
     assert.deepEqual(
-      file.songs.map((item) => [item.song.title, item.share.choice, item.versions]),
+      file.songs.map((item) => [chordProToSong(item.song.chordpro).title, item.share.choice, item.versions]),
       [
         ["Chain Breaker", "private", []],
         ["Midnight Run", "public", []],
@@ -125,11 +139,12 @@ async function apiChecks() {
     const arrived = await library(dana, newBlue);
     const byFileId = arrivals(file, arrived);
     for (const moved of file.songs) {
+      const title = chordProToSong(moved.song.chordpro).title;
       const song = byFileId.get(moved.id)!;
-      assert.notEqual(song.songId, moved.id, `${moved.song.title} has a new id`);
-      assert.deepEqual([song.sharedAs, song.canSendOn, song.sharedByName], [moved.share.choice, moved.share.choice === "public", "Ann Horn"], `${moved.song.title} keeps its ${moved.share.choice} flag, and a member may send on only a Public one`);
+      assert.notEqual(song.songId, moved.id, `${title} has a new id`);
+      assert.deepEqual([song.sharedAs, song.canSendOn, song.sharedByName], [moved.share.choice, moved.share.choice === "public", "Ann Horn"], `${title} keeps its ${moved.share.choice} flag, and a member may send on only a Public one`);
       const annSees = (await library(ann, newBlue)).songs.find((item) => item.songId === song.songId)!;
-      assert.equal(annSees.canSendOn, moved.share.choice === "public", `the importing admin can't send on ${moved.song.title} either, unless it was Public`);
+      assert.equal(annSees.canSendOn, moved.share.choice === "public", `the importing admin can't send on ${title} either, unless it was Public`);
     }
     const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
     assert.deepEqual(
@@ -155,7 +170,7 @@ async function apiChecks() {
       ["text that isn't JSON", "{nope"],
       ["a JSON list", "[]"],
       ["a file with no exportedFrom", JSON.stringify({ ...file, exportedFrom: undefined })],
-      ["a song whose chart isn't one", JSON.stringify({ ...file, songs: [{ ...file.songs[0], song: { ...file.songs[0].song, body: "lyrics" } }] })],
+      ["a song whose chart isn't one", JSON.stringify({ ...file, songs: [{ ...file.songs[0], song: { title: "Bad", artist: "", body: "lyrics" } }] })],
       ["a song with no Private or Public choice", JSON.stringify({ ...file, songs: [{ ...file.songs[0], share: { choice: "friends", parentId: null } }] })],
       ["a setlist naming a song the file doesn't hold", JSON.stringify({ ...file, setlists: [{ ...file.setlists[0], songIds: ["song_elsewhere"] }] })],
       ["two songs with the same id", JSON.stringify({ ...file, songs: [file.songs[0], file.songs[0]] })],
@@ -240,7 +255,7 @@ async function appChecks() {
     for (const end = Date.now() + 10000; Date.now() < end && !saved.includes("Sam's Trio.json"); await settle(100)) saved = readdirSync(downloads);
     assert.deepEqual(saved, ["Sam's Trio.json"], "the download is a file named after the band");
     const downloaded = JSON.parse(readFileSync(join(downloads, "Sam's Trio.json"), "utf8")) as BandFile;
-    assert.deepEqual([downloaded.exportedFrom, downloaded.band.name, downloaded.songs.map((item) => item.song.title), downloaded.setlists], [`${origin}/${trio}`, "Sam's Trio", ["Harbor Lights"], []], "it holds the band's songs");
+    assert.deepEqual([downloaded.exportedFrom, downloaded.band.name, downloaded.songs.map((item) => chordProToSong(item.song.chordpro).title), downloaded.setlists], [`${origin}/${trio}`, "Sam's Trio", ["Harbor Lights"], []], "it holds the band's songs");
     const downloadedText = readFileSync(join(downloads, "Sam's Trio.json"), "utf8");
     for (const mark of PRIVATE_MARKS) assert.ok(!downloadedText.includes(mark), `Sam's private timing version (${mark}) never appears in the band file`);
     assert.ok(!downloadedText.includes("messages") && !downloadedText.includes("gigs"), "and neither do chat or gig logs");

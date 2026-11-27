@@ -4,7 +4,7 @@ import { signedIn, who, type Person, type Route } from "./directory-http";
 import { deliver } from "./directory-inbox";
 import { fromRoom, Refused, roomRefused as refused } from "./refused";
 import { chatRoom, type Posted } from "./room-chat";
-import { isText } from "./room-library";
+import { isText, storedSong } from "./room-library";
 import { bandIdIn, bandRoom, inRoom, roomOf, type RoomStore } from "./room-members";
 
 type NoteRow = { note_id: string; song_id: string; author: string; author_name: string; body: string; created_at: number; deleted_at: number | null };
@@ -33,7 +33,7 @@ const noteRow = (sql: SqlStorage, noteId: string) => sql.exec<NoteRow>(`SELECT *
 function bandSongTitle(sql: SqlStorage, songId: string): string {
   const row = sql.exec<{ song: string }>(`SELECT song FROM band_songs WHERE song_id = ?`, songId).toArray()[0];
   if (!row) throw refused("not-found");
-  return (JSON.parse(row.song) as { title: string }).title;
+  return storedSong(row.song).title;
 }
 
 /** Every user id here is trusted: only the Directory calls these, after it has checked the session. Members read; only an admin writes (t40s3). */

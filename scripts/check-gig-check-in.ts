@@ -345,6 +345,8 @@ cleanUp = async () => {
   if (pageGigs) await letGo().catch(() => {});
 };
 const rex = await player("Rex Moon", "rexmoon");
+/** Signs out everywhere in K24, which ends every session of hers, so no other case uses her. */
+const kit = await player("Kit Lark", "kitlark");
 
 const SONGS = [
   "{title: Porch Light Waltz}\n{artist: The Late Shift}\n{key: G}\n{tempo: 92}\n[G]Porch light [C]on, the [D]screen door [G]sings",
@@ -396,8 +398,11 @@ await site.send("Page.addScriptToEvaluateOnNewDocument", {
   source: `(() => {
     window.__calls = [];
     const realFetch = window.fetch.bind(window);
+    window.__failPath = null;
     window.fetch = (input, init) => {
-      try { window.__calls.push({ path: new URL(typeof input === "string" ? input : input.url, location.href).pathname, body: init && typeof init.body === "string" ? init.body : null }); } catch {}
+      let path = "";
+      try { path = new URL(typeof input === "string" ? input : input.url, location.href).pathname; window.__calls.push({ path, body: init && typeof init.body === "string" ? init.body : null }); } catch {}
+      if (path && path === window.__failPath) return Promise.reject(new TypeError("Failed to fetch"));
       return realFetch(input, init);
     };
     const Real = window.WebSocket;
@@ -412,8 +417,14 @@ await site.send("Page.addScriptToEvaluateOnNewDocument", {
         this.addEventListener("message", (event) => { if (typeof event.data === "string") window.__got.push(event.data.slice(0, 300)); });
       }
       send(data) {
+        if (this.__deaf) return;
         window.__sent.push(String(data).slice(0, 300));
         return super.send(data);
+      }
+      // A deaf socket stays open but hears nothing and says nothing, as a phone that lost its radio does.
+      addEventListener(type, listener, options) {
+        if (type !== "message") return super.addEventListener(type, listener, options);
+        return super.addEventListener(type, (event) => { if (!this.__deaf) (typeof listener === "function" ? listener.call(this, event) : listener.handleEvent(event)); }, options);
       }
     }
     window.WebSocket = Watched;
@@ -542,6 +553,70 @@ const tonightRows = () =>
   );
 const tick = (who: Player) =>
   evaluate(`[...document.querySelectorAll(${js(`${TONIGHT} .tonight-row`)})].find((row) => row.querySelector(".tonight-name")?.textContent.trim() === ${js(who.name)}).querySelector("input[type=checkbox]").click()`);
+
+// ---- For K20 to K25 -------------------------------------------------------------------------------------------
+
+/** Strip keys of a phone that does not follow a gig: no strip, invited, downloading, its own planned gig, over, off the lineup. */
+const NOT_FOLLOWING = ["", "join", "getting", "start", "ended", "off-lineup"];
+const sentJoin = (gigId: string) => `(${joinsSent(gigId)} > 0)`;
+/** How many join-gig frames this page has sent for the gig. An account switch in the app keeps the page, so a case counts from before its tap. */
+const joinsSent = (gigId: string) => `window.__sent.filter((m) => m.includes('"join-gig"') && m.includes(${js(gigId)})).length`;
+/** The phone follows the gig: it sent join-gig for it, and its strip is a followed one with no Join gig. Watching is not following. */
+const follows = (gigId: string, ms: number, what: string) =>
+  until(
+    `${sentJoin(gigId)} && (() => { const s = document.querySelector(".gig-strip"); return !!s && !${js(NOT_FOLLOWING)}.includes(s.dataset.strip ?? "") && ![...s.querySelectorAll("button")].some((b) => b.textContent.trim() === "Join gig"); })()`,
+    what,
+    ms,
+  );
+const joinOnStrip = `[...document.querySelectorAll(".gig-strip button")].some((b) => b.textContent.trim() === "Join gig")`;
+
+/** Taps Join gig on the strip, and answers the click question if this account was never asked. */
+async function tapJoin(gigId: string) {
+  await until(joinOnStrip, "Join gig on the strip", 10000);
+  const before = await evaluate<number>(joinsSent(gigId));
+  await clickButton("Join gig", `document.querySelector(".gig-strip")`);
+  await waitFor("the phone to join, answering the click question if asked", 15000, async () => {
+    if (await has(".gig-question")) await evaluate(`document.querySelectorAll(".gig-question button")[1].click()`);
+    return (await evaluate<number>(joinsSent(gigId))) > before;
+  });
+}
+
+/** The phone's account joins and so answers the click question on an earlier gig, which then ends. The next gig needs no tap. */
+async function answeredBefore(band: Band) {
+  const earlier = await planGig(band, "Earlier night");
+  await startBySocket(band, earlier);
+  await go("#/songs", `!document.querySelector(".band-page")`, "the song list");
+  await visibleAgain();
+  await tapJoin(earlier);
+  await endPageGig(band, earlier);
+  await closeAll();
+}
+
+const accountStep = (step: string, ms = 8000) => until(`document.querySelector(".account-sheet")?.dataset.step === ${js(step)}`, `the account sheet's ${step} screen`, ms);
+/** The app's own Sign out, with no reload, then in again as `who` through the account sheet, as two players sharing one phone do. */
+async function switchInApp(who: Player | null) {
+  await go("#/songs", `!!document.querySelector(".shell-header")`, "the song list");
+  await app.openMenu();
+  await app.pick("Account");
+  await accountStep("account");
+  await app.click("Sign out");
+  await accountStep("start");
+  pageAccount = null;
+  if (who) {
+    await app.click("Sign in with a password");
+    await accountStep("password");
+    await app.type("Your @name", who.handle);
+    await app.type("Password", PASSWORD);
+    await app.click("Sign in");
+    await until(`(document.querySelector(".account-sheet")?.dataset.step ?? "account") === "account"`, `${who.name} signed in from the account sheet`, 30000);
+    pageAccount = who;
+  }
+  await evaluate(`document.querySelector(".account-sheet .account-close")?.click()`);
+  await until(`!document.querySelector(".account-sheet")`, "the account sheet to close");
+  await app.closeMenu();
+}
+
+const roomLineDown = `[...document.querySelectorAll(${js(`${SHEET} .band-status-line`)})].some((el) => el.textContent.includes("Can't reach the band"))`;
 
 try {
   await site.send("Page.navigate", { url: `${origin}/#/songs` });
@@ -1035,6 +1110,177 @@ try {
     );
     assert.ok(adaText.includes("Downloaded") && !adaText.includes("Not yet"), `Ada, Connected with tonight's set, reads Downloaded, not Not yet (${adaText})`);
     await closePanel();
+    await endPageGig(band, gigId);
+    await closeAll();
+  });
+
+  // ---- Added in self-check fix pass 1, one or two per finding ----------------------------------------------------
+
+  await check("K20 joins without a tap, on the phone: Bo's phone on the gig's screen follows the gig within 5 s of the start, not only watches it", async () => {
+    await pageAs(bo);
+    const band = await newBand("Follow Night");
+    await answeredBefore(band);
+    const gigId = await planGig(band, "Follow night");
+    await packFor(bo, band, gigId);
+    await openGigScreen(band, gigId);
+    const where = await evaluate<string>("location.hash");
+    await until(`window.__sent.some((m) => m.includes('"gig-state"') && m.includes(${js(gigId)})) && window.__got.some((m) => m.includes('"gig-state"'))`, "Bo's phone watching the gig in the Room", 10000);
+    assert.ok(!(await evaluate<boolean>(sentJoin(gigId))), "Bo's phone has not joined the planned gig");
+    const startedAt = Date.now();
+    await startBySocket(band, gigId);
+    await follows(gigId, Math.max(0, startedAt + 5000 - Date.now()), "Bo's phone follows the gig within 5 s of the start, with no tap");
+    await until(`window.__sent.includes("beat")`, "Bo's phone beats once it follows", 5000);
+    assert.equal(await evaluate<string>("location.hash"), where, "Bo's screen is still the gig's screen");
+    await endGig(band, gigId);
+    await closeAll();
+  });
+
+  await check("K21 joins without a tap from the band page: today's planned gig once it starts, and a gig already live when the page opens; the page stays", async () => {
+    await pageAs(bo);
+    const band = await newBand("Band Page Night");
+    await answeredBefore(band);
+    const tonight = await planGig(band, "Band page night");
+    await openBandPage(band);
+    const where = await evaluate<string>("location.hash");
+    await until(`window.__sent.some((m) => m.includes('"gig-state"') && m.includes(${js(tonight)}))`, "Bo's band page watching today's gig", 10000);
+    const startedAt = Date.now();
+    await startBySocket(band, tonight);
+    await follows(tonight, Math.max(0, startedAt + 8000 - Date.now()), "Bo's phone follows today's gig within 8 s of the start, from the band page");
+    assert.equal(await evaluate<string>("location.hash"), where, "Bo is still on the band page");
+    await endPageGig(band, tonight);
+    await closeAll();
+
+    const live = await planGig(band, "Already live");
+    await go("#/songs", `!document.querySelector(".band-page")`, "off the band page");
+    await startBySocket(band, live);
+    await openBandPage(band);
+    const opened = await evaluate<string>("location.hash");
+    await follows(live, 10000, "Bo's phone follows the live gig within 10 s of opening the band page");
+    assert.equal(await evaluate<string>("location.hash"), opened, "Bo is still on the band page");
+    await endPageGig(band, live);
+    await closeAll();
+  });
+
+  await check("K22 three unanswered beats: a phone whose line goes silent says it can't reach the band, drops the socket itself and comes back fresh", async () => {
+    await pageAs(lee);
+    const band = await newBand("Missed Beats");
+    const gigId = await planGig(band, "Missed beats");
+    await leaderStarts(band, gigId);
+    await packFor(ada, band, gigId);
+    (await (await openSock(ada, band.bandId)).join(gigId)).startBeats();
+    await openPanel();
+    await panelReads([[ada, "Connected"]], 8000, "Ada Connected on Lee's phone");
+    await until(`window.__sent.includes("beat")`, "Lee's phone beating", 5000);
+    const before = await evaluate<number>(`window.__rooms.length`);
+    const deafened = await evaluate<number>(`(() => { let n = 0; for (const ws of window.__rooms) if (ws.url.includes("/api/rooms/") && ws.readyState === 1) { ws.__deaf = true; n += 1; } return n; })()`);
+    assert.ok(deafened > 0, "Lee's open room socket goes silent");
+    const silentAt = Date.now();
+    await pause(5000);
+    assert.ok(!(await evaluate<boolean>(roomLineDown)), "two missed beats are not yet a lost line");
+    assert.ok(await evaluate<boolean>(`[...window.__rooms].some((ws) => ws.__deaf && ws.readyState === 1)`), "the silent socket is still open: nothing closed it");
+    await until(roomLineDown, "the line that the band can't be reached, within 15 s of the line going silent", Math.max(0, silentAt + 15000 - Date.now()));
+    assert.ok((await panelRows()).filter((row) => row.word).every((row) => row.old), "the kept rows are marked old");
+    assert.ok(await evaluate<boolean>(`[...window.__rooms].filter((ws) => ws.__deaf).every((ws) => ws.readyState >= 2)`), "the phone closed the silent socket itself");
+    await until(`window.__rooms.length > ${before}`, "a new room socket", 10000);
+    await until(`!(${roomLineDown})`, "the line to go once the new socket hears the Room", 15000);
+    await panelReads([[ada, "Connected"]], 8000, "Ada Connected again on fresh rows");
+    assert.ok((await panelRows()).every((row) => !row.old), "fresh rows");
+    await closePanel();
+    await endPageGig(band, gigId);
+    await closeAll();
+  });
+
+  await check("K23 a Save that fails: the words, the stored lineup read again and ticked, nothing changed on the server; an ended gig says it is over", async () => {
+    await pageAs(lee);
+    const band = await newBand("Failed Save");
+    const gigId = await planGig(band, "Failed save");
+    await openGigScreen(band, gigId);
+    await openTonight(gigId);
+    await tick(mo);
+    ok(await ada.call("/api/bands/gig/lineup", { bandId: band.bandId, gigId, lineup: [ada.userId, lee.userId, bo.userId, mo.userId, ray.userId] }), "Ada adds Ray while Lee's sheet is open");
+    await evaluate(`window.__failPath = "/api/bands/gig/lineup"`);
+    const callsBefore = await evaluate<number>(`window.__calls.length`);
+    await clickButton("Save", `document.querySelector(${js(TONIGHT)})`);
+    await until(`(document.querySelector(${js(`${TONIGHT} .tonight-error`)})?.textContent ?? "").includes("Can't reach the server. Check your connection and try again.")`, "the words for a save that never reached the server");
+    await evaluate(`window.__failPath = null`);
+    await until(
+      `(() => { const calls = window.__calls.slice(${callsBefore}).map((c) => c.path); const at = calls.indexOf("/api/bands/gig/lineup"); return at >= 0 && calls.indexOf("/api/bands/gig/open", at) > at; })()`,
+      "the gig read again after the failed save",
+    );
+    const ticked = await waitFor("the ticks back to the stored lineup, Ada's", 5000, async () => {
+      const rows = await tonightRows();
+      const names = rows.filter((row) => row.ticked).map((row) => row.name).sort();
+      return js(names) === js([ada, lee, bo, mo, ray].map((who) => who.name).sort()) ? names : null;
+    });
+    assert.ok(ticked.includes(mo.name) && ticked.includes(ray.name), "Mo ticked again and Ray, Ada's add, ticked");
+    assert.ok(await has(TONIGHT), "the sheet stays open");
+    assert.deepEqual([...((await gigOf(band, gigId)).gig.lineup as string[])].sort(), [ada, lee, bo, mo, ray].map((who) => who.userId).sort(), "the server has Ada's lineup, untouched by Lee's failed save");
+    await tick(mo);
+    await clickButton("Save", `document.querySelector(${js(TONIGHT)})`);
+    await until(`!document.querySelector(${js(TONIGHT)})`, "Tonight's players to close once a save goes through");
+    assert.deepEqual([...((await gigOf(band, gigId)).gig.lineup as string[])].sort(), [ada, lee, bo, ray].map((who) => who.userId).sort(), "the save after the failure keeps Ray and drops Mo");
+
+    await openTonight(gigId);
+    await tick(bo);
+    ok(await endGig(band, gigId), "Ada ends the planned gig while Lee's sheet is open");
+    await clickButton("Save", `document.querySelector(${js(TONIGHT)})`);
+    await until(`(document.querySelector(".gig-view")?.textContent ?? "").includes("That gig is over.")`, "the phone to say the gig is over within 3 s of the refused save", 3000);
+    await closeAll();
+  });
+
+  await check("K24 sign-out and a shared phone: the phone's own Sign out and Sign out everywhere turn the row Not connected; one account's dismissed gig is not the next one's", async () => {
+    await pageAs(mo);
+    const band = await newBand("Shared Phone", [kit]);
+    const gigId = await planGig(band, "Shared phone", [ada, lee, bo, mo, kit]);
+    const leader = await startBySocket(band, gigId);
+    const kitSock = await (await openSock(kit, band.bandId)).join(gigId);
+    await reads(leader, gigId, kit, true, 5000, "Kit Connected within 5 s");
+    ok(await kit.call("/api/auth/sign-out-everywhere", {}), "Kit signs out everywhere from another phone");
+    await waitFor("the Room to close Kit's socket", 5000, () => kitSock.closeCode !== null);
+    await reads(leader, gigId, kit, false, 5000, "Kit Not connected within 5 s of signing out everywhere");
+
+    await go("#/songs", `!document.querySelector(".band-page")`, "Mo's song list");
+    await visibleAgain();
+    await until(joinOnStrip, "Join gig on Mo's strip", 10000);
+    await evaluate(`document.querySelector(".gig-strip [aria-label=Close]").click()`);
+    await until(`!document.querySelector(".gig-strip")`, "Mo's strip gone once he closes it");
+    await switchInApp(bo);
+    await visibleAgain();
+    await until(joinOnStrip, "Join gig on Bo's strip on the phone Mo shared, though Mo closed his", 10000);
+    await tapJoin(gigId);
+    await reads(leader, gigId, bo, true, 5000, "Bo Connected within 5 s of joining");
+    await switchInApp(null);
+    await reads(leader, gigId, bo, false, 5000, "Bo Not connected within 5 s of the phone's own Sign out");
+    assert.ok(!(await has(".gig-strip")), "the signed-out phone shows no gig strip");
+    oneRow(leader, gigId, bo);
+    await endGig(band, gigId);
+    await closeAll();
+  });
+
+  await check("K25 a dismissed warning is one account's: Lee dismisses it on the shared phone, Ada leads and signs in there, and sees it", async () => {
+    await pageAs(lee);
+    const band = await newBand("Handed Phone");
+    const gigId = await planGig(band, "Handed phone");
+    await leaderStarts(band, gigId);
+    await warningSays(3, 8000, "the warning says 3 not ready on Lee's phone");
+    await evaluate(`document.querySelector(${js(`${WARNING} [aria-label="Dismiss for tonight"]`)}).click()`);
+    await until(`!document.querySelector(${js(WARNING)})`, "the warning to go on Lee's dismiss");
+    await switchInApp(ada);
+    // Ada, the admin, takes the lead from her own phone, as K8's Bo does.
+    const adaSock = await (await openSock(ada, band.bandId)).join(gigId);
+    adaSock.send({ kind: "gig-state", gigId });
+    const copy = await waitFor("the Room's copy of the gig on Ada's phone", 5000, () => adaSock.heard.find((m) => m.kind === "gig-state" && m.state?.gigId === gigId));
+    const now = Date.now();
+    const op = { opId: `ada-${now}`, epoch: copy.state.epoch, kind: "takeOver" };
+    const taken = phone.reduce(copy.state, op as never, { by: ada.userId, now: now as never, lead: 0 });
+    assert.ok(taken.ok, `Ada may take over (${js(taken)})`);
+    adaSock.send({ kind: "gig-op", op, state: taken.state, at: now });
+    await pause(1000);
+    assert.ok(!adaSock.heard.some((m) => m.kind === "gig-refused"), `the Room takes Ada's take-over (${js(adaSock.heard.filter((m) => m.kind === "gig-refused"))})`);
+    await visibleAgain();
+    await tapJoin(gigId);
+    await until(`document.querySelector(".gig-strip")?.dataset.strip === "leading"`, "the shared phone's strip to say Ada leads", 10000);
+    await waitFor("a warning on the shared phone for Ada, who leads, not hidden by Lee's dismiss", 10000, async () => /\d+ not ready/.test(await warningText()));
     await endPageGig(band, gigId);
     await closeAll();
   });

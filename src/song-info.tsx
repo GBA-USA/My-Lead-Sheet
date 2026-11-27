@@ -11,8 +11,11 @@ export const NotesReport = createContext<(seen: NotesSeen) => void>(() => {});
 
 const NOTHING: NotesSeen = { count: 0, shown: false };
 
-/** A scroll this recent means the chart is moving under the player, so a toggle keeps the chart where it is. */
-const MOVING_MS = 400;
+/**
+ * A scroll this recent means the chart is moving under the player, so a toggle keeps the chart where it is. scrollTop
+ * moves in whole pixels, so the slowest auto-scroll (about 1 px a second) is heard at least this often.
+ */
+const MOVING_MS = 1000;
 
 const filled = (text: string) => text.trim().length > 0;
 

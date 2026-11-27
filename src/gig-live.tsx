@@ -148,6 +148,13 @@ export function useLiveGig({ me, stage = null, metronome, personal, onPersonal, 
   const [names, setNames] = useState<Record<string, string>>({});
   const [sleepy, setSleepy] = useState(false);
   const [dismissed, setDismissed] = useState<string[]>([]);
+  // The gigs one account closed or saw end are its own: the next account on a shared phone starts with none.
+  const [owner, setOwner] = useState(me);
+  if (owner !== me) {
+    setOwner(me);
+    setDismissed([]);
+    setEnded(null);
+  }
   const [, changed] = useReducer((n: number) => n + 1, 0);
   const [, setFrame] = useState("");
   const release = useRef<(() => void) | null>(null);

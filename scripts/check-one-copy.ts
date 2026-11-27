@@ -106,6 +106,16 @@ check(
   );
 }
 
+// W14: worker/ holds one reader of a stored song; no file but worker/room-library.ts calls JSON.parse on a song column
+{
+  const readers = filesWith(/\b(?:function|const)\s+storedSong\b/, "worker/");
+  const songJson = filesWith(/JSON\.parse\(\s*[^)]*\.songs?\b/, "worker/").filter((file) => file !== "worker/room-library.ts");
+  check(
+    readers.length === 1 && readers[0] === "worker/room-library.ts" && songJson.length === 0,
+    `W14: worker/ holds one storedSong reader (worker/room-library.ts) and no other worker file calls JSON.parse on a song column (readers: ${readers.join(", ") || "none"}; song JSON.parse: ${songJson.join(", ") || "none"})`,
+  );
+}
+
 if (failures > 0) {
   console.log(`${failures} failed`);
   process.exit(1);

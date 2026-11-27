@@ -35,16 +35,17 @@ export function SongInfo({ song, semitones, notation, notes }: { song: Song; sem
   const id = useId();
   const [open, setOpen] = useState(false);
   const [seen, setSeen] = useState<NotesSeen>(NOTHING);
-  const box = useRef<HTMLDivElement>(null);
   const scrolledAt = useRef(-Infinity);
   const held = useRef<{ scroller: HTMLElement; chart: Element; top: number } | null>(null);
 
+  // A scroll does not bubble, but it passes the document on the capture way down. Listening there touches no element
+  // at mount, so a sheet drawn in a stand-in DOM (check:metronome, check:teach) mounts as it does in a browser.
   useEffect(() => {
-    const scroller = box.current?.closest<HTMLElement>("#sheet-scroll");
-    if (!scroller) return;
-    const heard = () => void (scrolledAt.current = performance.now());
-    scroller.addEventListener("scroll", heard, { passive: true });
-    return () => scroller.removeEventListener("scroll", heard);
+    const heard = (event: Event) => {
+      if ((event.target as HTMLElement | null)?.id === "sheet-scroll") scrolledAt.current = performance.now();
+    };
+    document.addEventListener("scroll", heard, { capture: true, passive: true });
+    return () => document.removeEventListener("scroll", heard, { capture: true });
   }, []);
 
   useLayoutEffect(() => {
@@ -59,8 +60,8 @@ export function SongInfo({ song, semitones, notation, notes }: { song: Song; sem
   const hint = <OriginalKeyHint song={song} semitones={semitones} />;
 
   const toggle = () => {
-    const scroller = box.current?.closest<HTMLElement>("#sheet-scroll");
-    const chart = box.current?.nextElementSibling;
+    const scroller = document.getElementById("sheet-scroll");
+    const chart = document.getElementById("chord-section");
     if (scroller && chart && performance.now() - scrolledAt.current < MOVING_MS) {
       held.current = { scroller, chart, top: chart.getBoundingClientRect().top };
     }
@@ -68,7 +69,7 @@ export function SongInfo({ song, semitones, notation, notes }: { song: Song; sem
   };
 
   return (
-    <div className="song-info" ref={box} hidden={!shows}>
+    <div className="song-info" hidden={!shows}>
       {shows ? (
         <button
           type="button"

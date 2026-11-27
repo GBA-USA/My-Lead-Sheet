@@ -19,7 +19,12 @@ const TAKE_ME_OUT = 5;
 const WIDTHS = [390, 1280];
 /** U3b took the metronome block (158.38 px at 390, 142.19 px at 1280 with its margin) off the card, above the chart. */
 /** Re-measured in Chrome on Linux (the CI runner) after chordpro-codec removed the bass table above the chart. */
-const FIRST_CHORD_IN_CARD: Record<number, { x: number; y: number }> = { 390: { x: 109.59, y: 772.61 }, 1280: { x: 121.59, y: 370.64 } };
+/**
+ * p2-song-info moved the source line, Feel and How to play into the closed Song info row, so the chart starts higher.
+ * The y values are the Linux CI reading of Deep verify run 46043279728, which check:ux-metronome-sheet works out from
+ * the stylesheet too (199.30 at 390, 179.56 at 1280). x is unchanged.
+ */
+const FIRST_CHORD_IN_CARD: Record<number, { x: number; y: number }> = { 390: { x: 109.59, y: 199.3 }, 1280: { x: 121.59, y: 179.56 } };
 const js = (value: unknown) => JSON.stringify(value);
 const settle = (ms = 250) => new Promise((done) => setTimeout(done, ms));
 
@@ -497,6 +502,10 @@ try {
       await evaluate(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }))`);
       await settle();
       expect(!(await evaluate<boolean>(`!!${DIALOG}`)), "Escape left the Scroll sheet open");
+      // The song's own pace holds the sung line at the sheet's middle, so a chart whose first rows sit above the middle
+      // stays put until the song reaches them. Closed, Song info leaves this chart that high at 1280 px; opened, it puts
+      // the source, feel and How to play back above the chart, so the first rows start below the middle as before.
+      await tap("Song info", `document.querySelector("article.sheet")`);
       await evaluate(`document.querySelector(".scroll-pill").click()`);
       await settle(1200);
       const top = await evaluate<number>(`document.getElementById("sheet-scroll").scrollTop`);

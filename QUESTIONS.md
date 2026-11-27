@@ -1,3 +1,23 @@
+# p2-song-info Deep verify fix: two check edits in check:ux-sheet-controls-save, one expected to be a product fix
+
+Deep verify run 46043279728 failed three checks. check:metronome and check:teach were a product bug: Song info's mount
+effect called `Element.closest`, which their stand-in DOM (`scripts/fake-dom.ts`) lacks, so the effect threw and React
+dropped the whole sheet. Song info now hears the scroll at the document, in the capture phase, and looks the scroller
+and chart up by id only on a tap. Neither check was edited. check:ux-sheet-controls-save got two edits:
+
+1. The first chord's y pins became 199.30 (390 px) and 179.56 (1280 px), the Linux values from that run. The plan moves
+   everything above the chart into the closed row, and check:ux-metronome-sheet works out the same two numbers from the
+   stylesheet and passed on that run. x is unchanged.
+2. The Scroll pill case taps Song info open before the pill. The handoff called this one a behavior regression, and it
+   is not one. The song's own pace holds the sung line at the sheet's middle, so a chart whose first rows start above
+   the middle does not move until the song reaches them. Measured in Edge on song 10: the base chart starts 343 px down
+   the 558 px tall scroller at 1280x800, with its first row at 383, below the 279 px middle, so it moves at once (top 175
+   after 1.2 s). The head chart starts at 152, with its first row at 192, so it holds (top 0). The base holds the same
+   way in a taller window (1280x1200, middle 479: top 0). Opening Song info puts the source, feel and How to play back
+   above the chart, so the case asserts the same `scroll on and top > 0` after the same 1.2 s. Owner: say if a player
+   should see the chart move at once even when its first rows already sit above the middle. That would change
+   src/scroll-timing.ts, which is outside this cook.
+
 # p2-song-info: check:ux-metronome-sheet's closed-panel chord y and tops come from the stylesheet, not from Windows
 
 Fix pass 1 replaced the Windows-measured numbers in the case "with Song info closed, the chart's first chord and the

@@ -147,6 +147,7 @@ const CASE_NAMES = [
   "V11 themes",
   "V12 folded bar",
   "V13 instant theme switch",
+  "V14 long key label",
 ];
 
 let site: Site | null = null;
@@ -814,6 +815,88 @@ if (site) {
       const chosenAfter = await s.evaluate<string>(`document.querySelector(".controls [role=radiogroup] [role=radio][aria-checked=true]")?.textContent?.trim() ?? ""`);
       assert.equal(chosenAfter, "Nashville", `chosen view stayed Nashville after unfolding (got ${js(chosenAfter)})`);
       await tapRadio("Chords");
+    });
+
+    // ------------------------------------------------------------------ V14 long key label
+    // Built-in song 13 carries a 47-character key label; 704 is a made-up long key. Open and folded, from 360 px
+    // to past the 430 and 540 px steps, every part stays whole inside the pill and the screen, whichever is chosen.
+    await check("V14 long key label", async () => {
+      const bad: string[] = [];
+      const measure = () =>
+        s.evaluate<{
+          parts: { text: string; checked: boolean; left: number; right: number; width: number; clipped: boolean }[];
+          pill: [number, number];
+          readout: { width: number; height: number; spills: boolean; nameLines: number };
+          page: number;
+        }>(`(() => {
+          const pill = document.querySelector(".controls .notes-switch");
+          const pr = pill.getBoundingClientRect();
+          const parts = [...pill.querySelectorAll("[role=radio]")].map((b) => {
+            const r = b.getBoundingClientRect();
+            const range = document.createRange();
+            range.selectNodeContents(b);
+            const tb = range.getBoundingClientRect();
+            const lines = new Set([...range.getClientRects()].filter((x) => x.width > 0).map((x) => Math.round(x.top))).size;
+            return {
+              text: b.textContent.trim(),
+              checked: b.getAttribute("aria-checked") === "true",
+              left: r.left,
+              right: r.right,
+              width: r.width,
+              clipped: lines !== 1 || b.scrollWidth > b.clientWidth + 0.5 || tb.left < r.left - 0.5 || tb.right > r.right + 0.5,
+            };
+          });
+          const readout = document.querySelector(".controls .key-readout");
+          const rr = readout.getBoundingClientRect();
+          const name = readout.querySelector(".key-name");
+          const nr = name.getBoundingClientRect();
+          const nameRange = document.createRange();
+          nameRange.selectNodeContents(name);
+          const nameLines = new Set([...nameRange.getClientRects()].filter((x) => x.width > 0).map((x) => Math.round(x.top))).size;
+          return {
+            parts,
+            pill: [pr.left, pr.right],
+            readout: { width: rr.width, height: rr.height, spills: nr.left < rr.left - 0.5 || nr.right > rr.right + 0.5 || nr.top < rr.top - 0.5 || nr.bottom > rr.bottom + 0.5, nameLines },
+            page: document.documentElement.scrollWidth,
+          };
+        })()`);
+      const judge = (tag: string, width: number, folded: boolean, m: Awaited<ReturnType<typeof measure>>) => {
+        const [pl, pr] = m.pill;
+        for (const p of m.parts) {
+          const where = `${tag} ${p.text}${p.checked ? " (chosen)" : ""} at ${p.left.toFixed(0)}..${p.right.toFixed(0)}, pill ${pl.toFixed(0)}..${pr.toFixed(0)}`;
+          if (p.left < pl - 0.5 || p.right > pr + 0.5 || p.left < -0.5 || p.right > width + 0.5) bad.push(`${where}: not whole on screen`);
+          if (p.clipped) bad.push(`${where}: label clipped or wrapped`);
+        }
+        for (let i = 1; i < m.parts.length; i++) {
+          if (m.parts[i].left < m.parts[i - 1].right - 0.5) bad.push(`${tag}: ${m.parts[i - 1].text} and ${m.parts[i].text} overlap`);
+        }
+        if (!folded) {
+          const ws = m.parts.map((p) => p.width);
+          if (Math.max(...ws) - Math.min(...ws) > 1) bad.push(`${tag}: parts not equal (${js(ws.map((w) => +w.toFixed(1)))})`);
+        }
+        if (m.readout.width < 44 || m.readout.height < 44) bad.push(`${tag}: key readout ${m.readout.width.toFixed(0)}x${m.readout.height.toFixed(0)} under 44 px`);
+        if (m.readout.spills) bad.push(`${tag}: key label spills out of its button`);
+        if (folded && m.readout.nameLines !== 1) bad.push(`${tag}: folded key label runs to ${m.readout.nameLines} lines`);
+        if (m.page > width + 0.5) bad.push(`${tag}: page scrolls sideways (${m.page})`);
+      };
+
+      for (const id of [13, 704]) {
+        for (const width of [360, 390, 412, 429, 430, 480, 539, 540, 600]) {
+          await phone(width);
+          await openSong(id);
+          for (const label of ["Chords", "Nashville", "Chords only"]) {
+            await tapRadio(label);
+            judge(`song ${id} @${width} open, ${label} chosen`, width, false, await measure());
+            await foldBar();
+            judge(`song ${id} @${width} folded, ${label} chosen`, width, true, await measure());
+            await unfoldBar();
+          }
+          await tapRadio("Chords");
+        }
+      }
+      await phone(360);
+      for (const line of bad) console.log(`     ${line}`);
+      assert.equal(bad.length, 0, `${bad.length} long-key layout problems (listed above)`);
     });
 
     // Optional screenshot capture for report when VIEW_PILL_SHOTS is set

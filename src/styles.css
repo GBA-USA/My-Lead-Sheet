@@ -628,8 +628,24 @@ a:focus-visible {
   gap: 4px;
 }
 
-.song-chrome-bar[data-folded="song"] .notes-switch {
+.song-chrome-bar[data-folded="song"] .transpose {
   flex: 0 1 auto;
+}
+
+.song-chrome-bar[data-folded="song"] .key-readout {
+  min-width: 72px;
+  overflow: hidden;
+}
+
+.song-chrome-bar[data-folded="song"] .key-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.song-chrome-bar[data-folded="song"] .notes-switch {
+  flex: none;
   width: auto;
   margin-left: auto;
   padding: 2px;
@@ -662,8 +678,6 @@ a:focus-visible {
   .song-chrome-bar[data-folded="song"] .notes-switch {
     display: inline-flex;
     gap: 1px;
-    overflow-x: auto;
-    scrollbar-width: none;
   }
 
   .song-chrome-bar[data-folded="song"] .notes-switch [role="radio"] {
@@ -716,6 +730,10 @@ a:focus-visible {
   align-items: center;
   gap: 8px;
   min-width: 0;
+}
+
+.controls > .control-row:first-child {
+  flex-wrap: wrap;
 }
 
 .segmented-pill {
@@ -797,8 +815,8 @@ a:focus-visible {
 }
 
 @media (max-width: 429px) {
-  .controls > .control-row:first-child {
-    flex-wrap: wrap;
+  .controls .key-name-long {
+    max-width: calc(100vw - 144px);
   }
 
   .notes-switch {

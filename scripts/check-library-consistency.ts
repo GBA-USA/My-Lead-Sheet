@@ -73,10 +73,10 @@ const ownSong = (id: number, title: string, extra: object = {}) => ({ ...JSON.pa
 function storeSongs(app: App, store: FakeStorage, songs: object[]) {
   useStore(store);
   app.loadLibrary();
-  const stored = JSON.parse(store.getItem("leadSheetsLibrary")!);
+  const stored = JSON.parse(store.getItem("leadSheetsLibraryV2")!);
   const ids = new Set(songs.map((song) => (song as { id: number }).id));
   stored.songs = [...stored.songs.filter((song: { id: number }) => !ids.has(song.id)), ...songs];
-  store.setItem("leadSheetsLibrary", JSON.stringify(stored));
+  store.setItem("leadSheetsLibraryV2", JSON.stringify(stored));
   return app.loadLibrary();
 }
 
@@ -92,18 +92,18 @@ await check("condition 1, path (b): a stored own song whose key is H shows on no
   const store = new FakeStorage();
   const shown = storeSongs(app, store, [ownSong(30, "Blue Train", { keyRoot: "H" })]);
   assert.ok(!titlesOf(shown).includes("Blue Train"), "the song fails isSong, so the first load leaves it out");
-  assert.ok(!(store.getItem("leadSheetsLibrary") ?? "").includes("Blue Train"), "and loadLibrary wrote the shorter library back, so no later build can show it");
+  assert.ok(!(store.getItem("leadSheetsLibraryV2") ?? "").includes("Blue Train"), "and loadLibrary wrote the shorter library back, so no later build can show it");
 });
 
 await check("condition 1, path (c): 35 own songs in a stored library with no seed prints show on no load and are gone after the first", () => {
   const store = new FakeStorage();
   useStore(store);
   const older = { ...JSON.parse(JSON.stringify(seed)), songs: [...JSON.parse(JSON.stringify(seed.songs)), ...fiftySongs()] };
-  store.setItem("leadSheetsLibrary", JSON.stringify(older));
+  store.setItem("leadSheetsLibraryV2", JSON.stringify(older));
   const shown = app.loadLibrary();
   assert.equal(older.songs.length, 50, "the stored library holds 50 songs");
   assert.equal(shown.songs.length, CATALOG.length, `this build shows the catalog only (${shown.songs.length})`);
-  assert.ok(!REPORTED.some((title) => (store.getItem("leadSheetsLibrary") ?? "").includes(title)), "and the 35 extra songs are erased from storage on that first load");
+  assert.ok(!REPORTED.some((title) => (store.getItem("leadSheetsLibraryV2") ?? "").includes(title)), "and the 35 extra songs are erased from storage on that first load");
 });
 
 await check("condition 1, control: the same 50 songs stored the way this build stores them show on every one of three loads", () => {
@@ -171,16 +171,18 @@ async function accountSwitch(perAccount: boolean) {
     }
   }
 
+  const titleOfItem = (item: { title?: string; chordpro?: string }) => item.title ?? /^\{title: (.*)\}$/m.exec(item.chordpro ?? "")?.[1] ?? "";
+
   /** The account's song rows as its backup holds them: title by row key. */
   const songRows = async (phone: PhoneT) => {
     const reply = await realFetch(new URL("/api/backup", base), {
       method: "POST",
-      headers: { "content-type": "application/json", origin: TEST_ORIGIN, cookie: phone.cookie },
+      headers: { "content-type": "application/json", origin: TEST_ORIGIN, "x-song-shape": "chordpro", cookie: phone.cookie },
       body: js({ since: 0, changes: [] }),
     });
     const { rows } = (await reply.json()) as { rows: { key: string; value: string | null }[] };
     return {
-      songs: Object.fromEntries(rows.filter((row) => row.key.startsWith("leadSheetsSong.") && row.value !== null).map((row) => [row.key, JSON.parse(row.value!).item.title as string])),
+      songs: Object.fromEntries(rows.filter((row) => row.key.startsWith("leadSheetsSong.") && row.value !== null).map((row) => [row.key, titleOfItem(JSON.parse(row.value!).item)])),
       keys: rows.filter((row) => row.value !== null).map((row) => row.key),
     };
   };
@@ -325,7 +327,7 @@ async function onScreen() {
         const poll = () => { const titles = read(); if (titles.length > 0 || tries++ > 150) { setTimeout(() => { const last = read(); tab.close(); done(last); }, 500); } else setTimeout(poll, 100); };
         poll();
       })`);
-    const backedUp = () => page.until(`(() => { const s = JSON.parse(localStorage.getItem("leadSheetsBackup") ?? "null"); return !!s && s.at != null; })()`, "the backup to finish", 15000);
+    const backedUp = () => page.until(`(() => { const s = JSON.parse(localStorage.getItem("leadSheetsBackupV2") ?? "null"); return !!s && s.at != null; })()`, "the backup to finish", 15000);
     const fitsEverywhere = async (selector: string, words: string) => {
       for (const px of WIDTHS) {
         await width(px);
@@ -347,9 +349,9 @@ async function onScreen() {
     await page.library();
     await page.until(`document.querySelectorAll(".song-list .song-title").length > 0`, "My Songs");
     await site.evaluate(`(() => {
-      const stored = JSON.parse(localStorage.getItem("leadSheetsLibrary"));
+      const stored = JSON.parse(localStorage.getItem("leadSheetsLibraryV2"));
       stored.songs.push(${js(ownSong(30, "Night Owl"))}, ${js(ownSong(31, "Owl From Kim", { copy: { id: "copy-kim-1", canSendOn: true, from: { name: "Kim Keys" } } }))});
-      localStorage.setItem("leadSheetsLibrary", JSON.stringify(stored));
+      localStorage.setItem("leadSheetsLibraryV2", JSON.stringify(stored));
     })()`);
     await reload();
 
@@ -405,7 +407,7 @@ async function onScreen() {
     await page.pick("Account");
     await page.until(`document.querySelector(".account-sheet")?.dataset.step === "account"`, "the account screen");
     await page.click("Sign out");
-    await page.until(`!localStorage.getItem("leadSheetsBackup")`, "signing out");
+    await page.until(`!localStorage.getItem("leadSheetsBackupV2")`, "signing out");
     await page.click("âœ•").catch(() => {});
     await page.closeMenu();
     await site.evaluate(`location.hash = "#/songs"`);

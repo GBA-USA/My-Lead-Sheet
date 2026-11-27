@@ -31,6 +31,60 @@
   font-size: 17px;
 }
 
+.learn-coverage {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.learn-ways {
+  display: grid;
+  gap: 8px;
+}
+
+.learn-way {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  min-height: 56px;
+  padding: 10px 14px;
+  border: var(--control-border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.learn-way.is-primary {
+  border-color: var(--accent);
+}
+
+.learn-way:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.learn-way-title {
+  font-weight: 700;
+}
+
+.learn-way-line {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+/* The file input stays in the page, where a tap on its label opens the picker on every phone, but takes no room. */
+.learn-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
 .learn-progress {
   display: flex;
   align-items: center;
@@ -190,6 +244,7 @@
 }
 
 .learn-actions button {
+  height: 44px;
   padding: 0 14px;
 }
 

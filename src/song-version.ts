@@ -3,7 +3,7 @@ import type { Owner } from "./account";
 import { initialMetronomeBpm } from "./metronome";
 import { clampScrollPercent, isNotation, type Notation } from "./music";
 import type { PersonalDefaults } from "./personal-settings-model";
-import { nextVersionName, withTempo, type Learned, type ScrollPlan, type Tempo } from "./scroll-timing";
+import { nextVersionName, withTempo, type Learned, type ScrollPlan, type ScrollVersion, type Tempo } from "./scroll-timing";
 import { useStored } from "./hooks";
 import {
   loadNotation,
@@ -13,6 +13,7 @@ import {
   loadSongDraft,
   saveSongData,
   saveSongDraft,
+  storedLearned,
   updateScrollVersions,
   type ScrollVersions,
   type StoredVersion,
@@ -70,6 +71,14 @@ function toStored(name: string, draft: Draft): StoredVersion {
 export function loadSongVersions(ref: SongRef): { versions: SongVersion[]; selected: number | null } {
   const { versions, selected } = loadScrollVersions(ref);
   return { versions: versions.map(fromStored), selected };
+}
+
+/**
+ * The song's versions with taught or learned timing, as the send route takes them, each learned part in its stored
+ * form so a friend on a build from before colors keeps it. A version holding only settings has no timing to send.
+ */
+export function timingVersions(ref: SongRef): ScrollVersion[] {
+  return loadSongVersions(ref).versions.flatMap(({ name, plan, learned }) => (plan ? [{ name, ...plan, ...(learned ? { learned: storedLearned(learned) } : {}) }] : []));
 }
 
 /** Whether any of the song's versions holds taught or learned timing. A version can hold only settings, such as a key. */

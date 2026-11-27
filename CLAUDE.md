@@ -1,6 +1,6 @@
 # My-Lead-Sheet rules
 
-Read this first. A bass player's lead-sheet app: a React phone app in `src/`, a Cloudflare Worker with two
+Read this first. A lead-sheet app for guitar and piano players: a React phone app in `src/`, a Cloudflare Worker with two
 SQLite-backed Durable Objects (Directory and Room) in `worker/`, and executable checks in `scripts/`.
 The plan is `/workspace/mls-social-plan-2026-11-13/PLAN.md`. Where this file and the plan disagree, say so in your report.
 

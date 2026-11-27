@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { extname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { build as bundle } from "esbuild";
 import { build } from "vite";
 import type { LibraryFile, Song } from "../src/types.ts";
@@ -14,7 +15,7 @@ const SCALES = [1, 1.3, 1.5, 1.7];
 /** Set SHOTS to a folder to save the chord chart of the two longest songs at 390 and 1280 px, x1, x1.3 and x1.7. */
 const shots = process.env.SHOTS;
 
-const root = new URL("..", import.meta.url).pathname;
+const root = fileURLToPath(new URL("..", import.meta.url));
 const seed = JSON.parse(readFileSync(join(root, "data/library.json"), "utf8")) as LibraryFile;
 const modules = await bundle({
   stdin: { contents: 'export * from "./src/storage.ts"; export * from "./src/music.ts";', resolveDir: root, loader: "ts" },
@@ -201,6 +202,21 @@ try {
       }
     }
   }
+  // N10: A built-in song's sheet has no table and no "Your bass notes" heading, at 360 px and at 390 px.
+  await send("Page.navigate", { url: `${origin}/?scale=1#/song/${seed.songs[0].id}` });
+  const n10Bad: string[] = [];
+  for (const w of [360, 390]) {
+    await send("Emulation.setDeviceMetricsOverride", { width: w, height: 900, deviceScaleFactor: 2, mobile: false });
+    await evaluate(`location.hash = "#/song/${seed.songs[0].id}"`);
+    await evaluate(shown(seed.songs[0].title));
+    const seen = await evaluate<{ tables: number; hasHeading: boolean }>(`({
+      tables: document.querySelectorAll("article.sheet table").length,
+      hasHeading: /Your bass notes/i.test(document.querySelector("article.sheet")?.textContent ?? ""),
+    })`);
+    if (seen.tables > 0 || seen.hasHeading) n10Bad.push(`@${w}px (tables=${seen.tables}, heading=${seen.hasHeading})`);
+  }
+  if (n10Bad.length) check(false, "N10: built-in song sheet has no table and no Your bass notes heading", n10Bad.join(", "));
+  else console.log("ok   N10: built-in song sheet has no table and no Your bass notes heading at 360 px and 390 px");
 } finally {
   socket.close();
   chrome.kill();

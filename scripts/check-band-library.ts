@@ -64,7 +64,7 @@ async function apiChecks(base: string, origin: string) {
   assert.deepEqual([shared.body.sharedAs, shared.body.canSendOn, shared.body.localId, shared.body.rev], ["private", true, 101, 1], "Terry, who shared it, can still send it on");
   for (const member of [mike, dana]) {
     const seen = songIn(await library(member, blue), "Chain Breaker");
-    assert.deepEqual(seen.song, chainBreaker, `${member.name} gets the whole chart`);
+    assert.deepEqual(seen.song, { ...chainBreaker, bassNotes: [] }, `${member.name} gets the whole chart`);
     assert.deepEqual([seen.sharedByName, seen.sharedAs, seen.canSendOn, seen.localId], ["Terry Bass", "private", false, null], `${member.name} sees it is Terry's Private share and can't send it on`);
   }
   assert.deepEqual(refusal(await mike.call("/api/bands/library/copy-song", { bandId: blue, songId: shared.body.songId })), [403, "band-only"], "Mike can't copy it out into My Songs: band songs stay in the band");
@@ -275,7 +275,7 @@ async function appChecks(site: Awaited<ReturnType<typeof openSite>>, base: strin
   );
   assert.deepEqual(refusal(tried), [403, "band-only"], "and Sam's direct copy-song is refused");
   assert.equal(
-    await site.evaluate<number>(`JSON.parse(localStorage.getItem("leadSheetsLibrary") ?? '{"songs":[]}').songs.filter((song) => song.title === "Back Porch Blues").length`),
+    await site.evaluate<number>(`JSON.parse(localStorage.getItem("leadSheetsLibraryV2") ?? '{"songs":[]}').songs.filter((song) => song.title === "Back Porch Blues" || (typeof song.chordpro === "string" && song.chordpro.includes("{title: Back Porch Blues}"))).length`),
     0,
     "nothing of it is in My Songs",
   );

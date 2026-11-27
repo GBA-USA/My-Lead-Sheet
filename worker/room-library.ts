@@ -1,11 +1,13 @@
 import seedLibrary from "../data/library.json" with { type: "json" };
-import type { BandLibrary, BandSetlist, BandSong, SongContent } from "../src/band-library-model";
+import type { BandSetlist, BandSong } from "../src/band-library-model";
+import { chordProToSong, normalizeChordPro, songToChordPro, type SentSong, type SongContent } from "../src/chordpro";
 import type { ChartLine, ChartSection } from "../src/types";
 import { randomBytes, toBase64Url } from "./bytes";
 import { liveCode } from "./codes";
-import { signedIn, type Context, type Route, type User } from "./directory-http";
+import { signedIn, wantsChordPro, type Context, type Route, type User } from "./directory-http";
 import { fromRoom, Refused, roomRefused as refused } from "./refused";
 import { selfRoomId } from "./room-backup";
+import { everAGuest, firstName, guestBandIdsOf } from "./room-guest";
 import { bandIdIn, bandIdsOf, inRoom, roomOf, shutOut, type RoomStore } from "./room-members";
 import { checkSend, lineage, type ShareChoice, type StoredShare } from "./share-guard";
 
@@ -93,15 +95,20 @@ function sharedFields(sql: SqlStorage, row: Shared, userId: string, names: Map<s
   };
 }
 
-const memberNames = (sql: SqlStorage) =>
+/** Who shared each item, by the name bandmates see, or by first name only for a guest (PLAN.md 7.14). */
+const memberNames = (sql: SqlStorage, guest = false) =>
   new Map(
     sql
       .exec<{ user_id: string; display_name: string }>(`SELECT user_id, display_name FROM members`)
       .toArray()
-      .map((row) => [row.user_id, row.display_name]),
+      .map((row) => [row.user_id, guest ? firstName(row.display_name) : row.display_name]),
   );
 
-const songOf = (sql: SqlStorage, row: SongRow, userId: string, names = memberNames(sql)): BandSong => ({ songId: row.song_id, song: JSON.parse(row.song), ...sharedFields(sql, row, userId, names) });
+const songOf = (sql: SqlStorage, row: SongRow, userId: string, names = memberNames(sql)): StoredBandSong => ({
+  songId: row.song_id,
+  song: row.song,
+  ...sharedFields(sql, row, userId, names),
+});
 
 const setlistOf = (sql: SqlStorage, row: SetlistRow, userId: string, names = memberNames(sql)): BandSetlist => ({
   setlistId: row.setlist_id,
@@ -125,6 +132,10 @@ export function bandSongsOnly(sql: SqlStorage, songIds: string[]) {
   for (const id of songIds) if (!songRow(sql, id)) throw refused("not-a-band-song");
 }
 
+/** A band song as the room returns it: `song` is the stored column (ChordPro text or legacy JSON), shaped on the way out. */
+export type StoredBandSong = Omit<BandSong, "song"> & { song: string };
+export type StoredBandLibrary = { songs: StoredBandSong[]; setlists: BandSetlist[] };
+
 /** `sentId` is the phone's own id for this share, so a retry after a lost reply gets the band song it already made. */
 export type SongShare = { song: SongContent; print: string; localId: number | null; choice: ShareChoice; sentId: string | null };
 export type SongChange = { song: SongContent; print: string };
@@ -133,9 +144,9 @@ export type SetlistShare = SetlistFields & { localId: number | null; choice: Sha
 
 /** Every user id here is trusted: only the Directory calls these, after it has checked the session and the share rule. */
 export const bandLibrary = {
-  view(band: RoomStore, userId: string): BandLibrary {
-    inRoom(band.sql, userId);
-    const names = memberNames(band.sql);
+  view(band: RoomStore, userId: string): StoredBandLibrary {
+    const { me } = inRoom(band.sql, userId, "setlists");
+    const names = memberNames(band.sql, me.role === "guest");
     return {
       songs: band.sql
         .exec<SongRow>(`SELECT * FROM band_songs ORDER BY shared_at, song_id`)
@@ -152,7 +163,7 @@ export const bandLibrary = {
     inRoom(band.sql, userId);
   },
 
-  shareSong(band: RoomStore, userId: string, share: SongShare, from: Chain | null, now: number): BandSong {
+  shareSong(band: RoomStore, userId: string, share: SongShare, from: Chain | null, now: number): StoredBandSong {
     inRoom(band.sql, userId);
     const sent = band.sql.exec<SongRow>(`SELECT * FROM band_songs WHERE shared_by = ? AND sent_id = ?`, userId, share.sentId).toArray()[0];
     if (sent) return songOf(band.sql, sent, userId);
@@ -162,7 +173,7 @@ export const bandLibrary = {
       `INSERT INTO band_songs (song_id, share_id, song, print, shared_by, local_id, shared_at, updated_by, updated_at, rev, sent_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
       songId,
       shareId,
-      JSON.stringify(share.song),
+      songText(share.song),
       share.print,
       userId,
       share.localId,
@@ -196,10 +207,10 @@ export const bandLibrary = {
   },
 
   /** `change` is null when the share rule refused the new chart. The base rev is still checked, so a stale edit always hears `changed`. */
-  editSong(band: RoomStore, userId: string, songId: string, base: number, change: SongChange | null, now: number): Saved<BandSong> {
+  editSong(band: RoomStore, userId: string, songId: string, base: number, change: SongChange | null, now: number): Saved<StoredBandSong> {
     const row = editable(band, userId, songRow(band.sql, songId));
     if (row.rev !== base || !change) return { item: songOf(band.sql, row, userId), changed: row.rev !== base };
-    band.sql.exec(`UPDATE band_songs SET song = ?, print = ?, updated_by = ?, updated_at = ?, rev = rev + 1 WHERE song_id = ?`, JSON.stringify(change.song), change.print, userId, now, songId);
+    band.sql.exec(`UPDATE band_songs SET song = ?, print = ?, updated_by = ?, updated_at = ?, rev = rev + 1 WHERE song_id = ?`, songText(change.song), change.print, userId, now, songId);
     return { item: songOf(band.sql, songRow(band.sql, songId), userId), changed: false };
   },
 
@@ -238,7 +249,10 @@ export const bandLibrary = {
    * share ids the caller's own copies came through), only the songs the caller shared or took a copy from; with null, all.
    */
   heldByPrint(band: RoomStore, userId: string, print: string, except: string | null, takenFrom: string[] | null): Chain[] {
-    if (shutOut(band.sql, userId)) return [];
+    if (shutOut(band.sql, userId)) {
+      if (everAGuest(band.sql, userId) && band.sql.exec(`SELECT 1 FROM band_songs WHERE print = ? LIMIT 1`, print).toArray().length) throw refused("guest");
+      return [];
+    }
     const taken = takenFrom && JSON.stringify(takenFrom);
     return band.sql
       .exec<SongRow>(
@@ -285,7 +299,11 @@ export const selfCopies = {
   /** Keeps a copy code's charts with a share row for the setlist and each song, and returns the setlist's share id. */
   sendSetlist(sql: SqlStorage, ownerId: string, send: SetlistSend, now: number): string {
     const id = adopt(sql, `sent_${toBase64Url(randomBytes(12))}`, ownerId, send.from, send.choice);
-    const songs = send.songs.map((item, index) => ({ song: item.song, print: item.print, shareId: adopt(sql, `${id}/${index}`, ownerId, item.from, send.choice) }));
+    const songs = send.songs.map((item, index) => ({
+      chordpro: songText(item.song),
+      print: item.print,
+      shareId: adopt(sql, `${id}/${index}`, ownerId, item.from, send.choice),
+    }));
     sql.exec(`INSERT INTO setlist_sends (share_id, name, songs, created_at) VALUES (?, ?, ?, ?)`, id, send.name, JSON.stringify(songs), now);
     return id;
   },
@@ -293,8 +311,16 @@ export const selfCopies = {
   setlistSend(sql: SqlStorage, shareId: string): SentSetlist | null {
     const row = sql.exec<{ name: string; songs: string }>(`SELECT name, songs FROM setlist_sends WHERE share_id = ?`, shareId).toArray()[0];
     if (!row) return null;
-    const songs = JSON.parse(row.songs) as { song: SongContent; print: string; shareId: string }[];
-    return { name: row.name, chain: selfCopies.held(sql, shareId), songs: songs.map((item) => ({ song: item.song, print: item.print, chain: selfCopies.held(sql, item.shareId) })) };
+    const songs = JSON.parse(row.songs) as { chordpro?: string; song?: unknown; print: string; shareId: string }[];
+    return {
+      name: row.name,
+      chain: selfCopies.held(sql, shareId),
+      songs: songs.map((item) => ({
+        song: typeof item.chordpro === "string" ? storedSong(item.chordpro) : storedSong(JSON.stringify(item.song)),
+        print: item.print,
+        chain: selfCopies.held(sql, item.shareId),
+      })),
+    };
   },
 
   receiveSetlist(sql: SqlStorage, setlist: Chain, songs: { chain: Chain; print: string }[]) {
@@ -353,12 +379,100 @@ function sectionIn(value: unknown): ChartSection {
   return { heading: section.heading, lines: section.lines.map(lineIn) };
 }
 
-/** The chart keeps only the parts a sheet shows. The other fields ride along as stored, and the phone checks them again when it adds the song. */
+const KEY_ROOT = /^[A-G][#b]?$/;
+const textOr = (value: unknown) => (typeof value === "string" ? value : "");
+const numberOrNull = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : null);
+
+function songFromObject(raw: Record<string, unknown>, body: ChartSection[]): SongContent {
+  const keyRoot = typeof raw.keyRoot === "string" && KEY_ROOT.test(raw.keyRoot) ? raw.keyRoot : "C";
+  const keyMode = raw.keyMode === "minor" ? "minor" : "major";
+  const kept = Array.isArray(raw.kept) ? raw.kept.filter((line): line is string => typeof line === "string") : [];
+  return {
+    title: textOr(raw.title),
+    artist: textOr(raw.artist),
+    keyLabel: typeof raw.keyLabel === "string" ? raw.keyLabel : `${keyRoot} ${keyMode}`,
+    keyRoot,
+    keyMode,
+    keyNote: textOr(raw.keyNote),
+    tempo: numberOrNull(raw.tempo),
+    tempoNote: textOr(raw.tempoNote),
+    timeSignature: textOr(raw.timeSignature),
+    officialRuntimeSec: numberOrNull(raw.officialRuntimeSec),
+    feel: textOr(raw.feel),
+    sourceNote: textOr(raw.sourceNote),
+    atAGlance: textOr(raw.atAGlance),
+    howToPlay: textOr(raw.howToPlay),
+    practiceTip: textOr(raw.practiceTip),
+    body,
+    ...(kept.length > 0 ? { kept } : {}),
+  };
+}
+
+function safeLine(value: unknown): ChartLine {
+  const line = record(value);
+  if (!line) return {};
+  return Object.fromEntries(LINE_FIELDS.filter((field) => typeof line[field] === "string").map((field) => [field, line[field]]));
+}
+
+function safeBody(value: unknown): ChartSection[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const section = record(item);
+    return section ? [{ heading: textOr(section.heading), lines: Array.isArray(section.lines) ? section.lines.map(safeLine) : [] }] : [];
+  });
+}
+
+/** The one writer of a stored song: deterministic ChordPro text. */
+export const songText = (song: SongContent): string => songToChordPro(song);
+
+/** The one reader of a stored song column: legacy JSON starts with `{"`, ChordPro text starts with `{title`. Never throws. */
+export function storedSong(text: string): SongContent {
+  if (typeof text !== "string") return chordProToSong("");
+  if (text.startsWith('{"')) {
+    try {
+      const parsed = record(JSON.parse(text));
+      if (parsed) return songFromObject(parsed, safeBody(parsed.body));
+    } catch {
+      return chordProToSong("");
+    }
+    return chordProToSong("");
+  }
+  return chordProToSong(text);
+}
+
+/** A legacy song object answered to callers that do not ask for ChordPro, with an empty `bassNotes` list for old builds. */
+export type OldSong = SongContent & { bassNotes: [] };
+export const oldSong = (song: SongContent): OldSong => ({ ...song, bassNotes: [] });
+
+/** Shapes a stored song column or parsed song into `{ chordpro }` or the legacy object for a reply. */
+export function songForCaller(stored: string | SongContent, chordpro: boolean): SentSong | OldSong {
+  if (typeof stored === "string") {
+    if (chordpro && !stored.startsWith('{"')) return { chordpro: stored };
+    const parsed = storedSong(stored);
+    return chordpro ? { chordpro: songText(parsed) } : oldSong(parsed);
+  }
+  return chordpro ? { chordpro: songText(stored) } : oldSong(stored);
+}
+
+/** A stored song column as `{ chordpro }`, avoiding a parse when the row is already ChordPro text. */
+export const storedChordPro = (stored: string): SentSong => (stored.startsWith('{"') ? { chordpro: songText(storedSong(stored)) } : { chordpro: stored });
+
+/** Reads a song sent in either `{ chordpro }` or the legacy object shape, keeping only the plan's fields. */
 export function songIn(value: unknown): SongContent {
   const song = record(value);
-  if (!song || !isText(song.title, 200) || typeof song.artist !== "string" || !Array.isArray(song.body) || JSON.stringify(song).length > MAX_SONG_CHARS) throw new Refused("bad-request");
-  const { ref: _ref, id: _id, copy: _copy, ...content } = song;
-  return { ...content, body: song.body.map(sectionIn) } as SongContent;
+  if (!song) throw new Refused("bad-request");
+  if ("chordpro" in song) {
+    if (typeof song.chordpro !== "string") throw new Refused("bad-request");
+    const normalized = normalizeChordPro(song.chordpro);
+    if (normalized.length > MAX_SONG_CHARS) throw new Refused("bad-request");
+    const parsed = chordProToSong(normalized);
+    if (!isText(parsed.title, 200) || songText(parsed).length > MAX_SONG_CHARS) throw new Refused("bad-request");
+    return parsed;
+  }
+  if (!isText(song.title, 200) || typeof song.artist !== "string" || !Array.isArray(song.body)) throw new Refused("bad-request");
+  const parsed = songFromObject(song, song.body.map(sectionIn));
+  if (songText(parsed).length > MAX_SONG_CHARS && JSON.stringify(song).length > MAX_SONG_CHARS) throw new Refused("bad-request");
+  return parsed;
 }
 
 const localIdIn = (value: unknown) => (Number.isSafeInteger(value) ? (value as number) : null);
@@ -389,12 +503,15 @@ export async function printOf(song: SongContent): Promise<string> {
 
 export const selfRoom = (c: Context, userId: string) => c.env.ROOM.getByName(selfRoomId(userId));
 
-let builtInPrints: Promise<Set<string>> | undefined;
+let commonPrints: Promise<Set<string>> | undefined;
 
-/** Every phone ships the built-in library, so holding one of its charts says nothing about where a player got it. */
-async function isBuiltIn(print: string) {
-  builtInPrints ??= Promise.all(seedLibrary.songs.map((song) => printOf(song as SongContent))).then((prints) => new Set(prints));
-  return (await builtInPrints).has(print);
+/**
+ * Every phone ships the built-in library, and every chart with nothing shown yet (a sheet started from the song catalog)
+ * prints the same, so holding one of these says nothing about where a player got it.
+ */
+async function isCommon(print: string) {
+  commonPrints ??= Promise.all([...seedLibrary.songs, { body: [] }].map((song) => printOf(song as SongContent))).then((prints) => new Set(prints));
+  return (await commonPrints).has(print);
 }
 
 /**
@@ -402,17 +519,17 @@ async function isBuiltIn(print: string) {
  * the phone names must allow it, and vouches for the chart it was made of. Otherwise the caller's copies of this chart
  * and the band songs they shared or took a copy from that show it must include one that allows it; a chart the caller
  * holds none of is their own original. A named copy sent with another chart vouches for nothing more, so every band song
- * the caller can see with that chart counts. A built-in chart is only ever judged by a named copy. Returns the chain the
- * new copy comes from, or null for the caller's own original.
+ * the caller can see with that chart counts. A built-in or empty chart is only ever judged by a named copy. Returns the
+ * chain the new copy comes from, or null for the caller's own original.
  */
 export async function guardContent(c: Context, userId: string, print: string, choice: ShareChoice, copyId: string | null, except: string | null): Promise<Chain | null> {
   const mine = await fromRoom(selfRoom(c, userId).copyChains(copyId, print));
   const verdict = (chain: Chain) => allowed(chain, userId, choice);
   if (copyId !== null && !mine.named) throw new Refused("not_found", 404);
   if (mine.named) mustAllow(mine.named.chain, userId, choice);
-  if (mine.named?.print === print || (await isBuiltIn(print))) return mine.named?.chain ?? null;
+  if (mine.named?.print === print || (await isCommon(print))) return mine.named?.chain ?? null;
   const takenFrom = mine.named ? null : mine.takenFrom;
-  const inBands = await Promise.all(bandIdsOf(c.sql, userId).map((bandId) => fromRoom(roomOf(c, bandId).heldByPrint(userId, print, except, takenFrom))));
+  const inBands = await Promise.all([...bandIdsOf(c.sql, userId), ...guestBandIdsOf(c.sql, userId)].map((bandId) => fromRoom(roomOf(c, bandId).heldByPrint(userId, print, except, takenFrom))));
   const held = [...mine.byPrint, ...inBands.flat()];
   const allowing = held.find((chain) => verdict(chain).ok);
   if (held.length > 0 && !allowing) mustAllow(held[0], userId, choice);
@@ -467,10 +584,14 @@ function saved<T>({ item, changed }: Saved<T>): { body: T } {
   return { body: item };
 }
 
+const shapeBandSong = (item: StoredBandSong, chordpro: boolean) => ({ ...item, song: songForCaller(item.song, chordpro) });
+
 export const LIBRARY_ROUTES: Record<string, Route> = {
   async "POST /api/bands/library"(c) {
     const bandId = bandIdIn(c.body);
-    return { body: await fromRoom(roomOf(c, bandId).bandLibrary(signedIn(c).user_id)) };
+    const chordpro = wantsChordPro(c.request);
+    const lib = await fromRoom(roomOf(c, bandId).bandLibrary(signedIn(c).user_id));
+    return { body: { ...lib, songs: lib.songs.map((item) => shapeBandSong(item, chordpro)) } };
   },
 
   async "POST /api/bands/library/share-song"(c) {
@@ -482,7 +603,8 @@ export const LIBRARY_ROUTES: Record<string, Route> = {
     const print = await printOf(song);
     const sentId = c.body.shareId === undefined ? null : idIn(c.body.shareId);
     const from = await guardContent(c, userId, print, choice, c.body.copyId === undefined ? null : idIn(c.body.copyId), null);
-    return { body: await fromRoom(roomOf(c, bandId).shareSong(userId, { song, print, localId: localIdIn(c.body.localId), choice, sentId }, from, c.now)) };
+    const item = await fromRoom(roomOf(c, bandId).shareSong(userId, { song, print, localId: localIdIn(c.body.localId), choice, sentId }, from, c.now));
+    return { body: shapeBandSong(item, wantsChordPro(c.request)) };
   },
 
   async "POST /api/bands/library/share-setlist"(c) {
@@ -504,7 +626,7 @@ export const LIBRARY_ROUTES: Record<string, Route> = {
     const refusal = await refusalOf(guardContent(c, userId, print, "public", null, songId));
     const result = await fromRoom(roomOf(c, bandId).editBandSong(userId, songId, base, refusal ? null : { song, print }, c.now));
     if (refusal && !result.changed) throw refusal;
-    return saved(result);
+    return saved({ item: shapeBandSong(result.item, wantsChordPro(c.request)), changed: result.changed });
   },
 
   async "POST /api/bands/library/edit-setlist"(c) {

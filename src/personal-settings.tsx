@@ -80,7 +80,7 @@ export function YourSettings({
             +
           </button>
         </div>
-        <p className="settings-note">For a bass tuned down. Every song you open starts here, and Original Key comes back here.</p>
+        <p className="settings-note">For an instrument tuned down. Every song you open starts here, and Original Key comes back here.</p>
       </div>
       <p className="settings-note">Your settings stay yours when you join a gig.</p>
     </section>

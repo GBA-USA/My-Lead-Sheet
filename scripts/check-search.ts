@@ -293,7 +293,7 @@ try {
     assert.deepEqual(await app.texts(".setlist h2"), ["Worship Set", "Biker church"], "setlists holding Chain Breaker");
   });
 
-  const myCount = () => site.evaluate<number>(`JSON.parse(localStorage.getItem("leadSheetsLibrary")).songs.length`);
+  const myCount = () => site.evaluate<number>(`JSON.parse(localStorage.getItem("leadSheetsLibraryV2")).songs.length`);
   const bandRow = (artist: string) => `[...document.querySelectorAll(".band-library-songs li")].find((li) => li.textContent.includes(${js(artist)}))`;
   const dmCard = (artist: string) => `[...document.querySelectorAll(".room li")].find((li) => li.textContent.includes(${js(artist)}))`;
   const openBlueSongs = async () => {
@@ -333,7 +333,7 @@ try {
     await app.until(`!!${dmCard("The Other Chain Gang")}?.querySelector("button")`, "The Other Chain Gang's card", 15000);
     const before = await myCount();
     await app.click("Add to My Songs", dmCard("The Other Chain Gang"));
-    await app.until(`JSON.parse(localStorage.getItem("leadSheetsLibrary")).songs.length === ${before + 1}`, "the song by a different artist added", 15000);
+    await app.until(`JSON.parse(localStorage.getItem("leadSheetsLibraryV2")).songs.length === ${before + 1}`, "the song by a different artist added", 15000);
     assert.ok(!(await site.evaluate<string>(`document.querySelector(".room").textContent`)).includes("You already have"), "with no duplicate prompt");
   });
 

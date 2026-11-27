@@ -4,15 +4,15 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chordAnchors, type Row } from "./chord-anchors.ts";
-import { listenThrough } from "./fake-worker.ts";
+import { FakeWorker, listenThrough } from "./fake-worker.ts";
 import { LYRICS, plainLine } from "./learn-lyrics.ts";
-import { DRUMS_ONLY, HEAD, MIC_LEVELS, SAMPLE_RATE, SILENCE, ScoreRefused, micColor, readWav, render, sidecarOf, writeWav, type Score, type Truth } from "./learn-render.ts";
+import { DRUMS_ONLY, HEAD, MIC_LEVELS, SAMPLE_RATE, SILENCE, ScoreRefused, micColor, parseChord, readWav, render, sidecarOf, writeWav, type Score, type Truth } from "./learn-render.ts";
 import { SONGS } from "./learn-songs.ts";
 import { BANDS_FILE, chartRows, fitBands, lyricsOf, rechartRates, scoreListen, stripChords, writeBands, type Call } from "./learn-score.ts";
-import type { HeardLine, Listen } from "../src/learn-result.ts";
+import type { FromWorker, HeardLine, Listen } from "../src/learn-result.ts";
 
 /** A TESTS-FIRST case its cook has not landed yet: it runs and prints, but its FAIL does not fail check:learn-songs. */
-type Pending = "pending until l8";
+type Pending = "pending until l3" | "pending until l5" | "pending until l8";
 let failures = 0;
 function check(ok: boolean, message: string, pending?: Pending) {
   if (pending && ok) {
@@ -432,8 +432,18 @@ check(
 );
 
 // The whole set, clean and through the mic, for the gates later cooks read and for --fit.
+interface SetRun {
+  score: Score;
+  take: ReturnType<typeof render>;
+  kind: string;
+  listen: Listen | null;
+  card: ReturnType<typeof scoreListen>;
+}
 const setCalls: Call[] = [];
 const table: string[] = [];
+const runs: SetRun[] = [];
+/** The clean file of each song heard with no words, for the labels the audio alone gives. */
+const wordless: SetRun[] = [];
 let rendered = 0;
 for (const score of SONGS) {
   let take: ReturnType<typeof render>;
@@ -445,10 +455,17 @@ for (const score of SONGS) {
   }
   rendered += 1;
   for (const [kind, samples] of [["file", take.samples], ...MIC_LEVELS.map((level) => [`mic ${level}`, micColor(take.samples, level)] as const)] as const) {
-    const card = scoreListen(await listenTo(samples, `${score.title}.wav`, score.beatsPerBar, take.lyrics), take.truth);
+    const listen = await listenTo(samples, `${score.title}.wav`, score.beatsPerBar, take.lyrics);
+    const card = scoreListen(listen, take.truth);
+    runs.push({ score, take, kind, listen, card });
+    if (kind === "file" && !take.lyrics) wordless.push(runs[runs.length - 1]);
     setCalls.push(...card.calls);
     const cell = (row: string) => (card.values[row] === null ? "-" : Number(card.values[row]).toFixed(2));
     table.push(`| ${score.title} | ${kind} | ${score.bpm} | ${cell("BPM at the right octave")} | ${cell("beat F-measure at 70 ms")} | ${cell("downbeat accuracy")} | ${cell("root accuracy per change")} | ${cell("section boundary error in bars")} | ${cell("line start error in ms")} | ${cell("syllable placement exact")} |`);
+  }
+  if (take.lyrics) {
+    const listen = await listenTo(take.samples, `${score.title}.wav`, score.beatsPerBar, null);
+    wordless.push({ score, take, kind: "file, no words", listen, card: scoreListen(listen, take.truth) });
   }
 }
 check(rendered === SONGS.length, `every song in the set renders (${rendered} of ${SONGS.length})`);
@@ -456,6 +473,193 @@ console.log("\n| song | case | BPM | BPM right | beat F | downbeats | roots | bo
 console.log("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |");
 for (const row of table) console.log(row);
 console.log(`\n${setCalls.length} heard changes with a confidence across the set`);
+
+// TESTS-FIRST for learn wave B: the set's gates for L3 (chords), L5 (sections) and L8 (words) in LEARN-PLAN.md, each
+// line starting with its pass condition's number. They read only the Listen each song gives through the worker.
+const clean = runs.filter((run) => run.kind === "file");
+const mics = runs.filter((run) => run.kind.startsWith("mic"));
+const pooledShare = (parts: { value: number | null; of: number }[]) => {
+  const of = parts.reduce((sum, part) => sum + part.of, 0);
+  return of ? parts.reduce((sum, part) => sum + (part.value ?? 0) * part.of, 0) / of : 0;
+};
+const middle = (values: number[]) => (values.length ? [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)] : null);
+const pct = (value: number | null) => (value === null ? "n/a" : `${Math.round(value * 100)}%`);
+const barLength = (truth: Truth) => truth.downbeats[truth.downbeats.length - 1] - truth.downbeats[truth.downbeats.length - 2];
+const songEnd = (truth: Truth) => truth.downbeats[truth.downbeats.length - 1] + barLength(truth);
+const soundingAt = (listen: Listen | null, time: number) => (listen?.changes ?? []).filter((change) => change.at <= time + 1e-9).at(-1) ?? null;
+const rootOf = (name: string | null | undefined) => (name ? (parseChord(name)?.root ?? null) : null);
+const L3: Pending = "pending until l3";
+const L5: Pending = "pending until l5";
+const L8: Pending = "pending until l8";
+
+{
+  const twoBar = clean.find((run) => run.score.title === "Two a Bar")!;
+  const { truth } = twoBar.take;
+  const beat = 60 / truth.bpm;
+  const midBar = truth.changes.filter((change) => truth.downbeats.every((down) => Math.abs(down - change.at) > beat / 2));
+  const split = midBar.filter((change) => {
+    const heard = (twoBar.listen?.changes ?? []).find((each) => Math.abs(each.at - change.at) <= beat / 2);
+    const down = truth.downbeats.filter((each) => each < change.at).at(-1)!;
+    return !!heard?.chord && heard.chord !== soundingAt(twoBar.listen, down + beat / 4)?.chord;
+  });
+  const errors = clean.flatMap((run) => run.take.truth.changes.map((change) => Math.min(...(run.listen?.changes ?? []).map((heard) => Math.abs(heard.at - change.at))) / (60 / run.take.truth.bpm)));
+  const error = middle(errors.filter(Number.isFinite));
+  check(
+    midBar.length > 0 && split.length === midBar.length && error !== null && error < 0.5,
+    `L3.2 changes fall on beats and a bar can hold two: ${split.length} of ${twoBar.score.title}'s ${midBar.length} beat-3 changes are heard there as a second chord, and the change-time error is ${error === null ? "n/a" : error.toFixed(2)} beats in the middle (want under 0.5)`,
+    L3,
+  );
+}
+{
+  const changesOf = (run: SetRun) => run.take.truth.changes.length;
+  const roots = pooledShare(clean.map((run) => ({ value: run.card.values["root accuracy per change"], of: changesOf(run) })));
+  const qualities = pooledShare(clean.map((run) => ({ value: run.card.values["major-or-minor accuracy per change"], of: changesOf(run) })));
+  check(roots >= 0.85 && qualities >= 0.75, `L3.3 clean songs read the root right in ${pct(roots)} of changes and major or minor in ${pct(qualities)} (want 85% and 75%)`, L3);
+  const micRoots = pooledShare(mics.map((run) => ({ value: run.card.values["root accuracy per change"], of: changesOf(run) })));
+  check(micRoots >= 0.6, `L3.4 mic-colored songs read the root right in ${pct(micRoots)} of changes (want 60%)`, L3);
+}
+{
+  const floors = JSON.parse(readFileSync(BANDS_FILE, "utf8")) as { fitted: boolean; sure: number; likely: number };
+  const green = setCalls.filter((call) => call.confidence >= floors.sure);
+  const yellow = setCalls.filter((call) => call.confidence >= floors.likely && call.confidence < floors.sure);
+  const rightIn = (calls: Call[]) => (calls.length ? calls.filter((call) => call.right).length / calls.length : null);
+  const refit = fitBands(setCalls);
+  const committed = floors.fitted && refit?.sure === floors.sure && refit?.likely === floors.likely;
+  check(
+    (rightIn(green) ?? 0) >= 0.9 && (rightIn(yellow) ?? 0) >= 0.7 && committed,
+    `L3.5 green is right ${pct(rightIn(green))} of ${green.length} and yellow ${pct(rightIn(yellow))} of ${yellow.length} at the committed floors, green from ${floors.sure} and yellow from ${floors.likely}, which ${committed ? "are" : "are not"} what --fit gives the set now (${JSON.stringify(refit)}, fitted ${floors.fitted})`,
+    L3,
+  );
+}
+{
+  const spans = clean.flatMap((run) => {
+    const { truth } = run.take;
+    return truth.changes.flatMap((change, i) => (change.chord === "N.C." ? [] : [soundingAt(run.listen, (change.at + (truth.changes[i + 1]?.at ?? songEnd(truth))) / 2)]));
+  });
+  const unsure = spans.filter((heard) => !heard?.chord).length / (spans.length || 1);
+  check(unsure <= 0.25, `L3.6 no more than 25% of changes are unsure on clean songs (${pct(unsure)} of ${spans.length})`, L3);
+}
+{
+  const run = clean.find((each) => each.score.title === "Gather at the River")!;
+  const { truth } = run.take;
+  const choruses = truth.sections.filter((section) => section.label === "CHORUS").map((section) => section.fromBar + 5);
+  const heard = choruses.map((bar) => soundingAt(run.listen, truth.downbeats[bar] + barLength(truth) / 2)?.chord ?? null);
+  check(
+    choruses.length === 3 && rootOf(heard[0]) === 4 && rootOf(heard[1]) === 4 && rootOf(heard[2]) === 9,
+    `L5.10 repeats with different chords keep their own chords: the last chorus's changed bar reads its Am while the first two read Em (${heard.map((chord) => chord ?? "?").join(", ")})`,
+    L3,
+  );
+}
+{
+  const stereo = SONGS.find((score) => score.stereo && score.sections.some((section) => section.lines?.length))!;
+  const take = render(stereo);
+  const mono = await listenTo(take.samples, `${stereo.title}.wav`, stereo.beatsPerBar, take.lyrics);
+  const both = await new Promise<Listen | null>((resolve, reject) => {
+    const worker = new FakeWorker("learn-worker.ts");
+    worker.onerror = (event) => (worker.terminate(), reject(event.error));
+    worker.onmessage = ({ data }) => {
+      const reply = data as FromWorker;
+      if (reply.kind !== "done") return;
+      worker.terminate();
+      resolve(reply.listen);
+    };
+    for (let at = 0; at < take.samples.length; at += rate) {
+      const chunk = take.samples.slice(at, at + rate);
+      const [left, right] = take.stereo!.map((channel) => channel.slice(at, at + rate));
+      worker.postMessage({ kind: "samples", chunk, sampleRate: rate }, [chunk.buffer]);
+      worker.postMessage({ kind: "stereo", left, right }, [left.buffer, right.buffer]);
+    }
+    worker.postMessage({ kind: "finish", beatsPerBar: stereo.beatsPerBar, lyrics: take.lyrics, source: { kind: "file", name: `${stereo.title}.wav`, stereo: true, sampleRate: rate }, expectedSeconds: take.samples.length / rate, stopped: "finished" });
+  });
+  const { source: _mono, ...heardMono } = mono ?? { source: null };
+  const { source: _both, ...heardBoth } = both ?? { source: null };
+  check(
+    !!mono && JSON.stringify(heardBoth) === JSON.stringify(heardMono),
+    `L3.11 the side view is used only when the source is stereo and only if the A/B keeps it: no A/B has kept it, so ${stereo.title} heard with both channels gives what its mono mix gives`,
+  );
+}
+
+/** Each true section boundary as bars from bar 1, and each heard one by the truth's downbeats. */
+const boundaries = (run: SetRun) => {
+  const { truth } = run.take;
+  const barOf = (time: number) => {
+    const k = Math.max(0, truth.downbeats.findLastIndex((down) => down <= time));
+    return k + (time - truth.downbeats[k]) / barLength(truth);
+  };
+  const beats = run.listen?.analysis.beats ?? [];
+  const heard = [...(run.listen?.sections ?? [])].sort((a, b) => a.fromBeat - b.fromBeat).slice(1).map((section) => barOf(beats[section.fromBeat] ?? songEnd(truth)));
+  return { truth: truth.sections.slice(1).map((section) => section.fromBar), heard };
+};
+{
+  const found = clean.map((run) => {
+    const { truth, heard } = boundaries(run);
+    return { value: truth.length ? truth.filter((bound) => heard.some((each) => Math.abs(each - bound) <= 1)).length / truth.length : 1, of: truth.length };
+  });
+  const share = pooledShare(found);
+  check(share >= 0.7, `L5.2 at least 70% of true boundaries are found within one bar on the set (${pct(share)} of ${found.reduce((sum, each) => sum + each.of, 0)})`, L5);
+  const falses = clean.map((run) => {
+    const { truth, heard } = boundaries(run);
+    return { title: run.score.title, count: heard.filter((each) => !truth.some((bound) => Math.abs(each - bound) <= 1)).length };
+  });
+  const over = falses.filter((each) => each.count > 1);
+  check(over.length === 0, `L5.3 no more than one false boundary per song (over one: ${over.map((each) => `${each.title} ${each.count}`).join(", ") || "none"})`);
+  const short = clean.flatMap((run) =>
+    (run.listen?.sections ?? []).filter((section) => section.toBeat - section.fromBeat < 4 * run.score.beatsPerBar).map((section) => `${run.score.title} beats ${section.fromBeat} to ${section.toBeat}`),
+  );
+  check(short.length === 0, `L5.5 a section shorter than four bars is not made (${short.slice(0, 3).join(", ") || "none"})`);
+}
+{
+  const pairs = clean.map((run) => {
+    const n = run.take.truth.sections.length;
+    return { value: run.card.values["repeat grouping"], of: (n * (n - 1)) / 2 };
+  });
+  const grouping = pooledShare(pairs);
+  const gather = clean.find((run) => run.score.title === "Gather at the River")!;
+  const { truth } = gather.take;
+  const beats = gather.listen?.analysis.beats ?? [];
+  const sections = gather.listen?.sections ?? [];
+  const at = (section: (typeof sections)[number]) => ({ start: beats[section.fromBeat] ?? 0, end: beats[section.toBeat] ?? songEnd(truth) });
+  const overlap = (a: { start: number; end: number }, b: { start: number; end: number }) => Math.max(0, Math.min(a.end, b.end) - Math.max(a.start, b.start));
+  const letters = truth.sections.map((section) => {
+    const span = { start: truth.downbeats[section.fromBar], end: truth.downbeats[section.toBar] ?? songEnd(truth) };
+    return sections.reduce((best, each) => (overlap(at(each), span) > overlap(at(best), span) ? each : best), sections[0])?.group ?? "?";
+  });
+  const alike = truth.sections.every((a, i) => truth.sections.every((b, j) => (a.group === b.group) === (letters[i] === letters[j])));
+  check(
+    alike && grouping >= 0.8,
+    `L5.4 repeats are grouped by letter: ${gather.score.title}'s ${truth.sections.map((section) => section.group).join(" ")} is heard ${letters.join(" ")}, and ${pct(grouping)} of section pairs across the set are grouped alike (want 80%)`,
+    L5,
+  );
+}
+{
+  const sung = clean.filter((run) => run.take.lyrics);
+  const labels = pooledShare(sung.map((run) => ({ value: run.card.values["section label accuracy"], of: run.take.truth.sections.length })));
+  check(labels >= 0.9, `L5.6 labels from the words are right on ${pct(labels)} of the sung songs' sections (want 90%)`, L5);
+  const audio = pooledShare(wordless.map((run) => ({ value: run.card.values["section label accuracy"], of: run.take.truth.sections.length })));
+  const bands = [...new Set(wordless.flatMap((run) => (run.listen?.sections ?? []).map((section) => section.band)))];
+  check(
+    audio >= 0.75 && bands.length === 1 && bands[0] === "likely",
+    `L5.7 labels from the audio alone, with no words, are right on ${pct(audio)} of the set's sections (want 75%) and all yellow (bands: ${bands.join(", ") || "none"})`,
+    L5,
+  );
+}
+{
+  const lineErrors = (set: SetRun[]) =>
+    set.flatMap((run) => {
+      const starts = new Map<number, number>();
+      for (const syllable of run.take.truth.syllables) if (!starts.has(syllable.line)) starts.set(syllable.line, syllable.at);
+      return (run.listen?.lines ?? []).filter((line) => starts.has(line.line)).map((line) => 1000 * Math.abs(line.start - starts.get(line.line)!));
+    });
+  const sungOf = (set: SetRun[]) => set.filter((run) => run.take.lyrics);
+  const [onFile, onMic] = [middle(lineErrors(sungOf(clean))), middle(lineErrors(sungOf(mics)))];
+  check(onFile !== null && onFile <= 300, `L8.3 line starts land within 300 ms, median, on the clean sung set (${onFile === null ? "no lines timed" : `${Math.round(onFile)} ms`})`, L8);
+  check(onMic !== null && onMic <= 500, `L8.3 line starts land within 500 ms, median, on the mic case (${onMic === null ? "no lines timed" : `${Math.round(onMic)} ms`})`, L8);
+  const placed = (run: SetRun) => run.take.truth.changes.filter((change) => run.take.truth.syllables.some((syllable) => syllable.at === change.at)).length;
+  const exact = pooledShare(sungOf(clean).map((run) => ({ value: run.card.values["syllable placement exact"], of: placed(run) })));
+  const oneSyllable = pooledShare(sungOf(clean).map((run) => ({ value: run.card.values["syllable placement within one syllable"], of: placed(run) })));
+  check(exact >= 0.85 && oneSyllable >= 0.95, `L8.4 each chord sung on a syllable is heard on it in ${pct(exact)} of the clean sung set, within one syllable in ${pct(oneSyllable)} (want 85% and 95%)`, L8);
+}
+
 if (fit) {
   const floors = fitBands(setCalls);
   if (!floors) console.log(`--fit: no heard changes carry a confidence yet, so ${BANDS_FILE} is left as it is`);

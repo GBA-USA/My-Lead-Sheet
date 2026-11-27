@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import { NOT_A_MEMBER_CLOSE, firstUnreadSeq, isMuted, newMsgId, previewText, unread, withMessages, type BandSongCard, type ChatEntry, type ChatMessage } from "./chat-model";
 import { onDelivery, onQueueChange, queueMessage, queuedMessages, sendQueued, type Delivery } from "./chat-queue";
 export { queueOwner } from "./chat-queue";
+import { NOT_ON_LINEUP_CLOSE } from "./links/link";
 import type { Route } from "./route";
 import { SEND_MESSAGES } from "./send-song";
 import { ApiError, api } from "./sign-in-methods";
@@ -16,6 +17,9 @@ export const MESSAGES: Record<string, string> = {
   "not-friends": "You can only message friends and bandmates.",
   "not-found": "That person isn't here any more.",
   "bad-request": "That conversation isn't here.",
+  guest: "This pass has ended.",
+  "pass-revoked": "This pass was ended by the band.",
+  "pass-ended": "This pass has ended.",
 };
 
 export const chatMessage = (error: unknown) => {
@@ -23,7 +27,13 @@ export const chatMessage = (error: unknown) => {
   return MESSAGES[reason] ?? "Something went wrong. Try again.";
 };
 
-export const closedRoom = (error: unknown) => error instanceof ApiError && ["not-a-member", "no-band", "not-friends"].includes(error.reason);
+/** What a guest hears once no pass of theirs opens the chat: `guest` from a chat call, or the room's own word when it closes their socket. */
+const PASS_OVER = ["guest", "pass-revoked", "pass-ended"];
+
+export const closedRoom = (error: unknown) => error instanceof ApiError && ["not-a-member", "no-band", "not-friends", ...PASS_OVER].includes(error.reason);
+
+/** A refusal that no retry can change, so the phone stops asking: the room is closed to this account, the session ended, or the request names no room. */
+const final = (error: unknown) => closedRoom(error) || (error instanceof ApiError && (error.status === 400 || error.status === 401));
 
 const SIGNED_OUT_CLOSE = 4401;
 const RECONNECT_MS = 3000;
@@ -147,20 +157,36 @@ export function useRoomSocket({
     setMessages(null);
     setNewLineAt(null);
     setError("");
+    const stop = () => {
+      stopped = true;
+      clearTimeout(timer);
+      socket?.close();
+    };
+    /** What the room refused, from a chat call or a socket close. A final refusal stops the socket first, so the screen hears it once and nothing asks again. */
+    const refused = (caught: unknown) => {
+      if (stopped) return;
+      if (final(caught)) stop();
+      return caught instanceof ApiError && caught.status === 400 ? onGone(caught) : failed(caught);
+    };
+    const read = () => api<{ messages: ChatMessage[] }>("/api/chat/open", { roomId, after: lastSeq });
     const fetchNew = () =>
-      api<{ messages: ChatMessage[] }>("/api/chat/open", { roomId, after: lastSeq }).then((reply) => {
+      read().then((reply) => {
         if (stopped) return;
         setError("");
         lastSeq = Math.max(lastSeq, ...reply.messages.map((m) => m.seq));
         setMessages((current) => current ?? []);
         arrived(reply.messages);
-      }, (caught) => (caught instanceof ApiError && caught.status === 400 ? onGone(caught) : failed(caught)));
+      }, refused);
     const connect = () => {
       if (stopped) return;
+      let greeted = false;
       socket = new WebSocket(socketUrl(roomId));
       socket.onmessage = (event) => {
         const inbound = JSON.parse(String(event.data)) as { kind: string; message?: ChatMessage };
-        if (inbound.kind === "hello") fetchNew().then(sendQueued);
+        if (inbound.kind === "hello") {
+          greeted = true;
+          fetchNew().then(sendQueued);
+        }
         if (inbound.kind === "message" && inbound.message) {
           lastSeq = Math.max(lastSeq, inbound.message.seq);
           arrived([inbound.message]);
@@ -168,18 +194,18 @@ export function useRoomSocket({
       };
       socket.onclose = (event) => {
         if (stopped) return;
-        if (event.code === NOT_A_MEMBER_CLOSE) return failed(new ApiError("not-a-member", 403));
+        if (event.code === NOT_A_MEMBER_CLOSE) return refused(new ApiError("not-a-member", 403));
+        // The room closes a chat socket with this code only when the band revokes a guest's last live pass. The close reason is the room's word for it.
+        if (event.code === NOT_ON_LINEUP_CLOSE) return refused(new ApiError(PASS_OVER.includes(event.reason) ? event.reason : "guest", 410));
         if (event.code === SIGNED_OUT_CLOSE) return onSignedOut();
         timer = setTimeout(connect, RECONNECT_MS);
+        // A browser reports a refused upgrade only as close 1006, the same as no network. The chat's own call gives the refusal back, so a phone the room shut out stops asking.
+        if (!greeted) read().catch((caught) => final(caught) && refused(caught));
       };
     };
     fetchNew();
     connect();
-    return () => {
-      stopped = true;
-      clearTimeout(timer);
-      socket?.close();
-    };
+    return stop;
   }, [roomId]);
 
   useEffect(() => {

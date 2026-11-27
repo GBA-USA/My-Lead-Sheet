@@ -45,7 +45,7 @@ export type CodeRow = {
 
 type Target = { targetId: string };
 
-/** How a signed-in player gets each kind of code. A kind with no entry can't be made yet. */
+/** How a signed-in player gets each kind of code. A kind with no entry can't be made here: a guest code is made with its pass (worker/room-guest.ts), so it ends when the pass does. */
 interface Minter {
   minutes: number;
   /** Hand back the player's live code of this kind instead of making another, so Stop this code stops the one link they shared. */
@@ -71,9 +71,28 @@ async function payloadFor(env: Env, row: CodeRow): Promise<string> {
   return `${text}.${toBase64Url(new Uint8Array(mac))}`;
 }
 
-async function codeView(env: Env, row: CodeRow) {
+export async function codeView(env: Env, row: CodeRow) {
   const code = await payloadFor(env, row);
   return { kind: row.kind, code, link: `${env.APP_ORIGIN ?? ""}/c/${code}`, expiresAt: row.expires_at };
+}
+
+/**
+ * Keeps a code made now, clearing out ended ones first. A code id already kept stays as it was, so a retry that names
+ * the same id gets the first code back.
+ */
+export function storeCode(c: Context, code: Pick<CodeRow, "code_id" | "kind" | "target_id" | "created_by" | "expires_at">): CodeRow {
+  c.sql.exec(`DELETE FROM codes WHERE expires_at <= ?`, c.now);
+  c.sql.exec(
+    `INSERT OR IGNORE INTO codes (code_id, kind, target_id, created_by, nonce, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    code.code_id,
+    code.kind,
+    code.target_id,
+    code.created_by,
+    toBase64Url(randomBytes(6)),
+    code.expires_at,
+    c.now,
+  );
+  return c.sql.exec<CodeRow>(`SELECT * FROM codes WHERE code_id = ?`, code.code_id).one();
 }
 
 /**
@@ -107,27 +126,13 @@ export const CODE_ROUTES: Record<string, Route> = {
           .toArray()[0]
       : undefined;
     if (reused) return { body: await codeView(c.env, reused) };
-    const row: CodeRow = {
+    const row = storeCode(c, {
       code_id: toBase64Url(randomBytes(12)),
       kind: kind as CodeKind,
       target_id: target.targetId,
       created_by: user.user_id,
-      nonce: toBase64Url(randomBytes(6)),
       expires_at: c.now + minter.minutes * (Number(c.env.CODE_MINUTE_MS) || MINUTE_MS),
-      stopped_at: null,
-      created_at: c.now,
-    };
-    c.sql.exec(`DELETE FROM codes WHERE expires_at <= ?`, c.now);
-    c.sql.exec(
-      `INSERT INTO codes (code_id, kind, target_id, created_by, nonce, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      row.code_id,
-      row.kind,
-      row.target_id,
-      row.created_by,
-      row.nonce,
-      row.expires_at,
-      c.now,
-    );
+    });
     return { body: await codeView(c.env, row) };
   }, { maxBody: MAX_CODE_BODY }),
 
@@ -162,6 +167,13 @@ const HEADLINE: Record<CodeRefusal, string> = {
   "code-stopped": "This code was stopped",
 };
 
+/** A guest pass is the band's to end, so its link says so in a guest's words (PLAN.md 7.14). */
+const GUEST_HEADLINE: Partial<Record<CodeRefusal, string>> = {
+  "code-ended": "This pass has ended",
+  "code-stopped": "This pass was ended by the band",
+};
+const GUEST_WHY = "Ask the band for a new pass.";
+
 /** The server can't know the visitor's time zone, so the day is UTC's. */
 const dayOf = (ms: number) => new Date(ms).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
 
@@ -186,7 +198,8 @@ export async function codeLanding(sql: SqlStorage, env: Env, payload: string): P
   } catch (error) {
     if (!(error instanceof Refused) || !(error.reason in CODE_REFUSED)) throw error;
     const reason = error.reason as CodeRefusal;
-    const page = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${APP_NAME}</title><h1>${escapeHtml(HEADLINE[reason])}</h1><p>${escapeHtml(whyLine(sql, reason, payload))}</p><p><a href="${escapeHtml(origin)}/">Open ${APP_NAME}</a></p></html>`;
+    const guest = readPayload(payload)?.kind === "guest" ? GUEST_HEADLINE[reason] : undefined;
+    const page = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${APP_NAME}</title><h1>${escapeHtml(guest ?? HEADLINE[reason])}</h1><p>${escapeHtml(guest ? GUEST_WHY : whyLine(sql, reason, payload))}</p><p><a href="${escapeHtml(origin)}/">Open ${APP_NAME}</a></p></html>`;
     return new Response(page, { status: error.status, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
   }
 }

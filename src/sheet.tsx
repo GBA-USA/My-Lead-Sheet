@@ -5,13 +5,9 @@ import { usePlayingLearned } from "./cues";
 import { onPlayhead, useLookAhead } from "./hooks";
 import { BeatDot, type MetronomeState } from "./metronome-view";
 import {
-  displayBassNote,
-  displayChordCell,
   displayChordLine,
   displayKeyLabel,
-  displayPlace,
   namesChords,
-  nashvilleNumber,
   originalKey,
   type Notation,
 } from "./music";
@@ -54,9 +50,6 @@ export function LeadSheet({
       </p>
 
       {song.feel ? <p className="feel">Feel: {song.feel}</p> : null}
-
-      <h2 className="sheet-label">Your bass notes</h2>
-      <BassTable song={song} semitones={semitones} notation={notation} />
 
       {song.howToPlay ? (
         <>
@@ -113,49 +106,6 @@ function OriginalKeyHint({ song, semitones }: { song: Song; semitones: number })
   return original ? <span className="hint"> · original key ({original})</span> : null;
 }
 
-function BassTable({
-  song,
-  semitones,
-  notation,
-}: {
-  song: Song;
-  semitones: number;
-  notation: Notation;
-}) {
-  return (
-    <table className="bass">
-      <thead>
-        <tr>
-          <th scope="col">Chord</th>
-          <th scope="col">Nashville</th>
-          <th scope="col">
-            Bass
-            <br />
-            note
-          </th>
-          <th scope="col">Easiest place to play it</th>
-        </tr>
-      </thead>
-      <tbody>
-        {song.bassNotes.map((note, index) => {
-          const number = nashvilleNumber(note, song);
-          return (
-            <tr key={`${note.chord}-${index}`}>
-              <td className="strong">{displayChordCell(note, song, semitones, notation)}</td>
-              <td>
-                {number}
-                {number === note.nashville ? null : <span className="hint"> ({note.nashville})</span>}
-              </td>
-              <td className="strong">{displayBassNote(note.bassNote, song, semitones, notation)}</td>
-              <td>{displayPlace(note, song, semitones)}</td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
-  );
-}
-
 function Chart({
   song,
   scale,
@@ -208,7 +158,7 @@ function Chart({
       {song.body.map((section, index) => {
         const learned = playing?.sections[index];
         const heard = learned?.heading === section.heading ? learned.heard : undefined;
-        const rows = heard ? [{ bars: heardRow(heard) }, ...section.lines] : section.lines;
+        const rows = heard ? [{ bars: heardRow(heard.map((cell) => cell.chord)) }, ...section.lines] : section.lines;
         return (
           <section key={`${section.heading}-${index}`} className="chart-section">
             <h3 className="chart-heading">{section.heading}</h3>

@@ -159,9 +159,9 @@ const openChooser = async () => {
   await tap(CARET, "");
   await tap("[role=dialog] button", "Learn this song");
 };
-const tapRow = async (label: string) => {
+const tapRow = async (label: string, within = CHOOSER_ROWS) => {
   const box = await evaluate<{ x: number; y: number } | null>(`(() => {
-    const el = document.querySelector(${JSON.stringify(`${CHOOSER_ROWS} button[aria-label="${label}"]`)});
+    const el = document.querySelector(${JSON.stringify(`${within} button[aria-label="${label}"]`)});
     if (!el) return null;
     const box = el.getBoundingClientRect();
     return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
@@ -289,7 +289,14 @@ try {
   await scenario("Learn by listen", async () => {
     check(await evaluate<boolean>(`!window.__mic`), "the mic is not asked for before Learn by listen");
     await openChooser();
+    await evaluate(`delete window.__audioInTap`);
     await tapRow("Learn by listen");
+    await until(`!!document.querySelector(".learn[role=dialog]")`, "the Learn sheet");
+    const ways = await evaluate<string[]>(`[...document.querySelectorAll(".learn[role=dialog] :is(input, button)")].map((el) => el.getAttribute("aria-label") ?? el.innerText.trim())`);
+    check(JSON.stringify(ways) === `["Pick the song's file","Listen with the mic","Cancel"]`, `Learn by listen opens the Learn sheet on its two ways in, the file first, with Cancel (${ways.join(", ")})`);
+    await pause(250);
+    check(await evaluate<boolean>(`!window.__mic && window.__audioInTap === undefined`), "neither the mic nor its audio starts until the player picks the mic");
+    await tapRow("Listen with the mic", ".learn[role=dialog]");
     await until(`!!window.__mic`, "the mic");
     check(await evaluate<boolean>(`document.querySelector(".learn[role=dialog]")?.innerText.includes("Play the whole song near the phone")`), "Learn by listen opens the Learn sheet and starts listening");
     check(await evaluate<boolean>(`window.__audioInTap === true`), "its audio starts inside the tap itself, where browsers allow it");

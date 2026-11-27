@@ -3,13 +3,20 @@ import { join } from "node:path";
 import { build } from "esbuild";
 import { BPM, FORM, HEAD, blues, truthOf, type Take } from "./blues.ts";
 import { openSite } from "./chrome.ts";
+import { HEAD as SCORE_HEAD, SAMPLE_RATE as SCORE_RATE, render, type Score } from "./learn-render.ts";
+import type { Heard, HeardChange } from "../src/learn-result.ts";
 
 /** Set SHOTS to a folder to save Review with heard bars and the learned version playing with its kept row. */
 const shots = process.env.SHOTS;
 
 const root = new URL("..", import.meta.url).pathname;
 const bundled = await build({
-  stdin: { contents: 'export * from "./src/learn-analyze.ts"; export * from "./src/learn-chords.ts";', resolveDir: root, loader: "ts" },
+  stdin: {
+    contents:
+      'export * from "./src/learn-analyze.ts"; export * from "./src/learn-chords.ts"; export { bandOf } from "./src/learn-result.ts"; export { parseChord, pitchClass } from "./src/music.ts";',
+    resolveDir: root,
+    loader: "ts",
+  },
   bundle: true,
   write: false,
   format: "esm",
@@ -17,12 +24,22 @@ const bundled = await build({
   logLevel: "silent",
 });
 const app = (await import(`data:text/javascript,${encodeURIComponent(bundled.outputFiles[0].text)}`)) as typeof import("../src/learn-analyze.ts") &
-  typeof import("../src/learn-chords.ts");
+  typeof import("../src/learn-chords.ts") &
+  Pick<typeof import("../src/learn-result.ts"), "bandOf"> &
+  Pick<typeof import("../src/music.ts"), "parseChord" | "pitchClass">;
 
+/** A TESTS-FIRST case its cook has not landed yet: it runs and prints, but its FAIL does not fail check:heard. */
+type Pending = "pending until l3";
+const L3: Pending = "pending until l3";
 let failures = 0;
-function check(ok: boolean, message: string) {
-  if (!ok) failures += 1;
-  console.log(`${ok ? "ok  " : "FAIL"} ${message}`);
+function check(ok: boolean, message: string, pending?: Pending) {
+  if (pending && ok) {
+    failures += 1;
+    console.log(`FAIL ${message}: it holds now, so remove its "${pending}" mark`);
+    return;
+  }
+  if (!ok && !pending) failures += 1;
+  console.log(`${ok ? "ok  " : "FAIL"} ${message}${pending ? ` (${pending})` : ""}`);
 }
 
 const SAMPLE_RATE = 48_000;
@@ -70,13 +87,16 @@ function score(name: string, take: Take, heard: { chord: string | null; confiden
 }
 
 const rows: string[] = [];
+const heardTakes = new Map<string, Heard | null>();
 for (const { name, take, least } of TAKES) {
   const samples = blues(SAMPLE_RATE, take);
   const listener = new app.SongListener(SAMPLE_RATE);
   const started = performance.now();
   for (let at = 0; at < samples.length; at += 4096) listener.push(samples.subarray(at, at + 4096));
   const listened = performance.now() - started;
-  const analysis = listener.analyze(4)?.analysis;
+  const whole = listener.analyze(4);
+  heardTakes.set(name, whole);
+  const analysis = whole?.analysis;
   if (!analysis) {
     console.log(`     ${name}: Learn hears no steady beat, so there are no bars to hear`);
     rows.push(`| ${name} | no steady beat heard | | | |`);
@@ -101,6 +121,105 @@ console.log(`\nSURE = ${app.SURE}\n`);
 console.log(`| take at ${BPM} BPM, ${SIX} choruses of ${FORM.length} bars | right | wrong | not sure | right per chorus |`);
 console.log("| --- | --- | --- | --- | --- |");
 for (const row of rows) console.log(row);
+
+// TESTS-FIRST for L3, chords heard with no chart. Each line starts with its pass condition's number in LEARN-PLAN.md
+// L3. They read `changes` from the listener, as a listen gives them, and rely on nothing else of L3's.
+const VOCABULARY: Record<string, number[]> = { "": [0, 4, 7], m: [0, 3, 7], "7": [0, 4, 7, 10], m7: [0, 3, 7, 10], maj7: [0, 4, 7, 11], sus2: [0, 2, 7], sus4: [0, 5, 7] };
+/** One of 12 roots times the seven qualities, with a slash bass only where the bass is a chord tone other than the root. */
+const inVocabulary = (name: string) => {
+  const chord = app.parseChord(name);
+  const tones = chord && VOCABULARY[chord.quality];
+  if (!chord || !tones) return false;
+  if (!chord.bass) return true;
+  const step = (app.pitchClass(chord.bass) - app.pitchClass(chord.root) + 12) % 12;
+  return step !== 0 && tones.includes(step);
+};
+const rootOf = (name: string | null) => (name && app.parseChord(name) ? app.pitchClass(app.parseChord(name)!.root) : null);
+/** The heard change sounding at `time`. */
+const soundingAt = (changes: HeardChange[], time: number) => changes.filter((change) => change.at <= time + 1e-9).at(-1) ?? null;
+const named = (change: HeardChange | null) => (change ? `${change.chord ?? "?"} at ${change.at.toFixed(2)} s, ${change.confidence}` : "none");
+
+{
+  const swapped = heardTakes.get("silent bar, drums-only bar, G7 bar")?.changes ?? [];
+  const barMiddle = (bar: number) => HEAD + (4 * bar + 2) * (60 / BPM);
+  const outside = swapped.filter((change) => change.chord !== null && !inVocabulary(change.chord));
+  const g7 = soundingAt(swapped, barMiddle(49));
+  check(
+    swapped.length > 0 && outside.length === 0 && (g7?.chord === "G7" || g7?.chord === "G"),
+    `L3.1 every change names a chord from the fixed vocabulary or none, never only from the chart: the blues' G7 bar reads G7 or G (G7 bar: ${named(g7)}; outside the vocabulary: ${outside.map((change) => change.chord).join(", ") || "none"})`,
+    L3,
+  );
+  const unsure = [16, 32].map((bar) => soundingAt(swapped, barMiddle(bar)));
+  const neighbours = [15, 17, 31, 33].map((bar) => ({ bar, change: soundingAt(swapped, barMiddle(bar)) }));
+  const heardNeighbours = neighbours.filter(({ bar, change }) => rootOf(change?.chord ?? null) === rootOf(FORM[bar % 12]));
+  check(
+    unsure.every((change) => change?.chord === null) && heardNeighbours.length === neighbours.length,
+    `L3.7 a silent bar and a drums-only bar are unsure, not guessed, while the bars around them are named (silent ${named(unsure[0])}, drums only ${named(unsure[1])}; neighbours named ${heardNeighbours.length} of ${neighbours.length})`,
+    L3,
+  );
+}
+
+/** A score heard the way the phone hears a picked file: at its decode rate, a second at a time. */
+function hearScore(samples: Float32Array): Heard | null {
+  const ear = new app.SongListener(SCORE_RATE);
+  for (let at = 0; at < samples.length; at += SCORE_RATE) ear.push(samples.subarray(at, at + SCORE_RATE));
+  return ear.analyze(4);
+}
+const barsOf = (text: string) => text.split("|").map((bar) => [bar.trim()]);
+const songOf = (title: string, bass: Score["bass"], ...parts: string[]): Score => ({
+  title,
+  bpm: 100,
+  beatsPerBar: 4,
+  stereo: false,
+  swing: false,
+  strum: "light",
+  bass,
+  sections: parts.map((chords, i) => ({ label: ["INTRO", "VERSE", "OUTRO"][i], group: "ABC"[i], bars: barsOf(chords) })),
+});
+const scoreBar = (bar: number, beat = 2) => SCORE_HEAD + ((4 * bar + beat) * 60) / 100;
+/** The heard changes over bars 5 to 10 of a 16-bar score, the middle of its 8-bar verse. */
+const verseChanges = (heard: Heard | null) => [5, 6, 7, 8, 9, 10].map((bar) => soundingAt(heard?.changes ?? [], scoreBar(bar)));
+
+{
+  const overA = render(songOf("C over A", "root", "C | C | C | C", "C/A | C/A | C/A | C/A | C/A | C/A | C/A | C/A", "C | C | C | C"));
+  const heard = verseChanges(hearScore(overA.samples));
+  const reads = (change: HeardChange | null) => {
+    const names = change ? [change.chord, ...change.alternatives.map((each) => each.chord)] : [];
+    const minorOnA = names.some((name) => rootOf(name) === 9 && !!app.parseChord(name ?? "")?.minor);
+    const majorOnC = names.some((name) => rootOf(name) === 0 && !app.parseChord(name ?? "")?.minor);
+    return ["Am", "Am7", "C"].includes(change?.chord ?? "") && minorOnA && majorOnC && app.bandOf(change!.confidence) !== "sure";
+  };
+  check(
+    heard.every(reads),
+    `L3.8 the bass root is read from the low view and a stable bass that disagrees lowers confidence: C E G over a steady A reads Am or C with both offered and is not green (${heard.map((change) => `${named(change)} [${change?.alternatives.map((each) => each.chord).join(" ") ?? ""}]`).join("; ")})`,
+    L3,
+  );
+}
+{
+  const overFSharp = render(songOf("D over F#", "root", "D | D | D | D", "D/F# | D/F# | D/F# | D/F# | D/F# | D/F# | D/F# | D/F#", "G | G | D | D"));
+  const heard = verseChanges(hearScore(overFSharp.samples));
+  const slash = (change: HeardChange | null) => {
+    const chord = app.parseChord(change?.chord ?? "");
+    return !!chord?.bass && app.pitchClass(chord.root) === 2 && app.pitchClass(chord.bass) === 6 && chord.quality === "";
+  };
+  check(heard.every(slash), `L3.9 a slash chord is named when the bass is a stable chord tone that is not the root: D over a steady F# reads D/F# (${heard.map(named).join("; ")})`, L3);
+}
+{
+  const form = ["G | G | C | C", "G | G | D | D | G | G | C | C", "G | G | G | G"] as const;
+  const plain = render(songOf("Two bars of G", "root", ...form));
+  const blip = render(songOf("Two bars of G", "root", form[0], `C | ${form[1].split("|").slice(1).join("|")}`, form[2]));
+  const beat = (k: number) => Math.round((SCORE_HEAD + (k * 60) / 100) * SCORE_RATE);
+  const samples = Float32Array.from(plain.samples);
+  samples.set(blip.samples.subarray(beat(18), beat(19)), beat(18));
+  const heard = hearScore(samples)?.changes ?? [];
+  const inside = heard.filter((change) => change.at > scoreBar(4, 0.5) && change.at < scoreBar(6, 0));
+  const through = [scoreBar(4, 0.5), scoreBar(4, 3.5), scoreBar(5, 2)].map((time) => soundingAt(heard, time));
+  check(
+    inside.length === 0 && through.every((change) => change?.chord === "G"),
+    `L3.10 a one-beat blip inside a two-bar chord does not split it: one beat of C inside two bars of G reads G throughout (changes inside: ${inside.map(named).join("; ") || "none"}; through it: ${through.map(named).join("; ")})`,
+    L3,
+  );
+}
 
 const page = await build({
   entryPoints: [join(root, "scripts/blues.ts")],
@@ -189,10 +308,18 @@ try {
   await click('[aria-label="Scroll settings"]');
   await click("[role=dialog] button", "Learn this song");
   await click('[role=dialog] button[aria-label="Learn by listen"]');
+  await until(`!!document.querySelector(".learn[role=dialog]")`, "the Learn sheet");
+  const ways = await evaluate<string[]>(`[...document.querySelectorAll(".learn[role=dialog] :is(input, button)")].map((el) => el.getAttribute("aria-label") ?? el.textContent.trim())`);
+  check(JSON.stringify(ways) === `["Pick the song's file","Listen with the mic","Cancel"]`, `Learn by listen opens the Learn sheet on its two ways in, the file first, with Cancel (${ways.join(", ")})`);
+  await pause(250);
+  check(await evaluate<boolean>(`!window.__mic`), "the mic is not asked for until the player picks it");
+  await click('.learn[role=dialog] button[aria-label="Listen with the mic"]');
   await until(`!!window.__mic`, "the mic");
   await evaluate(`window.__play(${JSON.stringify({ ...quiet, swaps: { [OUTSIDE]: "G7" } })})`);
   await click(".learn-actions button", "Stop");
   await until(`!!document.querySelector(".learn-sections")`, "the Review panel");
+  const from = await evaluate<string>(`document.querySelector(".learn-coverage")?.textContent ?? ""`);
+  check(from.startsWith("From the mic · "), `the Review's first line says the song came from the mic (${from})`);
 
   const placed = await evaluate<{ name: string; beat: number }[]>(`[...document.querySelectorAll(".learn-sections li")].map((li) => {
     const [, bar, beat] = li.querySelector(".learn-at").textContent.match(/bar (\\d+)(?:, beat (\\d+))?/);

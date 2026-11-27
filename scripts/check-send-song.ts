@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { build } from "esbuild";
 import type { SongContent } from "../src/band-library-model.ts";
 import type { ChatEntry, ChatMessage } from "../src/chat-model.ts";
 import type { ScrollVersion } from "../src/scroll-timing.ts";
@@ -33,6 +36,17 @@ type StoredSong = Song & { copy?: { id: string; canSendOn: boolean; from?: { nam
 type Reply = { status: number; body: Record<string, any> };
 
 const root = new URL("..", import.meta.url).pathname;
+const codecBundle = await build({
+  entryPoints: [join(fileURLToPath(new URL("..", import.meta.url)), "src/chordpro.ts")],
+  bundle: true,
+  write: false,
+  format: "esm",
+  platform: "neutral",
+  logLevel: "silent",
+});
+const { chordProToSong } = (await import(
+  `data:text/javascript;base64,${Buffer.from(codecBundle.outputFiles[0].text).toString("base64")}`
+)) as { chordProToSong(text: string): SongContent };
 /** Set SHOTS to a folder to save the send screens at phone size. */
 const shots = process.env.SHOTS;
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
@@ -74,7 +88,13 @@ type SendBody = { userId: string; msgId: string; shareId: string; song: SongCont
 const sendBody = (to: { userId: string }, song: SongContent, over: Partial<SendBody> = {}): SendBody => ({ userId: to.userId, msgId: newId(), shareId: newId(), song, versions: [], data: null, choice: "public", ...over });
 const send = (from: Phone, to: { userId: string }, song: SongContent, over: Partial<SendBody> = {}) => from.call("/api/chat/send-song", sendBody(to, song, over));
 const songMessages = async (who: Phone, roomId: string) => ((await who.call("/api/chat/open", { roomId })).body.messages ?? []).filter((m: ChatMessage) => m.kind === "song") as ChatMessage[];
-const songIn = (message: ChatMessage) => JSON.parse(message.text) as SongMessage;
+const songIn = (message: ChatMessage): SongMessage => {
+  const body = JSON.parse(message.text) as SongMessage & { song: SongContent | { chordpro: string } };
+  if (body.song && typeof (body.song as { chordpro?: unknown }).chordpro === "string") {
+    return { ...body, song: chordProToSong((body.song as { chordpro: string }).chordpro) };
+  }
+  return body as SongMessage;
+};
 const dmOf = async (a: Phone, b: { userId: string }) => (await a.call("/api/chat/dm", { userId: b.userId })).body.roomId as string;
 const dmTitles = async (who: Phone) => ((await who.call("/api/chat")).body.chats as ChatEntry[]).filter((c) => c.kind === "dm").map((c) => c.title);
 
@@ -113,7 +133,14 @@ try {
   const app = await appPage(site);
   const appCalls = (path: string, body: object) =>
     site.evaluate<Reply>(`fetch(${js(path)}, { method: "POST", headers: { "content-type": "application/json" }, body: ${js(js(body))} }).then(async (r) => ({ status: r.status, body: await r.json() }))`);
-  const stored = () => site.evaluate<StoredSong[]>(`JSON.parse(localStorage.getItem("leadSheetsLibrary") ?? "{}").songs ?? []`);
+  const stored = async (): Promise<StoredSong[]> => {
+    const raw = await site.evaluate<Array<Record<string, unknown>>>(`JSON.parse(localStorage.getItem("leadSheetsLibraryV2") ?? "{}").songs ?? []`);
+    return raw.map((entry) =>
+      typeof entry.chordpro === "string"
+        ? ({ ...chordProToSong(entry.chordpro), id: entry.id as number, ...(entry.copy ? { copy: entry.copy as StoredSong["copy"] } : {}) } as StoredSong)
+        : (entry as unknown as StoredSong),
+    );
+  };
   const dialogButtons = (scope = "document.querySelector('[role=dialog]')") => site.evaluate<{ text: string; disabled: boolean }[]>(`[...(${scope}?.querySelectorAll("button") ?? [])].map((b) => ({ text: b.textContent.trim(), disabled: b.disabled }))`);
   /** Taps the first enabled button whose text starts with `start`, anywhere or inside `scope`. */
   const tap = async (start: string, scope = "document") => {

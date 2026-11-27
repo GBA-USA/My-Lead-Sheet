@@ -1,12 +1,17 @@
 import seedLibrary from "../data/library.json";
 import { PER_ACCOUNT, SONG_SETTING_KEYS } from "./backup-keys";
+import { chordProToSong, normalizeChordPro, songToChordPro, type SongContent } from "./chordpro";
 import { clampScrollPercent, isNotation, pitchClass, type Notation } from "./music";
 import { parsePersonal, type PersonalDefaults } from "./personal-settings-model";
 import { CHOICE_WORDS, type RouteChoice } from "./routes";
-import type { Learned, Mark, ScrollPlan, Span, Tempo } from "./scroll-timing";
-import type { BassNote, ChartLine, ChartSection, CopyMark, Library, LibraryFile, Song, SongData, SongRef } from "./types";
+import type { HeardCell, Learned, Mark, ScrollPlan, Span, Tempo } from "./scroll-timing";
+import type { ChartLine, ChartSection, CopyMark, Library, LibraryFile, Song, SongData, SongRef } from "./types";
 
-export const LIBRARY_KEY = "leadSheetsLibrary";
+export const LIBRARY_KEY = "leadSheetsLibraryV2";
+/** Earlier library key, left untouched for open tabs on an older build until an account change. */
+export const OLD_LIBRARY_KEY = "leadSheetsLibrary";
+/** Prints of songs and setlists already taken in from the earlier library key. */
+export const LIBRARY_TAKEN_KEY = "leadSheetsLibraryTaken";
 export const TEXT_SCALE_KEY = "leadSheetsTextScale";
 /** Per-song scroll percentage, stored under `leadSheetsScrollPercent.<ref key>`. */
 export const SCROLL_PERCENT_KEY = "leadSheetsScrollPercent";
@@ -14,7 +19,9 @@ export const SCROLL_PERCENT_KEY = "leadSheetsScrollPercent";
 export const NOTATION_KEY = "leadSheetsNotation";
 export const PENDING_INVITE_KEY = "leadSheetsPendingInvite";
 /** This phone's sync state for the signed-in account (`src/backup.ts`). Present only while signed in. */
-export const BACKUP_KEY = "leadSheetsBackup";
+export const BACKUP_KEY = "leadSheetsBackupV2";
+/** Earlier backup state key, left untouched for open tabs on an older build until an account change. */
+export const OLD_BACKUP_KEY = "leadSheetsBackup";
 /** Each backed-up value an account left on this phone when it signed out, by key: that account and a print of the value. */
 export const LEFT_BY_KEY = "leadSheetsLeftBy";
 /** `leadSheetsSetAside.<account id>`: that account's values moved off this phone's keys while another account's backup used them. */
@@ -86,13 +93,15 @@ const isNote: Check = (value) => {
   }
 };
 
-/** Every field a screen reads. A stored item that fails is dropped, so the seed copy of it comes back. */
-type StoredSong = LibraryFile["songs"][number];
+/** A song stored as ChordPro text, or a legacy JSON object saved before ChordPro storage. */
+export type ChordProStoredSong = { id: number; copy?: CopyMark; chordpro: string };
+type LegacyStoredSong = LibraryFile["songs"][number];
+export type StoredSong = ChordProStoredSong | LegacyStoredSong;
 type StoredSetlist = LibraryFile["setlists"][number];
 
 const isCopy = shaped<CopyMark>({ id: isString, canSendOn: (value) => typeof value === "boolean", from: optional(shaped<{ name: string }>({ name: isString })) });
 
-const isSong = shaped<StoredSong>({
+const isLegacySong = shaped<LegacyStoredSong>({
   id: isId,
   title: isString,
   artist: isString,
@@ -109,7 +118,6 @@ const isSong = shaped<StoredSong>({
   atAGlance: isString,
   howToPlay: isString,
   practiceTip: isString,
-  bassNotes: listOf(shaped<BassNote>({ chord: isString, nashville: isString, bassNote: isString, position: isString })),
   body: listOf(
     shaped<ChartSection>({
       heading: isString,
@@ -124,13 +132,57 @@ const isSong = shaped<StoredSong>({
     }),
   ),
   copy: optional(isCopy),
+  kept: optional(listOf(isString)),
 });
+
+const isChordProSong = (value: unknown): value is ChordProStoredSong =>
+  !!value &&
+  typeof value === "object" &&
+  isId((value as ChordProStoredSong).id) &&
+  typeof (value as ChordProStoredSong).chordpro === "string" &&
+  optional(isCopy)((value as ChordProStoredSong).copy);
+
+const isStoredSong: Check = (value) => isChordProSong(value) || isLegacySong(value);
 const isSetlist = shaped<StoredSetlist>({ id: isId, name: isString, songIds: listOf(isId), copy: optional(isCopy) });
+
+const parsedByText = new Map<string, SongContent>();
+
+function freezeContent(song: SongContent): SongContent {
+  for (const section of song.body) {
+    for (const line of section.lines) Object.freeze(line);
+    Object.freeze(section.lines);
+    Object.freeze(section);
+  }
+  Object.freeze(song.body);
+  if (song.kept) Object.freeze(song.kept);
+  return Object.freeze(song);
+}
+
+/** The one reader of a stored song: parses `{ id, copy?, chordpro }` once per text, or reads a legacy JSON object. */
+export function songFromStored(stored: StoredSong): Song {
+  if ("chordpro" in stored && typeof stored.chordpro === "string") {
+    let parsed = parsedByText.get(stored.chordpro);
+    if (!parsed) {
+      parsed = freezeContent(chordProToSong(normalizeChordPro(stored.chordpro)));
+      parsedByText.set(stored.chordpro, parsed);
+    }
+    return { ...parsed, id: stored.id, ref: localRef(stored.id), ...(stored.copy !== undefined ? { copy: stored.copy } : {}) };
+  }
+  const { bassNotes: _bassNotes, ...rest } = stored as LegacyStoredSong & { bassNotes?: unknown };
+  return { ...rest, ref: localRef(stored.id) };
+}
+
+/** The one writer of a stored song: `{ id, copy?, chordpro }`. */
+export function songToStored(song: Omit<Song, "ref">): ChordProStoredSong {
+  const { id, copy, ...content } = song;
+  return { id, ...(copy !== undefined ? { copy } : {}), chordpro: songToChordPro(content) };
+}
 
 /** Fingerprint of each seed item as it was stored, by id. An item whose stored copy no longer matches was edited. */
 type SeedPrints = Record<string, string>;
 
-interface StoredLibrary extends LibraryFile {
+interface StoredLibrary extends Omit<LibraryFile, "songs"> {
+  songs: StoredSong[];
   seedPrints: { songs: SeedPrints; setlists: SeedPrints };
   /** The highest song id this library has ever held. A deleted song's id stays taken, so nothing keyed by it (a send, a band copy) passes to a new song. */
   lastSongId: number;
@@ -168,7 +220,7 @@ function parseStored(raw: string | null): Partial<StoredLibrary> | null {
     if (!parsed || typeof parsed !== "object") return null;
     const record = parsed as Partial<StoredLibrary>;
     if (!Array.isArray(record.songs) || !Array.isArray(record.setlists)) return null;
-    return { songs: record.songs.filter(isSong), setlists: record.setlists.filter(isSetlist), seedPrints: record.seedPrints, lastSongId: Number.isSafeInteger(record.lastSongId) ? record.lastSongId : undefined };
+    return { songs: record.songs.filter(isStoredSong), setlists: record.setlists.filter(isSetlist), seedPrints: record.seedPrints, lastSongId: Number.isSafeInteger(record.lastSongId) ? record.lastSongId : undefined };
   } catch {
     return null;
   }
@@ -189,21 +241,233 @@ const seedCopy = () => JSON.parse(JSON.stringify(seedLibrary)) as LibraryFile;
 
 function storedLibrary(stored: Partial<StoredLibrary> | null): StoredLibrary {
   const seed = seedCopy();
-  const songs = mergeSeed(seed.songs, stored?.songs ?? [], stored?.seedPrints?.songs);
+  const songs = mergeSeed<StoredSong>(seed.songs, stored?.songs ?? [], stored?.seedPrints?.songs);
   const setlists = mergeSeed(seed.setlists, stored?.setlists ?? [], stored?.seedPrints?.setlists);
   const lastSongId = Math.max(stored?.lastSongId ?? 0, ...songs.items.map((song) => song.id));
   return { ...seed, songs: songs.items, setlists: setlists.items, seedPrints: { songs: songs.prints, setlists: setlists.prints }, lastSongId };
 }
 
+const takenTag = (key: string, value: string) => `${key}:${valuePrint(value)}`;
+
+function readTaken(): Set<string> {
+  try {
+    const parsed = JSON.parse(readRaw(LIBRARY_TAKEN_KEY) ?? "[]");
+    return new Set(Array.isArray(parsed) ? parsed.filter(isString) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+const writeTaken = (taken: Set<string>): boolean => writeRaw(LIBRARY_TAKEN_KEY, JSON.stringify([...taken]));
+
+/**
+ * First open: copies `leadSheetsLibrary` and `leadSheetsBackup` byte for byte to the V2 keys and notes prints under
+ * `leadSheetsLibraryTaken`. If storage has no room for two libraries, moves the keys in place in one turn of script,
+ * rolling back if writes still fail.
+ */
+function copyOldToV2(): boolean {
+  const oldLib = readRaw(OLD_LIBRARY_KEY);
+  const oldBak = readRaw(OLD_BACKUP_KEY);
+  const needLib = readRaw(LIBRARY_KEY) === null && oldLib !== null;
+  const needBak = readRaw(BACKUP_KEY) === null && oldBak !== null;
+  if (!needLib && !needBak) return false;
+
+  const taken = needLib ? new Set([...ownLibraryItems(oldLib)].map(([k, v]) => takenTag(k, v))) : null;
+
+  const libOk = !needLib || writeRaw(LIBRARY_KEY, oldLib);
+  const bakOk = libOk && (!needBak || writeRaw(BACKUP_KEY, oldBak));
+  const takenOk = bakOk && (!taken || writeTaken(taken));
+  if (takenOk) return true;
+
+  if (needLib) removeRaw(LIBRARY_KEY);
+  if (needBak) removeRaw(BACKUP_KEY);
+  if (taken) removeRaw(LIBRARY_TAKEN_KEY);
+
+  // Confirm writes are not globally refused before removing the old keys.
+  if (needLib && !writeRaw(OLD_LIBRARY_KEY, oldLib)) return false;
+  if (!needLib && needBak && !writeRaw(OLD_BACKUP_KEY, oldBak)) return false;
+
+  if (oldBak !== null) removeRaw(OLD_BACKUP_KEY);
+  if (oldLib !== null) removeRaw(OLD_LIBRARY_KEY);
+  removeRaw(LIBRARY_TAKEN_KEY);
+
+  const movedLib = !needLib || writeRaw(LIBRARY_KEY, oldLib);
+  const movedBak = movedLib && (!needBak || writeRaw(BACKUP_KEY, oldBak));
+  if (movedLib && movedBak) return true;
+
+  if (needLib) removeRaw(LIBRARY_KEY);
+  if (needBak) removeRaw(BACKUP_KEY);
+  if (oldLib !== null) writeRaw(OLD_LIBRARY_KEY, oldLib);
+  if (oldBak !== null) writeRaw(OLD_BACKUP_KEY, oldBak);
+  return false;
+}
+
+/**
+ * Takes in songs and setlists an open tab on an older build added or edited under `leadSheetsLibrary`. Never overwrites
+ * or drops anything in `leadSheetsLibraryV2`, and never touches `leadSheetsLibrary`.
+ */
+export function takeInOldLibrary(): boolean {
+  const oldRaw = readRaw(OLD_LIBRARY_KEY);
+  const newRaw = readRaw(LIBRARY_KEY);
+  if (!oldRaw || !newRaw) return false;
+  const oldOwn = ownLibraryItems(oldRaw);
+  if (oldOwn.size === 0) return false;
+
+  const taken = readTaken();
+  const pendingSongs: [string, string][] = [];
+  const pendingSetlists: [string, string][] = [];
+  for (const [key, value] of oldOwn) {
+    if (taken.has(takenTag(key, value))) continue;
+    if (key.startsWith(`${SONG_ROW}.`)) pendingSongs.push([key, value]);
+    else if (key.startsWith(`${SETLIST_ROW}.`)) pendingSetlists.push([key, value]);
+  }
+  if (pendingSongs.length === 0 && pendingSetlists.length === 0) return false;
+
+  const newOwn = ownLibraryItems(newRaw);
+  const newLib = storedLibrary(parseStored(newRaw));
+  const changes = new Map<string, string>();
+  const movedSongs = new Map<number, number>();
+  const usedSongIds: number[] = [];
+  const usedSetlistIds: number[] = [];
+  const leftBy = readLeftBy();
+  let leftByChanged = false;
+  const settingCopies: [string, string][] = [];
+
+  for (const [key, value] of pendingSongs) {
+    const oldId = Number(key.slice(SONG_ROW.length + 1));
+    if (newOwn.get(key) === value) {
+      taken.add(takenTag(key, value));
+      continue;
+    }
+    if (!newLib.songs.some((song) => song.id === oldId)) {
+      changes.set(key, value);
+    } else {
+      const newId = freeOwnId(newRaw, SONG_ROW, usedSongIds);
+      usedSongIds.push(newId);
+      const entry = parseEntry<StoredSong>(value, isStoredSong);
+      if (entry) {
+        const movedKey = `${SONG_ROW}.${newId}`;
+        const movedValue = JSON.stringify({ item: { ...entry.item, id: newId } });
+        changes.set(movedKey, movedValue);
+        movedSongs.set(oldId, newId);
+        for (const setting of SONG_SETTING_KEYS) {
+          const oldSettingKey = `${setting}.${oldId}`;
+          const settingVal = readRaw(oldSettingKey);
+          if (settingVal === null) continue;
+          const newSettingKey = `${setting}.${newId}`;
+          settingCopies.push([newSettingKey, settingVal]);
+          const settingMark = leftBy[oldSettingKey];
+          if (Array.isArray(settingMark) && typeof settingMark[0] === "string" && settingMark[1] === valuePrint(settingVal)) {
+            leftBy[newSettingKey] = [settingMark[0], valuePrint(settingVal)];
+            leftByChanged = true;
+          }
+        }
+        const oldMark = leftBy[key];
+        if (Array.isArray(oldMark) && typeof oldMark[0] === "string" && oldMark[1] === valuePrint(value)) {
+          leftBy[movedKey] = [oldMark[0], valuePrint(movedValue)];
+          leftByChanged = true;
+        }
+      }
+    }
+    taken.add(takenTag(key, value));
+  }
+
+  for (const [key, value] of pendingSetlists) {
+    const oldId = Number(key.slice(SETLIST_ROW.length + 1));
+    const entry = parseEntry<StoredSetlist>(value, isSetlist);
+    if (!entry) {
+      taken.add(takenTag(key, value));
+      continue;
+    }
+    const remappedIds = entry.item.songIds.map((id) => movedSongs.get(id) ?? id);
+    const remapped = remappedIds.some((id, i) => id !== entry.item.songIds[i]);
+    if (!remapped && newOwn.get(key) === value) {
+      taken.add(takenTag(key, value));
+      continue;
+    }
+    if (!newLib.setlists.some((setlist) => setlist.id === oldId)) {
+      const nextValue = remapped ? JSON.stringify({ ...entry, item: { ...entry.item, songIds: remappedIds } }) : value;
+      changes.set(key, nextValue);
+      if (remapped) {
+        const oldMark = leftBy[key];
+        if (Array.isArray(oldMark) && typeof oldMark[0] === "string" && oldMark[1] === valuePrint(value)) {
+          leftBy[key] = [oldMark[0], valuePrint(nextValue)];
+          leftByChanged = true;
+        }
+      }
+    } else {
+      const newId = freeOwnId(newRaw, SETLIST_ROW, usedSetlistIds);
+      usedSetlistIds.push(newId);
+      const movedKey = `${SETLIST_ROW}.${newId}`;
+      const movedValue = JSON.stringify({ item: { ...entry.item, id: newId, songIds: remappedIds } });
+      changes.set(movedKey, movedValue);
+      const oldMark = leftBy[key];
+      if (Array.isArray(oldMark) && typeof oldMark[0] === "string" && oldMark[1] === valuePrint(value)) {
+        leftBy[movedKey] = [oldMark[0], valuePrint(movedValue)];
+        leftByChanged = true;
+      }
+    }
+    taken.add(takenTag(key, value));
+  }
+
+  if (changes.size > 0) {
+    if (!writeRaw(LIBRARY_KEY, withOwnLibraryItems(newRaw, changes))) return false;
+    for (const [settingKey, settingVal] of settingCopies) writeRaw(settingKey, settingVal);
+    if (leftByChanged) writeRaw(LEFT_BY_KEY, JSON.stringify(leftBy));
+  }
+  writeTaken(taken);
+  return changes.size > 0;
+}
+
+/** Removes the three old-build keys at an account change. */
+export function clearOldKeys(): void {
+  removeRaw(OLD_LIBRARY_KEY);
+  removeRaw(OLD_BACKUP_KEY);
+  removeRaw(LIBRARY_TAKEN_KEY);
+}
+
+let openedFor: Storage | null = null;
+
+/** Copies old keys on first open and takes in any new saves from an old tab once per page open. */
+export function ensureOpened(): void {
+  if (typeof localStorage === "undefined") return;
+  const firstForStore = openedFor !== localStorage;
+  const needLibCopy = readRaw(LIBRARY_KEY) === null && readRaw(OLD_LIBRARY_KEY) !== null;
+  const needBakCopy = readRaw(BACKUP_KEY) === null && readRaw(OLD_BACKUP_KEY) !== null;
+  if (!firstForStore && !needLibCopy && !needBakCopy) return;
+  openedFor = localStorage;
+  const copied = needLibCopy || needBakCopy ? copyOldToV2() : false;
+  if (!copied && readRaw(OLD_LIBRARY_KEY) !== null && readRaw(LIBRARY_KEY) !== null) takeInOldLibrary();
+}
+
+if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+  window.addEventListener("storage", (event) => {
+    if (event.key === OLD_LIBRARY_KEY || event.key === null) {
+      if (takeInOldLibrary()) storageChanged();
+    }
+  });
+}
+
 /** The library as stored, and per account without what other accounts left here. Only the stored copy is written back. */
 export function loadLibrary(): Library {
-  const raw = readRaw(LIBRARY_KEY);
+  ensureOpened();
+  const v2 = readRaw(LIBRARY_KEY);
+  const raw = v2 ?? readRaw(OLD_LIBRARY_KEY);
   const library = storedLibrary(parseStored(raw));
   const next = JSON.stringify(library);
-  if (next !== raw) writeRaw(LIBRARY_KEY, next);
+  if (v2 !== null || raw === null) {
+    if (next !== v2) writeRaw(LIBRARY_KEY, next);
+  }
+  const activeTexts = new Set<string>();
+  for (const song of library.songs) {
+    if ("chordpro" in song && typeof song.chordpro === "string") activeTexts.add(song.chordpro);
+  }
+  for (const key of parsedByText.keys()) {
+    if (!activeTexts.has(key)) parsedByText.delete(key);
+  }
   const shown = readRaw(LIBRARY_MODE_KEY) === PER_ACCOUNT ? withoutOthers(library, next) : library;
   return {
-    songs: shown.songs.map((song) => ({ ...song, ref: localRef(song.id) })),
+    songs: shown.songs.map((song) => songFromStored(song)),
     setlists: shown.setlists.map(({ songIds, ...setlist }) => ({ ...setlist, songRefs: songIds.map(localRef) })),
   };
 }
@@ -218,6 +482,7 @@ function withoutOthers(library: StoredLibrary, raw: string): StoredLibrary {
 
 /** The account this phone backs up to, or null signed out. */
 export function backupAccount(): string | null {
+  ensureOpened();
   const account = readObject(BACKUP_KEY).account;
   return typeof account === "string" ? account : null;
 }
@@ -298,7 +563,7 @@ export function withOwnLibraryItems(raw: string | null, changes: Map<string, str
     const id = Number(key.slice(key.indexOf(".") + 1));
     if (!Number.isInteger(id)) continue;
     if (key.startsWith(`${SONG_ROW}.`)) {
-      const entry = value === null ? null : parseEntry<StoredSong>(value, isSong);
+      const entry = value === null ? null : parseEntry<StoredSong>(value, isStoredSong);
       if (value === null || entry?.item.id === id) setOwn(library.songs, library.seedPrints.songs, seed.songs, id, entry);
     } else if (key.startsWith(`${SETLIST_ROW}.`)) {
       const entry = value === null ? null : parseEntry<StoredSetlist>(value, isSetlist);
@@ -322,22 +587,51 @@ export function takeSongIds(ids: number[]) {
   if (lastSongId > library.lastSongId) localStorage.setItem(LIBRARY_KEY, JSON.stringify({ ...library, lastSongId }));
 }
 
-/** False when the browser refused the write or the song isn't one this phone can show. */
+/** False when the song has no title, the browser refused the write or the song isn't one this phone can show. */
 function writeOwnSong(raw: string | null, id: number, song: Omit<Song, "ref" | "id">): boolean {
-  if (!writeRaw(LIBRARY_KEY, withOwnLibraryItems(raw, new Map([[`${SONG_ROW}.${id}`, JSON.stringify({ item: { ...song, id } })]])))) return false;
+  // A song from another phone is read here first, so a title that is no text is refused the same way, not thrown on.
+  const model = { ...song, id };
+  if (typeof song.title !== "string" || !song.title.trim() || !isLegacySong(model)) return false;
+  if (!writeRaw(LIBRARY_KEY, withOwnLibraryItems(raw, new Map([[`${SONG_ROW}.${id}`, JSON.stringify({ item: songToStored(model) })]])))) return false;
   storageChanged();
   return loadLibrary().songs.some((stored) => stored.id === id);
 }
 
-/** Adds a song to My Songs under a new id. Null when the browser refused the write or the song isn't one this phone can show. */
+/** Adds a song to My Songs under a new id. Null when the song has no title, the browser refused the write or the song isn't one this phone can show. */
 export function addOwnSong(song: Omit<Song, "ref" | "id">): number | null {
+  ensureOpened();
   const raw = readRaw(LIBRARY_KEY);
   const id = freeOwnId(raw, SONG_ROW, []);
   return writeOwnSong(raw, id, song) ? id : null;
 }
 
+/**
+ * Adds songs to My Songs in one write, each under a new id, and tells every screen once. Gives the id of each, or null
+ * in its place for a song with no title or one this phone can't show. Null when the browser refused the write, and
+ * then nothing was added.
+ */
+export function addOwnSongs(songs: Omit<Song, "ref" | "id">[]): (number | null)[] | null {
+  ensureOpened();
+  const raw = readRaw(LIBRARY_KEY);
+  const first = freeOwnId(raw, SONG_ROW, []);
+  const changes = new Map<string, string>();
+  const ids = songs.map((song) => {
+    const model = { ...song, id: first + changes.size };
+    // A song this phone could not show is never written, so it holds no id another song could take.
+    if (typeof song.title !== "string" || !song.title.trim() || !isLegacySong(model)) return null;
+    const item = songToStored(model);
+    changes.set(`${SONG_ROW}.${item.id}`, JSON.stringify({ item }));
+    return item.id;
+  });
+  if (changes.size === 0) return ids;
+  if (!writeRaw(LIBRARY_KEY, withOwnLibraryItems(raw, changes))) return null;
+  storageChanged();
+  return ids;
+}
+
 /** Adds a setlist of own songs under a new id. Null when the browser refused the write. */
 export function addOwnSetlist(setlist: Omit<StoredSetlist, "id">): number | null {
+  ensureOpened();
   const raw = readRaw(LIBRARY_KEY);
   const id = freeOwnId(raw, SETLIST_ROW, []);
   if (!writeRaw(LIBRARY_KEY, withOwnLibraryItems(raw, new Map([[`${SETLIST_ROW}.${id}`, JSON.stringify({ item: { ...setlist, id } })]])))) return null;
@@ -346,7 +640,10 @@ export function addOwnSetlist(setlist: Omit<StoredSetlist, "id">): number | null
 }
 
 /** Puts a new chart in an own song's place, read from what is stored now. */
-export const replaceOwnSong = (id: number, song: Omit<Song, "ref" | "id">) => writeOwnSong(readRaw(LIBRARY_KEY), id, song);
+export const replaceOwnSong = (id: number, song: Omit<Song, "ref" | "id">) => {
+  ensureOpened();
+  return writeOwnSong(readRaw(LIBRARY_KEY), id, song);
+};
 
 const SEED_SONG_IDS = new Set(seedLibrary.songs.map((song) => song.id));
 
@@ -359,6 +656,7 @@ export const madeHere = (song: Pick<Song, "id" | "copy">) => !SEED_SONG_IDS.has(
  * refused the write.
  */
 export function removeOwnSong(id: number): boolean {
+  ensureOpened();
   const raw = readRaw(LIBRARY_KEY);
   const song = storedLibrary(parseStored(raw)).songs.find((item) => item.id === id);
   if (!song || !madeHere(song)) return false;
@@ -386,8 +684,12 @@ function storedKeys(): string[] {
 
 /** An own song or setlist entry copied to a new id, named "<name> · from <phone>". It is an added item, so it has no seed print. */
 export function copiedOwnItem(value: string, id: number, phone: string): string {
-  const { item } = JSON.parse(value) as OwnEntry<{ title?: string; name?: string }>;
+  const { item } = JSON.parse(value) as OwnEntry<{ title?: string; name?: string; chordpro?: string }>;
   const from = (name: string) => `${name} · from ${phone}`;
+  if (typeof item.chordpro === "string") {
+    const parsed = chordProToSong(normalizeChordPro(item.chordpro));
+    return JSON.stringify({ item: { ...item, id, chordpro: songToChordPro({ ...parsed, title: from(parsed.title) }) } });
+  }
   return JSON.stringify({ item: { ...item, id, ...(item.title === undefined ? {} : { title: from(item.title) }), ...(item.name === undefined ? {} : { name: from(item.name) }) } });
 }
 
@@ -594,15 +896,72 @@ const isMark = shaped<Mark>({
   progress: (value) => typeof value === "number" && value >= 0 && value <= 1,
 });
 
-const isLearned = shaped<Learned>({
+/**
+ * A learned section as stored. Its kept heard chords are names in `heard`, null where not sure, as a build from
+ * before colors reads them, and `cells` beside them holds each one's band, and the chord a pick replaced, when any is
+ * not likely. That build drops a version whose `heard` holds anything else, and its next write of the song stores
+ * the shorter list, which backup spreads to every phone.
+ */
+type StoredSection = Omit<Learned["sections"][number], "heard"> & { heard?: (string | null)[] | HeardCell[]; cells?: Omit<HeardCell, "chord">[] };
+
+const isChordName: Check = (value) => value === null || isString(value);
+const isBand: Check = (value) => value === "sure" || value === "likely" || value === "check" || value === "set";
+const isIndex: Check = (value) => Number.isInteger(value) && (value as number) >= 0;
+
+const isLearnedShape = shaped<Learned>({
   beatsPerBar: (value) => Number.isInteger(value) && (value as number) > 0,
   downbeat: isPositive,
   beats: listOf(isTime),
   sections: listOf(
-    shaped<Learned["sections"][number]>({ heading: isString, at: isTime, heard: optional(listOf((value) => value === null || isString(value))) }),
+    shaped<StoredSection>({
+      heading: isString,
+      at: isTime,
+      heard: optional((value) => listOf(isChordName)(value) || listOf(shaped<HeardCell>({ chord: isChordName, band: isBand, was: optional(isChordName) }))(value)),
+      cells: optional(listOf(shaped<Omit<HeardCell, "chord">>({ band: isBand, was: optional(isChordName) }))),
+    }),
   ),
+  plays: optional(listOf(shaped<Required<Learned>["plays"][number]>({ section: isIndex, at: isTime }))),
+  lines: optional(listOf(shaped<Required<Learned>["lines"][number]>({ section: isIndex, line: isIndex, at: isTime }))),
+  offset: optional((value) => typeof value === "number" && Number.isFinite(value)),
   vocals: listOf(shaped<Span>({ start: isTime, end: isTime })),
 });
+
+/** Every play and line names a section the version has. */
+const isLearned: Check = (value) => {
+  if (!isLearnedShape(value)) return false;
+  const { sections, plays = [], lines = [] } = value as Learned;
+  return [...plays, ...lines].every((each) => each.section < sections.length);
+};
+
+/**
+ * Kept heard chords stored as names come back as cells, each in its stored band, or likely when it has none. Names
+ * also reach this phone in a draft or a friend's send from a build before colors, so every learned part read in goes
+ * through here.
+ */
+function withHeardCells<T extends { learned?: Learned }>(version: T): T {
+  if (!version.learned?.sections.some((section) => section.heard)) return version;
+  const sections = (version.learned.sections as StoredSection[]).map(({ heard, cells, ...section }) =>
+    heard ? { ...section, heard: heard.map((each, i): HeardCell => (typeof each === "object" && each !== null ? each : { chord: each, ...(cells?.[i] ?? { band: "likely" as const }) })) } : section,
+  );
+  return { ...version, learned: { ...version.learned, sections } };
+}
+
+/**
+ * A learned part in its stored form, which goes to disk and to a friend: kept heard chords as names, with their bands
+ * beside them only when one is not likely. A friend's phone may run a build from before colors, which reads only that.
+ */
+export function storedLearned(given: Learned): Learned {
+  const learned = withHeardCells({ learned: given }).learned!;
+  if (!learned.sections.some((section) => section.heard)) return learned;
+  const sections: StoredSection[] = learned.sections.map(({ heard, ...section }) => {
+    if (!heard) return section;
+    const likely = heard.every((cell) => cell.band === "likely" && cell.was === undefined);
+    return { ...section, heard: heard.map((cell) => cell.chord), ...(likely ? {} : { cells: heard.map(({ chord: _chord, ...cell }) => cell) }) };
+  });
+  return { ...learned, sections } as Learned;
+}
+
+const withHeardNames = (version: StoredVersion): StoredVersion => (version.learned ? { ...version, learned: storedLearned(version.learned) } : version);
 
 const isTempoMap: Check = (value) => {
   if (!listOf(shaped<Tempo>({ at: isTime, bpm: isPositive }))(value)) return false;
@@ -674,14 +1033,14 @@ function withoutChordsOnly(row: unknown): unknown {
 
 export function loadScrollVersions(ref: SongRef): ScrollVersions {
   const value = readSongPref(SCROLL_VERSIONS_KEY, ref) as Partial<ScrollVersions> | undefined;
-  const versions = Array.isArray(value?.versions) ? value.versions.map(withoutEvenPace).map(withoutChordsOnly).filter(isVersion) : [];
+  const versions = Array.isArray(value?.versions) ? value.versions.map(withoutEvenPace).map(withoutChordsOnly).filter(isVersion).map(withHeardCells) : [];
   const selected = value?.selected;
   const valid = typeof selected === "number" && Number.isInteger(selected) && selected >= 0 && selected < versions.length;
   return { versions, selected: valid ? selected : null };
 }
 
 export function saveScrollVersions(ref: SongRef, value: ScrollVersions): boolean {
-  return writeRaw(`${SCROLL_VERSIONS_KEY}.${refKey(ref)}`, JSON.stringify({ ...value, versions: value.versions.map((version) => withChordsOnly(withEvenPace(version))) }));
+  return writeRaw(`${SCROLL_VERSIONS_KEY}.${refKey(ref)}`, JSON.stringify({ ...value, versions: value.versions.map((version) => withChordsOnly(withEvenPace(withHeardNames(version)))) }));
 }
 
 /** Applies one change to the stored versions, not to a copy a screen holds, so a version pulled meanwhile stays. Null when the browser refused the write. */
@@ -697,7 +1056,8 @@ export function loadSongDraft(owner: string | null, ref: SongRef): unknown {
   const raw = readRaw(draftKey(owner, ref));
   if (raw === null) return undefined;
   try {
-    return JSON.parse(raw);
+    const draft = JSON.parse(raw);
+    return isLearned(draft?.learned) ? withHeardCells(draft) : draft;
   } catch {
     return undefined;
   }

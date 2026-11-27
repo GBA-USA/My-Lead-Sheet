@@ -1,8 +1,8 @@
-import type { SongContent } from "../src/band-library-model";
+import type { SentSong, SongContent } from "../src/chordpro";
 import { NOTE_MAX_CHARS } from "../src/song-notes-model";
 import { signedIn, type Route } from "./directory-http";
 import { fromRoom, readJsonObject, Refused, roomRefused as refused } from "./refused";
-import { bandLibrary, isText, printOf, record, setlistIn, songIn, storeOf } from "./room-library";
+import { bandLibrary, isText, printOf, record, setlistIn, songIn, storedChordPro, storeOf } from "./room-library";
 import { bandIdIn, bandRoom, roomOf, type RoomStore } from "./room-members";
 import { keepMovedNote, movedNotes, type MovedNote } from "./room-notes";
 import { lineage, type ShareChoice, type StoredShare } from "./share-guard";
@@ -21,9 +21,11 @@ import { lineage, type ShareChoice, type StoredShare } from "./share-guard";
  * so its file reads the same as one made before notes, and a file with no `notes` imports with none.
  */
 export type MovedShare = { choice: ShareChoice; parentId: string | null };
-export type MovedSong = { id: string; share: MovedShare; song: SongContent; versions: unknown[] };
+export type MovedSong = { id: string; share: MovedShare; song: SentSong; versions: unknown[] };
 export type MovedSetlist = { id: string; name: string; songIds: string[]; tags: string[]; share: MovedShare };
 export type BandFile = { exportedFrom: string; exportedAt: string; band: { name: string }; songs: MovedSong[]; setlists: MovedSetlist[]; notes?: MovedNote[] };
+type ImportedSong = { id: string; share: MovedShare; song: SongContent; versions: unknown[] };
+type ImportedFile = Omit<BandFile, "songs"> & { songs: ImportedSong[] };
 
 export type Counted = { added: number; skipped: number };
 export type Imported = { songs: Counted; setlists: Counted };
@@ -52,7 +54,7 @@ export function exportBand(band: RoomStore, adminId: string, origin: string | un
     songs: sql
       .exec<SongRow>(`SELECT song_id, share_id, song FROM band_songs ORDER BY shared_at, song_id`)
       .toArray()
-      .map((row) => ({ id: row.song_id, share: shareOf(sql, row.share_id), song: JSON.parse(row.song), versions: [] })),
+      .map((row) => ({ id: row.song_id, share: shareOf(sql, row.share_id), song: storedChordPro(row.song), versions: [] })),
     setlists: sql
       .exec<SetlistRow>(`SELECT setlist_id, share_id, name, song_ids, tags FROM band_setlists ORDER BY shared_at, setlist_id`)
       .toArray()
@@ -84,10 +86,10 @@ function distinct(ids: string[]) {
   if (new Set(ids).size !== ids.length) throw badFile();
 }
 
-function fileIn(body: Record<string, unknown>): BandFile {
+function fileIn(body: Record<string, unknown>): ImportedFile {
   const band = record(body.band);
   if (!band || !Array.isArray(body.songs) || !Array.isArray(body.setlists)) throw badFile();
-  const songs = body.songs.map((value): MovedSong => {
+  const songs = body.songs.map((value): ImportedSong => {
     const item = record(value);
     if (!item || !Array.isArray(item.versions)) throw badFile();
     return { id: textIn(item.id, 64), share: shareIn(item.share), song: songIn(item.song), versions: [] };
@@ -112,7 +114,7 @@ function fileIn(body: Record<string, unknown>): BandFile {
 const heldAs = (sql: SqlStorage, table: "band_songs" | "band_setlists", column: "song_id" | "setlist_id", movedId: string) =>
   sql.exec<{ id: string }>(`SELECT ${column} AS id FROM ${table} WHERE share_id IN (SELECT id FROM shares WHERE parent_id = ?)`, movedId).toArray()[0]?.id;
 
-function importBand(storage: DurableObjectStorage, band: RoomStore, adminId: string, origin: string | undefined, file: BandFile, prints: string[], now: number): Imported {
+function importBand(storage: DurableObjectStorage, band: RoomStore, adminId: string, origin: string | undefined, file: ImportedFile, prints: string[], now: number): Imported {
   bandRoom.requireAdmin(band, adminId);
   if (file.exportedFrom === sourceOf(origin, band.bandId)) throw new Refused("own-file");
   return storage.transactionSync(() => {
@@ -150,7 +152,7 @@ function importBand(storage: DurableObjectStorage, band: RoomStore, adminId: str
 /** `POST /api/rooms/<bandId>` with a band file as the body. It comes to the Room directly because the Directory caps a body at 16 KB and a band file is bigger. */
 export async function importBandFile(request: Request, storage: DurableObjectStorage, band: RoomStore, userId: string, origin: string | undefined): Promise<Response> {
   try {
-    let file: BandFile;
+    let file: ImportedFile;
     try {
       file = fileIn(await readJsonObject(request, MAX_FILE_CHARS));
     } catch (error) {

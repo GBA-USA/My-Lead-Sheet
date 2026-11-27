@@ -12,6 +12,7 @@ import { APP_NAME } from "./data-kinds";
 // @ts-expect-error TS5097: esbuild maps "./gig-live.jsx" to gig-live.ts, so only ".tsx" names this file in tsc, Vite and esbuild.
 import { LiveGigStrip, useBandFollow, useGigStage } from "./gig-live.tsx";
 import { GigSongMissing, GigViewScreen } from "./gig-view";
+import { GuestPassSheet } from "./guest-pass";
 import { useAutoScroll, useScrolling, useStored, useWakeLock } from "./hooks";
 import { LearnSong } from "./learn-song";
 import { SetlistList, SongBody, SongList, Tabs } from "./library-lists";
@@ -61,11 +62,12 @@ export function App() {
     [stored, songData],
   );
   const [editing, setEditing] = useState<SongEdit | null>(null);
+  const [dropped, setDropped] = useState<File[]>([]);
   const [teaching, setTeaching] = useState<Teaching | null>(null);
   const [hash, setHash] = useState(() => window.location.hash);
   const [textIndex, setTextIndex] = useStored(loadTextScaleIndex);
   const [menu, setMenu] = useState<MenuId>(null);
-  const [scrollSheet, setScrollSheet] = useState(false);
+  const [scrollSheet, setScrollSheet] = useState<false | "speed" | "learn">(false);
   const { account, setAccount, checking, owner } = useAccount();
   const [personal, setPersonal] = useStored(() => loadPersonal(owner ?? null), owner);
   const [accountOpen, setAccountOpen] = useState(() => googleReturn() !== null);
@@ -75,6 +77,7 @@ export function App() {
   const [notice, setNotice] = useState("");
   const [setlistCode, setSetlistCode] = useState<Setlist | null>(null);
   const [setlistCopy, setSetlistCopy] = useState<{ code: string } | null>(null);
+  const [guestPass, setGuestPass] = useState<string | null>(null);
   const { invite, dropInvite } = useInvite();
 
   useEffect(() => queueOwner(account?.userId ?? null), [account?.userId]);
@@ -82,7 +85,7 @@ export function App() {
   const landings: Record<CodeScreen, (code: string) => void> = {
     friends: (code) => setFriends({ code }),
     bands: (code) => setBands({ code }),
-    gig: (code) => setBands({ code }),
+    gig: (code) => (readPayload(code)?.kind === "guest" ? setGuestPass(code) : setBands({ code })),
     connection: landSyncCheck,
     setlists: (code) => (readPayload(code)?.kind === "my-setlist" ? setSetlistCopy({ code }) : setBands({ code })),
   };
@@ -198,7 +201,8 @@ export function App() {
     document.getElementById("sheet-scroll")?.scrollTo(0, 0);
     setMenu(null);
     setScrollSheet(false);
-    setEditing(null);
+    // Import files closes itself on a change of page, asking first when rows are unsaved.
+    setEditing((now) => (now === "import" ? now : null));
     setTeaching(null);
     const now = parseHash(window.location.hash).name;
     if (now !== "bands" && now !== "messages") setNotice("");
@@ -265,6 +269,7 @@ export function App() {
   const retempo = (song: Song, tempo: number | null) => {
     if (tempo !== song.tempo) metronome.setBpm(initialMetronomeBpm(tempo));
   };
+  const setSongBpm = (bpm: number) => { setFollowed(null); songVersion.set((current) => ({ bpm: initialMetronomeBpm(bpm), data: { ...current.data, tempo: bpm } })); };
 
   const saveData = (song: Song, data: SongData) => {
     saveSongData(song.ref, data);
@@ -293,7 +298,7 @@ export function App() {
           )}
           {activeSong ? <TextSizeButtons index={textIndex} count={TEXT_SCALES.length} onChange={changeText} /> : null}
           {activeSong ? (
-            <OverflowMenu label="More" size="shell" open={menu === "shell"} onToggle={() => toggleMenu("shell")} onClose={closeMenu} onSongData={bandRoute || gigRoute ? undefined : () => setEditing("timing")} {...(route.name === "song" && madeHere(activeSong) ? { onEdit: () => setEditing("chart"), onDelete: () => setEditing("delete") } : {})}>
+            <OverflowMenu label="More" size="shell" open={menu === "shell"} onToggle={() => toggleMenu("shell")} onClose={closeMenu} onSongData={bandRoute || gigRoute ? undefined : () => setEditing("timing")} {...((route.name === "song" || route.name === "live") && madeHere(activeSong) ? { onEdit: () => setEditing("chart"), onDelete: () => setEditing("delete") } : {})}>
               {bandRoute || gigRoute ? null : sendSong.item(activeSong, closeMenu)}
             </OverflowMenu>
           ) : route.name === "settings" ? null : (
@@ -317,7 +322,7 @@ export function App() {
             onNotation={(notation) => songVersion.set({ notation })}
             scrolling={performance.scrolling}
             onToggleScroll={() => (take ? stopTake(take) : performance.setScrolling((on) => !on))}
-            onScrollSheet={() => { closeMenu(); setScrollSheet(true); }}
+            onScrollSheet={() => { closeMenu(); setScrollSheet("speed"); }}
             onSend={route.name === "song" ? sendSong.onSend(activeSong) : undefined}
             take={
               take ? (
@@ -342,7 +347,7 @@ export function App() {
           canTeach={even != null}
           onListen={route.name === "song" ? () => setTeaching({ learning: true }) : undefined}
           onTeach={teach}
-          onBpm={metronome.setBpm}
+          onBpm={setSongBpm} initial={scrollSheet}
           onClose={() => setScrollSheet(false)}
         />
       ) : null}
@@ -361,7 +366,7 @@ export function App() {
         />
       ) : null}
 
-      <SongEditors editing={editing} song={activeSong} songs={stored.songs} onSongData={saveData} onTempo={retempo} onClose={() => setEditing(null)} />
+      <SongEditors editing={editing} song={activeSong} songs={stored.songs} userId={account?.userId ?? null} files={dropped} onSongData={saveData} onTempo={retempo} onClose={() => setEditing(null)} />
 
       {accountOpen ? (
         <AccountSheet
@@ -390,12 +395,13 @@ export function App() {
       ) : null}
 
       {bands && owner ? (
-        <BandsSheet code={bands.code} onBand={openBand} onSetlistCopy={(code) => { setBands(null); setSetlistCopy({ code }); }} onSignedOut={() => setAccount(null)} onClose={() => setBands(null)} />
+        <BandsSheet code={bands.code} onBand={openBand} onSetlistCopy={(code) => { setBands(null); setSetlistCopy({ code }); }} onGuestPass={(code) => { setBands(null); setGuestPass(code); }} onSignedOut={() => setAccount(null)} onClose={() => setBands(null)} />
       ) : null}
       {setlistCode && account ? <MySetlistCodeSheet key={account.userId} setlist={setlistCode} onSignedOut={() => setAccount(null)} onClose={() => setSetlistCode(null)} /> : null}
       {setlistCopy && account ? (
         <SetlistCopySheet code={setlistCopy.code} onChat={openRoom} onSignedOut={() => setAccount(null)} onClose={() => setSetlistCopy(null)} />
       ) : null}
+      {guestPass && account ? <GuestPassSheet code={guestPass} onSignedOut={() => setAccount(null)} onClose={() => setGuestPass(null)} /> : null}
       {sendSong.sheet}
       <LiveGigStrip live={live} />
 
@@ -410,7 +416,7 @@ export function App() {
         {performance.scrolling && learned && motion.kind === "learned" ? (
           <LearnedCues learned={learned} clock={clock} rate={motion.rate} metronomeOn={metronome.playing} />
         ) : null}
-        {route.name === "songs" ? <SongList songs={library.songs} userId={account?.userId ?? null} onAdd={account ? () => setEditing("new") : undefined} /> : null}
+        {route.name === "songs" ? <SongList songs={library.songs} userId={account?.userId ?? null} onAdd={account ? () => setEditing("new") : undefined} onImport={account ? (files) => { if (editing && editing !== "import") return; setDropped(files); setEditing("import"); } : undefined} /> : null}
         {route.name === "setlists" ? <SetlistList setlists={library.setlists} songs={library.songs} onShowCode={account ? setSetlistCode : undefined} /> : null}
         {route.name === "settings" ? (
           <SettingsScreen
@@ -448,6 +454,7 @@ export function App() {
             semitones={draft?.semitones ?? 0}
             notation={draft?.notation ?? "notes"}
             metronome={metronome}
+            onPaste={(paste) => setEditing({ paste })} onLearn={() => setScrollSheet("learn")} onBpm={setSongBpm}
           />
         ) : null}
         {gigRoute && gigRoute.index === null && !holding ? (

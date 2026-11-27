@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore, type KeyboardEvent } from "react";
-import { bandSongRef } from "./band-library-model";
+import { bandSongRef, songFromSent } from "./band-library-model";
 import { PRIVACY_HREF } from "./data-kinds";
 import { GigSong } from "./gig-plan";
 import type { useMetronome } from "./metronome-view";
@@ -11,6 +11,9 @@ import { SearchBox, SearchChips } from "./search-box";
 import { CodeOfferButton } from "./setlist-code";
 import { codeOffer } from "./setlist-code-model";
 import { LeadSheet } from "./sheet";
+// @ts-expect-error TS5097: song-search.ts holds the same stem, so only ".tsx" names this file in tsc, Vite and esbuild.
+import { SongSearch } from "./song-search.tsx";
+import { SongStartPanel } from "./song-start";
 import { hasTiming } from "./song-version";
 import { songByRef, tempoText } from "./storage";
 import type { Library, Setlist, Song, SongRef } from "./types";
@@ -79,6 +82,9 @@ export function SongBody({
   semitones,
   notation,
   metronome,
+  onPaste,
+  onLearn,
+  onBpm,
 }: {
   library: Library;
   songRef: SongRef;
@@ -86,6 +92,9 @@ export function SongBody({
   semitones: number;
   notation: Notation;
   metronome: ReturnType<typeof useMetronome>;
+  onPaste: (text: string) => void;
+  onLearn: () => void;
+  onBpm: (bpm: number) => void;
 }) {
   const song = songByRef(library.songs, songRef);
   if (!song) {
@@ -99,6 +108,7 @@ export function SongBody({
   return (
     <>
       <CopyNote song={song} />
+      <SongStartPanel song={song} onPaste={onPaste} onLearn={onLearn} onBpm={onBpm} />
       <LeadSheet song={song} scale={scale} semitones={semitones} notation={notation} metronome={metronome} />
     </>
   );
@@ -124,7 +134,8 @@ function SongRowText({ song }: { song: Song }) {
  * account's never does. Each change to the phone's band data reads it again, so a sign-out that clears the phone
  * empties open results too.
  */
-export function SongList({ songs, userId, onAdd }: { songs: Song[]; userId: string | null; onAdd?: () => void }) {
+/** `onAdd` and `onImport` are there only while signed in. Files dragged onto the page go to `onImport`. */
+export function SongList({ songs, userId, onAdd, onImport }: { songs: Song[]; userId: string | null; onAdd?: () => void; onImport?: (files: File[]) => void }) {
   const [query, setQuery] = useState("");
   const [chips, setChips] = useState(NO_CHIPS);
   const [held, setHeld] = useState<CachedBandSong[]>([]);
@@ -137,13 +148,33 @@ export function SongList({ songs, userId, onAdd }: { songs: Song[]; userId: stri
     if (!searching || (userId && !heldFor(userId))) return setHeld([]);
     let current = true;
     allOnPhone("bandSongs").then(
-      (rows) => current && setHeld(rows),
+      (rows) => current && setHeld(rows.map((item) => ({ ...item, song: songFromSent(item.song) }))),
       () => current && setHeld([]),
     );
     return () => {
       current = false;
     };
   }, [searching, userId, phone]);
+
+  // Signed out there is no listener, so a drag does nothing the page did not do before.
+  useEffect(() => {
+    if (!onImport) return;
+    const over = (event: DragEvent) => {
+      if (event.dataTransfer?.types.includes("Files")) event.preventDefault();
+    };
+    const drop = (event: DragEvent) => {
+      const files = [...(event.dataTransfer?.files ?? [])];
+      if (files.length === 0) return;
+      event.preventDefault();
+      onImport(files);
+    };
+    document.addEventListener("dragover", over);
+    document.addEventListener("drop", drop);
+    return () => {
+      document.removeEventListener("dragover", over);
+      document.removeEventListener("drop", drop);
+    };
+  }, [onImport]);
 
   if (open) {
     return (
@@ -178,9 +209,17 @@ export function SongList({ songs, userId, onAdd }: { songs: Song[]; userId: stri
     <>
       <SearchBox label="Search songs" value={query} onChange={setQuery} />
       {onAdd && !searching ? (
-        <button type="button" className="song-list-add" onClick={onAdd}>
-          + Add a song
-        </button>
+        <>
+          <button type="button" className="song-list-add" onClick={onAdd}>
+            + Add a song
+          </button>
+          {onImport ? (
+            <button type="button" className="song-list-add" onClick={() => onImport([])}>
+              Import files
+            </button>
+          ) : null}
+          <SongSearch songs={songs} />
+        </>
       ) : null}
       {searching ? <SearchChips keys={keys} bands={bands} chips={chips} onChange={setChips} /> : null}
       {!searching ? (

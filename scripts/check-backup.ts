@@ -93,7 +93,7 @@ class Device {
   }
 }
 
-const BACKED_UP = /^leadSheets(Library|ScrollVersions|SongData|ScrollPercent|Notation|TextScale|KeepAwake)(\.|$)/;
+const BACKED_UP = /^leadSheets(LibraryV2?|ScrollVersions|SongData|ScrollPercent|Notation|TextScale|KeepAwake)(\.|$)/;
 const iphone = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)";
 const android = "Mozilla/5.0 (Linux; Android 15; Pixel 9)";
 
@@ -102,7 +102,7 @@ const learned: ScrollVersion = {
   name: "Learned",
   bpm: 96,
   marks: [{ at: 0.5, progress: 0 }, { at: 200, progress: 1 }],
-  learned: { beatsPerBar: 4, downbeat: 0.5, beats: [0.5, 1.125, 1.75], sections: [{ heading: "Verse 1", at: 0.5, heard: ["G", null] }], vocals: [{ start: 1, end: 2.25 }] },
+  learned: { beatsPerBar: 4, downbeat: 0.5, beats: [0.5, 1.125, 1.75], sections: [{ heading: "Verse 1", at: 0.5, heard: [{ chord: "G", band: "likely" }, { chord: null, band: "likely" }] }], vocals: [{ start: 1, end: 2.25 }] },
   tempo: [{ at: 0, bpm: 96 }, { at: 30, bpm: 100 }],
 };
 const version = (name: string, end: number): ScrollVersion => ({ name, bpm: 100, marks: [{ at: 0, progress: 0 }, { at: end, progress: 1 }] });
@@ -118,7 +118,7 @@ function addOwnSong(device: Device, id: number, title: string, setlist?: { id: n
   return device.boot();
 }
 
-async function post(cookie: string, body: object, headers: Record<string, string> = { origin: TEST_ORIGIN }) {
+async function post(cookie: string, body: object, headers: Record<string, string> = { origin: TEST_ORIGIN, "x-song-shape": "chordpro" }) {
   const response = await realFetch(new URL("/api/backup", base), {
     method: "POST",
     headers: { "content-type": "application/json", ...headers, ...(cookie ? { cookie } : {}) },
@@ -488,7 +488,7 @@ try {
     await until(`!!document.querySelector("[role=menuitemradio]")`);
     return site.evaluate<string[]>(`[...document.querySelectorAll("[role=menuitemradio]")].map((b) => b.textContent.replace("✓", "").trim())`);
   };
-  const backedUpOnB = () => until(`(() => { const state = JSON.parse(localStorage.getItem("leadSheetsBackup") ?? "{}"); return state.at != null && !Object.values(state.synced).some(([, print]) => print === "?"); })()`);
+  const backedUpOnB = () => until(`(() => { const state = JSON.parse(localStorage.getItem("leadSheetsBackupV2") ?? "{}"); return state.at != null && !Object.values(state.synced).some(([, print]) => print === "?"); })()`);
   const versionsOnB = async () => (JSON.parse((await site.evaluate<string | null>(`localStorage.getItem(${JSON.stringify(SONG_ONE)})`)) ?? "{}").versions ?? []).map((item: ScrollVersion) => item.name);
 
   const phoneA = new Device(new Phone(sheetBase), iphone, sheetOrigin);
@@ -503,7 +503,7 @@ try {
   await until(`!!document.querySelector(".shell-header")`);
   await site.evaluate(`(() => {
     localStorage.setItem(${JSON.stringify(SONG_ONE)}, ${JSON.stringify(JSON.stringify({ versions: [version("Mine", 150)], selected: null }))});
-    localStorage.setItem("leadSheetsBackup", JSON.stringify({ account: ${JSON.stringify(sheetUser)}, pulled: 0, synced: {}, at: null }));
+    localStorage.setItem("leadSheetsBackupV2", JSON.stringify({ account: ${JSON.stringify(sheetUser)}, pulled: 0, synced: {}, at: null }));
   })()`);
   await site.send("Page.reload");
   await until(`!!document.querySelector(".shell-header")`);

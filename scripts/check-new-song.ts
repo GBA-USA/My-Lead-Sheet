@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 import { build } from "esbuild";
 import type { ChartLine, ChartSection, LibraryFile, Song } from "../src/types.ts";
 import { Phone, startApi } from "./api-session.ts";
@@ -103,6 +104,13 @@ const META: Meta = { title: "Kitchen Floor", artist: "Pat Bass", keyRoot: "A", k
 const TWO_SECTIONS = ["VERSE 1", "A               E", "Honey, load up your questions", "", "Chorus:", "[D]Fire a[A]way, [E]fire away"].join("\n");
 /** Hand-read from the text above: the word each chord is typed over, counted across the song, and how far into it. */
 const TWO_SECTION_ANCHORS = ['A on word 1 "Honey," at 0', 'E on word 4 "your" at 1', 'D on word 6 "Fire" at 0', 'A on word 7 "away," at 1', 'E on word 8 "fire" at 0'];
+/**
+ * Lines a player can type that, written back as a chord row over a lyric, would read as something else: a bracket
+ * lyric that is chords, a note, bars or indented chords, two chords on one letter with the later one pushed just past
+ * a `[` of the lyric, and a bracket heading that reads as a note or bars.
+ */
+const ODD_CHART = ["VERSE 1", "[G]A [D]B [C]C", "[G]Note: slow down", "[Am7]Bars: 4", "[D]| hold", "[E]  Em", "[G][D]|[ hold", "", "[Note: slow]", "[G]Honey, load up", "", "[Bars: 2]", "| A | E |"].join("\n");
+const ODD_PIECES = ["[G]", "[Am7]", "[D/F#]", "A", "B", "C", "G", "Em", "N.C.", "hey", "Honey,", "load", "Note:", "note:", "Bars:", "|", "| A |", ":", "-", "(x2)", "VERSE", "HEY", "Chorus", "Chorus:", "Verse 2", "[Note: slow]", "[Bars: 2]", "[Bridge]", "[x]", "[|x]", "[", "]", "]:", "[ ]", "[G][D]", "Hi[G]", "  ", " ", "\t"];
 const pairs = (sections: ChartSection[]) => sections.flatMap((section) => section.lines).filter((line): line is Row & ChartLine => line.chords !== undefined);
 
 /** A bracket line read the way a player means it: the lyric without brackets, and each chord at the letter after its bracket. */
@@ -218,6 +226,26 @@ await check("2a. every library song written as editor text parses back to the sa
   assert.deepEqual(app.parseSheet(app.sectionsToText(pasted)).sections, pasted, "an own song opens in the editor as text that saves back unchanged");
 });
 
+await check("2a. an own song with odd lines opens in the editor as text that saves back unchanged, so an untouched Edit rewrites nothing", () => {
+  const app = need();
+  const sections = app.parseSheet(ODD_CHART).sections;
+  const written = app.sectionsToText(sections);
+  assert.deepEqual(app.parseSheet(written).sections, sections, `the odd lines read back as typed (written as ${js(written)})`);
+  // Made-up charts from pieces that read as chords, notes, bars, headings and brackets, the same every run.
+  let state = 1;
+  const next = () => (state = (Math.imul(state, 1103515245) + 12345) >>> 0) / 4294967296;
+  const piece = () => ODD_PIECES[Math.floor(next() * ODD_PIECES.length)];
+  const line = () => Array.from({ length: 1 + Math.floor(next() * 4) }, piece).join(["", " ", "  "][Math.floor(next() * 3)]);
+  const changed: string[] = [];
+  const runs = 5000;
+  for (let run = 0; run < runs; run += 1) {
+    const text = Array.from({ length: 1 + Math.floor(next() * 4) }, () => (next() < 0.15 ? "" : line())).join("\n");
+    const first = app.parseSheet(text).sections;
+    if (!isDeepStrictEqual(app.parseSheet(app.sectionsToText(first)).sections, first)) changed.push(text);
+  }
+  assert.deepEqual(changed.slice(0, 5), [], `${changed.length} of ${runs} made-up charts read back differently`);
+});
+
 await check("3. only a song the player made counts as made here", () => {
   const app = need();
   useStorage(new FakeStorage());
@@ -305,6 +333,46 @@ class Device {
     return need().loadLibrary();
   }
 }
+
+await check("7. the write path refuses a song with no title: addOwnSong and replaceOwnSong write nothing for a blank or spaces-only title, a real title still saves, and a title-less song stored earlier still loads", () => {
+  const app = need();
+  const store = new FakeStorage();
+  useStorage(store);
+  const song = app.ownSong(META, app.parseSheet(TWO_SECTIONS).sections);
+  const id = app.addOwnSong(song);
+  assert.ok(id !== null, "a song with a title is added");
+  const before = store.getItem(app.LIBRARY_KEY);
+  for (const title of ["", "   ", "\t\n "]) {
+    assert.equal(app.addOwnSong({ ...song, title }), null, `addOwnSong refuses the title ${js(title)}`);
+    assert.equal(app.replaceOwnSong(id, { ...song, title }), false, `replaceOwnSong refuses the title ${js(title)}`);
+    assert.equal(store.getItem(app.LIBRARY_KEY), before, `and the title ${js(title)} writes nothing`);
+  }
+  assert.equal(app.loadLibrary().songs.find((stored) => stored.id === id)?.title, META.title, "the stored song keeps its title");
+  assert.equal(app.replaceOwnSong(id, { ...song, title: "Kitchen Floor (live)" }), true, "a real title still replaces");
+  assert.equal(app.loadLibrary().songs.find((stored) => stored.id === id)?.title, "Kitchen Floor (live)", "and is stored");
+  const second = app.addOwnSong({ ...song, title: " Padded " });
+  assert.ok(second !== null && second !== id, "a title with spaces around it still adds");
+  const raw = JSON.parse(store.getItem(app.LIBRARY_KEY)!) as { songs: { id: number; title: string }[] };
+  raw.songs.find((stored) => stored.id === id)!.title = "  ";
+  store.setItem(app.LIBRARY_KEY, JSON.stringify(raw));
+  assert.ok(app.loadLibrary().songs.some((stored) => stored.id === id), "a song stored with no title before this rule still loads");
+});
+
+await check("7b. a song from another phone whose title is no text is refused the same way: no throw, and nothing written", () => {
+  const app = need();
+  const store = new FakeStorage();
+  useStorage(store);
+  const song = app.ownSong(META, app.parseSheet(TWO_SECTIONS).sections);
+  const id = app.addOwnSong(song);
+  assert.ok(id !== null, "a song with a title is added");
+  const before = store.getItem(app.LIBRARY_KEY);
+  for (const title of [undefined, null, 7]) {
+    const sent = { ...song, title } as unknown as typeof song;
+    assert.equal(app.addOwnSong(sent), null, `addOwnSong refuses the title ${js(title) ?? "undefined"}`);
+    assert.equal(app.replaceOwnSong(id, sent), false, `replaceOwnSong refuses the title ${js(title) ?? "undefined"}`);
+    assert.equal(store.getItem(app.LIBRARY_KEY), before, "and nothing is written");
+  }
+});
 
 await check("4. an own song survives reload and backs up and restores with the account", async () => {
   const app = need();
@@ -410,12 +478,47 @@ const measure = `(() => {
   return { right: box.right, rows };
 })()`;
 
+/**
+ * In the page before any app script: the song catalog says no songs, so a paste's lookup for a missing title never
+ * reaches the live catalog. A request to this origin goes through.
+ */
+const CATALOG_STUB = `(() => {
+  window.__catalogCalls = [];
+  const realFetch = window.fetch.bind(window);
+  window.fetch = (input, init = {}) => {
+    const href = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    const url = new URL(href, location.href);
+    if (url.origin === location.origin) return realFetch(input, init);
+    window.__catalogCalls.push(url.href);
+    return Promise.resolve(new Response(JSON.stringify({ created: "2026-11-24T00:00:00.000Z", count: 0, offset: 0, recordings: [] }), { status: 200, headers: { "content-type": "application/json" } }));
+  };
+})();`;
+
 async function phoneChecks(site: Site, base: string, origin: string) {
   const page = await appPage(site);
+  await site.send("Page.addScriptToEvaluateOnNewDocument", { source: CATALOG_STUB });
   type Reply = { status: number; body: Record<string, any> };
   const appCalls = (path: string, body: object) =>
     site.evaluate<Reply>(`fetch(${js(path)}, { method: "POST", headers: { "content-type": "application/json" }, body: ${js(js(body))} }).then(async (r) => ({ status: r.status, body: await r.json() }))`);
-  const stored = () => site.evaluate<Song[]>(`JSON.parse(localStorage.getItem("leadSheetsLibrary") ?? "{}").songs ?? []`);
+  const codecBundle = await build({
+    entryPoints: [join(fileURLToPath(new URL("..", import.meta.url)), "src/chordpro.ts")],
+    bundle: true,
+    write: false,
+    format: "esm",
+    platform: "neutral",
+    logLevel: "silent",
+  });
+  const { chordProToSong } = (await import(
+    `data:text/javascript;base64,${Buffer.from(codecBundle.outputFiles[0].text).toString("base64")}`
+  )) as { chordProToSong(text: string): Omit<Song, "ref" | "id" | "copy"> };
+  const stored = async (): Promise<Song[]> => {
+    const raw = await site.evaluate<Array<Record<string, unknown>>>(`JSON.parse(localStorage.getItem("leadSheetsLibraryV2") ?? "{}").songs ?? []`);
+    return raw.map((entry) =>
+      typeof entry.chordpro === "string"
+        ? ({ ...chordProToSong(entry.chordpro), id: entry.id as number, ...(entry.copy ? { copy: entry.copy as Song["copy"] } : {}) } as Song)
+        : (entry as unknown as Song),
+    );
+  };
   const hashId = () => site.evaluate<number | null>(`(() => { const m = location.hash.match(/^#\\/song\\/(\\d+)/); return m ? Number(m[1]) : null; })()`);
   const buttons = (scope: string) => site.evaluate<{ text: string; disabled: boolean }[]>(`[...(${scope}?.querySelectorAll("button") ?? [])].map((b) => ({ text: b.textContent.trim(), disabled: b.disabled }))`);
   const hasButton = (text: string) => site.evaluate<boolean>(`[...document.querySelectorAll("button")].some((b) => b.textContent.trim() === ${js(text)})`);
@@ -606,9 +709,10 @@ async function phoneChecks(site: Site, base: string, origin: string) {
       message = ((await mike!.call("/api/chat/open", { roomId })).body.messages ?? []).find((m: { kind: string }) => m.kind === "song");
     }
     assert.ok(message, "Mike's DM gets the song card");
-    const card = JSON.parse(message.text) as { song: Song; sharedAs: string };
+    const card = JSON.parse(message.text) as { song: Song | { chordpro: string }; sharedAs: string };
+    const cardSong = "chordpro" in card.song && typeof card.song.chordpro === "string" ? chordProToSong(card.song.chordpro) : (card.song as Song);
     const own = (await stored()).find((song) => song.id === id)!;
-    assert.deepEqual([card.song.title, card.song.body, card.sharedAs], [own.title, own.body, "public"], "holding Pat's own chart, sent Public");
+    assert.deepEqual([cardSong.title, cardSong.body, card.sharedAs], [own.title, own.body, "public"], "holding Pat's own chart, sent Public");
 
     const bandId = (await appCalls("/api/bands/create", { name: "Kitchen Band" })).body.bandId as string;
     assert.ok(bandId, "Pat starts a band");
@@ -645,9 +749,9 @@ async function phoneChecks(site: Site, base: string, origin: string) {
   await check("3. Edit and Delete stay disabled with 'Only songs you made can be edited.' on catalog and friend-copy songs", async () => {
     const builtIn = seed.songs[0];
     await site.evaluate(`(() => {
-      const library = JSON.parse(localStorage.getItem("leadSheetsLibrary"));
+      const library = JSON.parse(localStorage.getItem("leadSheetsLibraryV2"));
       library.songs.push({ ...library.songs[1], id: 800, title: "Gift from Sam", copy: { id: "copy_1", canSendOn: true, from: { name: "Sam" } } });
-      localStorage.setItem("leadSheetsLibrary", JSON.stringify(library));
+      localStorage.setItem("leadSheetsLibraryV2", JSON.stringify(library));
     })()`);
     await reload("#/songs");
     for (const [what, songId] of [["a built-in song", builtIn.id], ["a friend's copy", 800]] as const) {
@@ -662,9 +766,9 @@ async function phoneChecks(site: Site, base: string, origin: string) {
   await check("6. Delete asks first and removes the song from My Songs, from the player's own setlists and from its per-song settings", async () => {
     const builtIn = seed.songs[0];
     await site.evaluate(`(() => {
-      const library = JSON.parse(localStorage.getItem("leadSheetsLibrary"));
+      const library = JSON.parse(localStorage.getItem("leadSheetsLibraryV2"));
       library.setlists.push({ id: 900, name: "Friday", songIds: [${id}, ${builtIn.id}] });
-      localStorage.setItem("leadSheetsLibrary", JSON.stringify(library));
+      localStorage.setItem("leadSheetsLibraryV2", JSON.stringify(library));
       localStorage.setItem("leadSheetsNotation.${id}", JSON.stringify("nashville"));
     })()`);
     await reload("#/setlists");
@@ -723,7 +827,7 @@ async function phoneChecks(site: Site, base: string, origin: string) {
       let card: { song: Song; updateOf: string | null } | undefined;
       for (const end = Date.now() + 15000; !card && Date.now() < end; await sleep(200)) {
         const messages: { kind: string; text: string }[] = (await friend.call("/api/chat/open", { roomId })).body.messages ?? [];
-        card = messages.filter((m) => m.kind === "song").map((m) => JSON.parse(m.text)).find((each) => each.song?.title === title);
+        card = messages.filter((m) => m.kind === "song").map((m) => JSON.parse(m.text)).find((each) => (typeof each.song?.chordpro === "string" ? chordProToSong(each.song.chordpro).title : each.song?.title) === title);
       }
       assert.ok(card, `Mike's DM gets ${title}`);
       await reload("#/songs");
@@ -837,7 +941,7 @@ async function phoneChecks(site: Site, base: string, origin: string) {
     const setItem = Storage.prototype.setItem;
     window.__restoreSetItem = () => { Storage.prototype.setItem = setItem; };
     Storage.prototype.setItem = function (key, value) {
-      if (key === "leadSheetsLibrary") throw new DOMException("Full", "QuotaExceededError");
+      if (key === "leadSheetsLibraryV2") throw new DOMException("Full", "QuotaExceededError");
       return setItem.call(this, key, value);
     };
   })()`;
@@ -940,6 +1044,138 @@ async function phoneChecks(site: Site, base: string, origin: string) {
     assert.ok(!(await stored()).some((song) => song.id === doomed), "the next Delete removes it");
   });
 
+  await check("3. an untouched Edit saves an own song's chart as it was, odd lines included", async () => {
+    await openNewSong();
+    await fill("Title", "Odd Lines");
+    await fill("Chart", ODD_CHART);
+    await tapIn(editor, "Save");
+    await page.until(onSongPage, "the song's page");
+    const odd = (await hashId())!;
+    const typed = (await stored()).find((song) => song.id === odd)?.body;
+    assert.deepEqual(typed, need().parseSheet(ODD_CHART).sections, "the song is stored as typed");
+    await openSong(odd);
+    await openEdit();
+    await tapIn(editor, "Save");
+    await page.until(`!document.querySelector(".song-editor")`, "the editor to close");
+    assert.deepEqual((await stored()).find((song) => song.id === odd)?.body, typed, "Save with nothing touched keeps every line");
+  });
+
+  await check("3. on a live setlist an own song's More menu has Edit and Delete on and Edit saves in place, and a built-in song there says why both are off", async () => {
+    const builtIn = seed.songs[0];
+    const editDelete = (items: { text: string; disabled: boolean }[]) => items.filter((item) => ["Edit", "Delete"].includes(item.text));
+    await openNewSong();
+    await fill("Title", "Live Own Song");
+    await fill("Chart", TWO_SECTIONS);
+    await tapIn(editor, "Save");
+    await page.until(onSongPage, "the song's page");
+    const own = (await hashId())!;
+    await site.evaluate(`(() => {
+      const library = JSON.parse(localStorage.getItem("leadSheetsLibraryV2"));
+      library.setlists.push({ id: 901, name: "Saturday", songIds: [${own}, ${builtIn.id}] });
+      localStorage.setItem("leadSheetsLibraryV2", JSON.stringify(library));
+    })()`);
+    await reload("#/setlists");
+    const onLive = (index: number, title: string) =>
+      page.until(`location.hash === "#/live/901/${index}" && document.querySelector(".sheet .sheet-name")?.textContent === ${js(title)}`, `${title} on the live setlist`);
+    await site.evaluate(`location.hash = "#/live/901/0"`);
+    await onLive(0, "Live Own Song");
+    assert.deepEqual(editDelete(await openMore()), [{ text: "Edit", disabled: false }, { text: "Delete", disabled: false }], "the own song: Edit and Delete are on");
+    assert.ok(!(await page.text("[role=menu]")).includes("Only songs you made"), "with no locked note");
+    await tapIn(`document.querySelector("[role=menu]")`, "Edit");
+    await page.until(`!!${editor}`, "the editor on the live song");
+    await fill("Title", "Live Own Song (fixed)");
+    await tapIn(editor, "Save");
+    await page.until(`!document.querySelector(".song-editor")`, "the editor to close");
+    await onLive(0, "Live Own Song (fixed)");
+    assert.equal((await stored()).find((song) => song.id === own)?.title, "Live Own Song (fixed)", "the edit is stored");
+
+    await site.evaluate(`location.hash = "#/live/901/1"`);
+    await onLive(1, builtIn.title);
+    assert.deepEqual(editDelete(await openMore()), [{ text: "Edit", disabled: true }, { text: "Delete", disabled: true }], "the built-in song: Edit and Delete are off");
+    assert.ok((await page.text("[role=menu]")).includes("Only songs you made can be edited."), "the menu says why, which is true for it");
+    await closeMore();
+  });
+
+  /** The fold's button: the one that says whether the part holding the Title field is open. */
+  const fold = `[...${editor}.querySelectorAll("button[aria-expanded][aria-controls]")].find((b) => document.getElementById(b.getAttribute("aria-controls"))?.contains(${field("Title")}))`;
+  const foldOpen = () => site.evaluate<boolean | null>(`(() => { const b = ${fold}; return b ? b.getAttribute("aria-expanded") === "true" : null; })()`);
+  const onPage = (expression: string) => site.evaluate<boolean>(`!!(${expression})?.getClientRects().length`);
+  const DETAILS = ["Title", "Artist", "Key", "BPM", "Time signature"];
+  const caretIn = (label: string) => site.evaluate<boolean>(`document.activeElement === ${field(label)}`);
+  const tapFold = async () => {
+    assert.ok(await site.evaluate<boolean>(`(() => { const b = ${fold}; b?.click(); return !!b; })()`), "a details fold to tap");
+    await settle(150);
+  };
+
+  await check("7. New song opens with the details open and the Title field pointed to; with a title they fold to one line on a tap and open again", async () => {
+    await openNewSong();
+    assert.equal(await foldOpen(), true, "with no title the details are open");
+    for (const label of DETAILS) assert.ok(await onPage(field(label)), `the ${label} field shows`);
+    assert.ok(await site.evaluate<boolean>(`(() => { const el = ${field("Title")}; return document.activeElement === el || el.getAttribute("aria-invalid") === "true"; })()`), "and the Title field is pointed to");
+    await fill("Title", "Fold Me");
+    await fill("Artist", "Pat Bass");
+    assert.equal(await foldOpen(), true, "typing a title does not fold the details under the player's fingers");
+    assert.ok(await site.evaluate<boolean>(`${field("Title")}.getAttribute("aria-invalid") !== "true"`), "a filled Title field is no longer marked");
+    await tapFold();
+    assert.equal(await foldOpen(), false, "a tap folds them");
+    for (const label of DETAILS) assert.equal(await onPage(field(label)), false, `the folded ${label} field is off the page`);
+    assert.ok((await site.evaluate<string>(`${fold}.textContent`)).includes("Fold Me · Pat Bass"), "the fold says Fold Me · Pat Bass");
+    await fitsAt("the folded editor", ".song-editor");
+    await tapFold();
+    assert.equal(await foldOpen(), true, "and a second tap opens them");
+    assert.equal(await value("Title"), "Fold Me", "with what was typed still there");
+    await tapIn(editor, "Cancel");
+  });
+
+  await check("7. Edit song opens with the details folded to Title · Artist; a title of spaces is refused with Add a title, which opens the details on the Title field and stores nothing", async () => {
+    await openNewSong();
+    await fill("Title", "Folded Edit");
+    await fill("Artist", "Pat Bass");
+    await fill("BPM", "104");
+    await fill("Chart", TWO_SECTIONS);
+    await tapIn(editor, "Save");
+    await page.until(onSongPage, "the song's page");
+    const folded = (await hashId())!;
+    await openEdit();
+    assert.equal(await foldOpen(), false, "Edit song starts with the details folded");
+    for (const label of DETAILS) assert.equal(await onPage(field(label)), false, `the ${label} field is off the page`);
+    assert.ok(await onPage(field("Chart")), "the chart box shows");
+    const summary = await site.evaluate<string>(`${fold}.textContent`);
+    assert.ok(summary.includes("Folded Edit · Pat Bass"), `the fold says Folded Edit · Pat Bass (${js(summary)})`);
+    await tapFold();
+    assert.equal(await foldOpen(), true, "a tap opens them");
+    assert.deepEqual([await value("Title"), await value("Artist"), await value("BPM")], ["Folded Edit", "Pat Bass", "104"], "with the song's details");
+    await fill("Title", "   ");
+    await tapFold();
+    assert.equal(await foldOpen(), true, "details with no title do not fold");
+    const before = await site.evaluate<string>(`localStorage.getItem("leadSheetsLibraryV2")`);
+    await tapIn(editor, "Save");
+    assert.ok((await page.text(".song-editor [role=alert]")).includes("Add a title"), "Save with a title of spaces says Add a title");
+    assert.ok(await site.evaluate<boolean>(`!!${editor}`), "the editor stays open");
+    assert.equal(await site.evaluate<string>(`localStorage.getItem("leadSheetsLibraryV2")`), before, "and nothing is stored");
+    assert.ok(await onPage(field("Title")), "the Title field shows");
+    assert.ok(await caretIn("Title"), "with the caret in it");
+    assert.equal((await stored()).find((song) => song.id === folded)?.title, "Folded Edit", "the stored song keeps its title");
+    await fill("Title", "Folded Edit Again");
+    await tapIn(editor, "Save");
+    await page.until(`!document.querySelector(".song-editor")`, "the editor to close");
+    assert.equal((await stored()).find((song) => song.id === folded)?.title, "Folded Edit Again", "a real title then saves");
+  });
+
+  await check("7. a BPM the metronome can't play, saved with the details folded, opens them so the player sees which field the message is about", async () => {
+    await openEdit();
+    assert.equal(await foldOpen(), false, "Edit song starts folded");
+    await fill("BPM", "9999");
+    if (await foldOpen()) await tapFold();
+    assert.equal(await foldOpen(), false, "the details are folded over the bad BPM");
+    await tapIn(editor, "Save");
+    assert.ok((await page.text(".song-editor [role=alert]")).includes("BPM must be a whole number"), "the BPM is refused");
+    assert.equal(await foldOpen(), true, "and the details open");
+    assert.ok(await onPage(field("BPM")), "on the BPM field");
+    await tapIn(editor, "Cancel");
+  });
+
+  assert.equal(await site.evaluate<number>(`window.__catalogCalls.length`), await site.evaluate<number>(`window.__catalogCalls.filter((url) => url.startsWith("https://musicbrainz.org/ws/2/recording")).length`), "no request but the catalog's recording search left the page");
   assert.deepEqual(await page.errors(), [], "no page errors");
 }
 

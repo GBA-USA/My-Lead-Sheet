@@ -24,9 +24,76 @@
   font-size: 17px;
 }
 
+/* The details fold: one line that says the title and artist while the fields are away. */
+.song-editor-fold {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 14px;
+  border: var(--control-border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 700;
+  font-size: 15px;
+  text-align: left;
+}
+
+.song-editor-fold span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.song-editor-fold::after {
+  content: "";
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-bottom: 4px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+}
+
+.song-editor-fold[aria-expanded="true"]::after {
+  margin: 4px 0 0;
+  transform: rotate(-135deg);
+}
+
 .song-editor-fields {
   display: grid;
   gap: 10px;
+}
+
+.song-editor-fields[hidden] {
+  display: none;
+}
+
+/* The title a new song still needs is pointed out, not flagged as a mistake. */
+.song-editor-fields input[aria-required="true"][aria-invalid="true"] {
+  border-color: var(--accent);
+}
+
+.song-editor-missing {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.song-editor-guesses {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.song-editor-guesses li {
+  max-width: 100%;
 }
 
 .song-editor .song-data-field {
@@ -96,6 +163,45 @@
   font-size: 14px;
 }
 
+.song-editor-paste {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.song-editor-paste-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.song-editor-paste-actions:empty {
+  display: none;
+}
+
+.song-editor-paste-actions button {
+  min-height: 44px;
+  max-width: 100%;
+  padding: 6px 16px;
+  border: var(--control-border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 700;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  white-space: normal;
+}
+
+.song-editor-capo {
+  align-items: center;
+}
+
+.song-editor-paste-actions button[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
 .song-editor-text {
   width: 100%;
   min-width: 0;
@@ -143,6 +249,22 @@
 
 .song-data-actions .is-danger {
   color: var(--danger);
+}
+
+.song-editor .song-data-actions {
+  flex-wrap: wrap;
+}
+
+.song-editor .song-data-actions button {
+  min-height: 44px;
+  height: auto;
+  max-width: 100%;
+  padding: 8px 16px;
+  white-space: normal;
+}
+
+.song-editor.is-short .song-editor-preview {
+  margin-top: 0;
 }
 
 .song-list-add {

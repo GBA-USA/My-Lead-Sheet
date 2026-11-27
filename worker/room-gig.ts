@@ -3,11 +3,12 @@ import { DETAIL_LIMITS, gigLine, KIND_WORDS, type GigDetails, type GigKind, type
 import { CHOICE_WORDS, type RouteChoice } from "../src/routes";
 import { randomBytes, toBase64Url, utf8 } from "./bytes";
 import { liveCode } from "./codes";
-import { signedIn, who, type Context, type Person, type Route, type User } from "./directory-http";
+import { signedIn, wantsChordPro, who, type Context, type Person, type Route, type User } from "./directory-http";
 import { deliver } from "./directory-inbox";
 import { fromRoom, Refused, roomRefused as refused } from "./refused";
 import { addColumns, chatRoom, type Posted } from "./room-chat";
-import { bandSongsOnly, isText, MAX_SETLIST_SONGS } from "./room-library";
+import { firstName, guestGigsOf, guestOpens, liveGuestGigs, type GuestOpens } from "./room-guest";
+import { bandSongsOnly, isText, MAX_SETLIST_SONGS, songForCaller, storedSong } from "./room-library";
 import { bandIdIn, bandIdsOf, inRoom, roomOf, type RoomStore } from "./room-members";
 import { hmacKey } from "./session";
 
@@ -100,6 +101,13 @@ const lineupOf = (row: GigRow): string[] => JSON.parse(row.lineup);
 const songsOf = (row: GigRow): string[] => JSON.parse(row.song_order);
 const activeIds = (sql: SqlStorage) => new Set(sql.exec<{ user_id: string }>(`SELECT user_id FROM members WHERE state = 'active'`).toArray().map((row) => row.user_id));
 const isAdmin = (sql: SqlStorage, userId: string) => sql.exec(`SELECT 1 FROM members WHERE user_id = ? AND state = 'active' AND role = 'admin'`, userId).toArray().length > 0;
+
+/** The lineup by first name only, which is all a guest is shown of the band's members (PLAN.md 7.14). */
+function firstNames(sql: SqlStorage, row: GigRow): Record<string, string> {
+  const lineup = lineupOf(row);
+  const rows = sql.exec<{ user_id: string; display_name: string }>(`SELECT user_id, display_name FROM members WHERE state = 'active'`).toArray();
+  return Object.fromEntries(rows.filter((member) => lineup.includes(member.user_id)).map((member) => [member.user_id, firstName(member.display_name)]));
+}
 
 /** Who leads the gig now: the live state's leader once it is live, the planned leader before. Only the room's introductions read it; every plan keeps the planned pair. */
 const leadingNow = (row: GigRow) => (row.status === "live" ? liveOf(row)?.leader : null) ?? row.leader;
@@ -235,12 +243,13 @@ export const gigRoom = {
     return { view: viewOf(band, gigRow(band.sql, fields.gigId)), posted: chatRoom.post(band, planner, fields.gigId, text, now, card) };
   },
 
-  /** The gigs `userId` is on the lineup of, each with whoever leads it now, so the room introduces each phone to that leader. */
+  /** The gigs `userId` is on the lineup of, or follows as a guest, each with whoever leads it now, so the room introduces each phone to that leader. */
   lineups(band: RoomStore, userId: string): Map<string, string> {
-    inRoom(band.sql, userId);
+    const { me } = inRoom(band.sql, userId, "gigs");
     settleLive(band.sql);
+    const guestOf = me.role === "guest" ? liveGuestGigs(band.sql, userId) : null;
     const rows = band.sql.exec<GigRow>(`SELECT * FROM gigs`).toArray();
-    return new Map(rows.filter((row) => lineupOf(row).includes(userId)).map((row) => [row.gig_id, leadingNow(row)]));
+    return new Map(rows.filter((row) => (guestOf ? guestOf.has(row.gig_id) : lineupOf(row).includes(userId))).map((row) => [row.gig_id, leadingNow(row)]));
   },
 
   /** The gigs not yet ended, soonest first, and the ended ones, newest first. An ended gig is kept as the band's record. */
@@ -254,11 +263,12 @@ export const gigRoom = {
     };
   },
 
-  open(band: RoomStore, userId: string, gigId: string): GigView {
-    inRoom(band.sql, userId);
+  /** A guest opens only their pass's gig, sees its lineup by first name, and is told what else their pass opens and when it ends. */
+  open(band: RoomStore, userId: string, gigId: string): GigView & { names?: Record<string, string>; guest?: GuestOpens } {
+    const { me } = inRoom(band.sql, userId, { gigId });
     const row = gigRow(band.sql, gigId);
     if (!row) throw refused("not-found");
-    return viewOf(band, row);
+    return me.role === "guest" ? { ...viewOf(band, row), names: firstNames(band.sql, row), guest: guestOpens(band.sql, me, Date.now()) } : viewOf(band, row);
   },
 
   setLineup(band: RoomStore, userId: string, gigId: string, lineup: string[]): GigView {
@@ -295,14 +305,15 @@ export const gigRoom = {
    * first await, so the pack, its rev and its secret all come from one moment.
    */
   async pack(band: RoomStore, sessionSecret: string | undefined, userId: string, gigId: string, now: number): Promise<Pack> {
-    const { me, meta } = inRoom(band.sql, userId);
+    const { me, meta } = inRoom(band.sql, userId, { gigId });
     const row = gigRow(band.sql, gigId);
     if (!row) throw refused("not-found");
+    const guest = me.role === "guest" ? me.pass : null;
     const playing = lineupOf(row).includes(userId);
-    if (!playing && me.role !== "admin") throw refused("not-on-lineup");
+    if (!playing && !guest && me.role !== "admin") throw refused("not-on-lineup");
     const songs = songsOf(row).flatMap((songId): PackSong[] => {
       const song = band.sql.exec<{ song: string }>(`SELECT song FROM band_songs WHERE song_id = ?`, songId).toArray()[0];
-      return song ? [{ songId, song: JSON.parse(song.song), bandTiming: null }] : [];
+      return song ? [{ songId, song: storedSong(song.song), bandTiming: null }] : [];
     });
     if (playing) {
       band.sql.exec(
@@ -314,8 +325,8 @@ export const gigRoom = {
         now,
       );
     }
-    const secret = playing ? await gigSecret(sessionSecret, band.bandId, gigId, row.secret_rev) : null;
-    return { gig: planOf(row, band.bandId), songs, scrollWithLeader: meta.scroll_with_leader === 1, secret, packRev: row.rev, expiresAt: null };
+    const secret = playing || guest ? await gigSecret(sessionSecret, band.bandId, gigId, row.secret_rev) : null;
+    return { gig: planOf(row, band.bandId), songs, scrollWithLeader: meta.scroll_with_leader === 1, secret, packRev: row.rev, expiresAt: guest?.expires_at ?? null };
   },
 
   /** A gig link opens the gig for its lineup and the band's admins. Anyone else hears only that it is for the lineup. */
@@ -352,7 +363,7 @@ export const gigRoom = {
   },
 };
 
-function gigIdIn(value: unknown): string {
+export function gigIdIn(value: unknown): string {
   if (typeof value !== "string" || !GIG_ID.test(value)) throw new Refused("bad-request");
   return value;
 }
@@ -487,9 +498,12 @@ export const GIG_ROUTES: Record<string, Route> = {
     const me = signedIn(c).user_id;
     const since = new Date(c.now - 24 * 3_600_000).toISOString().slice(0, 10);
     const lists = await Promise.all(bandIdsOf(c.sql, me).map((bandId) => fromRoom(roomOf(c, bandId).gigList(me)).catch(() => null)));
-    const gigs = lists.flatMap((list) =>
-      list ? [...list.gigs, ...list.past].map((view) => view.gig).filter((gig) => gig.lineup.includes(me) && (gig.status === "live" || (gig.status === "ended" && gig.date >= since))) : [],
-    );
+    const passes = await Promise.all(guestGigsOf(c.sql, me).map((held) => fromRoom(roomOf(c, held.band_id).gigOpen(me, held.gig_id)).then((view) => view.gig, () => null)));
+    const tonight = (gig: GigPlan) => gig.status === "live" || (gig.status === "ended" && gig.date >= since);
+    const gigs = [
+      ...lists.flatMap((list) => (list ? [...list.gigs, ...list.past].map((view) => view.gig).filter((gig) => gig.lineup.includes(me) && tonight(gig)) : [])),
+      ...passes.filter((gig): gig is GigPlan => gig !== null && tonight(gig)),
+    ];
     return { body: { gigs } };
   },
 
@@ -525,7 +539,9 @@ export const GIG_ROUTES: Record<string, Route> = {
 
   async "POST /api/bands/gig/pack"(c) {
     const { room, gigId, me } = inGig(c);
-    return { body: await fromRoom(room.gigPack(me, gigId, c.now)) };
+    const pack = await fromRoom(room.gigPack(me, gigId, c.now));
+    const chordpro = wantsChordPro(c.request);
+    return { body: { ...pack, songs: pack.songs.map((item) => ({ ...item, song: songForCaller(item.song, chordpro) })) } };
   },
 
   async "POST /api/bands/gig/code"(c) {

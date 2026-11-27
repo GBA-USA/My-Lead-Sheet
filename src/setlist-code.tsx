@@ -1,6 +1,6 @@
 import { useEffect, useId, useState, type ReactNode } from "react";
-import { CHOICES, content } from "./band-library";
-import type { BandSetlist } from "./band-library-model";
+import { CHOICES, sent } from "./band-library";
+import { songFromSent, type BandSetlist, type WireSong } from "./band-library-model";
 import type { ChatMessage } from "./chat-model";
 import { CODE_REFUSED } from "./code-link";
 import { ShowCode } from "./codes";
@@ -124,7 +124,7 @@ export function MySetlistCodeSheet({ setlist, onSignedOut, onClose }: { setlist:
       ) : null}
       {showing && choice ? (
         <ShowCode
-          request={{ kind: "my-setlist", choice, name: setlist.name, songs: picked.map((song) => ({ song: content(song), copyId: song.copy?.id ?? null })), setlistCopyId: setlist.copy?.id ?? null }}
+          request={{ kind: "my-setlist", choice, name: setlist.name, songs: picked.map((song) => ({ song: sent(song), copyId: song.copy?.id ?? null })), setlistCopyId: setlist.copy?.id ?? null }}
           words={`${setlist.name} · ${picked.length === 1 ? "1 song" : `${picked.length} songs`}`}
           share
           onStopped={() => setShowing(false)}
@@ -233,7 +233,8 @@ export function SetlistCard({ message, me }: { message: ChatMessage; me: string 
   const add = async () => {
     setBusy(true);
     try {
-      const copy = await api<SetlistCopy>("/api/chat/setlist-copy", { copyId: card.copyId });
+      const raw = await api<Omit<SetlistCopy, "songs"> & { songs: { song: WireSong; copyId: string }[] }>("/api/chat/setlist-copy", { copyId: card.copyId });
+      const copy: SetlistCopy = { ...raw, songs: raw.songs.map((item) => ({ ...item, song: songFromSent(item.song) })) };
       const songs = loadLibrary().songs;
       const have = copy.songs.filter((item) => !songs.some((song) => song.copy?.id === item.copyId)).map((item) => songYouHave(songs, item.song)).find((hit) => hit !== undefined);
       if (have) setAsking({ copy, have });

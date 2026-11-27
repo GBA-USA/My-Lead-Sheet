@@ -11,7 +11,17 @@ export const PRIVACY_HREF = "privacy.html";
 export const APP_NAME = "Groovist";
 
 export const DATA_KINDS: readonly DataKind[] = [
-  { key: "leadSheetsLibrary", place: "phone", what: "Your songs and setlists, including any changes you make to them." },
+  { key: "leadSheetsLibraryV2", place: "phone", what: "Your songs and setlists, including any changes you make to them." },
+  {
+    key: "leadSheetsLibrary",
+    place: "phone",
+    what: "The earlier place your songs and setlists were stored, kept as it was for a page opened before the update and removed when the account on this phone changes.",
+  },
+  {
+    key: "leadSheetsLibraryTaken",
+    place: "phone",
+    what: "Short fingerprints of songs and setlists already taken in from the earlier library key, so changes made in a still-open older tab are not added twice. Removed when the account on this phone changes.",
+  },
   { key: "leadSheetsTheme", place: "phone", what: "The look you picked: stage, day, one of the two colorblind-safe looks, or high contrast." },
   { key: "leadSheetsTextScale", place: "phone", what: "The text size you picked for sheets." },
   {
@@ -53,9 +63,14 @@ export const DATA_KINDS: readonly DataKind[] = [
     what: "A link you opened while signed out, such as a friend or band invite, with the time it arrived, kept so it can finish once you sign in or create an account. Removed when it is used or refused, when you close the sign-in screen, or after a day.",
   },
   {
-    key: "leadSheetsBackup",
+    key: "leadSheetsBackupV2",
     place: "phone",
     what: "While you are signed in: which account this phone backs up to, and what it last sent and received, so it only sends changes. Removed when you sign out.",
+  },
+  {
+    key: "leadSheetsBackup",
+    place: "phone",
+    what: "The earlier place your backup state was stored, kept as it was for a page opened before the update and removed when the account on this phone changes.",
   },
   {
     key: "leadSheetsLeftBy",
@@ -109,6 +124,11 @@ export const DATA_KINDS: readonly DataKind[] = [
     place: "server",
     what: "Your backup, in a room only your account can open: the songs and setlists you added or changed, your timing versions, the runtime, tempo and time signature you entered, the scroll speed and Notes or Nashville choice for each song, and your text size, plus the Screen on choice an older version of the app kept. Your phones sync it when you are signed in.",
   },
+  {
+    key: "backup_shape",
+    place: "server",
+    what: "In your backup room, a single mark set once a newer build of the app has synced your backup, so an older build cannot overwrite or remove songs it cannot read.",
+  },
   { key: "session_floors", place: "server", what: "In each band or chat room, the oldest sign-in it still lets in for each person, after they signed out everywhere." },
   { key: "meta", place: "server", what: "For each band: its name, who made it and when, and whether Scroll with the leader is on." },
   {
@@ -161,7 +181,7 @@ export const DATA_KINDS: readonly DataKind[] = [
   {
     key: "mls-phone",
     place: "phone",
-    what: "Copies of the songs in your bands, and the gig packs you downloaded: the setlist for the night with its charts, the band timing for those songs, and the gig secret that proves your phone is on the lineup. Kept so they open with no signal. Removed when you sign out, or when another account signs in on this phone.",
+    what: "Copies of the songs in your bands, and the gig packs you downloaded: the setlist for the night with its charts, the band timing for those songs, and the gig secret that proves your phone is on the lineup. Kept so they open with no signal. Removed when you sign out, or when another account signs in on this phone. A pack that came with a guest pass also holds when the pass ends. It is deleted when the pass ends, even with no signal, and as soon as the phone hears that the band revoked the pass.",
   },
   {
     key: "syncHistory",
@@ -173,6 +193,16 @@ export const DATA_KINDS: readonly DataKind[] = [
     key: "gigs",
     place: "server",
     what: "For each band: every gig and rehearsal planned, with its name and date, start and call times, venue, address and notes, the setlist and its song order at the time, who is playing, the leader and backup leader, the connection the admin picked, whether it is planned, live or over, and a number that changes the gig secret when the lineup changes.",
+  },
+  {
+    key: "guest_passes",
+    place: "server",
+    what: "For each band: every guest pass the admin made for a gig, with the name the admin gave it, who made it, when it ends, whether it was revoked, which code opens it, the account that first opened it, and whether the guest may see the band chat and the other setlists.",
+  },
+  {
+    key: "guest_gigs",
+    place: "server",
+    what: "Which gigs you hold a guest pass for, so your phone can offer Join gig for them, and so the songs of that band are never passed on from your account.",
   },
   { key: "pack_receipts", place: "server", what: "For each gig: who on the lineup downloaded the gig to their phone, which version of it, and when, so the gig card can show Downloaded." },
   { key: "gig_ops", place: "server", what: "For each live gig: the id of each change the leader makes and when, so a change sent twice counts once. Nothing is written here until live gigs are built." },

@@ -18,7 +18,8 @@ const CHAIN_BREAKER = 10;
 const TAKE_ME_OUT = 5;
 const WIDTHS = [390, 1280];
 /** U3b took the metronome block (158.38 px at 390, 142.19 px at 1280 with its margin) off the card, above the chart. */
-const FIRST_CHORD_IN_CARD: Record<number, { x: number; y: number }> = { 390: { x: 109.59, y: 1312.64 }, 1280: { x: 121.59, y: 727.86 } };
+/** Re-measured in Chrome on Linux (the CI runner) after chordpro-codec removed the bass table above the chart. */
+const FIRST_CHORD_IN_CARD: Record<number, { x: number; y: number }> = { 390: { x: 109.59, y: 772.61 }, 1280: { x: 121.59, y: 370.64 } };
 const js = (value: unknown) => JSON.stringify(value);
 const settle = (ms = 250) => new Promise((done) => setTimeout(done, ms));
 
@@ -311,7 +312,9 @@ try {
     const old = loadSongVersions("local/13");
     expect(old.selected === 2 && old.versions.map((version) => version.name).join() === "V1,Slow intro,V2", `names or selection lost: ${js(old)}`);
     expect(old.versions.every((version) => version.semitones === null && version.bpm === null && version.scrollPercent === null && version.notation === null), "an old row has attributes set");
-    expect(js(old.versions[1].plan) === js({ bpm: 78, marks: TAUGHT.marks, tempo: TEMPO_MAPPED.tempo }) && js(old.versions[2].learned) === js(LEARNED_V2.learned), "an old row's timing or learned part changed");
+    const likely = (chords: (string | null)[]) => chords.map((chord) => ({ chord, band: "likely" }));
+    const learnedV2 = { ...LEARNED_V2.learned, sections: [{ heading: "VERSE 1", at: 0, heard: likely(["G", null, "C"]) }, { heading: "CHORUS", at: 42.1 }] };
+    expect(js(old.versions[1].plan) === js({ bpm: 78, marks: TAUGHT.marks, tempo: TEMPO_MAPPED.tempo }) && js(old.versions[2].learned) === js(learnedV2), `an old row's timing or learned part changed: ${js(old.versions[2].learned)}`);
     expect(store.get("leadSheetsScrollVersions.13") === js({ versions: [TAUGHT, TEMPO_MAPPED, LEARNED_V2], selected: 2 }), "reading rewrote the old rows");
     await freshPhone(`#/song/${CHAIN_BREAKER}`, `localStorage.setItem(${js(VERSIONS)}, ${js(js({ versions: [LEARNED], selected: 0 }))})`);
     expect((await chip()) === "V1 · learned ▾", `the chip reads ${await chip()}`);
@@ -321,6 +324,24 @@ try {
     expect((await scrollOn()) && top > 0, `the old learned version does not scroll (on ${await scrollOn()}, top ${top})`);
     await evaluate(`document.querySelector(".scroll-pill").click()`);
     expect(!(await saveShown()), "playing an old version shows Save");
+    const oldHeard = { ...LEARNED.learned, sections: [{ heading: "VERSE 1", at: 3, heard: ["C", null] }] };
+    const heardRow = async () => {
+      await evaluate(`document.querySelector(".scroll-pill")?.click()`);
+      await settle(800);
+      const shown = await evaluate<boolean>(`!!document.getElementById("chord-section")?.textContent.includes("Heard")`);
+      await evaluate(`document.querySelector(".scroll-pill")?.click()`);
+      return shown;
+    };
+    await freshPhone(`#/song/${CHAIN_BREAKER}`, `localStorage.setItem(${js(VERSIONS)}, ${js(js({ versions: [{ ...LEARNED, learned: oldHeard }], selected: 0 }))})`);
+    expect(await heardRow(), "an old version's heard bars, a not-sure bar included, draw no Heard row");
+    const draft = { semitones: 0, bpm: null, scrollPercent: 100, notation: "chords", plan: { bpm: LEARNED.bpm, marks: LEARNED.marks }, learned: oldHeard };
+    await freshPhone(`#/song/${CHAIN_BREAKER}`, `localStorage.setItem(${js(DRAFT)}, ${js(js(draft))})`);
+    const opened = { save: await saveShown(), heard: await heardRow(), broken: await evaluate<string>(`document.querySelector(".missing")?.textContent ?? ""`) };
+    expect(opened.save && opened.heard && opened.broken === "", `an old build's unsaved learned draft does not open with Save and play its Heard row: ${js(opened)}`);
+    await freshPhone(`#/song/${CHAIN_BREAKER}`, `localStorage.setItem(${js(DRAFT)}, ${js(js(draft))})`);
+    await saveAs("Old draft");
+    const kept = JSON.parse((await stored(VERSIONS)) ?? "{}").versions?.[0]?.learned?.sections?.[0]?.heard;
+    expect(js(kept) === js(["C", null]), `Save of the old draft stored heard bars ${js(kept)}, not the names a build from before colors reads`);
   });
 
   await test("the draft is per account on a shared phone", async () => {
@@ -375,6 +396,12 @@ try {
     await freshPhone(`#/song/${CHAIN_BREAKER}`);
     await openChooser();
     await tap("Learn by listen", DIALOG);
+    await until(`!!document.querySelector(".learn")`, "the Learn sheet");
+    const ways = await evaluate<string[]>(`[...document.querySelectorAll(".learn :is(input, button)")].map((el) => el.getAttribute("aria-label") ?? el.textContent.trim())`);
+    expect(js(ways) === js(["Pick the song's file", "Listen with the mic", "Cancel"]), `Learn by listen opened on ${js(ways)}, not its two ways in with the file first and Cancel`);
+    await settle(250);
+    expect(await evaluate<boolean>(`!window.__mic`), "the mic was asked for before the player picked it");
+    await tap("Listen with the mic", `document.querySelector(".learn")`);
     await until(`!!window.__mic`, "the mic");
     await evaluate(`window.__playSong(document.querySelectorAll(".chart-heading").length)`);
     await tap("Stop", `document.querySelector(".learn")`);
@@ -604,11 +631,11 @@ try {
   await mike.call("/api/friends/accept", { userId: sam.userId });
   const signedIn = `localStorage.setItem("leadSheetsSignedIn", "1");`;
   const withCopies = (library: string) =>
-    `${signedIn} const stored = ${library}; stored.songs.push(${js({ ...seed.songs.find((song) => song.id === CHAIN_BREAKER), id: 901, title: "Mike's Chain", copy: { id: "copy-dm", canSendOn: false, from: { name: "Mike" } } })}, ${js({ ...seed.songs.find((song) => song.id === CHAIN_BREAKER), id: 902, title: "Band Chain", copy: { id: "copy-band", canSendOn: true } })}); localStorage.setItem("leadSheetsLibrary", JSON.stringify(stored));`;
+    `${signedIn} const stored = ${library}; stored.songs.push(${js({ ...seed.songs.find((song) => song.id === CHAIN_BREAKER), id: 901, title: "Mike's Chain", copy: { id: "copy-dm", canSendOn: false, from: { name: "Mike" } } })}, ${js({ ...seed.songs.find((song) => song.id === CHAIN_BREAKER), id: 902, title: "Band Chain", copy: { id: "copy-band", canSendOn: true } })}); localStorage.setItem("leadSheetsLibraryV2", JSON.stringify(stored));`;
 
   await test("a locked song (a DM copy and a band song) shows no Save, no Revert, no Send, and its transposition is gone after leaving", async () => {
     await freshPhone("#/songs", signedIn);
-    const library = await stored("leadSheetsLibrary");
+    const library = await stored("leadSheetsLibraryV2");
     await freshPhone("#/songs", withCopies(library ?? "{}"));
     for (const id of [901, 902]) {
       await go(`#/song/${id}`);

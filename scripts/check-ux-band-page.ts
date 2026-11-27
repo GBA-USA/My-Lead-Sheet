@@ -211,7 +211,7 @@ try {
     await section(lowTides.bandId, "Songs");
     await app.until(`${page(lowTides.bandId)}.querySelectorAll(".band-library-songs li").length === 3`, "the three band songs");
     assert.ok(!(await buttonsIn(page(lowTides.bandId))).includes("Add to My Songs"), "no Add to My Songs on the band page");
-    const before = await site.evaluate<number>(`JSON.parse(localStorage.getItem("leadSheetsLibrary") ?? '{"songs":[]}').songs.length`);
+    const before = await site.evaluate<number>(`JSON.parse(localStorage.getItem("leadSheetsLibraryV2") ?? '{"songs":[]}').songs.length`);
     await tapRow(lowTides.bandId, "songs", "Harbor Lights");
     await app.until(`location.hash === ${js(`#/band/${lowTides.bandId}/song/${friday.songIds[1]}`)}`, "the band song's hash");
     await app.until(`document.querySelector(".sheet .sheet-name")?.textContent === "Harbor Lights"`, "the band song's chart");
@@ -224,7 +224,7 @@ try {
     const menu = await site.evaluate<string[]>(`[...document.querySelectorAll("[role=menu] [role=menuitem], [role=menu] button")].map((b) => b.textContent.trim())`);
     assert.ok(!menu.some((item) => /^Send/.test(item)), `no Send in More (${js(menu)})`);
     await site.evaluate(`document.querySelector(".shell-header [aria-label=More]")?.click()`);
-    const after = await site.evaluate<number>(`JSON.parse(localStorage.getItem("leadSheetsLibrary") ?? '{"songs":[]}').songs.length`);
+    const after = await site.evaluate<number>(`JSON.parse(localStorage.getItem("leadSheetsLibraryV2") ?? '{"songs":[]}').songs.length`);
     assert.equal(after, before, "nothing went into My Songs");
     assert.deepEqual(refusal(await appCalls("/api/bands/library/copy-song", { bandId: lowTides.bandId, songId: friday.songIds[0] })), [403, "band-only"], "a direct copy-song is refused band-only");
     assert.deepEqual(refusal(await terry.call("/api/bands/library/copy-song", { bandId: lowTides.bandId, songId: friday.songIds[0] })), [403, "band-only"], "even for the band's admin");
@@ -432,14 +432,14 @@ try {
       const card = `[...document.querySelectorAll(".room li")].find((li) => li.textContent.includes(${js(title)}))`;
       await app.until(`!!${card} && [...${card}.querySelectorAll("button")].some((b) => b.textContent.trim() === "Add to My Songs")`, `${title}'s card`, 15000);
       await app.click("Add to My Songs", card);
-      await app.until(`JSON.parse(localStorage.getItem("leadSheetsLibrary")).songs.some((s) => s.title === ${js(title)})`, `${title} in My Songs`);
+      await app.until(`JSON.parse(localStorage.getItem("leadSheetsLibraryV2")).songs.some((s) => s.title === ${js(title)} || (typeof s.chordpro === "string" && s.chordpro.includes("{title: " + ${js(title)} + "}")))`, `${title} in My Songs`);
     }
     await site.evaluate(`location.hash = "#/songs"`);
     await site.evaluate(`(() => {
-      const library = JSON.parse(localStorage.getItem("leadSheetsLibrary"));
-      const id = (title) => library.songs.find((s) => s.title === title).id;
+      const library = JSON.parse(localStorage.getItem("leadSheetsLibraryV2"));
+      const id = (title) => library.songs.find((s) => s.title === title || (typeof s.chordpro === "string" && s.chordpro.includes("{title: " + title + "}"))).id;
       library.setlists.push({ id: 901, name: "Porch set", songIds: [id("Porch Light")] }, { id: 902, name: "Steps set", songIds: [id("Back Steps")] });
-      localStorage.setItem("leadSheetsLibrary", JSON.stringify(library));
+      localStorage.setItem("leadSheetsLibraryV2", JSON.stringify(library));
     })()`);
     await openBand(lowTides.bandId, "The Low Tides");
     await section(lowTides.bandId, "Setlists");

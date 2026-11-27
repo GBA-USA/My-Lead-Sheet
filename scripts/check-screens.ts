@@ -59,9 +59,9 @@ function render(hash: string): string {
 }
 
 render("#/songs");
-const stored = JSON.parse(store.get("leadSheetsLibrary")!);
+const stored = JSON.parse(store.get("leadSheetsLibraryV2")!);
 stored.setlists.push({ id: 77, name: "Empty night", songIds: [] });
-store.set("leadSheetsLibrary", JSON.stringify(stored));
+store.set("leadSheetsLibraryV2", JSON.stringify(stored));
 const count = (html: string, pattern: RegExp) => html.match(new RegExp(pattern, "g"))?.length ?? 0;
 const attrs = (html: string, tag: RegExp) => [...html.matchAll(tag)].map((match) => match[0]);
 const attr = (element: string, name: string) => element.match(new RegExp(`${name}="([^"]*)"`))?.[1];

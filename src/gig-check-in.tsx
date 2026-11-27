@@ -72,13 +72,17 @@ export function useRosterCopy(me: string | null, gigId: string | null): RosterCo
   return useSyncExternalStore(onCopies, read, read);
 }
 
-/** Each player with their check-in from the copy. A player the copy has no row for is left as C23 draws them. */
+/**
+ * Each player with their check-in from the copy, and Downloaded read from the same row, so a player who fetched tonight's
+ * pack after this screen read the gig does not read Connected beside Not yet. A player the copy has no row for is left
+ * as C23 draws them.
+ */
 export function withCheckIn(players: readonly Player[], copy: RosterCopy | null): Player[] {
   if (!copy) return [...players];
   const rows = new Map(copy.rows.map((row) => [row.userId, row]));
   return players.map((p) => {
     const row = rows.get(p.id);
-    return row ? { ...p, checkIn: checkInOf(row, copy.packRev) } : p;
+    return row ? { ...p, checkIn: checkInOf(row, copy.packRev), downloaded: row.packRev === copy.packRev } : p;
   });
 }
 

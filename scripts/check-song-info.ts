@@ -9,7 +9,8 @@ import type { SongContent } from "../src/band-library-model.ts";
 /**
  * Song info: on every sheet the title is followed by the Key / Time / Tempo line, then one Song info row, closed, then
  * the chart. The row opens a panel holding the source line, Feel, How to play, At a glance, Practice tip, Key & tempo
- * notes and the band's notes, in that order. Cases I1 to I14 and guard G1 are the brief's (plans 2 to 6, plan 2).
+ * notes and the band's notes, in that order. Cases I1 to I14 and guard G1 are the brief's (plans 2 to 6, plan 2), and
+ * I15 is its "account switch" must-handle.
  * The app runs in headless Chrome at 360 x 740 against a real Worker; every song here is made up for this check.
  */
 
@@ -52,6 +53,7 @@ const NAMES = {
   I13: "I13 fits at 360 px: one meta line, a row at least 44 px tall, no sideways scroll closed or open",
   I14signal: "I14 no signal: on a band song whose notes request fails the row shows with no count, the fields open, no error and no waiting mark",
   I14out: "I14 signed out: on the song page the row works and no notes request is sent",
+  I15switch: "I15 account switch: after a member signs out on this phone, signed out, a second account outside the band, and that account in the band with no signal for notes see none of the first account's notes or count",
 };
 
 // ---------------------------------------------------------------------------------------------- G1
@@ -708,6 +710,57 @@ try {
     await settle(200);
     await s.evaluate(`${button("Leave", sheet)}?.click()`);
     await settle(200);
+  });
+
+  await check(NAMES.I15switch, async () => {
+    const NOTES = ["Watch the push into the chorus", "Bass: walk up on the last bar"];
+    const nothingOfSams = async (what: string) => {
+      const row = await rowState();
+      assert.ok(row === null || row.text === "Song info", `${what}: the row is absent or reads Song info (${js(row?.text)})`);
+      for (const note of NOTES) assert.equal(await laidOut("document.body", note), false, `${what}: ${js(note)} is not on screen`);
+      const kept = await s.evaluate<string>(`JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage })`);
+      for (const note of NOTES) assert.ok(!kept.includes(note), `${what}: ${js(note)} is not kept on the phone`);
+    };
+    const toSongs = async () => {
+      await s.evaluate(`location.hash = "#/songs"`);
+      await app.library();
+    };
+    const openHarborLink = async (what: string) => {
+      await toSongs();
+      await s.evaluate(`location.hash = ${js(`#/band/${bandId}/song/${harbor}`)}`);
+      await settle(2500);
+      await nothingOfSams(what);
+      await toSongs();
+    };
+
+    await openBandSong(bandId, harbor, "Harbor lights are calling");
+    assert.equal((await needRow("Harbor Song, Sam a member")).text, "Song info · 2 band notes", "Sam sees the count first");
+    await tapRow();
+    assert.equal(await laidOut(SHEET, NOTES[1]), true, "and the notes in the open panel");
+
+    await toSongs();
+    await app.openMenu();
+    await app.pick("Account");
+    await app.until(`document.querySelector(".account-sheet")?.dataset.step === "account"`, "the account screen");
+    await app.click("Sign out");
+    await app.until(`document.querySelector(".account-sheet")?.dataset.step === "start"`, "the sign-in screen");
+    await app.click("✕");
+    await app.closeMenu();
+    await openHarborLink("signed out, Harbor Song's band link");
+
+    await app.signUp("Pat Moreno");
+    await openHarborLink("Pat, outside the band, Harbor Song's band link");
+
+    assert.equal((await appCalls("/api/bands/join", { code })).status, 200, "Pat joins The Low Tides");
+    await s.evaluate(`sessionStorage.setItem("check-fail-notes", "1")`);
+    try {
+      await openBandSong(bandId, harbor, "Harbor lights are calling");
+      await nothingOfSams("Pat in the band, no signal for notes");
+    } finally {
+      await s.evaluate(`sessionStorage.removeItem("check-fail-notes")`);
+    }
+    await openBandSong(bandId, harbor, "Harbor lights are calling");
+    assert.equal((await needRow("Harbor Song, Pat a member")).text, "Song info · 2 band notes", "with signal Pat's own reply brings the count");
   });
 
   await check("no page errors", async () => {

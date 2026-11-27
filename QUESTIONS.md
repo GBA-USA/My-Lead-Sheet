@@ -2,8 +2,8 @@
 
 Deep verify run 46043279728 failed three checks. check:metronome and check:teach were a product bug: Song info's mount
 effect called `Element.closest`, which their stand-in DOM (`scripts/fake-dom.ts`) lacks, so the effect threw and React
-dropped the whole sheet. Song info now hears the scroll at the document, in the capture phase, and looks the scroller
-and chart up by id only on a tap. Neither check was edited. check:ux-sheet-controls-save got two edits:
+dropped the whole sheet. Song info now hears the scroll at the document, in the capture phase, and finds its own scroller
+and chart only inside that listener and on a tap. Neither check was edited. check:ux-sheet-controls-save got two edits:
 
 1. The first chord's y pins became 199.30 (390 px) and 179.56 (1280 px), the Linux values from that run. The plan moves
    everything above the chart into the closed row, and check:ux-metronome-sheet works out the same two numbers from the

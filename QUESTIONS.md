@@ -1,3 +1,50 @@
+# p6-gig-check-in: 2026-11-27: K3 cannot pass as written (scripts/check-gig-check-in.ts:977)
+
+**What is wrong.** The last assertion of K3 is
+
+```ts
+assert.ok(await has(gigView(gigId)), "the gig's screen is still showing");
+```
+
+`has(selector)` runs `document.querySelector(selector)`. `gigView(gigId)` is not a selector. It returns the JS
+expression `document.querySelector(".gig-view[data-gig=\"…\"]")`, which every other caller drops into `evaluate` or
+`until`. So `querySelector` throws `SyntaxError: … is not a valid selector` on every run, whatever the app does. On the
+first build run K3 failed on exactly that line:
+
+```
+FAIL K3 joins without a tap: … SyntaxError: Failed to execute 'querySelector' on 'Document':
+'document.querySelector(".gig-view[data-gig=\"gig_FMCF4Y8cK2sOWlQpIP3lJA\"]")' is not a valid selector.
+```
+
+This is a defect in the check, not in the behavior under test. On the tests-only commit K3 failed earlier, at "Bo
+Connected on the earlier gig", which is the right reason, so the defect stayed hidden until the build reached the last line.
+
+**The fix I would make** (same assertion, same strength):
+
+```ts
+assert.ok(await evaluate<boolean>(`!!${gigView(gigId)}`), "the gig's screen is still showing");
+```
+
+**Why I stopped.** The brief says that after commit 1 no case may be edited or weakened, and that a case that looks
+wrong gets this file, a commit, and a stop. So I have not touched the line.
+
+**Asking:** may I make that one-line fix to K3 (and only that line), and carry on?
+
+**Where the build stands** (for the resume). The tests-only commit is `60875a9`; the WIP commit before this file holds the
+build so far. On its first run, K17, K8, K15 (count 0 then 1), K1, K2, K10 and K4 pass. Known fixes still to make, none
+of them to the check:
+
+1. `worker/room.ts` `webSocketClose`: echoing close code 1005 throws, so the client never finishes closing (K6, K7, K11,
+   K13, K16). Fall back to `ws.close(1000)`.
+2. Beats never wake the Room, so a socket that starts beating after its join never arms the alarm (K14). Look once a
+   short grace after each join-gig, and push from the alarm only once some socket in the gig has beaten, so K6 still
+   catches a missing close push.
+3. `src/gig-live.tsx` `startable`: an ended gig still offers Hold to start, because the held pack says planned and only
+   a live listing excludes it (K5, K9). Exclude any listing that is not planned.
+4. `src/band-status.css`: roster rows are 37 px; give `.band-status-row` a 44 px minimum (K12).
+
+---
+
 # c23 fix: Band status opens for the admin and the leader on a live gig, and says what it is waiting for
 
 What ships in PR #107: the faces strip and the Band status panel on the band page and the gig view. Before and after

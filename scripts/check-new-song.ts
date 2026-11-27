@@ -827,7 +827,7 @@ async function phoneChecks(site: Site, base: string, origin: string) {
       let card: { song: Song; updateOf: string | null } | undefined;
       for (const end = Date.now() + 15000; !card && Date.now() < end; await sleep(200)) {
         const messages: { kind: string; text: string }[] = (await friend.call("/api/chat/open", { roomId })).body.messages ?? [];
-        card = messages.filter((m) => m.kind === "song").map((m) => JSON.parse(m.text)).find((each) => each.song?.title === title);
+        card = messages.filter((m) => m.kind === "song").map((m) => JSON.parse(m.text)).find((each) => (typeof each.song?.chordpro === "string" ? chordProToSong(each.song.chordpro).title : each.song?.title) === title);
       }
       assert.ok(card, `Mike's DM gets ${title}`);
       await reload("#/songs");

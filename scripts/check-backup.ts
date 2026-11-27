@@ -118,7 +118,7 @@ function addOwnSong(device: Device, id: number, title: string, setlist?: { id: n
   return device.boot();
 }
 
-async function post(cookie: string, body: object, headers: Record<string, string> = { origin: TEST_ORIGIN }) {
+async function post(cookie: string, body: object, headers: Record<string, string> = { origin: TEST_ORIGIN, "x-song-shape": "chordpro" }) {
   const response = await realFetch(new URL("/api/backup", base), {
     method: "POST",
     headers: { "content-type": "application/json", ...headers, ...(cookie ? { cookie } : {}) },

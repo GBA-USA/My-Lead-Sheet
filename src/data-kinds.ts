@@ -20,7 +20,7 @@ export const DATA_KINDS: readonly DataKind[] = [
   {
     key: "leadSheetsLibraryTaken",
     place: "phone",
-    what: "Short fingerprints of songs and setlists already taken in from the earlier library key, so an open older tab's changes are not added twice. Removed when the account on this phone changes.",
+    what: "Short fingerprints of songs and setlists already taken in from the earlier library key, so changes made in a still-open older tab are not added twice. Removed when the account on this phone changes.",
   },
   { key: "leadSheetsTheme", place: "phone", what: "The look you picked: stage, day, one of the two colorblind-safe looks, or high contrast." },
   { key: "leadSheetsTextScale", place: "phone", what: "The text size you picked for sheets." },

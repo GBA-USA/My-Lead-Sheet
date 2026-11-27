@@ -171,16 +171,18 @@ async function accountSwitch(perAccount: boolean) {
     }
   }
 
+  const titleOfItem = (item: { title?: string; chordpro?: string }) => item.title ?? /^\{title: (.*)\}$/m.exec(item.chordpro ?? "")?.[1] ?? "";
+
   /** The account's song rows as its backup holds them: title by row key. */
   const songRows = async (phone: PhoneT) => {
     const reply = await realFetch(new URL("/api/backup", base), {
       method: "POST",
-      headers: { "content-type": "application/json", origin: TEST_ORIGIN, cookie: phone.cookie },
+      headers: { "content-type": "application/json", origin: TEST_ORIGIN, "x-song-shape": "chordpro", cookie: phone.cookie },
       body: js({ since: 0, changes: [] }),
     });
     const { rows } = (await reply.json()) as { rows: { key: string; value: string | null }[] };
     return {
-      songs: Object.fromEntries(rows.filter((row) => row.key.startsWith("leadSheetsSong.") && row.value !== null).map((row) => [row.key, JSON.parse(row.value!).item.title as string])),
+      songs: Object.fromEntries(rows.filter((row) => row.key.startsWith("leadSheetsSong.") && row.value !== null).map((row) => [row.key, titleOfItem(JSON.parse(row.value!).item)])),
       keys: rows.filter((row) => row.value !== null).map((row) => row.key),
     };
   };

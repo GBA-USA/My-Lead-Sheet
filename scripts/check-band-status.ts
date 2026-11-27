@@ -24,8 +24,12 @@ import { openSite } from "./chrome.ts";
  *   inTime, heardMsAgo }`. A `PlayerStatus` is `{ id, route, spreadMs, p99Ms, lateRate, inTime, heardAt }`, with
  *   `heardAt` on the clock `now` reads. The newest status per player wins; a status for someone off the lineup is dropped.
  * - `seesBandStatus(admin, me, leader)`: only the admin and the live leader open Band status during a live gig.
- * - `opensBandStatus(status, me, feed)`: a gig that is not live opens for anyone; a live gig with no feed opens for no one.
- * - `BandStatusFaces({ players, status, live })`, with `live = { leader, admin, statuses(), now() }`, re-reads both getters
+ * - `opensBandStatus(status, me, { admin, leader })`: a gig that is not live opens for anyone; a live one only for the
+ *   admin and the leader. `admin` is this phone's band role and `leader` the gig's leader, so a missing feed changes nothing.
+ * - `waitingPlayers(players)`: a live gig this phone has no feed for yet. Each player is `{ kind: "waiting" }`, so no
+ *   row shows a route, bars, In time or Heard, and the panel reads "Live sync and timing will show once players are
+ *   connected." The live Room feed itself is p6-gig-check-in's work, not this check's.
+ * - `BandStatusFaces({ players, status, admin, live })`, with `live = { leader, statuses(), now() }`, re-reads both getters
  *   about once a second. Faces carry `band-status-face-steady`, `-amber` or `-grey`, the leader `-leader`. Rows carry
  *   `band-status-amber` or `band-status-grey`. A player not heard for 10 s is amber. A player who never joined reads
  *   "Not joined" in grey. The leader with no one heard yet reads "Just you so far".
@@ -118,24 +122,109 @@ await test("the planned panel shows the live-gig line, marks the leader and you,
 });
 await test("with no players the strip renders nothing", () => assert.equal(m.renderToStaticMarkup(m.createElement(m.BandStatusFaces, { players: [], status: "planned" })), ""));
 
-const liveView = { ...view, gig: { ...view.gig, status: "live" } } as GigView;
+/** Friday gone live with Dana as the backup. Terry is the band's admin, Mike leads, Sam is a member. No feed yet. */
+const liveView = { ...view, gig: { ...view.gig, status: "live", backup: "u-dana" } } as GigView;
+const adminBand: BandView = { ...band, role: "admin" };
 const faceTags = (html: string) => [...html.matchAll(/<(button|span)[^>]*class="band-status-face[^"]*"/g)].map((match) => match[1]);
-await test("during a live gig this phone has no feed for, no one can open Band status", () => {
-  for (const me of ["u-sam", "u-mike", "u-terry"]) {
-    const html = m.renderToStaticMarkup(m.createElement(m.BandStatusFaces, { players: m.playersFrom(liveView, band, me), status: "live" }));
-    const tags = faceTags(html);
-    assert.equal(tags.length, 4, `${me} sees four faces (${html})`);
-    assert.deepEqual([...new Set(tags)], ["span"], `${me}'s faces are pictures, not buttons`);
-  }
-});
+const noFeedStrip = (me: string, admin: boolean) =>
+  faceTags(m.renderToStaticMarkup(m.createElement(m.BandStatusFaces, { players: m.playersFrom(liveView, admin ? adminBand : band, me), status: "live", admin })));
+const nextGigCard = (viewer: BandView, me: string, gig: GigView) =>
+  m.renderToStaticMarkup(m.createElement(m.NextGigCard, { band: viewer, me, gigs: [gig], packs: {}, library: null, busy: false, onStart: () => {}, onOpen: () => {}, onPlan: () => {} }));
 await test("the next-gig card's strip during a live gig does not open Band status for a member", () => {
-  const card = (gig: GigView) =>
-    m.renderToStaticMarkup(
-      m.createElement(m.NextGigCard, { band, me: "u-sam", gigs: [gig], packs: {}, library: null, busy: false, onStart: () => {}, onOpen: () => {}, onPlan: () => {} }),
-    );
-  assert.deepEqual([...new Set(faceTags(card(view)))], ["button"], "before the gig goes live, Sam may open the panel");
-  assert.deepEqual([...new Set(faceTags(card(liveView)))], ["span"], "once it is live, Sam's faces are pictures");
+  assert.deepEqual([...new Set(faceTags(nextGigCard(band, "u-sam", view)))], ["button"], "before the gig goes live, Sam may open the panel");
+  assert.deepEqual([...new Set(faceTags(nextGigCard(band, "u-sam", liveView)))], ["span"], "once it is live, Sam's faces are pictures");
 });
+
+await test("F1 on a live gig with no feed, the admin can open Band status", () => {
+  assert.equal(m.opensBandStatus("live", "u-terry", { admin: true, leader: "u-mike" }), true, "the rule");
+  assert.deepEqual([...new Set(noFeedStrip("u-terry", true))], ["button"], "Terry's faces are buttons");
+  assert.deepEqual([...new Set(faceTags(nextGigCard(adminBand, "u-terry", liveView)))], ["button"], "on the next-gig card too");
+});
+await test("F2 on a live gig with no feed, the leader can open Band status", () => {
+  assert.equal(m.opensBandStatus("live", "u-mike", { admin: false, leader: "u-mike" }), true, "the rule");
+  assert.deepEqual([...new Set(noFeedStrip("u-mike", false))], ["button"], "Mike's faces are buttons");
+  assert.deepEqual([...new Set(faceTags(nextGigCard(band, "u-mike", liveView)))], ["button"], "on the next-gig card too");
+});
+await test("F3 on a live gig with no feed, a regular member cannot open Band status, and the backup cannot either", () => {
+  for (const [who, me] of [["Sam, a member", "u-sam"], ["Dana, the backup", "u-dana"]] as const) {
+    assert.equal(m.opensBandStatus("live", me, { admin: false, leader: "u-mike" }), false, `${who}: the rule`);
+    assert.deepEqual([...new Set(noFeedStrip(me, false))], ["span"], `${who}: faces are pictures`);
+    assert.deepEqual([...new Set(faceTags(nextGigCard(band, me, liveView)))], ["span"], `${who}: on the next-gig card too`);
+  }
+  assert.equal(m.opensBandStatus("live", "u-sam", { admin: false, leader: undefined }), false, "no one leads, so no one but the admin");
+  assert.equal(m.opensBandStatus("live", undefined, { admin: false, leader: undefined }), false, "a phone off the lineup is not the leader");
+});
+await test("F4 with no feed the panel shows the waiting line and invents no players, routes, bars or Heard times", () => {
+  const waiting = m.waitingPlayers(m.playersFrom(liveView, adminBand, "u-terry"));
+  assert.deepEqual(waiting.map((p) => p.name), ["Terry Bass", "Mike Keys", "Dana Drums", "Sam Rivera"], "the lineup, no one added");
+  assert.ok(waiting.every((p) => p.live?.kind === "waiting"), js(waiting));
+  const rows = m.statusRows(waiting);
+  assert.deepEqual(rows.map((r) => r.downloaded), ["Not yet", "Downloaded ✓", "Not yet", "Downloaded ✓"], "Downloaded still comes from the receipts");
+  assert.ok(rows.every((r) => r.routeText === "" && r.bars === null && r.barsText === "" && r.inTime === "" && r.heard === "" && r.tone === "steady"), js(rows));
+  assert.equal(m.panelLine(waiting), "Live sync and timing will show once players are connected.");
+  const html = m.renderToStaticMarkup(m.createElement(m.BandStatusPanel, { players: waiting, onClose: () => {} }));
+  assert.ok(html.includes("Live sync and timing will show once players are connected."), html);
+  assert.ok(!/Heard|In time|Out of sync|■|□|band-status-amber|band-status-grey|Not joined|Just you so far/.test(html), html);
+  assert.ok(!html.includes("Sync and timing show during a live gig."), "not the planned-gig line");
+  for (const word of [...Object.values(ROUTE_WORDS), CHOICE_WORDS.band_wifi.name]) assert.ok(!html.includes(word), `no route word ${word}`);
+  const strip = m.renderToStaticMarkup(m.createElement(m.BandStatusFaces, { players: m.playersFrom(liveView, adminBand, "u-terry"), status: "live", admin: true }));
+  assert.ok(!/band-status-face-(steady|amber|grey)/.test(strip), `no status rings with no feed (${strip})`);
+});
+
+// ---------------------------------------------------------------- the U7 cases from mls-int-20261113, by their names
+
+/** The U7 fed pair, Mike in sync and Dana out of sync, now as statuses the strip joins (`livePlayers`). */
+const u7Live = m.livePlayers([pureById["u-mike"], pureById["u-dana"]], "u-terry", [
+  { id: "u-mike", route: "wifi", spreadMs: 1.5, p99Ms: 3, lateRate: 0, inTime: true, heardAt: 8_000 },
+  { id: "u-dana", route: "wifi", spreadMs: 11, p99Ms: 15, lateRate: 0.05, inTime: false, heardAt: 5_000 },
+], 10_000);
+const u7Heard = (p: (typeof u7Live)[number]) => {
+  assert.equal(p.live?.kind, "heard", js(p));
+  return p.live as Extract<NonNullable<(typeof u7Live)[number]["live"]>, { kind: "heard" }>;
+};
+const u7Rows = m.statusRows(pure);
+const u7Blank = m.renderToStaticMarkup(m.createElement(m.BandStatusPanel, { players: pure, onClose: () => {} }));
+const u7Fed = m.renderToStaticMarkup(m.createElement(m.BandStatusPanel, { players: u7Live, onClose: () => {} }));
+const [u7Steady, u7Shaky] = m.statusRows(u7Live);
+await test("a receipt for the current pack rev is downloaded", () => assert.ok(pureById["u-mike"].downloaded && pureById["u-sam"].downloaded));
+await test("a stale receipt is not downloaded", () => assert.ok(!pureById["u-dana"].downloaded));
+await test("no receipt is not downloaded", () => assert.ok(!pureById["u-terry"].downloaded));
+await test("no sync data before a live gig", () => assert.ok(pure.every((p) => p.live === null), js(pure)));
+await test("rows read Downloaded ✓ or Not yet", () => assert.deepEqual(u7Rows.map((r) => r.downloaded), ["Not yet", "Downloaded ✓", "Not yet", "Downloaded ✓"]));
+await test("rows read the gig's route word from routes.ts", () => assert.ok(u7Rows.every((r) => r.routeText === CHOICE_WORDS.band_wifi.name), js(u7Rows)));
+await test("rows have no bars, no In time and a blank Heard with no sync data", () =>
+  assert.ok(u7Rows.every((r) => r.bars === null && r.barsText === "" && r.inTime === "" && r.heard === "Heard —"), js(u7Rows)));
+await test("no row is amber with no sync data", () => assert.ok(u7Rows.every((r) => r.tone !== "amber") && pure.every((p) => !m.isAmber(p)), js(u7Rows)));
+await test("the panel shows the live-gig line", () => assert.ok(u7Blank.includes("Sync and timing show during a live gig."), u7Blank));
+await test("the panel shows no bars, no amber and no inline style", () => assert.ok(!u7Blank.includes("□") && !u7Blank.includes("band-status-amber") && !u7Blank.includes("style="), u7Blank));
+await test("the panel marks the leader and you", () => assert.ok(/Mike Keys.*?Leader/.test(u7Blank) && /Sam Rivera.*?You/.test(u7Blank), u7Blank));
+await test("with sync data the panel renders one amber row, Out of sync, In time ✓ and Heard", () =>
+  assert.ok((u7Fed.match(/band-status-amber/g) ?? []).length === 1 && u7Fed.includes("Out of sync") && u7Fed.includes("In time ✓") && u7Fed.includes("Heard 2 s ago"), u7Fed));
+await test("with sync data the amber row carries no inline style", () => assert.ok(!u7Fed.includes("style="), u7Fed));
+await test("with sync data the faces mark the amber player by class", () => {
+  const feed = { leader: "u-terry", statuses: () => [{ id: "u-mike", route: "wifi", spreadMs: 1.5, p99Ms: 3, lateRate: 0, inTime: true, heardAt: 8_000 }, { id: "u-dana", route: "wifi", spreadMs: 11, p99Ms: 15, lateRate: 0.05, inTime: false, heardAt: 5_000 }], now: () => 10_000 };
+  const html = m.renderToStaticMarkup(m.createElement(m.BandStatusFaces, { players: [pureById["u-mike"], pureById["u-dana"]], status: "live", admin: true, live: feed }));
+  assert.equal((html.match(/band-status-face-amber/g) ?? []).length, 1, html);
+});
+await test("syncBars(1.5) === 4", () => assert.equal(m.syncBars(1.5), 4));
+await test("syncBars(2) === 4", () => assert.equal(m.syncBars(2), 4));
+await test("syncBars(4) === 3", () => assert.equal(m.syncBars(4), 3));
+await test("syncBars(7.5) === 2", () => assert.equal(m.syncBars(7.5), 2));
+await test("syncBars(9) === 0", () => assert.equal(m.syncBars(9), 0));
+await test("barsText(9) === 'Out of sync'", () => assert.equal(m.barsText(9), "Out of sync"));
+await test("barsText(1) === ''", () => assert.equal(m.barsText(1), ""));
+await test("liveRating of a steady player is Best", () => assert.equal(m.liveRating(u7Heard(u7Live[0])), "Best"));
+await test("liveRating of a late player is Not steady", () => assert.equal(m.liveRating(u7Heard(u7Live[1])), "Not steady"));
+await test("a fed row reads the route word and the rating", () =>
+  assert.deepEqual([u7Steady.routeText, u7Shaky.routeText], [`${CHOICE_WORDS.band_wifi.name} · Best`, `${CHOICE_WORDS.band_wifi.name} · Not steady`]));
+await test("a fed row out of sync is amber with Out of sync and no bars", () => assert.ok(u7Shaky.tone === "amber" && u7Shaky.barsText === "Out of sync" && u7Shaky.bars === 0, js(u7Shaky)));
+await test("a fed steady row has four bars", () => assert.ok(u7Steady.bars === 4 && u7Steady.tone !== "amber", js(u7Steady)));
+await test("player with lateRate 0.02, spread 1 is amber", () => {
+  const [p] = m.livePlayers([pureById["u-sam"]], "u-mike", [{ id: "u-sam", route: "wifi", spreadMs: 1, p99Ms: 2, lateRate: 0.02, inTime: true, heardAt: 0 }], 0);
+  assert.equal(m.isAmber(p), true);
+});
+await test("heardText(2000) === 'Heard 2 s ago'", () => assert.equal(m.heardText(2000), "Heard 2 s ago"));
+await test("heardText(0) === 'Heard 0 s ago'", () => assert.equal(m.heardText(0), "Heard 0 s ago"));
 
 await test("syncBars: four at 2 ms or less, three at 5, two at 8, else none", () =>
   assert.deepEqual([1.5, 2, 4, 5, 7.5, 8, 9].map(m.syncBars), [4, 4, 3, 3, 2, 2, 0]));
@@ -314,7 +403,8 @@ const harness = await build({
       };
       window.__render = (props) => {
         const live = props.live && { ...props.live, statuses: () => window.__statuses, now: () => window.__now };
-        root.render(createElement(BandStatusFaces, { players: props.players, status: "live", live }));
+        const admin = props.admin ?? props.live?.admin ?? false;
+        root.render(createElement(BandStatusFaces, { players: props.players, status: "live", admin, live }));
       };`,
     resolveDir: root,
     loader: "tsx",
@@ -497,6 +587,76 @@ try {
     assert.deepEqual(await site.evaluate<string[]>(`[...document.querySelectorAll(${js(`${SHEET} .band-status-line`)})].map((el) => el.textContent.trim())`), ["Just you so far"]);
     await close();
     assert.equal(await site.evaluate<number>(`document.querySelectorAll(${js(FACE)}).length`), 5, "the strip stays after the panel closes");
+  });
+
+  // A live gig this phone has no feed for yet: the Room feed is p6-gig-check-in's work, so today every phone is here.
+  const mountNoFeed = async (me: string, admin: boolean) => {
+    await site.evaluate(`window.__statuses = []; window.__now = ${NOW}; window.__mount(${js({ players: lineupFor(me), admin })}); true`);
+    await until(`document.querySelectorAll(${js(FACE)}).length === 5`, "five faces");
+  };
+  const WAITING = "Live sync and timing will show once players are connected.";
+
+  await test("F1 on a live gig with no feed, the admin's tap opens Band status", async () => {
+    await mountNoFeed(ids.terry, true);
+    await tap("Sam Rivera");
+    await until(`!!document.querySelector(${js(SHEET)})`, "the panel for the admin with no feed");
+    await close();
+  });
+
+  await test("F2 on a live gig with no feed, the leader's tap opens Band status", async () => {
+    await mountNoFeed(ids.mike, false);
+    await tap("Sam Rivera");
+    await until(`!!document.querySelector(${js(SHEET)})`, "the panel for the leader with no feed");
+    await close();
+  });
+
+  await test("F3 on a live gig with no feed, a member's tap opens nothing", async () => {
+    for (const [who, me] of [["Sam", ids.sam], ["Dana", ids.dana], ["Ana", ids.ana]] as const) {
+      await mountNoFeed(me, false);
+      assert.equal(await site.evaluate<number>(`document.querySelectorAll(${js(`${FACE}:is(button)`)}).length`), 0, `${who}'s faces are not buttons`);
+      await tap("Mike Keys");
+      await new Promise((done) => setTimeout(done, 600));
+      assert.equal(await isOpen(), false, `${who} taps and nothing opens`);
+    }
+  });
+
+  await test("F4 the open panel with no feed shows the waiting line, the lineup, and no route, bars or Heard", async () => {
+    await mountNoFeed(ids.terry, true);
+    await tap("Terry Bass");
+    await until(`!!document.querySelector(${js(SHEET)})`, "the panel");
+    assert.deepEqual(await site.evaluate<string[]>(`[...document.querySelectorAll(${js(`${SHEET} .band-status-line`)})].map((el) => el.textContent.trim())`), [WAITING]);
+    assert.deepEqual(
+      await site.evaluate<string[]>(`[...document.querySelectorAll(${js(`${SHEET} .band-status-name`)})].map((el) => el.textContent.trim())`),
+      ["Terry Bass", "Mike Keys", "Dana Drums", "Sam Rivera", "Ana Lee"],
+      "one row per lineup player, no one added",
+    );
+    const drawn = await site.evaluate<number>(`document.querySelectorAll(${js(`${SHEET} :is(.band-status-route, .band-status-bars, .band-status-in-time, .band-status-heard, .band-status-amber, .band-status-grey)`)}).length`);
+    assert.equal(drawn, 0, "no route, bars, In time, Heard, amber or grey");
+    const text = await site.evaluate<string>(`document.querySelector(${js(SHEET)}).textContent`);
+    assert.ok(!/Heard|In time|Out of sync|Not joined|Just you so far/.test(text), text);
+    const rings = await site.evaluate<string[]>(`[...document.querySelectorAll(${js(FACE)})].flatMap((el) => [...el.classList]).filter((c) => /^band-status-face-(steady|amber|grey)$/.test(c))`);
+    assert.deepEqual(rings, [], "no face carries a status ring");
+    await close();
+  });
+
+  await test("F5 a feed arriving under the open panel draws route words, bars, ratings and amber for out of sync", async () => {
+    await mountNoFeed(ids.terry, true);
+    await tap("Terry Bass");
+    await until(`!!document.querySelector(${js(SHEET)})`, "the panel with no feed");
+    const pair = statuses.filter((s) => s.id === ids.sam || s.id === ids.dana);
+    await site.evaluate(`window.__statuses = ${js(pair)}; window.__render(${js({ players: lineupFor(ids.terry), admin: true, live: { leader: ids.mike } })}); true`);
+    await until(`!!${row("Sam Rivera")}?.querySelector(".band-status-route")`, "Sam's live route");
+    assert.equal(await isOpen(), true, "the panel stays open as the feed arrives");
+    const read = (name: string) =>
+      site.evaluate<{ route: string; bars: string; amber: boolean; heard: string }>(
+        `(() => { const el = ${row(name)}; return { route: el.querySelector(".band-status-route")?.textContent.trim() ?? "", bars: el.querySelector(".band-status-bars")?.textContent.trim() ?? "", amber: el.classList.contains("band-status-amber"), heard: el.querySelector(".band-status-heard")?.textContent.trim() ?? "" }; })()`,
+      );
+    assert.deepEqual(await read("Sam Rivera"), { route: `${ROUTE_WORDS.wifi} · Best`, bars: "■■■■", amber: false, heard: "Heard 2 s ago" }, "Sam, in sync");
+    assert.deepEqual(await read("Dana Drums"), { route: `${ROUTE_WORDS.wifi} · Not steady`, bars: "Out of sync", amber: true, heard: "Heard 4 s ago" }, "Dana, out of sync");
+    assert.deepEqual(await site.evaluate<string[]>(`[...document.querySelectorAll(${js(`${SHEET} .band-status-amber .band-status-name`)})].map((el) => el.textContent.trim())`), ["Dana Drums"], "Dana is the only amber row");
+    assert.equal(await site.evaluate<number>(`document.querySelectorAll(${js(`${SHEET} .band-status-line`)}).length`), 0, "the waiting line is gone once players are heard");
+    assert.ok(await site.evaluate<boolean>(`${face("Dana Drums")}.classList.contains("band-status-face-amber")`), "Dana's face rings amber");
+    await close();
   });
 } finally {
   await site.close();

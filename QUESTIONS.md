@@ -1,3 +1,16 @@
+# PR #130 deep fix: check:links case 1 and Chrome's srflx-first pair (owner ruling needed)
+
+CI run 46071174653 failed `check:links` case 1 on both attempts at d3956f9, the same way PR #107's run 45281740592 did.
+The link was route "wifi" and open, but the follower's selected pair read `{"local":"srflx","remote":"host"}` and case 1
+requires local host. Chrome gathers host and srflx on one shared socket and names a connection after whichever it listed
+first. When the check's same-machine STUN reply beats the host's `.local` name, that is srflx. The product cannot pick
+that name and labels by the remote side (`routeOfPair`). PR #130 touches nothing in `src/links`. d0ea469 (case 1b replay,
+fails) and a20a8cf (case 1 accepts srflx at this machine's own address) are the shape of 5e02b90, which 61a4e57 reverted
+as a loosened check. A mutation run over `src/links` (11 mutants) shows the old local-host line decided none of them.
+Owner: name this change in #130's brief, or cherry-pick the two commits onto mls-int-20261113 and drop them here.
+Also seen, not fixed: `routeOfPair` calls local srflx with remote prflx "internet", so a phone that loses the same race
+on a Wi-Fi with unresolved `.local` names would call a Wi-Fi link "Over the internet".
+
 # p2-song-info self-check fix pass 2: opening Song info near the top of a scroll no longer drops the chart
 
 The self-check found that opening Song info 1 s into a scroll from the top dropped the reading row 20.6 px (1280x800)

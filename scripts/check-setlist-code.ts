@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { build } from "esbuild";
 import type { SongContent } from "../src/band-library-model.ts";
 import type { ChatMessage } from "../src/chat-model.ts";
 import { Phone, startApi, TEST_ORIGIN } from "./api-session.ts";
@@ -147,7 +150,28 @@ try {
   const setlistRow = (setlistId: string) => `document.querySelector(${js(`.band-library-setlists [data-setlist="${setlistId}"]`)})`;
   const buttonsIn = (scope: string) => site.evaluate<string[]>(`[...(${scope}?.querySelectorAll("button") ?? [])].map((b) => b.textContent.trim())`);
   const sheetText = (selector: string) => site.evaluate<string>(`document.querySelector(${js(selector)})?.textContent ?? ""`);
-  const stored = () => site.evaluate<{ songs: any[]; setlists: any[] }>(`JSON.parse(localStorage.getItem("leadSheetsLibrary"))`);
+  const codecBundle = await build({
+    entryPoints: [join(fileURLToPath(new URL("..", import.meta.url)), "src/chordpro.ts")],
+    bundle: true,
+    write: false,
+    format: "esm",
+    platform: "neutral",
+    logLevel: "silent",
+  });
+  const { chordProToSong } = (await import(
+    `data:text/javascript;base64,${Buffer.from(codecBundle.outputFiles[0].text).toString("base64")}`
+  )) as { chordProToSong(text: string): SongContent };
+  const stored = async () => {
+    const raw = await site.evaluate<{ songs: any[]; setlists: any[] }>(`JSON.parse(localStorage.getItem("leadSheetsLibraryV2"))`);
+    return {
+      ...raw,
+      songs: raw.songs.map((entry) =>
+        typeof entry?.chordpro === "string"
+          ? { ...chordProToSong(entry.chordpro), id: entry.id, ...(entry.copy ? { copy: entry.copy } : {}) }
+          : entry,
+      ),
+    };
+  };
   const shownCode = async () => {
     await app.until(`!!document.querySelector(".codes-qr svg")`, "the QR code", 15000);
     const link = readQr(await site.evaluate<string>(`document.querySelector(".codes-qr").innerHTML`));

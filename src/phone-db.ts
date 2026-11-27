@@ -1,11 +1,13 @@
-import { bandSongRef, type BandSong, type SongContent } from "./band-library-model";
-import type { GigPack } from "./gig-pack";
+import { bandSongRef, type SongContent, type WireBandSong, type WireSong } from "./band-library-model";
+import type { StoredGigPack } from "./gig-pack";
 import type { ShareChoice } from "./share-rule";
 import type { HistoryStore, SyncRecord } from "./sync-history";
 import type { SongRef } from "./types";
 
-/** A band song cached on this phone so search and the gig pack can read it with no signal (PLAN.md 10). */
-export type CachedBandSong = { bandId: string; bandName: string; songId: string; song: SongContent; sharedAs: ShareChoice; updatedAt: number };
+/** A band song as cached in IndexedDB: keeps whatever wire shape the reply gave. */
+export type StoredBandSong = { bandId: string; bandName: string; songId: string; song: WireSong; sharedAs: ShareChoice; updatedAt: number };
+/** A band song cached on this phone, past the door as `SongContent`, so search and the gig pack can read it with no signal (PLAN.md 10). */
+export type CachedBandSong = Omit<StoredBandSong, "song"> & { song: SongContent };
 
 /**
  * The stores of this phone's `mls-phone` database, each with its key and value. `bandSongs` is keyed
@@ -13,8 +15,8 @@ export type CachedBandSong = { bandId: string; bandName: string; songId: string;
  * `"<route>/<day>"` (src/sync-history.ts) and belongs to this phone, not to an account.
  */
 export type PhoneStores = {
-  bandSongs: { key: SongRef; value: CachedBandSong };
-  gigPacks: { key: string; value: GigPack };
+  bandSongs: { key: SongRef; value: StoredBandSong };
+  gigPacks: { key: string; value: StoredGigPack };
   syncHistory: { key: string; value: SyncRecord };
 };
 
@@ -110,12 +112,12 @@ export async function clearPhone(): Promise<void> {
 
 const bandKeys = (bandId: string) => IDBKeyRange.bound(`${bandId}/`, `${bandId}/\uffff`);
 
-function sweepPacks(transaction: IDBTransaction, gone: (pack: GigPack) => boolean, dropped = () => {}) {
+function sweepPacks(transaction: IDBTransaction, gone: (pack: StoredGigPack) => boolean, dropped = () => {}) {
   const packs = transaction.objectStore("gigPacks").openCursor();
   packs.onsuccess = () => {
     const cursor = packs.result;
     if (!cursor) return;
-    if (gone(cursor.value as GigPack)) {
+    if (gone(cursor.value as StoredGigPack)) {
       cursor.delete();
       dropped();
     }
@@ -133,7 +135,7 @@ export async function clearBand(bandId: string): Promise<void> {
 }
 
 /** Deletes the gig packs `gone` picks. When any went, every screen holding one reads again, so it never shows a deleted pack. */
-export async function dropGigPacks(gone: (pack: GigPack) => boolean): Promise<void> {
+export async function dropGigPacks(gone: (pack: StoredGigPack) => boolean): Promise<void> {
   let any = false;
   await written(["gigPacks"], (dropping) => sweepPacks(dropping, gone, () => (any = true)));
   if (any) phoneChanged();
@@ -156,7 +158,7 @@ export async function claimPhone(userId: string): Promise<void> {
 }
 
 /** Replaces one band's songs on this phone with the list its band screen just loaded, so search finds them with no signal (PLAN.md 9.2). */
-export async function holdBandSongs(userId: string, bandId: string, bandName: string, songs: BandSong[]): Promise<void> {
+export async function holdBandSongs(userId: string, bandId: string, bandName: string, songs: WireBandSong[]): Promise<void> {
   await claimPhone(userId);
   await written(["bandSongs"], (writing) => {
     const store = writing.objectStore("bandSongs");

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { BandLibrary } from "./band-library-model";
+import { songFromSent, type BandLibrary, type WireBandLibrary } from "./band-library-model";
 import { unreachable, words, type GuestOpens } from "./guest-pass";
 import { Room } from "./room";
 import { ApiError, api } from "./sign-in-methods";
@@ -13,8 +13,8 @@ function GuestSetlists({ bandId, onSignedOut }: { bandId: string; onSignedOut: (
   useEffect(() => {
     let live = true;
     setProblem(null);
-    api<BandLibrary>("/api/bands/library", { bandId }).then(
-      (found) => live && setLibrary(found),
+    api<WireBandLibrary>("/api/bands/library", { bandId }).then(
+      (found) => live && setLibrary({ ...found, songs: found.songs.map((item) => ({ ...item, song: songFromSent(item.song) })) }),
       (error) => live && (error instanceof ApiError && error.status === 401 ? onSignedOut() : setProblem(error)),
     );
     return () => {

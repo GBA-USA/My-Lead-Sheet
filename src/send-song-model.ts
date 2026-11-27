@@ -1,4 +1,4 @@
-import type { SongContent } from "./band-library-model";
+import { songFromSent, type SentSong, type SongContent, type WireSong } from "./band-library-model";
 import type { ScrollVersion } from "./scroll-timing";
 import type { ShareChoice } from "./share-rule";
 import type { Song, SongData } from "./types";
@@ -7,7 +7,7 @@ import type { Song, SongData } from "./types";
 export type SongMessage = { song: SongContent; versions: ScrollVersion[]; data: SongData | null; shareId: string; updateOf: string | null; sharedAs: ShareChoice; reshareable: boolean };
 
 /** What the phone asks the server to send. `copyId` names the copy the sender holds, if the song came from someone. */
-export type SongSend = { userId: string; shareId: string; song: SongContent; versions: ScrollVersion[]; data: SongData | null; choice: ShareChoice; copyId: string | null; updateOf: string | null };
+export type SongSend = { userId: string; shareId: string; song: SentSong; versions: ScrollVersion[]; data: SongData | null; choice: ShareChoice; copyId: string | null; updateOf: string | null };
 
 /** What the sender ticked: timing versions by their place in the song's list, and whether My song data goes too. The chart always goes. */
 export type SendPick = { versions: number[]; data: boolean; choice: ShareChoice | null };
@@ -44,8 +44,14 @@ export function cardLine(message: SongMessage, fromName: string): string {
 
 export function songMessageIn(text: string): SongMessage | null {
   try {
-    const message = JSON.parse(text) as SongMessage;
-    return typeof message?.song?.title === "string" && typeof message.shareId === "string" && Array.isArray(message.versions) ? message : null;
+    const raw = JSON.parse(text) as Omit<SongMessage, "song"> & { song?: WireSong };
+    if (!raw || typeof raw.shareId !== "string" || !Array.isArray(raw.versions) || !raw.song || typeof raw.song !== "object") return null;
+    const hasChordPro = typeof (raw.song as SentSong).chordpro === "string";
+    const hasTitle = typeof (raw.song as SongContent).title === "string";
+    if (!hasChordPro && !hasTitle) return null;
+    const song = songFromSent(raw.song);
+    if (hasChordPro && !song.title.trim()) return null;
+    return { ...raw, song };
   } catch {
     return null;
   }

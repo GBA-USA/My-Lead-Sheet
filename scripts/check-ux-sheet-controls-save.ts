@@ -631,11 +631,11 @@ try {
   await mike.call("/api/friends/accept", { userId: sam.userId });
   const signedIn = `localStorage.setItem("leadSheetsSignedIn", "1");`;
   const withCopies = (library: string) =>
-    `${signedIn} const stored = ${library}; stored.songs.push(${js({ ...seed.songs.find((song) => song.id === CHAIN_BREAKER), id: 901, title: "Mike's Chain", copy: { id: "copy-dm", canSendOn: false, from: { name: "Mike" } } })}, ${js({ ...seed.songs.find((song) => song.id === CHAIN_BREAKER), id: 902, title: "Band Chain", copy: { id: "copy-band", canSendOn: true } })}); localStorage.setItem("leadSheetsLibrary", JSON.stringify(stored));`;
+    `${signedIn} const stored = ${library}; stored.songs.push(${js({ ...seed.songs.find((song) => song.id === CHAIN_BREAKER), id: 901, title: "Mike's Chain", copy: { id: "copy-dm", canSendOn: false, from: { name: "Mike" } } })}, ${js({ ...seed.songs.find((song) => song.id === CHAIN_BREAKER), id: 902, title: "Band Chain", copy: { id: "copy-band", canSendOn: true } })}); localStorage.setItem("leadSheetsLibraryV2", JSON.stringify(stored));`;
 
   await test("a locked song (a DM copy and a band song) shows no Save, no Revert, no Send, and its transposition is gone after leaving", async () => {
     await freshPhone("#/songs", signedIn);
-    const library = await stored("leadSheetsLibrary");
+    const library = await stored("leadSheetsLibraryV2");
     await freshPhone("#/songs", withCopies(library ?? "{}"));
     for (const id of [901, 902]) {
       await go(`#/song/${id}`);

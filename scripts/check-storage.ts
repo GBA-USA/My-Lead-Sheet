@@ -88,8 +88,8 @@ function freshStorage() {
   storage = new FakeStorage();
   (globalThis as { localStorage?: unknown }).localStorage = storage;
 }
-const stored = () => JSON.parse(storage.getItem("leadSheetsLibrary") ?? "null") as LibraryFile;
-const putStored = (value: unknown) => storage.map.set("leadSheetsLibrary", JSON.stringify(value));
+const stored = () => JSON.parse(storage.getItem("leadSheetsLibraryV2") ?? "null") as LibraryFile;
+const putStored = (value: unknown) => storage.map.set("leadSheetsLibraryV2", JSON.stringify(value));
 const title = (library: Library | LibraryFile, id: number) => library.songs.find((song) => song.id === id)?.title;
 
 function renders(library: Library): string | null {
@@ -164,7 +164,7 @@ check(JSON.stringify(repaired.setlists.map((set) => set.songRefs)) === JSON.stri
 
 for (const garbage of ["null", "[]", '{"songs":5,"setlists":[]}', "{not json", '{"songs":[null],"setlists":[1]}']) {
   freshStorage();
-  storage.map.set("leadSheetsLibrary", garbage);
+  storage.map.set("leadSheetsLibraryV2", garbage);
   const library = app.loadLibrary();
   check(library.songs.length === seed.songs.length && renders(library) === null, `garbage ${garbage} reseeds`);
 }
@@ -316,7 +316,7 @@ const phone: Record<string, string> = {
 };
 for (const [key, value] of Object.entries(phone)) storage.map.set(key, value);
 const loadedOnce = app.loadLibrary();
-const storedBefore = storage.getItem("leadSheetsLibrary")!;
+const storedBefore = storage.getItem("leadSheetsLibraryV2")!;
 const fromPhone = (await loadApp(seed)).loadLibrary();
 const ref = (id: number) => fromPhone.songs.find((entry) => entry.id === id)!.ref;
 check(JSON.stringify(loadedOnce) === JSON.stringify(fromPhone), "a second visit loads the same library with the same refs");
@@ -325,7 +325,7 @@ check(
   JSON.stringify(fromPhone.setlists.map((set) => set.songRefs)) === JSON.stringify(seed.setlists.map((set) => set.songIds.map((id) => `local/${id}`))),
   "every setlist lists its songs as refs, in the same order",
 );
-check(storage.getItem("leadSheetsLibrary") === storedBefore && !storedBefore.includes("songRefs") && !storedBefore.includes('"ref"'), "the stored library keeps the shape an older build reads");
+check(storage.getItem("leadSheetsLibraryV2") === storedBefore && !storedBefore.includes("songRefs") && !storedBefore.includes('"ref"'), "the stored library keeps the shape an older build reads");
 check(JSON.stringify(app.loadScrollVersions(ref(13))) === asLoaded(phone["leadSheetsScrollVersions.13"]), "old taught, tempo-mapped and learned versions load under the song's ref, their heard bars as likely chords");
 check(JSON.stringify(app.loadScrollVersions(ref(10))) === phone["leadSheetsScrollVersions.10"], "another song's old versions load byte-equal under its ref");
 check(JSON.stringify(app.loadSongData(ref(13))) === phone["leadSheetsSongData.13"], "old song data loads byte-equal under the song's ref");

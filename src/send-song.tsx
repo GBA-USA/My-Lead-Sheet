@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from "react";
-import { CHOICES, content } from "./band-library";
+import { CHOICES, sent } from "./band-library";
 import { newMsgId, type ChatMessage, type Queued } from "./chat-model";
 import { onDelivery, queueMessage, sendQueued, type Delivery } from "./chat-queue";
 import { useEscape, useStored } from "./hooks";
@@ -118,7 +118,7 @@ export function SendSongSheet({ account, song, onFriends, onSent, onClose }: { a
     const request: SongSend = {
       userId: friend.userId,
       shareId,
-      song: content(song),
+      song: sent(song),
       versions: versions.filter((_, index) => pick.versions.includes(index)),
       data: pick.data && hasData ? data : null,
       choice: pick.choice,

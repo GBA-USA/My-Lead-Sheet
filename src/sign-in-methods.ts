@@ -40,7 +40,7 @@ export async function api<T>(path: string, body?: object): Promise<T> {
     response = await fetch(path, {
       method: body === undefined ? "GET" : "POST",
       credentials: "same-origin",
-      headers: body === undefined ? {} : { "content-type": "application/json" },
+      headers: body === undefined ? { "X-Song-Shape": "chordpro" } : { "content-type": "application/json", "X-Song-Shape": "chordpro" },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {

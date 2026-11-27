@@ -1,4 +1,4 @@
-import type { SongContent } from "./band-library-model";
+import { songFromSent, type SongContent, type WireSong } from "./band-library-model";
 import type { GigPlan } from "./gig-plan-model";
 import { claimPhone, dropGigPacks, getFromPhone, putOnPhone } from "./phone-db";
 import type { ScrollVersion } from "./scroll-timing";
@@ -8,6 +8,7 @@ export type { GigPlan, GigStatus } from "./gig-plan-model";
 
 /** One song of the pack: the band's chart as frozen at plan time, with the band's timing for it when the band has one. */
 export type GigPackSong = { songId: string; song: SongContent; bandTiming: ScrollVersion | null };
+export type StoredGigPackSong = Omit<GigPackSong, "song"> & { song: WireSong };
 
 /**
  * What a lineup phone downloads before the gig and keeps in IndexedDB (PLAN.md 7.3, 10). `secret` is in a lineup
@@ -22,9 +23,15 @@ export type GigPack = {
   packRev: number;
   expiresAt: number | null;
 };
+export type StoredGigPack = Omit<GigPack, "songs"> & { songs: StoredGigPackSong[] };
+
+const packFromStored = (pack: StoredGigPack): GigPack => ({
+  ...pack,
+  songs: pack.songs.map((item) => ({ ...item, song: songFromSent(item.song) })),
+});
 
 /** Whether the guest pass a pack came with has ended. A lineup player's pack has no end. */
-export const packEnded = (pack: GigPack, now = Date.now()) => pack.expiresAt !== null && pack.expiresAt <= now;
+export const packEnded = (pack: Pick<GigPack, "expiresAt">, now = Date.now()) => pack.expiresAt !== null && pack.expiresAt <= now;
 
 /** setTimeout fires at once when asked to wait longer than this, about 24.8 days. */
 const LONGEST_TIMER_MS = 2 ** 31 - 1;
@@ -68,9 +75,10 @@ export const dropEndedPacks = (now = Date.now()) => dropGigPacks((pack) => packE
  * takes its pack off the phone even when the answer comes late, and the screens showing it read again.
  */
 export async function packToShow(gigId: string): Promise<GigPack | null> {
-  const pack = await getFromPhone("gigPacks", gigId);
-  if (!pack) return null;
-  if (packEnded(pack)) return dropEndedPacks().then(() => null);
+  const stored = await getFromPhone("gigPacks", gigId);
+  if (!stored) return null;
+  if (packEnded(stored)) return dropEndedPacks().then(() => null);
+  const pack = packFromStored(stored);
   if (pack.expiresAt === null) return pack;
   const verdict = api("/api/bands/gig/open", { bandId: pack.gig.bandId, gigId }).then(
     () => pack,
@@ -85,12 +93,12 @@ export async function packToShow(gigId: string): Promise<GigPack | null> {
 
 /** Downloads the pack and keeps it on this phone under the gig's id, so a second download replaces the first. An older rev never replaces a newer one. */
 export async function downloadPack(userId: string, bandId: string, gigId: string): Promise<GigPack> {
-  const fresh = await api<GigPack>("/api/bands/gig/pack", { bandId, gigId });
+  const fresh = await api<StoredGigPack>("/api/bands/gig/pack", { bandId, gigId });
   await claimPhone(userId);
   const kept = await getFromPhone("gigPacks", gigId);
-  if (kept && kept.packRev > fresh.packRev) return kept;
+  if (kept && kept.packRev > fresh.packRev) return packFromStored(kept);
   await putOnPhone("gigPacks", gigId, fresh);
-  return fresh;
+  return packFromStored(fresh);
 }
 
 /** The packs on this phone for these gigs that `userId` downloaded. A phone that can't open its database has none. */
@@ -101,5 +109,5 @@ export async function packsOnPhone(userId: string, gigIds: string[]): Promise<Re
   );
   if (!claimed) return {};
   const found = await Promise.all(gigIds.map((gigId) => getFromPhone("gigPacks", gigId).catch(() => undefined)));
-  return Object.fromEntries(found.flatMap((pack) => (pack && !packEnded(pack) ? [[pack.gig.gigId, pack]] : [])));
+  return Object.fromEntries(found.flatMap((pack) => (pack && !packEnded(pack) ? [[pack.gig.gigId, packFromStored(pack)]] : [])));
 }

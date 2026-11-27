@@ -8,13 +8,16 @@ import {
   SETLIST_ROW,
   SET_ASIDE_KEY,
   SONG_ROW,
+  clearOldKeys,
   copiedOwnItem,
+  ensureOpened,
   freeOwnId,
   leftByOthers,
   ownLibraryItems,
   readLeftBy,
   setlistWithSongMoved,
   storageChanged,
+  takeInOldLibrary,
   takeSongIds,
   valuePrint,
   withOwnLibraryItems,
@@ -438,6 +441,7 @@ let running: Promise<BackupResult> | null = null;
  * `onlyIfChanged`, a phone with nothing new to send skips the call, so an idle open app costs no requests.
  */
 export function syncBackup({ onlyIfChanged = false } = {}): Promise<BackupResult> {
+  ensureOpened();
   const state = readState();
   if (!state || running) return running ?? Promise.resolve({ changed: [], at: null, ok: true, heldBack: 0 });
   if (onlyIfChanged && pending(state, readLocal(state.account)).changes.size === 0) return Promise.resolve({ changed: [], at: state.at, ok: true, heldBack: 0 });
@@ -459,18 +463,26 @@ export function syncBackup({ onlyIfChanged = false } = {}): Promise<BackupResult
  * an earlier account left here: that stays out of this account's backup, and comes back when its own account signs in.
  */
 export function backupOn(account: string) {
+  ensureOpened();
   const state = readState();
   if (state?.account === account) return;
+  takeInOldLibrary();
   if (state) leave(state.account);
   arrive(account);
+  clearOldKeys();
   writeState({ account, pulled: 0, synced: {}, at: null });
   storageChanged();
 }
 
 /** Signing out stops backup. Nothing is removed from the phone, but what this account holds here is marked as left by it. */
 export function backupOff() {
+  ensureOpened();
   const state = readState();
-  if (state) leave(state.account);
+  if (state) {
+    takeInOldLibrary();
+    leave(state.account);
+    clearOldKeys();
+  }
   localStorage.removeItem(BACKUP_KEY);
   storageChanged();
 }

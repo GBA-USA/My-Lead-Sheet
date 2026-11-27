@@ -500,7 +500,25 @@ async function phoneChecks(site: Site, base: string, origin: string) {
   type Reply = { status: number; body: Record<string, any> };
   const appCalls = (path: string, body: object) =>
     site.evaluate<Reply>(`fetch(${js(path)}, { method: "POST", headers: { "content-type": "application/json" }, body: ${js(js(body))} }).then(async (r) => ({ status: r.status, body: await r.json() }))`);
-  const stored = () => site.evaluate<Song[]>(`JSON.parse(localStorage.getItem("leadSheetsLibrary") ?? "{}").songs ?? []`);
+  const codecBundle = await build({
+    entryPoints: [join(fileURLToPath(new URL("..", import.meta.url)), "src/chordpro.ts")],
+    bundle: true,
+    write: false,
+    format: "esm",
+    platform: "neutral",
+    logLevel: "silent",
+  });
+  const { chordProToSong } = (await import(
+    `data:text/javascript;base64,${Buffer.from(codecBundle.outputFiles[0].text).toString("base64")}`
+  )) as { chordProToSong(text: string): Omit<Song, "ref" | "id" | "copy"> };
+  const stored = async (): Promise<Song[]> => {
+    const raw = await site.evaluate<Array<Record<string, unknown>>>(`JSON.parse(localStorage.getItem("leadSheetsLibraryV2") ?? "{}").songs ?? []`);
+    return raw.map((entry) =>
+      typeof entry.chordpro === "string"
+        ? ({ ...chordProToSong(entry.chordpro), id: entry.id as number, ...(entry.copy ? { copy: entry.copy as Song["copy"] } : {}) } as Song)
+        : (entry as unknown as Song),
+    );
+  };
   const hashId = () => site.evaluate<number | null>(`(() => { const m = location.hash.match(/^#\\/song\\/(\\d+)/); return m ? Number(m[1]) : null; })()`);
   const buttons = (scope: string) => site.evaluate<{ text: string; disabled: boolean }[]>(`[...(${scope}?.querySelectorAll("button") ?? [])].map((b) => ({ text: b.textContent.trim(), disabled: b.disabled }))`);
   const hasButton = (text: string) => site.evaluate<boolean>(`[...document.querySelectorAll("button")].some((b) => b.textContent.trim() === ${js(text)})`);
@@ -691,9 +709,10 @@ async function phoneChecks(site: Site, base: string, origin: string) {
       message = ((await mike!.call("/api/chat/open", { roomId })).body.messages ?? []).find((m: { kind: string }) => m.kind === "song");
     }
     assert.ok(message, "Mike's DM gets the song card");
-    const card = JSON.parse(message.text) as { song: Song; sharedAs: string };
+    const card = JSON.parse(message.text) as { song: Song | { chordpro: string }; sharedAs: string };
+    const cardSong = "chordpro" in card.song && typeof card.song.chordpro === "string" ? chordProToSong(card.song.chordpro) : (card.song as Song);
     const own = (await stored()).find((song) => song.id === id)!;
-    assert.deepEqual([card.song.title, card.song.body, card.sharedAs], [own.title, own.body, "public"], "holding Pat's own chart, sent Public");
+    assert.deepEqual([cardSong.title, cardSong.body, card.sharedAs], [own.title, own.body, "public"], "holding Pat's own chart, sent Public");
 
     const bandId = (await appCalls("/api/bands/create", { name: "Kitchen Band" })).body.bandId as string;
     assert.ok(bandId, "Pat starts a band");
@@ -730,9 +749,9 @@ async function phoneChecks(site: Site, base: string, origin: string) {
   await check("3. Edit and Delete stay disabled with 'Only songs you made can be edited.' on catalog and friend-copy songs", async () => {
     const builtIn = seed.songs[0];
     await site.evaluate(`(() => {
-      const library = JSON.parse(localStorage.getItem("leadSheetsLibrary"));
+      const library = JSON.parse(localStorage.getItem("leadSheetsLibraryV2"));
       library.songs.push({ ...library.songs[1], id: 800, title: "Gift from Sam", copy: { id: "copy_1", canSendOn: true, from: { name: "Sam" } } });
-      localStorage.setItem("leadSheetsLibrary", JSON.stringify(library));
+      localStorage.setItem("leadSheetsLibraryV2", JSON.stringify(library));
     })()`);
     await reload("#/songs");
     for (const [what, songId] of [["a built-in song", builtIn.id], ["a friend's copy", 800]] as const) {
@@ -747,9 +766,9 @@ async function phoneChecks(site: Site, base: string, origin: string) {
   await check("6. Delete asks first and removes the song from My Songs, from the player's own setlists and from its per-song settings", async () => {
     const builtIn = seed.songs[0];
     await site.evaluate(`(() => {
-      const library = JSON.parse(localStorage.getItem("leadSheetsLibrary"));
+      const library = JSON.parse(localStorage.getItem("leadSheetsLibraryV2"));
       library.setlists.push({ id: 900, name: "Friday", songIds: [${id}, ${builtIn.id}] });
-      localStorage.setItem("leadSheetsLibrary", JSON.stringify(library));
+      localStorage.setItem("leadSheetsLibraryV2", JSON.stringify(library));
       localStorage.setItem("leadSheetsNotation.${id}", JSON.stringify("nashville"));
     })()`);
     await reload("#/setlists");
@@ -922,7 +941,7 @@ async function phoneChecks(site: Site, base: string, origin: string) {
     const setItem = Storage.prototype.setItem;
     window.__restoreSetItem = () => { Storage.prototype.setItem = setItem; };
     Storage.prototype.setItem = function (key, value) {
-      if (key === "leadSheetsLibrary") throw new DOMException("Full", "QuotaExceededError");
+      if (key === "leadSheetsLibraryV2") throw new DOMException("Full", "QuotaExceededError");
       return setItem.call(this, key, value);
     };
   })()`;
@@ -1051,9 +1070,9 @@ async function phoneChecks(site: Site, base: string, origin: string) {
     await page.until(onSongPage, "the song's page");
     const own = (await hashId())!;
     await site.evaluate(`(() => {
-      const library = JSON.parse(localStorage.getItem("leadSheetsLibrary"));
+      const library = JSON.parse(localStorage.getItem("leadSheetsLibraryV2"));
       library.setlists.push({ id: 901, name: "Saturday", songIds: [${own}, ${builtIn.id}] });
-      localStorage.setItem("leadSheetsLibrary", JSON.stringify(library));
+      localStorage.setItem("leadSheetsLibraryV2", JSON.stringify(library));
     })()`);
     await reload("#/setlists");
     const onLive = (index: number, title: string) =>
@@ -1129,11 +1148,11 @@ async function phoneChecks(site: Site, base: string, origin: string) {
     await fill("Title", "   ");
     await tapFold();
     assert.equal(await foldOpen(), true, "details with no title do not fold");
-    const before = await site.evaluate<string>(`localStorage.getItem("leadSheetsLibrary")`);
+    const before = await site.evaluate<string>(`localStorage.getItem("leadSheetsLibraryV2")`);
     await tapIn(editor, "Save");
     assert.ok((await page.text(".song-editor [role=alert]")).includes("Add a title"), "Save with a title of spaces says Add a title");
     assert.ok(await site.evaluate<boolean>(`!!${editor}`), "the editor stays open");
-    assert.equal(await site.evaluate<string>(`localStorage.getItem("leadSheetsLibrary")`), before, "and nothing is stored");
+    assert.equal(await site.evaluate<string>(`localStorage.getItem("leadSheetsLibraryV2")`), before, "and nothing is stored");
     assert.ok(await onPage(field("Title")), "the Title field shows");
     assert.ok(await caretIn("Title"), "with the caret in it");
     assert.equal((await stored()).find((song) => song.id === folded)?.title, "Folded Edit", "the stored song keeps its title");

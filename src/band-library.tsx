@@ -9,17 +9,20 @@ import {
   type BandLibrary,
   type BandSetlist,
   type BandSong,
+  type SentSong,
   type SetlistSort,
   type SongContent,
   type SongSort,
+  type WireBandSong,
 } from "./band-library-model";
 import type { BandView } from "./bands-model";
+import { songToChordPro } from "./chordpro";
 import { matchingSongs } from "./search";
 import type { ShareChoice } from "./share-rule";
 import { BandSetlistCode, CodeOfferButton } from "./setlist-code";
 import { codeOffer } from "./setlist-code-model";
 import { api } from "./sign-in-methods";
-import { loadLibrary, songByRef, withBassNotes } from "./storage";
+import { loadLibrary, songByRef } from "./storage";
 import type { Setlist, Song } from "./types";
 import "./band-library.css";
 
@@ -57,7 +60,9 @@ export const CHOICES: Record<ShareChoice, { label: string; line: string }> = {
   public: { label: "Public", line: "They can pass it on." },
 };
 
-export const content = ({ ref: _ref, id: _id, copy: _copy, ...song }: Song): SongContent => withBassNotes(song);
+export const content = ({ ref: _ref, id: _id, copy: _copy, ...song }: Song): SongContent => song;
+/** What the phone sends to the Worker for a song: deterministic ChordPro text. */
+export const sent = (song: Song): SentSong => ({ chordpro: songToChordPro(content(song)) });
 export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 export const titleOf = (song: BandSong | undefined) => song?.song.title ?? "A song no longer in the band";
 const lockFor = (item: { sharedAs: ShareChoice }) =>
@@ -227,7 +232,7 @@ export function BandLibraryTab({ band, me, tab, library, reload, busy, run, noti
     });
 
   const shareSong = async (song: Song, choice: ShareChoice) =>
-    api<BandSong>("/api/bands/library/share-song", { bandId: band.bandId, song: content(song), choice, localId: song.id, copyId: song.copy?.id });
+    api<WireBandSong>("/api/bands/library/share-song", { bandId: band.bandId, song: sent(song), choice, localId: song.id, copyId: song.copy?.id });
 
   const share = (picked: Picked, choice: ShareChoice) =>
     act(async () => {

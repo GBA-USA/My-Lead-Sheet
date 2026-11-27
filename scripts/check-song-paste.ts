@@ -972,7 +972,25 @@ if (site) {
     };
     const previewHeadings = () => app.texts(".song-editor-preview .chart-heading");
     const firstChords = (scope: string) => s.evaluate<string>(`(document.querySelector(${js(`${scope} .pair .chords`)})?.textContent ?? "").trim().split(/\\s+/)[0]`);
-    const stored = () => s.evaluate<{ id: number; title: string; keyNote: string; body: Section[] }[]>(`JSON.parse(localStorage.getItem("leadSheetsLibrary") ?? "{}").songs ?? []`);
+    const codecBundle = await build({
+      entryPoints: [join(root, "src/chordpro.ts")],
+      bundle: true,
+      write: false,
+      format: "esm",
+      platform: "neutral",
+      logLevel: "silent",
+    });
+    const { chordProToSong } = (await import(
+      `data:text/javascript;base64,${Buffer.from(codecBundle.outputFiles[0].text).toString("base64")}`
+    )) as { chordProToSong(text: string): Record<string, unknown> & { title: string; keyNote: string; body: Section[] } };
+    const stored = async (): Promise<{ id: number; title: string; keyNote: string; body: Section[] }[]> => {
+      const raw = await s.evaluate<Array<Record<string, unknown>>>(`JSON.parse(localStorage.getItem("leadSheetsLibraryV2") ?? "{}").songs ?? []`);
+      return raw.map((entry) =>
+        typeof entry.chordpro === "string"
+          ? { id: entry.id as number, ...chordProToSong(entry.chordpro) }
+          : (entry as unknown as { id: number; title: string; keyNote: string; body: Section[] }),
+      );
+    };
     /** Each drawn chord row in `scope`, with the lyric column every chord glyph starts over (the measure check:chords uses). */
     const drawn = (scope: string) =>
       s.evaluate<Row[]>(`(() => {
@@ -1386,9 +1404,16 @@ if (site) {
     const recording = (id: string, title: string, artist: string, length: number) => ({ id, score: 100, title, length, "artist-credit": [{ name: artist, joinphrase: "" }], "first-release-date": "2014", lyrics: "DECOY WORDS NEVER STORED" });
     const LANTERN = recording("rec-lantern", "Carry the Lantern Home", "The Made Up Band", 232000);
     type Kept = { id: number; title: string; artist: string; officialRuntimeSec: number | null; tempo: number | null; timeSignature: string; keyRoot: string; keyNote: string };
-    const kept = () => s.evaluate<Kept[]>(`JSON.parse(localStorage.getItem("leadSheetsLibrary") ?? "{}").songs ?? []`);
+    const kept = async (): Promise<Kept[]> => {
+      const raw = await s.evaluate<Array<Record<string, unknown>>>(`JSON.parse(localStorage.getItem("leadSheetsLibraryV2") ?? "{}").songs ?? []`);
+      return raw.map((entry) =>
+        typeof entry.chordpro === "string"
+          ? ({ id: entry.id as number, ...chordProToSong(entry.chordpro) } as Kept)
+          : (entry as unknown as Kept),
+      );
+    };
     /** The stored library as text: any song written shows as a change here. */
-    const library = () => s.evaluate<string>(`localStorage.getItem("leadSheetsLibrary") ?? ""`);
+    const library = () => s.evaluate<string>(`localStorage.getItem("leadSheetsLibraryV2") ?? ""`);
     const everything = () => s.evaluate<string>(`JSON.stringify(Object.fromEntries(Object.keys(localStorage).map((key) => [key, localStorage.getItem(key)])))`);
     const savedPage = () => app.until(`/^#\\/song\\/\\d+/.test(location.hash) && !document.querySelector(".song-editor")`, "the saved song's page");
     const sungLines = lines(BARE).filter((line) => /[a-z]{3}/.test(line) && !line.startsWith("[")).map((line) => line.trim().toLowerCase());

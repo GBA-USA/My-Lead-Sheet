@@ -1,6 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { plural, titleOf } from "./band-library";
-import { bandSongRef, type BandLibrary, type BandSetlist, type BandSong } from "./band-library-model";
+import { bandSongRef, songFromSent, type BandLibrary, type BandSetlist, type BandSong } from "./band-library-model";
 import type { GigPack } from "./gig-pack";
 import type { GigView } from "./gig-plan-model";
 import { getFromPhone, heldFor, onPhoneChange, phoneGeneration } from "./phone-db";
@@ -45,7 +45,7 @@ export function useBandPlay(route: Route, userId: string | null): BandPlay {
     if (!heldFor(userId)) return setFound({ key });
     let live = true;
     getFromPhone("bandSongs", key).then(
-      (cached) => live && setFound({ key, song: cached && bandSong(bandId, songId, cached.song) }),
+      (cached) => live && setFound({ key, song: cached && bandSong(bandId, songId, songFromSent(cached.song)) }),
       () => live && setFound({ key }),
     );
     return () => {

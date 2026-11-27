@@ -152,7 +152,7 @@ async function phone(width: number, height = 844) {
 async function open(hash: string, setup = "", ready = `!!document.querySelector("#chord-section .chart-heading")`) {
   await send("Page.navigate", { url: `${site.origin}/?load=${(loads += 1)}#/songs` });
   await until(`document.readyState === "complete"`, "the app");
-  await evaluate(`(() => { const library = localStorage.getItem("leadSheetsLibrary"); localStorage.clear(); ${setup}; localStorage.setItem("leadSheetsTextScale", "${SCALE_15}"); })()`);
+  await evaluate(`(() => { const library = localStorage.getItem("leadSheetsLibraryV2"); localStorage.clear(); ${setup}; localStorage.setItem("leadSheetsTextScale", "${SCALE_15}"); })()`);
   await send("Page.navigate", { url: `${site.origin}/?load=${(loads += 1)}${hash}` });
   await until(ready, hash);
   await evaluate(`document.fonts.ready.then(() => true)`);
@@ -341,7 +341,7 @@ try {
     const copy = { ...fireAway, id: 901, title: "Mike's Fire Away", copy: { id: "copy-dm", canSendOn: false, from: { name: "Mike" } } };
     await open(
       "#/song/901",
-      `const stored = JSON.parse(library); stored.songs.push(${js(copy)}); localStorage.setItem("leadSheetsLibrary", JSON.stringify(stored))`,
+      `const stored = JSON.parse(library); stored.songs.push(${js(copy)}); localStorage.setItem("leadSheetsLibraryV2", JSON.stringify(stored))`,
     );
     await tap("Chords only", SWITCH);
     const locked = await lyricsAndChords();

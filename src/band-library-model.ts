@@ -1,16 +1,48 @@
-import type { SongContent } from "./chordpro";
+import { chordProToSong, normalizeChordPro, type SentSong, type SongContent } from "./chordpro";
 import { matchingSongs } from "./search";
 import type { ShareChoice } from "./share-rule";
 import type { Song, SongRef } from "./types";
 
-export type { SongContent } from "./chordpro";
+export type { SentSong, SongContent } from "./chordpro";
+
+/** A song as a reply, a phone store or a card may hold it. A store filled before the update, and a card from an old build, hold the old object. */
+export type WireSong = SentSong | SongContent;
+
+const sentCache = new Map<string, SongContent>();
+
+function freezeSent(song: SongContent): SongContent {
+  for (const section of song.body) {
+    for (const line of section.lines) Object.freeze(line);
+    Object.freeze(section.lines);
+    Object.freeze(section);
+  }
+  Object.freeze(song.body);
+  if (song.kept) Object.freeze(song.kept);
+  return Object.freeze(song);
+}
+
+/** The door. Text is normalized for CRLF/BOM and parsed once per text. The old object comes back as it is. */
+export function songFromSent(song: WireSong): SongContent {
+  if (typeof (song as SentSong).chordpro === "string") {
+    const text = normalizeChordPro((song as SentSong).chordpro);
+    let parsed = sentCache.get(text);
+    if (!parsed) {
+      parsed = freezeSent(chordProToSong(text));
+      sentCache.set(text, parsed);
+    }
+    return parsed;
+  }
+  return song as SongContent;
+}
 
 /** What every band item says about how it arrived. `canSendOn` is the server's answer for the caller, so the phone only hides buttons with it. */
 type Shared = { sharedBy: string; sharedByName: string; sharedAt: number; updatedAt: number; rev: number; sharedAs: ShareChoice; canSendOn: boolean; localId: number | null };
 
 export type BandSong = Shared & { songId: string; song: SongContent };
+export type WireBandSong = Shared & { songId: string; song: WireSong };
 export type BandSetlist = Shared & { setlistId: string; name: string; songIds: string[]; tags: string[] };
 export type BandLibrary = { songs: BandSong[]; setlists: BandSetlist[] };
+export type WireBandLibrary = { songs: WireBandSong[]; setlists: BandSetlist[] };
 
 export type CopiedSong = { song: SongContent; copy: { id: string; canSendOn: boolean } };
 

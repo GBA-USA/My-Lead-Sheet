@@ -265,11 +265,11 @@ export function useLiveGig({ me, stage = null, metronome, personal, onPersonal, 
 
   // Joining without a tap: a player who answered the click question on an earlier gig, with this band's page or the
   // gig's screen open, watches the gig in the room, and follows it the moment it is live, staying on that screen.
-  const [hash, setHash] = useState(() => location.hash);
+  const [hash, setHash] = useState(() => window.location.hash);
   useEffect(() => {
-    const moved = () => setHash(location.hash);
-    addEventListener("hashchange", moved);
-    return () => removeEventListener("hashchange", moved);
+    const moved = () => setHash(window.location.hash);
+    window.addEventListener("hashchange", moved);
+    return () => window.removeEventListener("hashchange", moved);
   }, []);
   const onScreen = me && !joined && !joining && !asksClick(personal) ? bandOnScreen(hash) : null;
   const watchKey = onScreen ? `${onScreen.bandId}/${onScreen.gigId ?? ""}` : "";

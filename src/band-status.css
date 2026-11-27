@@ -10,6 +10,9 @@ html {
 }
 
 .band-status-face {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   box-sizing: border-box;
   width: var(--touch);
   height: var(--touch);
@@ -27,6 +30,20 @@ html {
 
 .band-status-faces .band-status-face.band-status-face-leader {
   border-color: var(--accent);
+}
+
+span.band-status-face {
+  cursor: default;
+}
+
+.band-status-faces .band-status-face.band-status-face-steady {
+  border-color: var(--text);
+}
+
+.band-status-faces .band-status-face.band-status-face-grey {
+  border-style: dotted;
+  border-color: var(--text-dim);
+  color: var(--text-dim);
 }
 
 .band-status-faces .band-status-face.band-status-face-amber {
@@ -70,8 +87,21 @@ html {
   color: var(--text-dim);
 }
 
-.band-status-amber {
+.band-status-amber,
+.band-status-amber .band-status-tag,
+.band-status-amber .band-status-route,
+.band-status-amber .band-status-heard {
   color: var(--danger);
+}
+
+.band-status-bar-empty {
+  color: var(--text-dim);
+}
+
+.band-status-grey,
+.band-status-grey .band-status-tag,
+.band-status-grey .band-status-route {
+  color: var(--text-dim);
 }
 
 .band-status-amber .band-status-name::before {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type DependencyList, type Dispatch, type SetStateAction } from "react";
 import { dragTo, initialLook, release, showBandLine, startDrag, tagText, tick, touchAction } from "./look-ahead";
 import { parseHash } from "./route";
 import { READING_LINE, atSpeed, chordCount, runScroll, type LaidSection, type Motion, type Section, type TimeSource } from "./scroll-timing";
@@ -259,6 +259,31 @@ function lookAhead(el: HTMLElement, bandAt: () => number): { scroller: Parameter
     setLook(null);
   };
   return { scroller, unlook };
+}
+
+/** How often a screen that shows a gig asks for it again while it stays open. */
+const GIG_EVERY_MS = 15_000;
+
+/**
+ * Runs `ask` now, every `GIG_EVERY_MS` while the app shows, and each time it shows again, so a gig that goes live or
+ * ends reaches a phone that stays on the screen. `alive` turns false once `deps` change or the screen closes, so a late
+ * reply is dropped. A null `ask` asks nothing.
+ */
+export function useGigRefresh(ask: ((alive: () => boolean) => void) | null, deps: DependencyList) {
+  useEffect(() => {
+    if (!ask) return;
+    let on = true;
+    const alive = () => on;
+    const again = () => document.visibilityState === "visible" && ask(alive);
+    ask(alive);
+    const timer = setInterval(again, GIG_EVERY_MS);
+    document.addEventListener("visibilitychange", again);
+    return () => {
+      on = false;
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", again);
+    };
+  }, deps);
 }
 
 /** Screen Wake Lock, held while the app is open. Missing support and rejected requests are silent. The OS drops the lock when the page hides, so it is requested again on return. */

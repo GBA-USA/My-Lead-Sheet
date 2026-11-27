@@ -18,8 +18,10 @@
   white-space: normal;
 }
 
-.song-list-actions .song-list-add:hover {
-  background: var(--surface-2);
+@media (hover: hover) {
+  .song-list-actions .song-list-add:hover {
+    background: var(--surface-2);
+  }
 }
 
 .song-list-actions .song-list-add:active {

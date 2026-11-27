@@ -45,6 +45,7 @@ const NAMES = {
   I6search: "I6 every mount: a band song opened from My Songs search shows the row closed",
   I6import: "I6 every mount: the import preview shows the row closed",
   I7: "I7 band notes: the count is on the row, the notes are inside the panel and never above the sheet, members and admins see the right row",
+  I7count: "I7 band notes: an admin's Save note and Delete in the open panel change the row's count at once",
   I8: "I8 song change closes: Next in Live, A to B and back to A, and the next gig song all start closed",
   I9: "I9 key and view apply inside: At a glance A D E F#m reads B E F# G#m two steps up and 1 4 5 6m in Nashville",
   I10: "I10 reading position held: opening and closing during auto-scroll keeps the chart row at the reading line within 2 px",
@@ -624,6 +625,23 @@ try {
     await tapRow();
     const addInside = await s.evaluate<boolean>(`(() => { const row = ${ROW}, panel = document.getElementById(row.getAttribute("aria-controls")); const add = ${button("Add a note", "panel")}; return !!add && add.getClientRects().length > 0; })()`);
     assert.ok(addInside, "and Add a note is inside the open panel");
+  });
+
+  await check(NAMES.I7count, async () => {
+    await openBandSong(trio, trioSong, "Three of us tonight");
+    assert.equal((await needRow("Trio Song, as its admin")).text, "Song info", "no notes yet, no count");
+    await tapRow();
+    const panel = `document.getElementById(${ROW}.getAttribute("aria-controls"))`;
+    const rowReads = (text: string, what: string) => app.until(`${ROW}?.textContent.trim() === ${js(text)}`, what, 8000);
+    await tapButton("Add a note", panel);
+    await s.evaluate(`${panel}.querySelector("textarea[aria-label='Note for the band']").focus()`);
+    await s.send("Input.insertText", { text: "Count in from the bass" });
+    await tapButton("Save note", panel);
+    await rowReads("Song info · 1 band note", "the row's count after Save note");
+    await tapButton("Delete", panel);
+    await tapButton("Yes, delete", panel);
+    await rowReads("Song info", "the row's count gone after Delete");
+    assert.equal((await rowState())?.expanded, "true", "the panel stays open through both");
   });
 
   await check(NAMES.I14signal, async () => {

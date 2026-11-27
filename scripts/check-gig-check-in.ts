@@ -1284,6 +1284,41 @@ try {
     await endPageGig(band, gigId);
     await closeAll();
   });
+
+  await check("K26 a Save keeps a change made meanwhile: Ada adds Ray while Lee's sheet is open, Lee unticks Mo and saves, and Ray stays on", async () => {
+    await pageAs(lee);
+    const band = await newBand("Both Edit");
+    const gigId = await planGig(band, "Both edit");
+    await openGigScreen(band, gigId);
+    await openTonight(gigId);
+    ok(await ada.call("/api/bands/gig/lineup", { bandId: band.bandId, gigId, lineup: [ada.userId, lee.userId, bo.userId, mo.userId, ray.userId] }), "Ada adds Ray while Lee's sheet is open");
+    await tick(mo);
+    await clickButton("Save", `document.querySelector(${js(TONIGHT)})`);
+    await until(`!document.querySelector(${js(TONIGHT)})`, "Tonight's players to close after Save");
+    assert.deepEqual([...((await gigOf(band, gigId)).gig.lineup as string[])].sort(), [ada, lee, bo, ray].map((who) => who.userId).sort(), "Mo is off and Ray, Ada's add, is still on");
+    await closeAll();
+  });
+
+  await check("K27 See who after a failed read: the leader's read of the names fails, and See who comes once the line is back", async () => {
+    await pageAs(lee);
+    const band = await newBand("Late Names");
+    const gigId = await planGig(band, "Late names");
+    await openGigScreen(band, gigId);
+    await evaluate(`window.__failPath = "/api/bands/gig/open"`);
+    await leaderStarts(band, gigId);
+    await warningSays(3, 8000, "the warning says 3 not ready");
+    await pause(1500);
+    assert.ok(!(await has(`${WARNING} .check-in-see`)), "no See who while the names cannot be read");
+    await evaluate(`window.__failPath = null; window.__roomsDown = true; for (const ws of window.__rooms) ws.close();`);
+    await pause(1000);
+    await evaluate(`window.__roomsDown = false`);
+    await until(`!!document.querySelector(${js(`${WARNING} .check-in-see`)})`, "See who once the line is back", 15000);
+    await clickButton("See who", `document.querySelector(${js(WARNING)})`);
+    await until(`!!document.querySelector(${js(SHEET)})`, "See who opens Band status");
+    await closePanel();
+    await endPageGig(band, gigId);
+    await closeAll();
+  });
 } finally {
   await closeAll();
   await site.close();

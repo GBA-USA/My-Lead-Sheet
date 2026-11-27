@@ -499,6 +499,60 @@ try {
     }
   });
 
+  await check("T6 a pack download that fails on the band page is not tried again by each 15 s refresh", async () => {
+    const band = await newBand("Pack Retry", []);
+    assert.equal((await appCalls("/api/bands/join", { code: band.invite })).status, 200, "Sam joins Pack Retry");
+    const planned = viewOf(
+      await terry.call("/api/bands/gig/plan", { bandId: band.bandId, setlistId: band.setlistId, gigId: gigId(), name: "Retry night", date: dayFromNow(1), lineup: [terry.userId, sam.userId], leader: terry.userId }),
+      "Terry plans Retry night with Sam on the lineup",
+    ).gig.gigId;
+    await site.evaluate(`(() => {
+      window.__calls = { list: 0, pack: 0 };
+      window.__failPack = false;
+      window.__ticks = [];
+      window.__fetch = window.fetch;
+      window.fetch = (input, init) => {
+        const url = String(input instanceof Request ? input.url : input);
+        if (url.includes("/api/bands/gig/list")) window.__calls.list += 1;
+        if (url.includes("/api/bands/gig/pack")) {
+          window.__calls.pack += 1;
+          if (window.__failPack) return Promise.resolve(new Response(JSON.stringify({ reason: "check" }), { status: 500, headers: { "content-type": "application/json" } }));
+        }
+        return window.__fetch(input, init);
+      };
+      window.__setInterval = window.setInterval;
+      window.setInterval = (run, ms, ...rest) => (ms === 15000 ? (window.__ticks.push(run), 0) : window.__setInterval(run, ms, ...rest));
+      return true;
+    })()`);
+    const calls = () => site.evaluate<{ list: number; pack: number }>("window.__calls");
+    const card = () => site.evaluate<string>(`${bandPage(band.bandId)}?.querySelector(".next-gig")?.textContent ?? ""`);
+    /** One 15 s refresh, fired by hand: the band page reads its gigs again, and whatever that reply starts has time to run. */
+    const refresh = async () => {
+      const { list } = await calls();
+      await site.evaluate(`(window.__ticks.at(-1)(), true)`);
+      await app.until(`window.__calls.list > ${list}`, "the refresh to read gig/list", 5000);
+      await new Promise((done) => setTimeout(done, 1500));
+    };
+    try {
+      await openBand(band.bandId);
+      await app.until(`/Pack 2 of 2 downloaded/.test(${bandPage(band.bandId)}.querySelector(".next-gig")?.textContent ?? "")`, "the first auto-download", 20000);
+      assert.equal((await calls()).pack, 1, "opening the band page downloads the pack once");
+      assert.ok(await site.evaluate<boolean>("window.__ticks.length > 0"), "the band page set its 15 s refresh");
+      await site.evaluate("(window.__failPack = true)");
+      viewOf(await terry.call("/api/bands/gig/route", { bandId: band.bandId, gigId: planned, route: "band_wifi" }), "Terry's route change makes a new pack rev");
+      await refresh();
+      assert.equal((await calls()).pack, 2, "the refresh that sees the new pack rev tries it once, and that try fails");
+      await refresh();
+      await refresh();
+      const after = await calls();
+      assert.equal(after.pack, 2, `two more refreshes do not fetch the failed pack again (${js(after)})`);
+      assert.deepEqual(await texts(".band-page [role=alert]"), [], "the silent auto-download failure shows no error banner");
+      assert.match(await card(), /Pack 0 of 2 downloaded/, "the card says the new pack is not on the phone");
+    } finally {
+      await site.evaluate(`(window.__failPack = false, window.fetch = window.__fetch, window.setInterval = window.__setInterval, true)`);
+    }
+  });
+
   await check("no page errors", async () => assert.deepEqual(await app.errors(), [], "the page logged no errors"));
 } finally {
   await site.close();

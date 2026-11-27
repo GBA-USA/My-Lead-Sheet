@@ -449,7 +449,7 @@ function BandScreen({ me, bandId, section: asked, landing, inbox, onMessage, onS
     reloadLibrary().catch(loaded);
   }, []);
   /** The gigs on open and again while the page stays up, so a gig going live or ending reaches the card and Band status with no reload. */
-  useGigRefresh(() => void loadGigs().catch(loaded), []);
+  useGigRefresh((alive) => void loadGigs().catch((caught) => alive() && loaded(caught)), []);
 
   /** The band as it is now, each time the page comes back from Invite, settings or a form, so Members shows who joined meanwhile. */
   useEffect(() => {

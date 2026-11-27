@@ -1,0 +1,60 @@
+.song-list-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 8px;
+  margin: 8px 16px 0;
+}
+
+.song-list-actions .song-list-add {
+  flex: 1 1 140px;
+  max-width: 220px;
+  min-width: 0;
+  min-height: 44px;
+  margin: 0;
+  padding: 8px 14px;
+  line-height: 1.2;
+  text-align: center;
+  white-space: normal;
+}
+
+.song-list-actions .song-list-add:hover {
+  background: var(--surface-2);
+}
+
+.song-list-actions .song-list-add:active {
+  background: var(--accent-wash);
+}
+
+.song-row .song-title,
+.song-row .song-artist,
+.song-row-lines {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.band-library-songs .band-library-row {
+  gap: 2px;
+}
+
+.song-row-lines {
+  display: inline-grid;
+  width: 100%;
+  vertical-align: top;
+  gap: 2px;
+}
+
+.band-setlist-songs .song-row-lines + small {
+  display: block;
+  margin-left: 0;
+  margin-top: 2px;
+}
+
+.band-setlist-songs li:has(> .song-row-lines):has(> button) {
+  padding: 8px 0;
+}
+
+.band-setlist-songs .song-row-lines + button {
+  margin-left: 0;
+  margin-top: 6px;
+}

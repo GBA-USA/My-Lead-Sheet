@@ -9,6 +9,7 @@ import { gigLine, type GigView } from "./gig-plan-model";
 import type { GuestOpens } from "./guest-pass";
 import { GuestRooms } from "./guest-rooms";
 import type { GigPosition } from "./gig-position";
+import { useGigRefresh } from "./hooks";
 import { displayKeyLabel } from "./music";
 import { heldFor, onPhoneChange, phoneGeneration } from "./phone-db";
 import { bandHref, gigHref } from "./route";
@@ -30,8 +31,6 @@ const NEEDS_CONNECTION = "Needs a connection";
 const PACK_OFFLINE = "Can't download now · try on Wi-Fi";
 const FOLLOWING = "Following the leader starts when the gig goes live.";
 const NOT_ON_PHONE = "This song isn't on this phone.";
-/** How often the open gig view asks `gig/open` again, so a gig that goes live or ends reaches a phone that stays on it. */
-const STATUS_EVERY_MS = 15_000;
 
 const unreachable = (error: unknown) => error instanceof ApiError && (error.reason === "offline" || error.status >= 500);
 const message = (error: unknown) => (error instanceof ApiError && MESSAGES[error.reason]) || "Something went wrong. Try again.";
@@ -115,8 +114,8 @@ export function GigSongMissing({ bandId, gigId, pack }: { bandId: string; gigId:
 
 /**
  * The gig view at `#/gig/:bandId/:gigId`: the set runner. It renders from the pack on this phone with no server call,
- * so it opens with no signal. The band's view is read once for who is admin. `gig/open` is read on open, every
- * `STATUS_EVERY_MS` and when the screen shows again, so a gig going live shuts Band status for a member without a reload.
+ * so it opens with no signal. The band's view is read once for who is admin. `gig/open` is read through `useGigRefresh`,
+ * so a gig going live shuts Band status for a member, and a gig ending says so, without a reload.
  * Whoever may move the set gets the set rows as buttons and the bottom Prev and Next; a member reads the following
  * line. End is for the leader, the backup or an admin, asks once, and needs a connection.
  */
@@ -139,28 +138,20 @@ export function GigViewScreen({ me, bandId, gigId, pack, position, onSignIn, onS
   // Asked again when the pack leaves the phone or the room shuts a guest's Band chat, so a guest whose pass just ended hears why.
   const noPack = pack === null;
   const [shut, askAgain] = useReducer((n: number) => n + 1, 0);
-  useEffect(() => {
-    if (!me) return;
-    let on = true;
-    const ask = () =>
-      api<GigView & { guest?: GuestOpens }>("/api/bands/gig/open", { bandId, gigId }).then(
-        (view) => {
-          if (!on) return;
-          setOpened(view);
-          if (view.gig.status === "ended") setProblem(MESSAGES["gig-ended"]);
-        },
-        (caught) => on && refused(caught),
-      );
-    ask();
-    const timer = setInterval(ask, STATUS_EVERY_MS);
-    const onShow = () => document.visibilityState === "visible" && ask();
-    document.addEventListener("visibilitychange", onShow);
-    return () => {
-      on = false;
-      clearInterval(timer);
-      document.removeEventListener("visibilitychange", onShow);
-    };
-  }, [me, bandId, gigId, noPack, shut]);
+  useGigRefresh(
+    me
+      ? (alive) =>
+          api<GigView & { guest?: GuestOpens }>("/api/bands/gig/open", { bandId, gigId }).then(
+            (view) => {
+              if (!alive()) return;
+              setOpened(view);
+              if (view.gig.status === "ended") setProblem(MESSAGES["gig-ended"]);
+            },
+            (caught) => alive() && refused(caught),
+          )
+      : null,
+    [me, bandId, gigId, noPack, shut],
+  );
   // A guest's view, and the Band chat on it, closes the moment the pass ends. The end came with `gig/open`, so this needs no pack and no signal.
   useEffect(() => atPassEnd(opened?.guest, () => setProblem(MESSAGES["pass-ended"])), [opened]);
   useEffect(() => {

@@ -10,7 +10,8 @@ type Paths = Pick<typeof path, "relative" | "sep">;
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SCANNED = ["dist", "public", "src", "worker", "functions", "index.html"];
-const TEXT_FILE = /\.(html?|css|m?js|tsx?|webmanifest|json)$/i;
+const SCRIPT_FILE = /\.[cm]?[jt]sx?$/i;
+const TEXT_FILE = /\.(?:html?|css|[cm]?[jt]sx?|webmanifest|json)$/i;
 const SKIPPED = /(^|\/)(node_modules|\.wrangler)(\/|$)/;
 
 const FONT_OR_CDN_HOST =
@@ -20,7 +21,8 @@ const SCRIPT_TAG = new RegExp(String.raw`<script\b[^>]*\bsrc\s*=\s*${REMOTE}[^>]
 const LINK_TAG = /<link\b[^>]*>/gi;
 const LOADING_REL = /\brel\s*=\s*["'\x60]?[^"'\x60>]*\b(?:stylesheet|preload|modulepreload|preconnect|dns-prefetch|prefetch|icon|manifest)\b/i;
 const REMOTE_HREF = new RegExp(String.raw`\bhref\s*=\s*${REMOTE}`, "i");
-const CSS_REMOTE = new RegExp(String.raw`@import\s+(?:url\(\s*)?${REMOTE}[^;]*|\burl\(\s*${REMOTE}[^)]*\)`, "gi");
+const CSS_REMOTE = new RegExp(String.raw`@import\s+(?:url\(\s*)?${REMOTE}[^;]*|(?<![\w$.]|\bnew\s+)url\(\s*${REMOTE}[^)]*\)`, "gi");
+const EMBED_TAG = new RegExp(String.raw`<(?:img|image|iframe|frame|video|audio|source|track|embed|object|input|form)\b[^>]*\b(?:src|srcset|data|poster|href|action)\s*=\s*${REMOTE}[^>]*>`, "gi");
 const REMOTE_IMPORT = new RegExp(String.raw`\b(?:import|importScripts)\s*\(\s*${REMOTE}[^)]*\)|\bfrom\s*["'\x60](?:https?:)?\/\/[^"'\x60]*`, "g");
 
 const TRACKER_PACKAGE =
@@ -33,12 +35,13 @@ const KNOWN_URLS: { prefix: string; why: string }[] = [
   { prefix: "http://www.w3.org/", why: "SVG and XML namespace names, never fetched" },
   { prefix: "https://react.dev/errors/", why: "React's own error help text, never fetched" },
   { prefix: "https://www.google.com/search?q=", why: "a web search the player opens by tapping, nothing loads by itself" },
-  { prefix: "https://musicbrainz.org/ws/2/recording", why: "song search sends the typed title when the player searches; LEGAL-TODO row 3" },
+  { prefix: "https://musicbrainz.org/ws/2/recording", why: "song search sends the typed title when the player searches; LEGAL-TODO row 5" },
 ];
-const ABSOLUTE_URL = /\bhttps?:\/\/[a-z0-9.-]+\.[a-z]{2,}[^\s"'\x60<>)\\]*/gi;
+const ABSOLUTE_URL = /(?:\bhttps?:|(?<=["'\x60(=]\s*))\/\/[a-z0-9.-]+\.[a-z]{2,}[^\s"'\x60<>)\\]*/gi;
+const isKnownUrl = (url: string) => KNOWN_URLS.some(({ prefix }) => url.startsWith(url.startsWith("//") ? prefix.replace(/^https?:/, "") : prefix));
 
-const CONTROL_WORDS = /^\s*(?:subscribe|upgrade|go pro|get pro|buy|pay|purchase|checkout|start (?:your |a )?(?:free )?trial|unlock (?:pro|premium|plus|all|everything|the full))\b/i;
-const CONTROL_LABEL = { test: (label: string) => /^\s*[A-Z]/.test(label) && CONTROL_WORDS.test(label) };
+const CONTROL_WORDS = /^\s*(?:subscribe|upgrade|(?:go|get|try|join) (?:pro|premium|plus)|buy|pay|purchase|checkout|start (?:your |a )?(?:free )?trial|unlock (?:pro|premium|plus|all|everything|the full))\b/i;
+const isCodeControlLabel = (label: string) => /^\s*[A-Z]/.test(label) && CONTROL_WORDS.test(label);
 const PRICE = /[$€£]\s?\d+(?:[.,]\d{2})?\s*(?:\/|a|per|each)\s*(?:mo|month|yr|year|week|wk)\b|[$€£]\s?\d+[.,]\d{2}\b/i;
 const RENEWAL_WORDS = [/[$€£]\s?\d/, /\brenew/i, /\b(?:every|each|per|a)\s+(?:month|year|week)\b|\bmonthly\b|\byearly\b|\bannually\b/i, /\bcancel/i];
 const BESIDE = 600;
@@ -72,14 +75,15 @@ function loadRules({ file, text }: Page): Finding[] {
     ...found("font-or-cdn-host", matches(text, FONT_OR_CDN_HOST)),
     ...found("third-party-script", matches(text, SCRIPT_TAG)),
     ...found("third-party-link", links),
-    ...found("css-remote-load", /\.(css|html?)$/i.test(file) || !/\./.test(file) ? matches(text, CSS_REMOTE) : []),
-    ...found("remote-script-import", /\.(m?js|tsx?)$/i.test(file) ? matches(text, REMOTE_IMPORT) : []),
+    ...found("third-party-embed", matches(text, EMBED_TAG)),
+    ...found("css-remote-load", matches(text, CSS_REMOTE)),
+    ...found("remote-script-import", SCRIPT_FILE.test(file) ? matches(text, REMOTE_IMPORT) : []),
     ...found("tracker-sign", matches(text, TRACKER_SIGN)),
   ];
 }
 
 function importRules({ file, text }: Page): Finding[] {
-  if (file.startsWith("dist/") || !/\.(m?js|tsx?|html)$/i.test(file)) return [];
+  if (file.startsWith("dist/") || !(SCRIPT_FILE.test(file) || /\.html?$/i.test(file))) return [];
   return [...text.matchAll(IMPORT_SPECIFIER)]
     .map((m) => packageOf(m[1]))
     .filter((name) => TRACKER_PACKAGE.test(name))
@@ -87,9 +91,9 @@ function importRules({ file, text }: Page): Finding[] {
 }
 
 function distUrlRules({ file, text }: Page): Finding[] {
-  if (!file.startsWith("dist/") || !/\.(m?js|html?|css)$/i.test(file)) return [];
+  if (!file.startsWith("dist/") || !/\.(?:[cm]?js|html?|css)$/i.test(file)) return [];
   return matches(text, ABSOLUTE_URL)
-    .filter((url) => !KNOWN_URLS.some((known) => url.startsWith(known.prefix)))
+    .filter((url) => !isKnownUrl(url))
     .map((url) => ({ file, rule: "unlisted-third-party-url", text: url }));
 }
 
@@ -98,15 +102,15 @@ function priceRules({ file, text }: Page): Finding[] {
   if (/\.html?$/i.test(file) || !/\./.test(file) || file.startsWith("worker/")) {
     for (const m of text.matchAll(HTML_CONTROL)) {
       const label = stripTags(m[2] ?? m[3] ?? "").trim();
-      if ((CONTROL_LABEL.test(label) || PRICE.test(label)) && !hasRenewalTerms(text, m.index, m[0].length)) out.push({ file, rule: "price-control-without-renewal-terms", text: m[0].slice(0, 120) });
+      if ((CONTROL_WORDS.test(label) || PRICE.test(label)) && !hasRenewalTerms(text, m.index, m[0].length)) out.push({ file, rule: "price-control-without-renewal-terms", text: m[0].slice(0, 120) });
     }
   }
-  if (file.startsWith("dist/") && /\.m?js$/i.test(file)) {
+  if (file.startsWith("dist/") && /\.[cm]?js$/i.test(file)) {
     for (const m of text.matchAll(STRING_LITERAL)) {
       const label = m[1] ?? m[2] ?? m[3];
       const isKey = /^\s*:/.test(text.slice(m.index + m[0].length, m.index + m[0].length + 2));
       if (isKey || HEADER_USE.test(text.slice(Math.max(0, m.index - 12), m.index))) continue;
-      if ((CONTROL_LABEL.test(label) || PRICE.test(label)) && !hasRenewalTerms(text, m.index, m[0].length)) out.push({ file, rule: "price-control-without-renewal-terms", text: m[0] });
+      if ((isCodeControlLabel(label) || PRICE.test(label)) && !hasRenewalTerms(text, m.index, m[0].length)) out.push({ file, rule: "price-control-without-renewal-terms", text: m[0] });
     }
   }
   return out;
@@ -275,9 +279,9 @@ function runDocCases() {
   for (const known of KNOWN_URLS) {
     const cited = /LEGAL-TODO row (\d+)/.exec(known.why);
     if (!cited) continue;
-    const host = new URL(known.prefix).hostname.replace(/^www\./, "");
+    const service = new URL(known.prefix).hostname.split(".").slice(-2)[0];
     const row = rows.get(Number(cited[1])) ?? "";
-    report(row.toLowerCase().includes(host), `D1 the KNOWN_URLS row for ${host} cites a LEGAL-TODO row that names it`, `row ${cited[1]} does not mention ${host}`);
+    report(row.toLowerCase().includes(service), `D1 the KNOWN_URLS row for ${service} cites a LEGAL-TODO row that names it`, `row ${cited[1]} does not mention ${service}`);
   }
   const routes = routesThatStoreProfileAfterSignUp(readFileSync(path.join(ROOT, "worker", "directory-account.ts"), "utf8"));
   const missing = routes.filter((route) => !(rows.get(1) ?? "").includes(route));
@@ -286,7 +290,7 @@ function runDocCases() {
 
 const ITEMS: { name: string; rules: string[] }[] = [
   { name: "R0 the build exists", rules: ["no-build"] },
-  { name: "R2 no outside font, stylesheet or script in index.html, public, dist, the Worker pages or the privacy page", rules: ["font-or-cdn-host", "third-party-script", "third-party-link", "css-remote-load", "remote-script-import"] },
+  { name: "R2 no outside font, stylesheet, script, image or frame in index.html, public, dist, the Worker pages or the privacy page", rules: ["font-or-cdn-host", "third-party-script", "third-party-link", "third-party-embed", "css-remote-load", "remote-script-import"] },
   { name: "R2b every outside URL in the built bundle has an audit row", rules: ["unlisted-third-party-url"] },
   { name: "R3 no analytics or session-replay package, import or snippet", rules: ["tracker-package", "tracker-import", "tracker-sign"] },
   { name: "R5 no Subscribe or price control without renewal terms beside it", rules: ["price-control-without-renewal-terms"] },

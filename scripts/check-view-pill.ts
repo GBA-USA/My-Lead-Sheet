@@ -8,7 +8,7 @@ import { appPage } from "./app-page.ts";
 import { openSite, type Site } from "./chrome.ts";
 
 /**
- * View pill and finger-sized rows: cases V1 to V12 and guard G1.
+ * View pill and finger-sized rows: cases V1 to V13 and guard G1.
  * Drives the built app in headless Chrome at 360 px and 390 px wide using made-up songs
  * seeded through the real ChordPro storage path (`songToStored`).
  */
@@ -146,6 +146,7 @@ const CASE_NAMES = [
   "V10 Live link",
   "V11 themes",
   "V12 folded bar",
+  "V13 instant theme switch",
 ];
 
 let site: Site | null = null;
@@ -721,6 +722,33 @@ if (site) {
         assert.notEqual(checkedBgs.stage, checkedBgs.contrast, `chosen fill follows theme token across stage (${checkedBgs.stage}) and contrast (${checkedBgs.contrast})`);
         assert.notEqual(barBgs.stage, barBgs.day, `bar fill follows theme token across stage (${barBgs.stage}) and day (${barBgs.day})`);
       } finally {
+        await s.evaluate(`document.documentElement.dataset.theme = "stage"`);
+        await painted();
+      }
+    });
+
+    // ------------------------------------------------------------------ V13 instant theme switch
+    await check("V13 instant theme switch", async () => {
+      await phone(360);
+      await openSong(701);
+      const read = `(() => {
+        const bar = document.querySelector(".controls .notes-switch");
+        return [...bar.querySelectorAll("[role=radio]")].map((b) => {
+          const style = getComputedStyle(b);
+          return b.textContent.trim() + " " + style.color + " on " + style.backgroundColor;
+        });
+      })()`;
+      await s.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }] });
+      try {
+        for (const theme of ["day", "cb-rg", "contrast", "stage"] as const) {
+          const first = await s.evaluate<string[]>(`(() => { document.documentElement.dataset.theme = ${js(theme)}; return ${read}; })()`);
+          await painted();
+          await new Promise((done) => setTimeout(done, 400));
+          const settled = await s.evaluate<string[]>(read);
+          assert.deepEqual(first, settled, `theme ${theme}: the pill shows its theme colors the moment the theme changes (first frame ${js(first)}, settled ${js(settled)})`);
+        }
+      } finally {
+        await s.send("Emulation.setEmulatedMedia", { features: [] });
         await s.evaluate(`document.documentElement.dataset.theme = "stage"`);
         await painted();
       }

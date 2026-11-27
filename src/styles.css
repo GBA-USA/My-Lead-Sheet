@@ -785,7 +785,6 @@ a:focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: background-color 150ms ease, color 150ms ease;
 }
 
 .segmented-pill [role="radio"]:hover {
@@ -795,12 +794,6 @@ a:focus-visible {
 .segmented-pill [role="radio"][aria-checked="true"] {
   background: var(--accent);
   color: var(--on-accent);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .segmented-pill [role="radio"] {
-    transition: none;
-  }
 }
 
 @media (max-width: 429px) {
@@ -962,8 +955,7 @@ a:focus-visible {
 }
 
 .menu button {
-  display: flex;
-  align-items: center;
+  display: block;
   width: 100%;
   text-align: left;
   background: transparent;

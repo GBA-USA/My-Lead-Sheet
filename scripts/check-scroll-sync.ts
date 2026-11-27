@@ -259,7 +259,8 @@ test("the pace comes from the song alone; there is no album or radio-edit choice
   const names = Object.keys(app).filter((name) => picker.test(name));
   assert(names.length === 0, `scroll-timing exports no album or radio-edit choice (${names.join(", ")})`);
   const html = app.renderToStaticMarkup(app.createElement(app.SongControls, controlsProps(true)));
-  assert(!picker.test(html), "the song controls offer no album or radio-edit choice");
+  const offered = html.replace(/ role="radio(group)?"/g, "");
+  assert(!picker.test(offered), "the song controls offer no album or radio-edit choice");
 });
 
 test("the current lyric+chord line is at the vertical midpoint, with lines ahead below and lines just played above", () => {

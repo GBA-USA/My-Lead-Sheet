@@ -328,7 +328,8 @@ export function useLiveGig({ me, stage = null, metronome, personal, onPersonal, 
   }, [joined, me]);
 
   const liveGigNow = gigs.find((gig) => gig.status === "live" && !dismissed.includes(gig.gigId));
-  const startable = stage && stage.gig.status === "planned" && stage.gig.leader === me && !gigs.some((gig) => gig.gigId === stage.gig.gigId && gig.status === "live") ? stage : null;
+  // The held pack says planned until it is fetched again, so a listing that is live or ended wins over it.
+  const startable = stage && stage.gig.status === "planned" && stage.gig.leader === me && !gigs.some((gig) => gig.gigId === stage.gig.gigId && gig.status !== "planned") ? stage : null;
   const gig = joined?.gig ?? joining?.gig ?? (ended && !dismissed.includes(ended.gigId) ? ended : null) ?? liveGigNow ?? startable?.gig ?? null;
   const phase: StripPhase | null = joined
     ? "joined"

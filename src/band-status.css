@@ -123,3 +123,9 @@ span.band-status-face {
   font-style: italic;
   border-bottom-style: dashed;
 }
+
+.band-status-rows .band-status-row {
+  box-sizing: border-box;
+  min-height: var(--touch);
+  align-content: center;
+}

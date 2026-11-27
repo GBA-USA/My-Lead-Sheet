@@ -1,6 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { NOT_A_MEMBER_CLOSE, type ChatMessage } from "../src/chat-model";
-import { BEAT, nextLookAt, rosterKey, rosterRows, type Roster, type RosterAsk } from "../src/gig-check-in-model";
+import { anyBeat, BEAT, nextLookAt, rosterKey, rosterRows, type Roster, type RosterAsk } from "../src/gig-check-in-model";
 import { GIG_SEND_MAX_CHARS, asGigSend, type GigCopy, type GigRefused, type GigSend } from "../src/leader-fanout";
 import { NOT_ON_LINEUP_CLOSE, type GigPeers, type Hello, type JoinGig, type OnLineup } from "../src/links/link";
 import type { Person } from "./directory-http";
@@ -40,7 +40,7 @@ type Outbound =
  * What a socket carries across hibernation: its session version, the gig it joined (and when its phone opened it) once
  * the lineup check passed, and a fingerprint of the last roster sent to it, so an unchanged roster is not sent again.
  */
-type Attachment = { version: number; gigId?: string; openedAt?: number; rosterKey?: string };
+type Attachment = { version: number; gigId?: string; openedAt?: number; joinedAt?: number; rosterKey?: string };
 
 function parseInbound(message: string | ArrayBuffer): Inbound | null {
   if (typeof message !== "string") return null;
@@ -408,7 +408,7 @@ export class Room extends DurableObject<Env> {
     const leader = this.lineups(this.userOf(ws)).get(gigId);
     if (!leader) return ws.close(NOT_ON_LINEUP_CLOSE, "not-on-lineup");
     const now = Date.now();
-    ws.serializeAttachment({ ...attachment(ws), gigId, openedAt: Math.min(openedAt ?? now, now) });
+    ws.serializeAttachment({ ...attachment(ws), gigId, openedAt: Math.min(openedAt ?? now, now), joinedAt: now });
     const sockets = this.gigSockets(gigId);
     const opened = (socket: WebSocket) => attachment(socket).openedAt ?? now;
     const leaderSocket = sockets.filter((other) => this.userOf(other) === leader).sort((a, b) => opened(a) - opened(b))[0];
@@ -433,24 +433,26 @@ export class Room extends DurableObject<Env> {
    * receipts, and sent to the gig sockets of the player leading now and of the band's admins, and to no one else. A
    * socket is sent a roster only when it differs from the last one sent there, except to a socket that asked. `gone` is a
    * socket that is closing but still listed. Returns when the Room should look again, and sets the alarm for it unless
-   * the alarm itself is asking.
+   * the alarm itself is asking. The alarm sends only for beats: in a gig where no socket has beaten, every change it
+   * could see (a join, a close, a receipt) has already sent its own roster.
    */
-  private pushRoster(gigId: string, { gone = null, asker = null, arm = true }: { gone?: WebSocket | null; asker?: WebSocket | null; arm?: boolean } = {}): number | null {
+  private pushRoster(gigId: string, { gone = null, asker = null, timer = false }: { gone?: WebSocket | null; asker?: WebSocket | null; timer?: boolean } = {}): number | null {
     const source = gigRoom.roster(this.band, gigId);
     if (!source) return null;
     const open = this.gigSockets(gigId, gone).filter((ws) => ws.readyState === WebSocket.READY_STATE_OPEN);
     const now = Date.now();
-    const sockets = open.map((ws) => ({ userId: this.userOf(ws), lastBeat: this.ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime() ?? null }));
+    const sockets = open.map((ws) => ({ userId: this.userOf(ws), lastBeat: this.ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime() ?? null, joinedAt: attachment(ws).joinedAt ?? null }));
     const roster: Roster = { kind: "roster", gigId, packRev: source.packRev, rows: rosterRows(source.lineup, sockets, source.receipts, now) };
     const key = rosterKey(roster);
     const to = open.filter((ws) => source.to.has(this.userOf(ws)));
+    const next = to.length > 0 ? nextLookAt(sockets, now) : null;
+    if (!timer && next !== null) void this.armLook(next);
+    if (timer && !anyBeat(sockets)) return next;
     for (const ws of to) {
       if (ws !== asker && attachment(ws).rosterKey === key) continue;
       ws.serializeAttachment({ ...attachment(ws), rosterKey: key });
       send(ws, roster);
     }
-    const next = to.length > 0 ? nextLookAt(sockets, now) : null;
-    if (arm && next !== null) void this.armLook(next);
     return next;
   }
 
@@ -470,7 +472,7 @@ export class Room extends DurableObject<Env> {
 
   /** The timer that notices a socket gone quiet, or beating again. It runs only while a live gig has a socket that beats and someone to tell. */
   async alarm() {
-    const looks = [...this.gigsWithSockets()].map((gigId) => this.pushRoster(gigId, { arm: false })).filter((at): at is number => at !== null);
+    const looks = [...this.gigsWithSockets()].map((gigId) => this.pushRoster(gigId, { timer: true })).filter((at): at is number => at !== null);
     if (looks.length > 0) await this.ctx.storage.setAlarm(Math.min(...looks));
   }
 
@@ -479,7 +481,12 @@ export class Room extends DurableObject<Env> {
     try {
       ws.close(code, reason);
     } catch {
-      // Already closed, or a code the runtime will not echo.
+      // 1005 and 1006 are never sent on the wire, so a close without a code is answered with a plain one.
+      try {
+        ws.close(1000, "closed");
+      } catch {
+        // Already closed.
+      }
     }
     this.closed(ws);
   }

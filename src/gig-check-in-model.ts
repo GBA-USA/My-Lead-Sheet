@@ -58,17 +58,26 @@ export function checkInOf(row: RosterRow, packRev: number): CheckIn {
 export const notReady = (rows: readonly RosterRow[], packRev: number, except: string | null) =>
   rows.filter((row) => row.userId !== except && checkInOf(row, packRev).kind !== "connected").length;
 
+/** A phone that beats sends its first beat as it joins, so a socket with none this long after its join is a build without the heartbeat. */
+export const FIRST_BEAT_WITHIN_MS = 2 * BEAT_EVERY_MS;
+
+/** A socket as the Room's timer sees it: when it joined the gig, if it has. */
+export type LookSocket = RosterSocket & { joinedAt: number | null };
+
+/** Whether any socket in the gig has beaten, the only thing the timer can learn that a join, a close or a receipt does not tell the Room. */
+export const anyBeat = (sockets: readonly RosterSocket[]) => sockets.some((socket) => socket.lastBeat !== null);
+
 /**
- * When the Room should look at the gig's sockets again: the moment the freshest-looking beating socket would go quiet,
- * and at most `LOOK_EVERY_MS` away while any socket has beaten, so beats that stop or start again are noticed. A gig whose
- * sockets have never beaten needs no look: a close tells the Room itself.
+ * When the Room should look at the gig's sockets again: the moment a beating socket would go quiet, at most
+ * `LOOK_EVERY_MS` away while any socket has beaten (so beats that stop or start again are noticed), and once just after a
+ * new join's first beat is due. A gig whose sockets never beat needs no more looks: a close tells the Room itself.
  */
-export function nextLookAt(sockets: readonly RosterSocket[], now: number): number | null {
+export function nextLookAt(sockets: readonly LookSocket[], now: number): number | null {
   let next: number | null = null;
+  const look = (at: number) => (next = next === null ? at : Math.min(next, at));
   for (const socket of sockets) {
-    if (socket.lastBeat === null) continue;
-    const at = isFresh(socket, now) ? Math.min(socket.lastBeat + QUIET_AFTER_MS + 1, now + LOOK_EVERY_MS) : now + LOOK_EVERY_MS;
-    next = next === null ? at : Math.min(next, at);
+    if (socket.lastBeat !== null) look(isFresh(socket, now) ? Math.min(socket.lastBeat + QUIET_AFTER_MS + 1, now + LOOK_EVERY_MS) : now + LOOK_EVERY_MS);
+    else if (socket.joinedAt !== null && now < socket.joinedAt + FIRST_BEAT_WITHIN_MS) look(socket.joinedAt + FIRST_BEAT_WITHIN_MS);
   }
   return next;
 }

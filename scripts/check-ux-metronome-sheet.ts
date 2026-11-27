@@ -43,19 +43,31 @@ const seed = JSON.parse(readFileSync(join(root, "data/library.json"), "utf8")) a
  * At `#/song/10` with Song info closed, relative to `article.sheet`: the first chord glyph, the left edge, and the
  * tops of the card's children, which read title, meta, Song info row, chart. The source line, Feel and the labelled
  * notes sit in the closed panel and are not laid out.
- * x is Chrome on Linux (the CI runner), measured on the base (addc5a2). The y and the tops were measured in Edge on
- * Windows (p2-song-info, Nov 27 2026), with no Linux run to hand. The app bundles Inter and IBM Plex Mono and every line
- * height here is unitless, so the two systems agree on tops unless a line wraps differently. On the base (4d4ba74) at
- * 1280 px Windows reads the Linux pins to 0.01 px (chord y 370.64), and at 390 px it differs only by whole wrapped lines
- * of the prose that now sits in the closed panel. The title and meta wrap alike on both. The case logs what it
- * measured on every run, so a Linux run shows its own numbers.
+ * x is Chrome on Linux (the CI runner), measured on the base (addc5a2). No y here is a measurement on another system.
+ * Each is the stylesheet's arithmetic from the card's top padding and the title's line count. The base's Linux pins
+ * give that count: .source at 87.88 and 68.14 is 2 and 1 title lines (27.744 px each) under the 20 and 28 px padding,
+ * plus .source's 12.416 px margin. Below the title every line height is unitless and the row is 44 px. The first chord
+ * row sits under the section margin and the heading's one line (Inter's normal line at 13.12 px, 16 px), and the
+ * glyph's top is its row's top. The chart reads the Linux pins to 0.01 px on the base at 1280 px. The case measures
+ * the card again in serif. Every top holds there, so only the title's line count and the glyph's place in its row
+ * depend on how a system draws text.
  */
 const IN_SONG_INFO = [".source", ".feel", ".sheet-label"];
 /** The Song info row is a 44 px tap target (the brief's number, not a measurement). Its one text line is shorter. */
 const ROW_TAP = 44;
-const CARD: Record<number, { chord: { x: number; y: number }; left: number; tops: Record<string, number> }> = {
-  390: { chord: { x: 109.59, y: 199.3 }, left: 16, tops: { ".sheet-title": 20, ".meta": 84.88, ".song-info": 112.48, ".chart": 159.67 } },
-  1280: { chord: { x: 121.59, y: 179.56 }, left: 28, tops: { ".sheet-title": 28, ".meta": 65.14, ".song-info": 92.75, ".chart": 139.94 } },
+const EM = 16;
+const LINE = { title: 1.7 * 1.02 * EM, meta: 0.84 * 1.4 * EM, heading: 16 };
+const GAP = { meta: 0.7 * 0.84 * EM, info: 0.55 * EM, chart: 0.2 * EM, section: 1.15 * EM, heading: 0.4 * 0.82 * EM };
+/** The closed card's tops below a title at `top` that wraps to `lines`, and the first chord's y. */
+function stack(top: number, lines: number) {
+  const meta = top + lines * LINE.title + GAP.meta;
+  const info = meta + LINE.meta + GAP.info;
+  const chart = info + ROW_TAP + GAP.chart;
+  return { tops: { ".sheet-title": top, ".meta": meta, ".song-info": info, ".chart": chart }, chord: chart + GAP.section + LINE.heading + GAP.heading };
+}
+const CARD: Record<number, { x: number; left: number; top: number; titleLines: number }> = {
+  390: { x: 109.59, left: 16, top: 20, titleLines: 2 },
+  1280: { x: 121.59, left: 28, top: 28, titleLines: 1 },
 };
 
 /** Counts every click the page starts, records every body it sends, and stands in for the battery named in sessionStorage. */
@@ -480,19 +492,9 @@ try {
   });
 
   await check("with Song info closed, the chart's first chord and the card's blocks sit exactly at their pinned places", async () => {
-    for (const pixels of [390, 1280]) {
-      await phone.width(pixels);
-      await phone.fresh();
-      const pin = CARD[pixels];
-      const card = await phone.evaluate<{
-        x: number;
-        y: number;
-        row: Row;
-        tops: Record<string, number>;
-        lefts: Record<string, number>;
-        folded: Record<string, boolean>;
-        closed: { info: number; row: number };
-      }>(`(() => {
+    type Card = { x: number; y: number; row: Row; lines: number; tops: Record<string, number>; lefts: Record<string, number>; folded: Record<string, boolean>; closed: { info: number; row: number } };
+    const measure = () =>
+      phone.evaluate<Card>(`(() => {
         const sheet = document.querySelector("article.sheet").getBoundingClientRect();
         const chords = document.querySelector(".chart .pair .chords");
         const lyrics = document.querySelector(".chart .pair .lyrics");
@@ -503,8 +505,11 @@ try {
         const advance = range(lyrics.firstChild, 0, lyric.length).width / lyric.length;
         const at = [...text.matchAll(/\\S+/g)].map((chord) => Math.round((range(chords.firstChild, chord.index, chord.index + 1).left - left) / advance));
         const glyph = range(chords.firstChild, text.search(/\\S/), text.search(/\\S/) + 1);
+        const title = document.createRange();
+        title.selectNodeContents(document.querySelector("article.sheet > .sheet-title"));
+        const lines = new Set([...title.getClientRects()].map((r) => Math.round(r.bottom))).size;
         const tops = {}, lefts = {}, folded = {};
-        for (const selector of ${js([...Object.keys(pin.tops), ...IN_SONG_INFO])}) {
+        for (const selector of ${js([...Object.keys(stack(0, 1).tops), ...IN_SONG_INFO])}) {
           const el = document.querySelector("article.sheet > " + selector) ?? document.querySelector("article.sheet > .song-info > .song-info-panel > " + selector);
           folded[selector] = !!el.closest(".song-info-panel") && el.getClientRects().length === 0;
           if (folded[selector]) continue;
@@ -514,13 +519,21 @@ try {
         }
         const info = document.querySelector("article.sheet > .song-info");
         const closed = { info: info.getBoundingClientRect().height, row: info.querySelector(".song-info-row").getBoundingClientRect().height };
-        return { x: glyph.left - sheet.left, y: glyph.top - sheet.top, row: { chords: text, lyrics: lyric, at }, tops, lefts, folded, closed };
+        return { x: glyph.left - sheet.left, y: glyph.top - sheet.top, row: { chords: text, lyrics: lyric, at }, lines, tops, lefts, folded, closed };
       })()`);
-      console.log(`note at ${pixels} px: first chord x ${card.x.toFixed(2)} y ${card.y.toFixed(2)}, tops ${js(card.tops)}`);
-      const near = (a: number, b: number) => Math.abs(a - b) < 0.5;
-      assert.ok(near(card.x, pin.chord.x), `at ${pixels} px the first chord keeps its x (${card.x.toFixed(2)}, base ${pin.chord.x})`);
-      assert.ok(near(card.y, pin.chord.y), `at ${pixels} px the first chord sits at y ${pin.chord.y} (now ${card.y.toFixed(2)})`);
-      for (const [selector, top] of Object.entries(pin.tops)) assert.ok(near(card.tops[selector], top), `at ${pixels} px ${selector} sits at ${top} (now ${card.tops[selector]?.toFixed(2)})`);
+    const near = (a: number, b: number) => Math.abs(a - b) < 0.5;
+    const xs: [number, number][] = [];
+    for (const pixels of [390, 1280]) {
+      await phone.width(pixels);
+      await phone.fresh();
+      const pin = CARD[pixels];
+      const want = stack(pin.top, pin.titleLines);
+      const card = await measure();
+      console.log(`note at ${pixels} px: first chord x ${card.x.toFixed(2)} y ${card.y.toFixed(2)}, title lines ${card.lines}, tops ${js(card.tops)}`);
+      xs.push([pixels, card.x]);
+      assert.equal(card.lines, pin.titleLines, `at ${pixels} px the title wraps to ${pin.titleLines} lines, as on the base's Linux run`);
+      assert.ok(near(card.y, want.chord), `at ${pixels} px the first chord sits at y ${want.chord.toFixed(2)} (now ${card.y.toFixed(2)})`);
+      for (const [selector, top] of Object.entries(want.tops)) assert.ok(near(card.tops[selector], top), `at ${pixels} px ${selector} sits at ${top.toFixed(2)} (now ${card.tops[selector]?.toFixed(2)})`);
       assert.ok(near(card.closed.info, card.closed.row) && near(card.closed.row, ROW_TAP), `at ${pixels} px the closed Song info is exactly its row, and the row is the brief's ${ROW_TAP} px tap height (block ${card.closed.info.toFixed(2)}, row ${card.closed.row.toFixed(2)})`);
       for (const selector of IN_SONG_INFO) assert.ok(card.folded[selector], `at ${pixels} px ${selector} is inside the closed Song info panel and not laid out`);
       for (const [selector, left] of Object.entries(card.lefts)) assert.ok(near(left, pin.left), `at ${pixels} px ${selector} keeps its left edge (${left.toFixed(2)})`);
@@ -545,8 +558,16 @@ try {
       const again = await phone.evaluate<{ y: number; info: number }>(chordAndInfo);
       assert.ok(open.info > shut.info + 0.5 && near(open.y - shut.y, open.info - shut.info), `at ${pixels} px opening Song info moves the first chord down by exactly what the panel adds (chord ${(open.y - shut.y).toFixed(2)}, panel ${(open.info - shut.info).toFixed(2)})`);
       assert.ok(near(again.y, shut.y) && near(again.y, card.y), `at ${pixels} px closing Song info puts the first chord back (${again.y.toFixed(2)}, closed ${shut.y.toFixed(2)})`);
+
+      await phone.evaluate(`(() => { const style = document.createElement("style"); style.textContent = ".sheet, .sheet * { font-family: serif !important; }"; document.head.append(style); return document.fonts.ready.then(() => true); })()`);
+      await sleep(300);
+      const serif = await measure();
+      const drawn = stack(pin.top, serif.lines);
+      console.log(`note at ${pixels} px in serif: title lines ${serif.lines}, tops ${js(serif.tops)}`);
+      for (const [selector, top] of Object.entries(drawn.tops)) assert.ok(near(serif.tops[selector], top), `at ${pixels} px in serif ${selector} still sits at ${top.toFixed(2)} for ${serif.lines} title lines (now ${serif.tops[selector]?.toFixed(2)})`);
     }
     await phone.width(390);
+    for (const [pixels, x] of xs) assert.ok(near(x, CARD[pixels].x), `at ${pixels} px the first chord keeps its x (${x.toFixed(2)}, base ${CARD[pixels].x})`);
   });
 
   await check("Settings has separate Sound and Dot toggles, and both can be off", async () => {

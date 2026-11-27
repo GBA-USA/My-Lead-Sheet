@@ -1,14 +1,15 @@
-# p2-song-info: check:ux-metronome-sheet's closed-panel chord y and tops are Windows numbers
+# p2-song-info: check:ux-metronome-sheet's closed-panel chord y and tops come from the stylesheet, not from Windows
 
-The case now called "with Song info closed, the chart's first chord and the card's blocks sit exactly at their pinned
-places" pins the first chord's y and the tops of .meta, .song-info and .chart as exact numbers (0.5 px). It replaced a
-chain of relations that a 60 px margin on .meta, .sheet-title or .chart passed. The numbers were measured in Edge on
-Windows, since there is no Linux box here: chord y 199.30 at 390 px and 179.56 at 1280 px. Why they should hold on
-Linux: the app bundles Inter and IBM Plex Mono (src/main.tsx), every line height on the path is unitless, and on the
-untouched base 4d4ba74 at 1280 px Windows reads the Linux pins to 0.01 px (chord y 370.64, .feel 131.73, .sheet-label
-194.80). At 390 px the base differs only by whole wrapped lines of the source, Feel and notes prose, which this branch
-moves into the closed panel. The case prints a `note at <width> px` line with what it measured on every run.
-Owner: if the Linux Deep verify fails this case on y or a top, its note lines are the Linux numbers to pin instead.
+Fix pass 1 replaced the Windows-measured numbers in the case "with Song info closed, the chart's first chord and the
+card's blocks sit exactly at their pinned places". Each y is now worked out in the check (`stack`) from the stylesheet
+and one Linux fact, the title's line count. The base's Linux pins put .source at 87.88 (390 px) and 68.14 (1280 px),
+which is 2 and 1 title lines of 27.744 px under the 20 and 28 px card padding plus .source's 12.416 px margin. Below
+the title every line height is unitless, the row is 44 px, and the chart heading is Inter's one normal line (16 px).
+The worked-out numbers match what Edge on Windows draws to 0.07 px. The case measures the card again in serif and every
+top holds, so no top depends on how a system draws text, only on the title's line count. The case still prints its
+`note at <width> px` lines. Owner: the first chord's glyph y also needs the IBM Plex Mono glyph to sit at its row's top,
+as it does on Windows. On the base at 1280 px Windows reads the Linux chord y to 0.01 px, so that should hold too.
+If the Linux Deep verify fails the y line alone, the glyph's offset in its row is the one number to re-pin.
 
 # p2-song-info: check:ux-metronome-sheet's chord x pin cannot pass on the Windows laptop
 

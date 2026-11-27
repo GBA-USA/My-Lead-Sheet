@@ -1,3 +1,22 @@
+# c23 fix: Band status opens for the admin and the leader on a live gig, and says what it is waiting for
+
+What ships in PR #107: the faces strip and the Band status panel on the band page and the gig view. Before and after
+a gig, anyone in the band can open it and it reads the planned route, Downloaded ✓ or Not yet (from the pack receipts),
+and "Sync and timing show during a live gig." During a live gig, only the band's admin and the gig's leader can open
+it. Members and the backup see the faces as pictures.
+
+What does not ship here: no live feed reaches any phone yet. There is no Room feed, heartbeat, roster push or room
+copy of the leader's statuses. So on a live gig the panel lists the lineup with Downloaded and the line "Live sync and
+timing will show once players are connected." It shows no route, sync bars, In time or Heard time. The rings, route
+words, ratings, amber for out of sync and the counting Heard time are built and checked against a test feed only.
+p6-gig-check-in adds the feed, starting after this merge.
+
+Decided already (Terry t644u, CoS STATUS.md): the roster is the leader and the admins only; the 15-second heartbeat
+belongs to check-in; merge on green. Nothing here waits on the owner.
+
+1. A live gig whose leader has left the band has no leader on the strip. Only the admin can open Band status then.
+   Owner: say if the backup should take over.
+
 # song-paste-import fix pass 3: a whole-box paste can be undone, and only a new paste scrolls
 
 1. A paste the app takes now goes into the box as the browser's own edit (`insertText` over the whole box), so one

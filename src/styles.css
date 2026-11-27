@@ -624,6 +624,54 @@ a:focus-visible {
 
 .song-chrome-bar[data-folded="song"] .controls > .control-row:first-child {
   grid-area: keys;
+  flex-wrap: nowrap;
+  gap: 4px;
+}
+
+.song-chrome-bar[data-folded="song"] .notes-switch {
+  flex: 0 1 auto;
+  width: auto;
+  margin-left: auto;
+  padding: 2px;
+}
+
+.song-chrome-bar[data-folded="song"] .notes-switch [role="radio"] {
+  min-width: 44px;
+  height: 44px;
+}
+
+@media (max-width: 429px) {
+  .song-chrome-bar[data-folded="song"] .transpose {
+    gap: 2px;
+  }
+
+  .song-chrome-bar[data-folded="song"] .transpose .step {
+    width: 44px;
+    min-width: 44px;
+  }
+
+  .song-chrome-bar[data-folded="song"] .key-readout {
+    min-width: 48px;
+    padding: 0 2px;
+  }
+
+  .song-chrome-bar[data-folded="song"] .key-name {
+    font-size: 13px;
+  }
+
+  .song-chrome-bar[data-folded="song"] .notes-switch {
+    display: inline-flex;
+    gap: 1px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .song-chrome-bar[data-folded="song"] .notes-switch [role="radio"] {
+    flex: none;
+    padding: 0 4px;
+    font-size: 11px;
+    letter-spacing: -0.01em;
+  }
 }
 
 @media (min-width: 430px) {
@@ -670,15 +718,21 @@ a:focus-visible {
   min-width: 0;
 }
 
-.notes-switch {
+.segmented-pill {
   position: relative;
-  display: inline-flex;
+  display: grid;
+  grid-template-columns: repeat(var(--pill-count, 3), minmax(0, 1fr));
   align-items: center;
   gap: 2px;
-  margin-left: auto;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--surface-tabs);
   min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
+}
+
+.notes-switch {
+  flex: none;
+  margin-left: auto;
 }
 
 .transpose {
@@ -695,7 +749,6 @@ a:focus-visible {
 }
 
 .text-size button,
-.notes-switch button,
 .scroll-pill,
 .more-btn {
   border: var(--control-border);
@@ -717,27 +770,62 @@ a:focus-visible {
   opacity: 0.35;
 }
 
-.notes-switch button {
-  flex: none;
+.segmented-pill [role="radio"] {
   min-width: 48px;
   height: 48px;
-  padding: 0 6px;
+  padding: 0 12px;
+  border: var(--control-border);
   border-radius: 999px;
+  background: transparent;
+  color: var(--text-tab);
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1;
   white-space: nowrap;
-  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 150ms ease, color 150ms ease;
 }
 
-@media (max-width: 429px) {
-  .notes-switch button {
-    width: min-content;
-    white-space: normal;
-    line-height: 1.1;
+.segmented-pill [role="radio"]:hover {
+  background: var(--hover);
+}
+
+.segmented-pill [role="radio"][aria-checked="true"] {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .segmented-pill [role="radio"] {
+    transition: none;
   }
 }
 
-.notes-switch button[aria-pressed="true"] {
-  background: var(--accent);
-  color: var(--on-accent);
+@media (max-width: 429px) {
+  .controls > .control-row:first-child {
+    flex-wrap: wrap;
+  }
+
+  .notes-switch {
+    flex: 1 0 100%;
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .notes-switch [role="radio"] {
+    padding: 0 6px;
+    font-size: 13px;
+  }
+}
+
+@media (min-width: 430px) and (max-width: 539px) {
+  .notes-switch [role="radio"] {
+    padding: 0 3px;
+    font-size: 11px;
+    letter-spacing: -0.02em;
+  }
 }
 
 .scroll-pill,
@@ -874,7 +962,8 @@ a:focus-visible {
 }
 
 .menu button {
-  display: block;
+  display: flex;
+  align-items: center;
   width: 100%;
   text-align: left;
   background: transparent;
@@ -882,7 +971,7 @@ a:focus-visible {
   color: var(--text);
   font-weight: 600;
   font-size: 15px;
-  height: 40px;
+  min-height: 44px;
   padding: 0 12px;
   border-radius: 10px;
 }
@@ -1014,7 +1103,8 @@ a:focus-visible {
 
 .live-launch {
   flex: none;
-  height: 32px;
+  min-width: 44px;
+  min-height: 44px;
   padding: 0 14px;
   border-radius: 999px;
   background: var(--accent);
@@ -1023,6 +1113,7 @@ a:focus-visible {
   font-size: 14px;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   text-decoration: none;
 }
 

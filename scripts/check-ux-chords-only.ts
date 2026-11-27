@@ -14,7 +14,7 @@ const FIRE_AWAY = 1;
 const NO_HALF_STEPPIN = 13;
 const SCALE_15 = 4;
 const FPS = 60;
-const SWITCH = `document.querySelector("[role=group][aria-label='Notes or Nashville']")`;
+const SWITCH = `document.querySelector("[role=radiogroup][aria-label='Chord view']")`;
 
 const root = new URL("..", import.meta.url).pathname;
 const seed = JSON.parse(readFileSync(join(root, "data/library.json"), "utf8")) as LibraryFile;
@@ -134,7 +134,7 @@ const tap = async (text: string, scope = "document") => {
   expect(found, `a ${text} button to tap`);
   await pause(80);
 };
-const pressed = () => evaluate<string[]>(`[...(${SWITCH}?.querySelectorAll("button[aria-pressed=true]") ?? [])].map((b) => b.textContent.trim())`);
+const pressed = () => evaluate<string[]>(`[...(${SWITCH}?.querySelectorAll("[role=radio][aria-checked=true]") ?? [])].map((b) => b.textContent.trim())`);
 const frames = async (seconds: number) => {
   await evaluate(`window.__frames(${Math.round(seconds * FPS)})`);
   await pause(60);
@@ -282,11 +282,11 @@ try {
       await phone(width);
       await open(`#/song/${FIRE_AWAY}`);
       const labels = await evaluate<string[]>(`[...${SWITCH}.querySelectorAll("button")].map((b) => b.textContent.trim())`);
-      expect(js(labels) === js(["Notes", "Nashville", "Chords only"]), `at ${width} px the switch reads ${js(labels)}`);
+      expect(js(labels) === js(["Chords", "Nashville", "Chords only"]), `at ${width} px the switch reads ${js(labels)}`);
       await tap("Chords only", SWITCH);
       expect(js(await pressed()) === js(["Chords only"]), `at ${width} px Chords only is the one pressed (${js(await pressed())})`);
-      await tap("Notes", SWITCH);
-      expect(js(await pressed()) === js(["Notes"]), `at ${width} px Notes is pressed again (${js(await pressed())})`);
+      await tap("Chords", SWITCH);
+      expect(js(await pressed()) === js(["Chords"]), `at ${width} px Chords is pressed again (${js(await pressed())})`);
       for (const fold of [false, true]) {
         if (fold) {
           await evaluate(`(() => { const el = document.getElementById("sheet-scroll"); el.scrollTop = 600; el.dispatchEvent(new Event("scroll")); })()`);
@@ -301,21 +301,23 @@ try {
           const boxes = parts.map((el) => el.getBoundingClientRect());
           const middle = boxes.map((b) => b.top + b.height / 2);
           const oneLine = Math.abs(middle[1] - middle[0]) < 2 && boxes[0].right <= boxes[1].left;
+          const ownRow = boxes[1].top >= boxes[0].bottom - 0.5;
+          const placed = ${fold} ? oneLine : ownRow;
           const inside = boxes.every((b) => b.left >= 0 && b.right <= innerWidth - 4);
           const unclipped = buttons.every((b) => b.scrollWidth <= b.clientWidth);
-          const pressedSeen = buttons.filter((b) => b.getAttribute("aria-pressed") === "true").every(whole);
+          const pressedSeen = buttons.filter((b) => b.getAttribute("aria-checked") === "true").every(whole);
           const before = group.scrollLeft;
           const reach = buttons.every((b) => { b.scrollIntoView({ inline: "nearest", block: "nearest" }); return whole(b); });
           group.scrollLeft = before;
           const allSeen = buttons.every(whole);
-          return { fits: oneLine && inside && unclipped && pressedSeen && reach && (${width} < 390 || allSeen), detail: JSON.stringify({ oneLine, inside, unclipped, pressedSeen, reach, allSeen, boxes: [...boxes, ...buttons.map((b) => b.getBoundingClientRect())].map((b) => [Math.round(b.left), Math.round(b.right)]) }) };
+          return { fits: placed && inside && unclipped && pressedSeen && reach && allSeen, detail: JSON.stringify({ placed, oneLine, ownRow, inside, unclipped, pressedSeen, reach, allSeen, boxes: [...boxes, ...buttons.map((b) => b.getBoundingClientRect())].map((b) => [Math.round(b.left), Math.round(b.right)]) }) };
         })()`);
-        expect(row.fits, `at ${width} px ${fold ? "folded" : "open"}, the key and the switch share one row, the mode in use is whole on screen, each mode can be reached${width >= 390 ? ", and all three show at once" : " by scrolling the switch"}: ${row.detail}`);
+        expect(row.fits, `at ${width} px ${fold ? "folded" : "open"}, the switch sits in place, the mode in use is whole on screen, and all three show at once: ${row.detail}`);
         if (width < 390) {
           await tap("Chords only", SWITCH);
           const seen = await evaluate<boolean>(`(() => { const b = [...${SWITCH}.querySelectorAll("button")].at(-1), r = b.getBoundingClientRect(), g = ${SWITCH}.getBoundingClientRect(); return r.right <= g.right + 0.5 && r.left >= g.left - 0.5; })()`);
-          expect(seen, `at ${width} px ${fold ? "folded" : "open"}, choosing Chords only scrolls it whole into view`);
-          await tap("Notes", SWITCH);
+          expect(seen, `at ${width} px ${fold ? "folded" : "open"}, choosing Chords only keeps it whole in view`);
+          await tap("Chords", SWITCH);
         }
       }
     }
@@ -354,8 +356,8 @@ try {
     await open(`#/song/${NO_HALF_STEPPIN}`);
     await tap("Chords only", SWITCH);
     expect(await evaluate<boolean>(untimed), "No Half Steppin', which has no tempo, says its chords don't fill as it plays");
-    await tap("Notes", SWITCH);
-    expect(!(await evaluate<boolean>(untimed)), "Notes does not show that line");
+    await tap("Chords", SWITCH);
+    expect(!(await evaluate<boolean>(untimed)), "Chords does not show that line");
 
     await open("#/live/1/0");
     await tap("Chords only", SWITCH);
@@ -531,7 +533,7 @@ try {
     for (const id of [FIRE_AWAY, NO_HALF_STEPPIN]) {
       const song = seed.songs.find((each) => each.id === id) as Song;
       await open(`#/song/${id}`);
-      for (const mode of ["Notes", "Nashville"]) {
+      for (const mode of ["Chords", "Nashville"]) {
         await tap(mode, SWITCH);
         const first = await evaluate<(Row & { box: number[] })[]>(ANCHORS);
         await tap("Chords only", SWITCH);
@@ -539,7 +541,7 @@ try {
         const again = await evaluate<(Row & { box: number[] })[]>(ANCHORS);
         expect(js(again) === js(first), `${song.title} in ${mode} draws every chord row in the same place after a Chords only round trip`);
         const source: Row[] = song.body.flatMap((section) =>
-          section.lines.flatMap((line) => (line.chords === undefined ? [] : [{ chords: displayChordLine(line.chords, song, 0, mode === "Notes" ? "notes" : "nashville"), lyrics: line.lyrics }])),
+          section.lines.flatMap((line) => (line.chords === undefined ? [] : [{ chords: displayChordLine(line.chords, song, 0, mode === "Chords" ? "notes" : "nashville"), lyrics: line.lyrics }])),
         );
         const drawn = again.map((row) => ({ ...row, at: row.at!.map(Math.round) }));
         expect(js(chordAnchors(drawn)) === js(chordAnchors(source)), `${song.title} in ${mode} keeps each chord over its notated syllable`);

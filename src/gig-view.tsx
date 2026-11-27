@@ -277,7 +277,7 @@ export function GigViewScreen({ me, bandId, gigId, pack, position, onSignIn, onS
           <p className="gig-meta">{meta(next)}</p>
         </section>
       ) : null}
-      <div className="band-status-slot">{opened && band ? <BandStatusFaces players={playersFrom(opened, band, me)} status={opened.gig.status} /> : null}</div>
+      <div className="band-status-slot">{opened && band ? <BandStatusFaces players={playersFrom(opened, band, me)} status={opened.gig.status} admin={band.role === "admin"} /> : null}</div>
       {songs.length > 0 ? (
         <section className="gig-set">
           <h3>Set</h3>

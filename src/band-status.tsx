@@ -1,12 +1,15 @@
 import { useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
-import { livePlayers, opensBandStatus, panelLine, statusRows, type Player, type PlayerStatus, type StatusRow } from "./band-status-model";
+import { livePlayers, opensBandStatus, panelLine, statusRows, waitingPlayers, type Player, type PlayerStatus, type StatusRow } from "./band-status-model";
 import type { GigStatus } from "./gig-plan-model";
 import { useEscape } from "./hooks";
 import "./band-status.css";
 
-/** A live gig's feed: who leads now, whether this phone's player is the band's admin, and the leader's statuses on the clock `now` reads. */
-export type LiveFeed = { leader: string; admin: boolean; statuses: () => readonly PlayerStatus[]; now: () => number };
+/**
+ * A live gig's feed: who leads now, and the leader's statuses on the clock `now` reads. No mount passes one yet; the
+ * live Room feed is p6-gig-check-in's work. Until it lands a live gig draws `waitingPlayers`.
+ */
+export type LiveFeed = { leader: string; statuses: () => readonly PlayerStatus[]; now: () => number };
 
 /** "Heard 2 s ago" counts up between pings, so a live strip reads its feed again every second. */
 const TICK_MS = 1000;
@@ -89,20 +92,21 @@ function useTick(on: boolean) {
 
 /**
  * The faces strip for a gig in `status`. Before a gig goes live anyone in the band may open the panel. During one,
- * `live` feeds it and only the admin and the leader may (PLAN.md 6), so for anyone else, and for everyone on a phone
- * with no feed, the faces are pictures, not buttons, with no status rings. A feed on a gig that is not live is not
- * read. Losing the lead shuts an open panel, and getting it back does not reopen it. The panel mounts on `.app`,
- * because `.scroll` is its own stacking context under the shell header.
+ * only the band's `admin` and the leader may (PLAN.md 6), so for anyone else the faces are pictures, not buttons, with
+ * no status rings. The leader is the feed's when `live` feeds it, else the gig's. With no feed the panel still opens
+ * for them and shows the waiting line. A feed on a gig that is not live is not read. Losing the lead shuts an open
+ * panel, and getting it back does not reopen it. The panel mounts on `.app`, because `.scroll` is its own stacking
+ * context under the shell header.
  */
-export function BandStatusFaces({ players, status, live }: { players: Player[]; status: GigStatus; live?: LiveFeed }) {
+export function BandStatusFaces({ players, status, admin, live }: { players: Player[]; status: GigStatus; admin: boolean; live?: LiveFeed }) {
   const [sheetHost, setSheetHost] = useState<Element | null>(null);
   const feed = status === "live" ? live : undefined;
   useTick(!!feed);
   if (players.length === 0) return null;
 
-  const shown = feed ? livePlayers(players, feed.leader, feed.statuses(), feed.now()) : players;
-  const me = players.find((p) => p.you)?.id ?? "";
-  const opens = opensBandStatus(status, me, feed);
+  const shown = feed ? livePlayers(players, feed.leader, feed.statuses(), feed.now()) : status === "live" ? waitingPlayers(players) : players;
+  const me = players.find((p) => p.you)?.id;
+  const opens = opensBandStatus(status, me, { admin, leader: feed?.leader ?? players.find((p) => p.leader)?.id });
   if (!opens && sheetHost) setSheetHost(null);
 
   return (

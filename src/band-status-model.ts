@@ -10,8 +10,12 @@ import { rateRoute, type Rating } from "./sync-rating";
  */
 export type PlayerStatus = { id: string; route: LinkRoute; spreadMs: number; p99Ms: number; lateRate: number; inTime: boolean; heardAt: number };
 
-/** Where one lineup player stands in a live gig: leading it, never heard yet, or heard over a route. */
+/**
+ * Where one lineup player stands in a live gig: waiting (this phone has no feed yet, so nothing is known), leading it,
+ * never heard yet, or heard over a route. The live Room feed that replaces `waiting` is p6-gig-check-in's work.
+ */
 export type Live =
+  | { kind: "waiting" }
   | { kind: "leading" }
   | { kind: "not-joined" }
   | { kind: "heard"; route: LinkRoute; spreadMs: number; p99Ms: number; lateRate: number; inTime: boolean; heardMsAgo: number };
@@ -46,16 +50,20 @@ export function livePlayers(players: readonly Player[], leader: string, statuses
   });
 }
 
-/** During a live gig only the admin and the leader see every player's route and sync (PLAN.md 6). */
-export const seesBandStatus = (admin: boolean, me: string, leader: string) => admin || me === leader;
+/** A live gig this phone has no feed for yet: the same lineup, each player waiting, so no route, sync or Heard is made up. */
+export function waitingPlayers(players: readonly Player[]): Player[] {
+  return players.map((p) => ({ ...p, live: { kind: "waiting" } }));
+}
+
+/** During a live gig only the admin and the leader see every player's route and sync (PLAN.md 6). No one leads a gig with no leader. */
+export const seesBandStatus = (admin: boolean, me: string | undefined, leader: string | undefined) => admin || (me !== undefined && me === leader);
 
 /**
- * Whether this phone may open Band status. Before or after a gig, anyone in the band may. During one, only the admin
- * and the live leader, and only on a phone whose feed says who those are, so a live gig with no feed opens for no one.
+ * Whether this phone may open Band status. Before or after a gig, anyone in the band may. During one, only the band's
+ * admin and the gig's leader. Both come from the band and the gig, not from a live feed, so a missing feed shuts no one out.
  */
-export function opensBandStatus(status: GigStatus, me: string, feed: { admin: boolean; leader: string } | undefined): boolean {
-  if (status !== "live") return true;
-  return feed !== undefined && seesBandStatus(feed.admin, me, feed.leader);
+export function opensBandStatus(status: GigStatus, me: string | undefined, roles: { admin: boolean; leader: string | undefined }): boolean {
+  return status !== "live" || seesBandStatus(roles.admin, me, roles.leader);
 }
 
 export function liveRating(live: Heard): Rating {
@@ -103,7 +111,7 @@ export type StatusRow = {
 function liveText(p: Player): Pick<StatusRow, "routeText" | "bars" | "barsText" | "inTime" | "heard" | "tone"> {
   const live = p.live;
   if (live === null) return { routeText: CHOICE_WORDS[p.route].name, bars: null, barsText: "", inTime: "", heard: "Heard —", tone: "steady" };
-  if (live.kind === "leading") return { routeText: "", bars: null, barsText: "", inTime: "", heard: "", tone: "steady" };
+  if (live.kind === "waiting" || live.kind === "leading") return { routeText: "", bars: null, barsText: "", inTime: "", heard: "", tone: "steady" };
   if (live.kind === "not-joined") return { routeText: "Not joined", bars: null, barsText: "", inTime: "", heard: "", tone: "grey" };
   return {
     routeText: `${ROUTE_WORDS[live.route]} · ${liveRating(live)}`,
@@ -119,9 +127,13 @@ export function statusRows(players: readonly Player[]): StatusRow[] {
   return players.map((p) => ({ id: p.id, name: p.name, leader: p.leader, you: p.you, downloaded: p.downloaded ? "Downloaded ✓" : "Not yet", ...liveText(p) }));
 }
 
-/** The panel's one line under the rows: before the gig, sync waits for it; live with no one heard, the leader is alone. */
+/**
+ * The panel's one line under the rows: before the gig, sync waits for it; live with no feed yet, it waits for the players;
+ * live with no one heard, the leader is alone.
+ */
 export function panelLine(players: readonly Player[]): string | null {
   if (players.every((p) => p.live === null)) return "Sync and timing show during a live gig.";
+  if (players.every((p) => p.live?.kind === "waiting")) return "Live sync and timing will show once players are connected.";
   const leading = players.find((p) => p.live?.kind === "leading");
   if (leading?.you && !players.some((p) => p.live?.kind === "heard")) return "Just you so far";
   return null;

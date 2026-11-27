@@ -86,7 +86,7 @@ export function NextGigCard({
         ) : null}
       </section>
       <div className="band-status-slot">
-        <BandStatusFaces players={playersFrom(next, band, me)} status={gig.status} />
+        <BandStatusFaces players={playersFrom(next, band, me)} status={gig.status} admin={admin} />
       </div>
     </>
   );

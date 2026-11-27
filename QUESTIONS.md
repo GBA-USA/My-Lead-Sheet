@@ -1,3 +1,13 @@
+# p6-gig-check-in, step-up retry: 2026-11-27: K3 is still the only red case, and still waits on the answer below
+
+The four fixes listed under "Where the build stands" below are in. The retry did not edit the check. With the one-line
+fix applied in an untracked scratch copy only, all 18 cases pass three runs in a row and all 17 mutations turn their
+cases red. On the registered check, 17 cases are ok and K3 fails on line 977 alone, so `npm run check:gig-check-in`
+exits 1 until the answer below. **Asking (unchanged):** may the cook change line 977 to
+`assert.ok(await evaluate<boolean>(`!!${gigView(gigId)}`), "the gig's screen is still showing");` and nothing else?
+
+---
+
 # p6-gig-check-in: 2026-11-27: K3 cannot pass as written (scripts/check-gig-check-in.ts:977)
 
 **What is wrong.** The last assertion of K3 is

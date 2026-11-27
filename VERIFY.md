@@ -1,18 +1,19 @@
-VERDICT: PASS
+VERDICT: FAIL
+P1 | CLASS=check-defect | scripts/check-gig-check-in.ts:977 | K3's last line passes a JS expression (`gigView(gigId)`) to `has()`, which runs `document.querySelector` on it and throws `SyntaxError ... is not a valid selector` on every run, so `npm run check:gig-check-in` exits 1 whatever the app does. Seen in .verify-logs/k-real.log and final-gig-check-in.log. A scratch copy with only that line changed to `evaluate<boolean>(`!!${gigView(gigId)}`)` passes all 18 cases three runs in a row. Not edited: the brief forbids editing a case after commit 1; QUESTIONS.md (top entry) asks for the one-line fix. Open until the owner answers.
 Nits:
-P3 | CLASS=scope-boundary | src/bands.tsx:625-628 | When `/api/bands/open` fails offline, `offlineSongs` renders cached band songs using `<span className="band-library-name">{item.song.title}</span><small>{item.song.artist}</small>` without key/tempo. Left untouched because `src/bands.tsx` is outside the owned files for this cook.
+P3 | CLASS=laptop-only | scripts/check-mirror.ts:299 | Case 1 "each tab's band clock is within 8 ms" fails on this Windows laptop: 26.84 ms, then 8.52 ms alone, 13.05 ms with this cook's heartbeat switched off, and 45.35 ms on the merge base 640f930 with none of this cook's code. Not caused by this cook; the Linux Deep verify decides.
+P3 | CLASS=laptop-only | scripts/check-gig.ts:12 | Stops at start: esbuild cannot resolve `/C:/.../src/gig-state.ts` from `new URL(...).pathname`. Neither file is changed by this cook.
+P3 | CLASS=laptop-only | scripts/check-gig-plan.ts, scripts/check-ux-gig-view.ts | Both stop at start with `ENOENT C:\C:\...\data\library.json` (a `new URL(...).pathname` path on Windows), on this branch and on the merge base alike. src/gig-view.tsx is covered here only by K1, K2, K12 and K18.
+P3 | CLASS=ui-rule-2 | src/gig-check-in.tsx:133 | Band status opens from the faces strip (K18) and from the warning's See who (brief item 4). Both are asked for by the brief; the warning is a notice with its own way in, not a second menu, so I read rule 2 as kept. Named here for the judge.
 
-# Self-check summary (Phase 2)
+# What was checked (assume it is wrong, look for it)
 
-Reviewed all modified and added files (`src/song-row.tsx`, `src/song-row.css`, `src/library-lists.tsx`, `src/band-library.tsx`, `src/band-setlist-view.tsx`, `scripts/check-list-rows.ts`, `package.json`) against R1–R10, the four song lists, signed-in/signed-out, empty/error states, 360 px layout rules, theme token usage, and the mutation table.
-
-- **Verified in Windows sandbox (after final edit):**
-  - `npx tsc --noEmit`: exit 0
-  - `npx tsc -p worker`: exit 0
-  - `npx vite build --configLoader native --outDir "$env:TEMP\vite-final"`: exit 0 (`170 modules transformed`)
-  - `npm run check:one-copy`: exit 0 (all checks ok)
-  - `npm run check:portable`: exit 0
-  - SSR component & route verification (Node `esbuild` + `react-dom/server`): all 16 routes of `check:screens` and rendered markup for R1, R2, R3, R4, R5, R6, R7, R9 (button wrapper & signed-out hiding), R10 (`withSongData`) passed; all 6 mutations turned their target cases red.
-- **Blocked by Windows sandbox / Windows path bugs (left for harness + Linux Deep verify):**
-  - `npm run build`, `check:list-rows`, `check:phone-layout`, `check:song-import`, `check:new-song`, `check:chordpro-phone`, `check:library-consistency` hit `EPERM: operation not permitted, mkdir` inside the worktree (`node_modules\.vite-temp` and `worker\.wrangler\tmp`) because the sandbox shell ACL on the worktree is `(S,X)`, and headless Edge (`CHROME`) cannot spawn renderer processes inside the Windows AppContainer sandbox.
-  - `check:search`, `check:band-library`, `check:ux-band-page`, `check:screens` fail at base on Windows due to pre-existing `new URL("..", import.meta.url).pathname` (`C:\C:\` / rollup `UNRESOLVED_ENTRY` / esbuild `resolveDir` errors).
+- K1 to K18: all ok on three scratch runs in a row (K3 fixed in the scratch copy only); on the registered check, 17 ok and K3 FAIL for the reason above.
+- Mutation table: 17 of 17 turn their cases red (.verify-logs/mutations.txt, mutate-driver*.log).
+- A silent phone: K14 and the live run (Not connected 10.1 s after the last beat, Connected 4.5 s after beats resume, one row in 214 looks).
+- A quiet roster: K15 count 0 in 30 s, 1 after one join, on every run.
+- Paths a roster can take: `pushRoster` is the only sender. Its `to` is the open sockets of this gig (`gigSockets`, which runs `stillIn`, so ended guest passes are closed) whose user is in `gigRoom.roster().to`: active admins and the player leading now (`leadingNow`), read from the Room's tables each time. `roster-ask` is answered only on a socket already in that gig, and only if it is in `to` (the asker skips only the same-key check). Removed members are closed by `closeMember` and are not active. Nothing from the phone names a role.
+- SQL: the two new statements in worker/room-gig.ts bind `gigId`, `"active"`, `"admin"` with `?`. No text is built from a value.
+- C23's checks: check:band-status and check:ux-band-status green; their files are unchanged against origin/mls-int-20261113.
+- 360 px light and dark: Tonight's players, the roster with one Connected, one Not connected and one Not synced, the warning, the silent phone and its return (C:\Users\guard\cooks\reports\p6-gig-check-in-shots).
+- Fixed in this pass: Band status showed Connected beside Not yet for a player who downloaded after the screen read the gig (src/gig-check-in.tsx `withCheckIn`), reproduced by a scratch assertion red before and green after.

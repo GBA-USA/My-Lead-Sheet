@@ -16,8 +16,11 @@ belongs to check-in; merge on green. Nothing here waits on the owner.
 
 1. A live gig whose leader has left the band has no leader on the strip. Only the admin can open Band status then.
    Owner: say if the backup should take over.
-2. A member sitting on the gig view learns the gig went live within 15 seconds, or at once when the screen shows
-   again. Their open panel shuts then. Owner: say if that is too slow before p6-gig-check-in's feed tells phones sooner.
+2. The gig view and the band page both ask for the gig again every 15 seconds while they stay open, and at once when
+   the app shows again. So a member or the backup on either screen learns the gig went live within 15 seconds, and
+   their open panel shuts then. A member on the gig view whose leader ends the gig reads "That gig is over." and
+   "Back to the band" within 15 seconds. There is still no live feed until p6-gig-check-in. Owner: say if 15 seconds
+   is too slow before that feed tells phones sooner.
 
 # song-paste-import fix pass 3: a whole-box paste can be undone, and only a new paste scrolls
 

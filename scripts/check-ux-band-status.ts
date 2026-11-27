@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { build } from "esbuild";
 import type { SongContent } from "../src/band-library-model.ts";
 import type { GigPlan } from "../src/gig-pack.ts";
 import { CHOICE_WORDS, ROUTE_WORDS } from "../src/routes.ts";
@@ -26,7 +29,7 @@ type Reply = { status: number; body: Record<string, any> };
 type GigView = { gig: GigPlan; packRev: number; receipts: { userId: string; packRev: number; at: number }[] };
 type Box = { x: number; y: number; w: number; h: number; bottom: number; right: number };
 
-const root = new URL("..", import.meta.url).pathname;
+const root = fileURLToPath(new URL("..", import.meta.url));
 const js = (value: unknown) => JSON.stringify(value);
 const gigId = () => `gig_${Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString("base64url")}`;
 const dayFromNow = (days: number) => {
@@ -35,7 +38,7 @@ const dayFromNow = (days: number) => {
   return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
 };
 
-const seed = JSON.parse(readFileSync(`${root}data/library.json`, "utf8")) as { songs: (SongContent & { id: number })[] };
+const seed = JSON.parse(readFileSync(join(root, "data", "library.json"), "utf8")) as { songs: (SongContent & { id: number })[] };
 const content = ({ id: _id, ...song }: SongContent & { id: number }): SongContent => song;
 const LIVE_LINE = "Sync and timing show during a live gig.";
 const STRIP = ".band-status-slot .band-status-faces";
@@ -217,7 +220,7 @@ try {
     await openPanel();
     assert.deepEqual([...new Set(await texts(`${SHEET} .band-status-route`))], [CHOICE_WORDS[lowTide.route].name], "Pier night's rows read the Auto word");
     await closePanel();
-    const model = readFileSync(`${root}src/band-status-model.ts`, "utf8");
+    const model = readFileSync(join(root, "src", "band-status-model.ts"), "utf8");
     const words = [...Object.values(ROUTE_WORDS), ...Object.values(CHOICE_WORDS).map((choice) => choice.name)];
     assert.deepEqual(words.filter((word) => model.includes(js(word))), [], "the model spells no route word of its own");
     assert.match(model, /from "\.\/routes"/, "the model reads the words from src/routes.ts");
@@ -311,6 +314,243 @@ try {
     assert.equal(amber.row, danger, `an amber row is the --danger token (${amber.row})`);
     assert.equal(amber.face, dangerBorder, `an amber face's ring is the --danger token (${amber.face})`);
     await closePanel();
+  });
+
+  // A gig turns live when its leader's phone opens it in the band room (PLAN.md 7.10), so these cases send that opening
+  // from Node, with no live feed after it: the Room feed is p6-gig-check-in's work.
+  const opening = await build({ stdin: { contents: 'export { startGig } from "./src/gig-state.ts";', resolveDir: root, loader: "ts" }, bundle: true, write: false, format: "esm", platform: "node", logLevel: "silent" });
+  const { startGig } = (await import(`data:text/javascript;base64,${Buffer.from(opening.outputFiles[0].text).toString("base64")}`)) as typeof import("../src/gig-state.ts");
+  const goLive = async (leader: typeof terry, admin: string, bandId: string, id: string) => {
+    const view = viewOf(await leader.call("/api/bands/gig/open", { bandId, gigId: id }), `${leader.name} reads ${id}`) as GigView & { songIds: string[] };
+    const ws = new WebSocket(leader.socketUrl(bandId), { headers: { origin, cookie: leader.cookie } } as unknown as string[]);
+    const heard: Record<string, any>[] = [];
+    ws.addEventListener("message", (event) => heard.push(JSON.parse(String(event.data))));
+    try {
+      await new Promise((done, fail) => (ws.addEventListener("open", done, { once: true }), ws.addEventListener("error", fail, { once: true })));
+      ws.send(js({ kind: "gig-state", gigId: id }));
+      for (const end = Date.now() + 5000; !heard.some((m) => m.kind === "gig-state"); await new Promise((done) => setTimeout(done, 50))) {
+        if (Date.now() > end) throw new Error(`the room never answered ${leader.name}'s ask (${js(heard)})`);
+      }
+      const now = Date.now();
+      const state = startGig({ gigId: id, order: view.songIds, leader: leader.userId, admin, backup: null, lineup: view.gig.lineup, route: "auto", scrollAlong: true, now: now as never });
+      ws.send(js({ kind: "gig-start", state, at: now }));
+      for (const end = Date.now() + 5000; viewOf(await leader.call("/api/bands/gig/open", { bandId, gigId: id }), "the gig").gig.status !== "live"; await new Promise((done) => setTimeout(done, 100))) {
+        if (Date.now() > end) throw new Error(`the gig never went live (${js(heard)})`);
+      }
+    } finally {
+      ws.close();
+    }
+  };
+  const faceTags = () => site.evaluate<string[]>(`[...new Set([...document.querySelectorAll(${js(`.gig-view ${STRIP} .band-status-face`)})].map((el) => el.tagName.toLowerCase()))]`);
+
+  await check("F1 on the gig view of a live gig with no feed, the admin's tap opens Band status", async () => {
+    const own = (await appCalls("/api/bands/create", { name: "Sam's Trio" })).body.bandId as string;
+    const code = (await appCalls("/api/codes", { kind: "band", bandId: own })).body.code as string;
+    assert.equal((await terry.call("/api/bands/join", { code })).status, 200, "Terry joins Sam's Trio");
+    const song = await appCalls("/api/bands/library/share-song", { bandId: own, song: content(seed.songs[0]), choice: "public", localId: null });
+    const set = await appCalls("/api/bands/library/share-setlist", { bandId: own, name: "Set", songIds: [song.body.songId], tags: [], choice: "public", localId: null });
+    assert.equal(set.status, 200, `Sam shares a set (${js(set.body)})`);
+    const planned = viewOf(
+      await appCalls("/api/bands/gig/plan", { bandId: own, setlistId: set.body.setlistId, gigId: gigId(), name: "Trio night", date: dayFromNow(0), lineup: [sam.userId, terry.userId], leader: terry.userId }),
+      "Sam, the admin, plans Trio night with Terry leading",
+    ).gig.gigId;
+    await goLive(terry, sam.userId, own, planned);
+    await openGigView(own, planned);
+    await app.until(`document.querySelectorAll(${js(`.gig-view ${STRIP} .band-status-face`)}).length === 2`, "two faces on the gig view");
+    assert.deepEqual(await faceTags(), ["button"], "Sam, the admin, gets faces that open the panel");
+    await openPanel();
+    assert.deepEqual(await texts(`${SHEET} .band-status-line`), ["Live sync and timing will show once players are connected."], "the panel waits for players");
+    await closePanel();
+  });
+
+  await check("F3 a member on the gig view when the gig goes live loses Band status without a reload", async () => {
+    const planned = viewOf(
+      await terry.call("/api/bands/gig/plan", { bandId: quiet.bandId, setlistId: quiet.setlistId, gigId: gigId(), name: "Quiet night", date: dayFromNow(0), lineup: [terry.userId, sam.userId], leader: terry.userId }),
+      "Terry plans Quiet night",
+    ).gig.gigId;
+    await openGigView(quiet.bandId, planned);
+    await app.until(`document.querySelectorAll(${js(`.gig-view ${STRIP} .band-status-face`)}).length === 2`, "two faces on the gig view");
+    assert.deepEqual(await faceTags(), ["button"], "before the gig goes live, Sam may open the panel");
+    await openPanel();
+    await goLive(terry, terry.userId, quiet.bandId, planned);
+    await app.until(`!document.querySelector(${js(SHEET)})`, "the open panel to shut once the gig is live", 25000);
+    assert.deepEqual(await faceTags(), ["span"], "Sam's faces are pictures now");
+    await site.evaluate(`document.querySelector(${js(`.gig-view ${STRIP} .band-status-face`)}).click()`);
+    await new Promise((done) => setTimeout(done, 600));
+    assert.ok(!(await has(SHEET)), "a tap opens nothing");
+  });
+
+  // The band page is the other mount of the strip. These cases keep Sam on it, or on a gig view, while Terry's phone
+  // changes the gig, with no reload: the page must hear the change by itself.
+  const WAITING_LINE = "Live sync and timing will show once players are connected.";
+  const bandFaceTags = () => site.evaluate<string[]>(`[...new Set([...document.querySelectorAll(${js(`.band-page ${STRIP} .band-status-face`)})].map((el) => el.tagName.toLowerCase()))]`);
+  /** A band with a gig tonight that Terry leads and Sam plays, Sam the band's admin, a member or the gig's backup. */
+  const tonight = async (name: string, role: "admin" | "member" | "backup") => {
+    let bandId: string;
+    let setlistId: string;
+    let plan: (path: string, body: object) => Promise<Reply>;
+    if (role === "admin") {
+      bandId = (await appCalls("/api/bands/create", { name })).body.bandId as string;
+      const code = (await appCalls("/api/codes", { kind: "band", bandId })).body.code as string;
+      assert.equal((await terry.call("/api/bands/join", { code })).status, 200, `Terry joins ${name}`);
+      const song = await appCalls("/api/bands/library/share-song", { bandId, song: content(seed.songs[0]), choice: "public", localId: null });
+      const set = await appCalls("/api/bands/library/share-setlist", { bandId, name: "Set", songIds: [song.body.songId], tags: [], choice: "public", localId: null });
+      assert.equal(set.status, 200, `Sam shares a set into ${name} (${js(set.body)})`);
+      setlistId = set.body.setlistId as string;
+      plan = appCalls;
+    } else {
+      const band = await newBand(name, []);
+      assert.equal((await appCalls("/api/bands/join", { code: band.invite })).status, 200, `Sam joins ${name}`);
+      ({ bandId, setlistId } = band);
+      plan = (path, body) => terry.call(path, body);
+    }
+    const backup = role === "backup" ? sam.userId : null;
+    const gig = viewOf(
+      await plan("/api/bands/gig/plan", { bandId, setlistId, gigId: gigId(), name: `${name} tonight`, date: dayFromNow(0), lineup: [terry.userId, sam.userId], leader: terry.userId, backup }),
+      `${name}: a gig tonight with Terry leading and Sam as ${role}`,
+    ).gig;
+    assert.equal(gig.backup, backup, `${name}: the gig's backup is ${backup ? "Sam" : "nobody"}`);
+    return { bandId, gigId: gig.gigId, admin: role === "admin" ? sam.userId : terry.userId };
+  };
+  /** Sam on the band page of `bandId` with Band status open while the gig is still planned. */
+  const panelOnBandPage = async (bandId: string) => {
+    await openBand(bandId);
+    await app.until(`document.querySelectorAll(${js(`.band-page ${STRIP} .band-status-face`)}).length === 2`, "two faces on the band page");
+    assert.deepEqual(await bandFaceTags(), ["button"], "before the gig goes live, Sam may open the panel");
+    await openPanel();
+    assert.deepEqual(await texts(`${SHEET} .band-status-line`), [LIVE_LINE], "the panel reads the planned gig's line");
+  };
+  const losesBandStatus = async (who: string) => {
+    await app.until(`!document.querySelector(${js(SHEET)})`, `${who}'s open panel to shut once the gig is live`, 20000);
+    assert.deepEqual(await bandFaceTags(), ["span"], `${who}'s faces are pictures now`);
+    await site.evaluate(`document.querySelector(${js(`.band-page ${STRIP} .band-status-face`)}).click()`);
+    await new Promise((done) => setTimeout(done, 600));
+    assert.ok(!(await has(SHEET)), "a tap opens nothing");
+  };
+
+  await check("T1 a member on the band page when the gig goes live loses Band status without a reload", async () => {
+    const gig = await tonight("Member Night", "member");
+    await panelOnBandPage(gig.bandId);
+    await goLive(terry, gig.admin, gig.bandId, gig.gigId);
+    await losesBandStatus("Sam the member");
+  });
+
+  await check("T2 the backup on the band page when the gig goes live loses Band status without a reload", async () => {
+    const gig = await tonight("Backup Night", "backup");
+    await panelOnBandPage(gig.bandId);
+    await goLive(terry, gig.admin, gig.bandId, gig.gigId);
+    await losesBandStatus("Sam the backup");
+  });
+
+  await check("T3 the admin on the band page when the gig goes live keeps Band status", async () => {
+    const gig = await tonight("Admin Night", "admin");
+    await panelOnBandPage(gig.bandId);
+    await goLive(terry, gig.admin, gig.bandId, gig.gigId);
+    await app.until(`[...document.querySelectorAll(${js(`${SHEET} .band-status-line`)})].map((el) => el.textContent.trim()).join() === ${js(WAITING_LINE)}`, "the admin's open panel to read the live gig's waiting line", 20000);
+    assert.deepEqual(await bandFaceTags(), ["button"], "Sam, the admin, keeps faces that open the panel");
+    await closePanel();
+    await openPanel();
+    assert.deepEqual(await texts(`${SHEET} .band-status-line`), [WAITING_LINE], "the panel opens again on the live gig");
+    await closePanel();
+  });
+
+  await check("T4 a member on the gig view when the leader ends the gig reads That gig is over and a way back", async () => {
+    const gig = await tonight("Last Call", "member");
+    await goLive(terry, gig.admin, gig.bandId, gig.gigId);
+    await openGigView(gig.bandId, gig.gigId);
+    await app.until(`document.querySelectorAll(${js(`.gig-view ${STRIP} .band-status-face`)}).length === 2`, "two faces on the live gig view");
+    assert.ok(!(await texts(".gig-view"))[0].includes("That gig is over."), "the live gig is not over yet");
+    assert.equal((await terry.call("/api/bands/gig/end", { bandId: gig.bandId, gigId: gig.gigId })).status, 200, "Terry ends the gig");
+    await app.until(`(${gigViewOf(gig.gigId)}?.textContent ?? "").includes("That gig is over.")`, "the gig view to say the gig is over", 20000);
+    assert.deepEqual(await texts(`.gig-view [role=alert]`), ["That gig is over."], "the view says why it stopped");
+    const back = await site.evaluate<{ text: string; href: string } | null>(
+      `(() => { const a = [...document.querySelectorAll(".gig-view a")].find((el) => el.textContent.trim() === "Back to the band"); return a ? { text: a.textContent.trim(), href: a.getAttribute("href") } : null; })()`,
+    );
+    assert.ok(back, "a Back to the band link");
+    assert.equal(back.href, `#/band/${gig.bandId}`, "the link goes to this gig's band");
+    assert.ok(!(await has(`.gig-view ${STRIP}`)), "the ended gig shows no Band status");
+  });
+
+  await check("T5 coming back to the app makes the band page ask for its gigs again, with the 15 s refresh held off", async () => {
+    const band = await newBand("Back Again", []);
+    assert.equal((await appCalls("/api/bands/join", { code: band.invite })).status, 200, "Sam joins Back Again");
+    await site.evaluate(`(() => {
+      window.__gigLists = 0;
+      window.__fetch = window.fetch;
+      window.fetch = (input, init) => {
+        if (String(input instanceof Request ? input.url : input).includes("/api/bands/gig/list")) window.__gigLists += 1;
+        return window.__fetch(input, init);
+      };
+      window.__setInterval = window.setInterval;
+      window.setInterval = (run, ms, ...rest) => (ms === 15000 ? 0 : window.__setInterval(run, ms, ...rest));
+      return true;
+    })()`);
+    try {
+      await openBand(band.bandId);
+      await app.until(`/No gig planned/.test(${bandPage(band.bandId)}.textContent)`, "Back Again says No gig planned");
+      await new Promise((done) => setTimeout(done, 1000));
+      const asked = await site.evaluate<number>("window.__gigLists");
+      assert.equal(asked, 1, "the band page read its gigs once on open");
+      assert.equal(await site.evaluate<string>("document.visibilityState"), "visible", "the page shows");
+      await site.evaluate(`document.dispatchEvent(new Event("visibilitychange")), true`);
+      await app.until(`window.__gigLists > ${asked}`, "the band page to ask for its gigs again on visibilitychange", 3000);
+    } finally {
+      await site.evaluate(`(window.fetch = window.__fetch, window.setInterval = window.__setInterval, true)`);
+    }
+  });
+
+  await check("T6 a pack download that fails on the band page is not tried again by each 15 s refresh", async () => {
+    const band = await newBand("Pack Retry", []);
+    assert.equal((await appCalls("/api/bands/join", { code: band.invite })).status, 200, "Sam joins Pack Retry");
+    const planned = viewOf(
+      await terry.call("/api/bands/gig/plan", { bandId: band.bandId, setlistId: band.setlistId, gigId: gigId(), name: "Retry night", date: dayFromNow(1), lineup: [terry.userId, sam.userId], leader: terry.userId }),
+      "Terry plans Retry night with Sam on the lineup",
+    ).gig.gigId;
+    await site.evaluate(`(() => {
+      window.__calls = { list: 0, pack: 0 };
+      window.__failPack = false;
+      window.__ticks = [];
+      window.__fetch = window.fetch;
+      window.fetch = (input, init) => {
+        const url = String(input instanceof Request ? input.url : input);
+        if (url.includes("/api/bands/gig/list")) window.__calls.list += 1;
+        if (url.includes("/api/bands/gig/pack")) {
+          window.__calls.pack += 1;
+          if (window.__failPack) return Promise.resolve(new Response(JSON.stringify({ reason: "check" }), { status: 500, headers: { "content-type": "application/json" } }));
+        }
+        return window.__fetch(input, init);
+      };
+      window.__setInterval = window.setInterval;
+      window.setInterval = (run, ms, ...rest) => (ms === 15000 ? (window.__ticks.push(run), 0) : window.__setInterval(run, ms, ...rest));
+      return true;
+    })()`);
+    const calls = () => site.evaluate<{ list: number; pack: number }>("window.__calls");
+    const card = () => site.evaluate<string>(`${bandPage(band.bandId)}?.querySelector(".next-gig")?.textContent ?? ""`);
+    /** One 15 s refresh, fired by hand: the band page reads its gigs again, and whatever that reply starts has time to run. */
+    const refresh = async () => {
+      const { list } = await calls();
+      await site.evaluate(`(window.__ticks.at(-1)(), true)`);
+      await app.until(`window.__calls.list > ${list}`, "the refresh to read gig/list", 5000);
+      await new Promise((done) => setTimeout(done, 1500));
+    };
+    try {
+      await openBand(band.bandId);
+      await app.until(`/Pack 2 of 2 downloaded/.test(${bandPage(band.bandId)}.querySelector(".next-gig")?.textContent ?? "")`, "the first auto-download", 20000);
+      assert.equal((await calls()).pack, 1, "opening the band page downloads the pack once");
+      assert.ok(await site.evaluate<boolean>("window.__ticks.length > 0"), "the band page set its 15 s refresh");
+      await site.evaluate("(window.__failPack = true)");
+      viewOf(await terry.call("/api/bands/gig/route", { bandId: band.bandId, gigId: planned, route: "band_wifi" }), "Terry's route change makes a new pack rev");
+      await refresh();
+      assert.equal((await calls()).pack, 2, "the refresh that sees the new pack rev tries it once, and that try fails");
+      await refresh();
+      await refresh();
+      const after = await calls();
+      assert.equal(after.pack, 2, `two more refreshes do not fetch the failed pack again (${js(after)})`);
+      assert.deepEqual(await texts(".band-page [role=alert]"), [], "the silent auto-download failure shows no error banner");
+      assert.match(await card(), /Pack 0 of 2 downloaded/, "the card says the new pack is not on the phone");
+    } finally {
+      await site.evaluate(`(window.__failPack = false, window.fetch = window.__fetch, window.setInterval = window.__setInterval, true)`);
+    }
   });
 
   await check("no page errors", async () => assert.deepEqual(await app.errors(), [], "the page logged no errors"));

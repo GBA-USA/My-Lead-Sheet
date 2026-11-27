@@ -1,10 +1,18 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
-import { statusRows, type Player } from "./band-status-model";
+import { livePlayers, opensBandStatus, panelLine, statusRows, waitingPlayers, type Player, type PlayerStatus, type StatusRow } from "./band-status-model";
+import type { GigStatus } from "./gig-plan-model";
 import { useEscape } from "./hooks";
 import "./band-status.css";
 
-const LIVE_LINE = "Sync and timing show during a live gig.";
+/**
+ * A live gig's feed: who leads now, and the leader's statuses on the clock `now` reads. No mount passes one yet; the
+ * live Room feed is p6-gig-check-in's work. Until it lands a live gig draws `waitingPlayers`.
+ */
+export type LiveFeed = { leader: string; statuses: () => readonly PlayerStatus[]; now: () => number };
+
+/** "Heard 2 s ago" counts up between pings, so a live strip reads its feed again every second. */
+const TICK_MS = 1000;
 
 const initials = (name: string) =>
   name
@@ -14,9 +22,17 @@ const initials = (name: string) =>
     .map((word) => [...word][0].toUpperCase())
     .join("");
 
+const ROW_TONE: Record<StatusRow["tone"], string> = { steady: "band-status-row", amber: "band-status-row band-status-amber", grey: "band-status-row band-status-grey" };
+
+function faceClass(row: StatusRow, live: boolean): string {
+  const status = !live || row.leader ? null : row.tone === "grey" ? "band-status-face-grey" : row.tone === "amber" ? "band-status-face-amber" : "band-status-face-steady";
+  return ["band-status-face", row.leader && "band-status-face-leader", status].filter(Boolean).join(" ");
+}
+
 export function BandStatusPanel({ players, onClose }: { players: Player[]; onClose: () => void }) {
   const titleId = useId();
   useEscape(onClose);
+  const line = panelLine(players);
 
   return (
     <div className="bottom-backdrop" onClick={onClose}>
@@ -29,57 +45,87 @@ export function BandStatusPanel({ players, onClose }: { players: Player[]; onClo
         </header>
         <ul className="band-status-rows">
           {statusRows(players).map((row) => (
-            <li key={row.id} className={row.amber ? "band-status-row band-status-amber" : "band-status-row"}>
+            <li key={row.id} className={ROW_TONE[row.tone]}>
               <span className="band-status-name">{row.name}</span>
               {row.leader ? <span className="band-status-tag">Leader</span> : null}
               {row.you ? <span className="band-status-tag">You</span> : null}
-              <span className="band-status-route">{row.routeText}</span>
+              {row.routeText ? <span className="band-status-route">{row.routeText}</span> : null}
               {row.bars === null ? null : (
                 <span className="band-status-bars">
                   {row.barsText || (
-                    <span className="band-status-bars-boxes">
-                      {[0, 1, 2, 3].map((i) => (
-                        <span key={i} className={i < (row.bars ?? 0) ? "band-status-bar-filled" : "band-status-bar-empty"}>
-                          □
-                        </span>
-                      ))}
+                    <span className="band-status-bars-boxes" role="img" aria-label={`Sync: ${row.bars} of 4 bars`}>
+                      {[0, 1, 2, 3].map((i) =>
+                        i < (row.bars ?? 0) ? (
+                          <span key={i} className="band-status-bar-filled">
+                            ■
+                          </span>
+                        ) : (
+                          <span key={i} className="band-status-bar-empty">
+                            □
+                          </span>
+                        ),
+                      )}
                     </span>
                   )}
                 </span>
               )}
               <span className="band-status-downloaded">{row.downloaded}</span>
               {row.inTime ? <span className="band-status-in-time">{row.inTime}</span> : null}
-              <span className="band-status-heard">{row.heard}</span>
+              {row.heard ? <span className="band-status-heard">{row.heard}</span> : null}
             </li>
           ))}
         </ul>
-        <p className="account-note band-status-line">{LIVE_LINE}</p>
+        {line ? <p className="account-note band-status-line">{line}</p> : null}
       </section>
     </div>
   );
 }
 
-/** The panel mounts on `.app`, because `.scroll` is its own stacking context under the shell header. */
-export function BandStatusFaces({ players }: { players: Player[] }) {
+function useTick(on: boolean) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!on) return;
+    const timer = setInterval(() => setTick((tick) => tick + 1), TICK_MS);
+    return () => clearInterval(timer);
+  }, [on]);
+}
+
+/**
+ * The faces strip for a gig in `status`. Before a gig goes live anyone in the band may open the panel. During one,
+ * only the band's `admin` and the leader may (PLAN.md 6), so for anyone else the faces are pictures, not buttons, with
+ * no status rings. The leader is the feed's when `live` feeds it, else the gig's. With no feed the panel still opens
+ * for them and shows the waiting line. A feed on a gig that is not live is not read. Losing the lead shuts an open
+ * panel, and getting it back does not reopen it. The panel mounts on `.app`, because `.scroll` is its own stacking
+ * context under the shell header.
+ */
+export function BandStatusFaces({ players, status, admin, live }: { players: Player[]; status: GigStatus; admin: boolean; live?: LiveFeed }) {
   const [sheetHost, setSheetHost] = useState<Element | null>(null);
+  const feed = status === "live" ? live : undefined;
+  useTick(!!feed);
   if (players.length === 0) return null;
+
+  const shown = feed ? livePlayers(players, feed.leader, feed.statuses(), feed.now()) : status === "live" ? waitingPlayers(players) : players;
+  const me = players.find((p) => p.you)?.id;
+  const opens = opensBandStatus(status, me, { admin, leader: feed?.leader ?? players.find((p) => p.leader)?.id });
+  if (!opens && sheetHost) setSheetHost(null);
 
   return (
     <>
       <div className="band-status-faces" role="group" aria-label="Band status">
-        {statusRows(players).map((row) => (
-          <button
-            key={row.id}
-            type="button"
-            className={["band-status-face", row.leader && "band-status-face-leader", row.amber && "band-status-face-amber"].filter(Boolean).join(" ")}
-            aria-label={row.leader ? `${row.name}, leader` : row.name}
-            onClick={(event) => setSheetHost(event.currentTarget.closest(".app") ?? document.body)}
-          >
-            {initials(row.name)}
-          </button>
-        ))}
+        {statusRows(shown).map((row) => {
+          const label = row.leader ? `${row.name}, leader` : row.name;
+          return opens ? (
+            <button key={row.id} type="button" className={faceClass(row, !!feed)} aria-label={label} onClick={(event) => setSheetHost(event.currentTarget.closest(".app") ?? document.body)}>
+              {initials(row.name)}
+            </button>
+          ) : (
+            <span key={row.id} className={faceClass(row, false)} role="img" aria-label={label}>
+              {initials(row.name)}
+            </span>
+          );
+        })}
       </div>
-      {sheetHost ? createPortal(<BandStatusPanel players={players} onClose={() => setSheetHost(null)} />, sheetHost) : null}
+      {sheetHost ? createPortal(<BandStatusPanel players={shown} onClose={() => setSheetHost(null)} />, sheetHost) : null}
     </>
   );
 }

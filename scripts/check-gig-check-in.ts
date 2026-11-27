@@ -974,7 +974,7 @@ try {
     );
     await pause(1000);
     assert.equal(await evaluate<string>("location.hash"), where, "Bo's own screen is still the gig's screen he was on");
-    assert.ok(await has(gigView(gigId)), "the gig's screen is still showing");
+    assert.ok(await evaluate<boolean>(`!!${gigView(gigId)}`), "the gig's screen is still showing");
     await endGig(band, gigId);
     await closeAll();
   });

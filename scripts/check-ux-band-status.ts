@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { SongContent } from "../src/band-library-model.ts";
 import type { GigPlan } from "../src/gig-pack.ts";
 import { CHOICE_WORDS, ROUTE_WORDS } from "../src/routes.ts";
@@ -26,7 +28,7 @@ type Reply = { status: number; body: Record<string, any> };
 type GigView = { gig: GigPlan; packRev: number; receipts: { userId: string; packRev: number; at: number }[] };
 type Box = { x: number; y: number; w: number; h: number; bottom: number; right: number };
 
-const root = new URL("..", import.meta.url).pathname;
+const root = fileURLToPath(new URL("..", import.meta.url));
 const js = (value: unknown) => JSON.stringify(value);
 const gigId = () => `gig_${Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString("base64url")}`;
 const dayFromNow = (days: number) => {
@@ -35,7 +37,7 @@ const dayFromNow = (days: number) => {
   return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
 };
 
-const seed = JSON.parse(readFileSync(`${root}data/library.json`, "utf8")) as { songs: (SongContent & { id: number })[] };
+const seed = JSON.parse(readFileSync(join(root, "data", "library.json"), "utf8")) as { songs: (SongContent & { id: number })[] };
 const content = ({ id: _id, ...song }: SongContent & { id: number }): SongContent => song;
 const LIVE_LINE = "Sync and timing show during a live gig.";
 const STRIP = ".band-status-slot .band-status-faces";
@@ -217,7 +219,7 @@ try {
     await openPanel();
     assert.deepEqual([...new Set(await texts(`${SHEET} .band-status-route`))], [CHOICE_WORDS[lowTide.route].name], "Pier night's rows read the Auto word");
     await closePanel();
-    const model = readFileSync(`${root}src/band-status-model.ts`, "utf8");
+    const model = readFileSync(join(root, "src", "band-status-model.ts"), "utf8");
     const words = [...Object.values(ROUTE_WORDS), ...Object.values(CHOICE_WORDS).map((choice) => choice.name)];
     assert.deepEqual(words.filter((word) => model.includes(js(word))), [], "the model spells no route word of its own");
     assert.match(model, /from "\.\/routes"/, "the model reads the words from src/routes.ts");

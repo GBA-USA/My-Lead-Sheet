@@ -228,6 +228,7 @@ const CASES: Case[] = [
   { name: "L50 an outside TURN relay at an IP address fails", files: { "dist/assets/i.js": `const ice=[{urls:'turn:203.0.113.5:3478'}]` }, expect: { rule: "unlisted-third-party-url", file: "dist/assets/i.js" } },
   { name: "L51 an outside fetch to an IPv6 address fails", files: { "dist/assets/i.js": `fetch("https://[2001:db8::1]/p")` }, expect: { rule: "unlisted-third-party-url", file: "dist/assets/i.js" } },
   { name: "L52 an outside fetch to a one-word host fails", files: { "dist/assets/i.js": `fetch("http://tracker:9000/p")` }, expect: { rule: "unlisted-third-party-url", file: "dist/assets/i.js" } },
+  { name: "L54 a build file of a type no rule names, such as a browserconfig.xml tile icon from an outside host, fails", files: { "dist/browserconfig.xml": `<browserconfig><msapplication><tile><square150x150logo src="https://cdn.example.net/t.png"/></tile></msapplication></browserconfig>` }, expect: { rule: "unlisted-third-party-url", file: "dist/browserconfig.xml" } },
   { name: "L53 an object key named stun and the audited STUN server pass", files: { "dist/assets/i.js": `f({stun:C.stun});g({stun:EN});const s=["stun:stun.cloudflare.com:3478"];` }, expect: "clean" },
 ];
 

@@ -16,6 +16,8 @@ belongs to check-in; merge on green. Nothing here waits on the owner.
 
 1. A live gig whose leader has left the band has no leader on the strip. Only the admin can open Band status then.
    Owner: say if the backup should take over.
+2. A member sitting on the gig view learns the gig went live within 15 seconds, or at once when the screen shows
+   again. Their open panel shuts then. Owner: say if that is too slow before p6-gig-check-in's feed tells phones sooner.
 
 # song-paste-import fix pass 3: a whole-box paste can be undone, and only a new paste scrolls
 

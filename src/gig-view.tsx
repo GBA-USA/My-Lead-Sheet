@@ -30,6 +30,8 @@ const NEEDS_CONNECTION = "Needs a connection";
 const PACK_OFFLINE = "Can't download now · try on Wi-Fi";
 const FOLLOWING = "Following the leader starts when the gig goes live.";
 const NOT_ON_PHONE = "This song isn't on this phone.";
+/** How often the open gig view asks `gig/open` again, so a gig that goes live or ends reaches a phone that stays on it. */
+const STATUS_EVERY_MS = 15_000;
 
 const unreachable = (error: unknown) => error instanceof ApiError && (error.reason === "offline" || error.status >= 500);
 const message = (error: unknown) => (error instanceof ApiError && MESSAGES[error.reason]) || "Something went wrong. Try again.";
@@ -113,7 +115,8 @@ export function GigSongMissing({ bandId, gigId, pack }: { bandId: string; gigId:
 
 /**
  * The gig view at `#/gig/:bandId/:gigId`: the set runner. It renders from the pack on this phone with no server call,
- * so it opens with no signal; `gig/open` and the band's view are read once for the gig's status and for who is admin.
+ * so it opens with no signal. The band's view is read once for who is admin. `gig/open` is read on open, every
+ * `STATUS_EVERY_MS` and when the screen shows again, so a gig going live shuts Band status for a member without a reload.
  * Whoever may move the set gets the set rows as buttons and the bottom Prev and Next; a member reads the following
  * line. End is for the leader, the backup or an admin, asks once, and needs a connection.
  */
@@ -138,10 +141,25 @@ export function GigViewScreen({ me, bandId, gigId, pack, position, onSignIn, onS
   const [shut, askAgain] = useReducer((n: number) => n + 1, 0);
   useEffect(() => {
     if (!me) return;
-    api<GigView & { guest?: GuestOpens }>("/api/bands/gig/open", { bandId, gigId }).then((view) => {
-      setOpened(view);
-      if (view.gig.status === "ended") setProblem(MESSAGES["gig-ended"]);
-    }, refused);
+    let on = true;
+    const ask = () =>
+      api<GigView & { guest?: GuestOpens }>("/api/bands/gig/open", { bandId, gigId }).then(
+        (view) => {
+          if (!on) return;
+          setOpened(view);
+          if (view.gig.status === "ended") setProblem(MESSAGES["gig-ended"]);
+        },
+        (caught) => on && refused(caught),
+      );
+    ask();
+    const timer = setInterval(ask, STATUS_EVERY_MS);
+    const onShow = () => document.visibilityState === "visible" && ask();
+    document.addEventListener("visibilitychange", onShow);
+    return () => {
+      on = false;
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onShow);
+    };
   }, [me, bandId, gigId, noPack, shut]);
   // A guest's view, and the Band chat on it, closes the moment the pass ends. The end came with `gig/open`, so this needs no pack and no signal.
   useEffect(() => atPassEnd(opened?.guest, () => setProblem(MESSAGES["pass-ended"])), [opened]);

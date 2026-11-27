@@ -1,34 +1,31 @@
 VERDICT: FAIL
-P2 | CLASS=data-shape | docs/cooks/chordpro-phone.md:45 | Map row 12 says the phone reads the `/api/chat/setlist-copy` reply in either shape, but `src/setlist-code.tsx` is not an owned file and no P case covers a scan. After cook 3 the new phone sends the header and gets `{ chordpro }`, so `src/setlist-code.tsx:210` runs `addOwnSong({ ...item.song, copy })` on a value with no title or body and `:238` calls `songYouHave(songs, item.song)` on text. Scanning a copy code adds nothing usable. Only W8, on the Worker side, proves row 12.
-P2 | CLASS=data-shape | docs/cooks/chordpro-phone.md:45 | `src/guest-rooms.tsx:16` fetches `/api/bands/library` itself, and `:41` reads `item.song.title`. The file is not owned and no P case covers it. After cook 3 the reply is `{ chordpro }`, so every row of a guest's setlist reads "A song the band took out".
-P2 | CLASS=data-shape | docs/PLAN-chordpro-backbone.md:257 | The format gives no written form for a chart line that holds a sung line (chords or lyrics) plus `bars`. A sung line lives only in a non-grid section and a bar row only in a grid (table at :251-255), and `{x_join}` across `{end_of_verse}{start_of_grid}` is not defined. Yet C5 requires "each pair", and the brief freezes the format "to the byte". So cook 1 must invent bytes for `{lyrics:"la", bars:"| A |"}` (same for chords alone in a grid section). The brief's pass condition "every line kind" has no evidence for this one.
-Nits:
-P3 | docs/PLAN-chordpro-backbone.md:195 | "There is no blank line" contradicts :257 "a chart line with no field is written as an empty sung line", which is a blank line. C5 catches a wrong reading, but the spec should say it.
-P3 | docs/PLAN-chordpro-backbone.md:225 | An empty heading (C6) has to be `label=""` so it differs from a start with no label (a continuation). The spec never writes that form.
-P3 | docs/PLAN-chordpro-backbone.md:500 | The both-keys merge adds an old tab's late edit under a new id but never says which account owns it in per-account mode (`leadSheetsLeftBy`).
-P3 | docs/PLAN-chordpro-backbone.md:153 | The plan lists `src/sheet.tsx` "near line 140" for the table from the brief. The heading is at :58 and `BassTable` at :116. Harmless, the plan names symbols.
+P2 | CLASS=other | src/gig-view.tsx:280 | set `admin={false}` on the gig-view BandStatusFaces mount; check:band-status (74 ok) and check:ux-band-status (10 ok) both still pass, so F1 in the gig view (the brief's second mount) has no regression guard
+P2 | CLASS=stale-ui | src/gig-view.tsx:141 | a member opens the gig view while the gig is planned, then the leader goes live; `gig/open` is read once, so `status` stays "planned" and the member can still tap a face and open Band status (breaks F3) until reload
+P2 | CLASS=other | ../EDGE-CASES.md:14 | fix round c23-fix (5eeebe8..966f73b) added no EDGE-CASES.md row; grep for c23 or band status finds none
+Nits: P3 | PR #107 body says "check:ux-band-status is unchanged against mls-int-20261113", but 966f73b changes its repo-root lines (fileURLToPath/join); P3 | PR #107 body says 73 cases, but check:band-status prints 74 ok at 966f73b; P3 | PR #107 head is still 5e02b90, so the body has not been refreshed for this fix round
 
-# Fix pass 1
+# Fix pass 1 (c23-fix self-check)
 
-Goal: every finding above is reproduced by a check case that fails at `b7db81f`, then fixed in the plan and the briefs until the same case passes.
+Goal: each finding above has a check case or grep that fails on `966f73b` and passes after the fix. Logs are in `.verify-logs/c23-fix2/` on the laptop.
 
-Check: `npm run check:chordpro-plan` (`scripts/check-chordpro-plan.ts`, with the plan's reference codec in `scripts/chordpro-plan-reference.ts`). Commit `90ebafe` holds the check alone. It printed 20 FAIL and exit 1 on the plan as it stood (`.verify-logs/fix1/red-at-b7db81f.log`). After the fix it prints 34 ok, "all passed" and exit 0 (`.verify-logs/fix1/green.log`). Seven one-line mutations of the fixed docs each turn it red again, 7 of 7 (`.verify-logs/fix1/mutate.mjs`, `mutate.log`).
+Commit `6a7f5c3` holds the two new cases alone, in `check:ux-band-status`. Each one takes a real gig live over the band room socket and sends no feed after it.
 
-- First and second P2, as one class. The root cause was a map written by hand from memory of the code. The check now finds the places itself: it types the four song replies as "may be text" on the tree at `61f18be`, runs `tsc`, and greps the callers of `content`. That gives 7 files where a song comes in and 5 that send one. `src/setlist-code.tsx` and `src/guest-rooms.tsx` are two of them, and `src/bands.tsx`, `src/library-lists.tsx`, `src/band-setlist-view.tsx` and `src/send-song.tsx` were missing as well. The plan gains the table "Where a song enters and leaves the phone", one door function `songFromSent`, one sender `sent`, and cases P14 to P16. The phone brief owns every file the table changes.
-- Third P2. The plan gains "Every mix of the four fields, written": 22 examples, all 16 mixes of chords, lyrics, bars and note, plus five section shapes. A sung line with a bar row ends the sung section, starts a grid with no label, then `{x_join}`, then the row. The check writes each example with the reference codec and compares bytes, then reads it back. C5 and C6 read the same block.
-- First P3. "The text as a whole" now says where an empty line may stand: one empty text line is a chart line with no field.
-- Second P3. An empty heading is written `label=""`. The example block holds it.
-- Third P3. "Whose it is" says a song taken in from an old tab carries the `leadSheetsLeftBy` mark of the old id. P4 proves it.
-- Fourth P3. The plan names `src/sheet.tsx:58` and `src/sheet.tsx:116`. The check reads both lines at `61f18be`.
+- First P2 (no guard on the gig-view mount). The case is "F1 on the gig view of a live gig with no feed, the admin's tap opens Band status". Sam is the admin of Sam's Trio and Terry leads. It passes on `966f73b`. With `admin={false}` on the gig-view mount it prints FAIL "Sam, the admin, gets faces that open the panel" (`red-mutation-admin-false.log`). The mutation was reverted at once. It is ok after the fix.
+- Second P2 (stale status). The case is "F3 a member on the gig view when the gig goes live loses Band status without a reload". Sam has the panel open on a planned gig, then Terry starts it. On `966f73b` it prints FAIL "timed out waiting for the open panel to shut once the gig is live" (`red-head.log`). The fix is in `src/gig-view.tsx`. The view now reads `gig/open` on open, every 15 s (`STATUS_EVERY_MS`) and when the screen shows again. Before, it read it once. `BandStatusFaces` already shuts an open panel when `opens` turns false. The case is ok after the fix.
+- Third P2 (no EDGE-CASES row). `grep -inE "c23|band status" ../EDGE-CASES.md` found nothing (exit 1). Three rows now cover it. EC-09 is the c23-fix round's root cause, a missing feed treated as a permission input. EC-10 is a component mounted from two screens but checked at one. EC-11 is a screen that reads a gig's phase once. The grep finds all three.
+- QUESTIONS.md item 2 says a member can keep the panel up to 15 s after the gig goes live.
 
-## Found while reproducing, beyond the list
+After the fix, all on Windows with Edge:
+- `npm run build` and `check:portable` exit 0.
+- `check:ux-band-status` prints 12 ok, three runs in a row.
+- `check:band-status` prints 74 ok, three runs in a row.
+- `check:guest` prints 34 ok.
 
-The plan removed the old library key after its move. The old build's `pending` in `src/backup.ts` sends every synced key that is missing on the phone as removed, and an old tab backs up on a timer. Run against the old build's real code at `61f18be`: with the key removed, the next backup of an old tab sends 3 of 3 songs as removed. With the key left as it is, it sends none. With both old keys removed in one turn, it sends nothing at all. The plan now keeps the new library under `leadSheetsLibraryV2` and `leadSheetsBackupV2` and never writes or removes a key the old build reads while the account stays. The check runs this simulation on every run, and mutation M1 proves it bites. New risks R3a, R7a and R7b, case P17 and five lines of section 7 say what stays unproven.
+`check:gig` stops before its first case. esbuild cannot resolve `/C:/...`, which is the known Windows URL-pathname gap the brief names. The box's Deep verify runs it.
 
-The fuzz also broke one rule of the first format: a note that opened a section looked only at the next line, and a note, a line with no field and a bar row then changed on a second writing. The rule now skips note-alone lines and reads the first other line. 20,000 of 20,000 made-up songs and 31 of 31 real songs hold on the reference.
+## The PR body for the next push (nits)
 
-## Against the brief
+PR #107's head is still `5e02b90`, because this cook does not push. Replace two parts of the body when the branch goes up.
 
-The cook brief says no `package.json` edit and docs only. This pass adds one `check:*` line and two files under `scripts/`, because the fix-pass brief asks for a check case per finding and `CLAUDE.md` allows a cook exactly that line. `check:chord-grab-plan` and `check:bulk-import-plan` set the same precedent. No file under `src/` or `worker/` changed.
-
-Also run after the fix, all exit 0: `npm run build`, `check:portable`, `check:one-copy`, `check:chord-grab-plan`, `check:bulk-import-plan`.
+- In "The fix in this round", add this bullet. "The gig view's Band status follows the gig live. `gig/open` is read on open, every 15 s and when the screen shows again, so a member's panel shuts when the leader starts the gig, with no reload."
+- Replace the first paragraph of "Checks" with this. "`check:band-status` has 74 cases. All 36 case names from `mls-int-20261113` are back as their own cases, and F1 to F5 are added. `check:ux-band-status` keeps all 10 cases from `mls-int-20261113` and adds two. One is F1 on the gig view (the admin's tap opens Band status, which fails with `admin={false}` on that mount). The other is F3 on the gig view (a gig going live shuts a member's panel with no reload). Its only other change is the repo root, now resolved with `fileURLToPath` and `join` so it runs on Windows (966f73b)."

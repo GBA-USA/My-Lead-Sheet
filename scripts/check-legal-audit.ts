@@ -206,6 +206,14 @@ const CASES: Case[] = [
   { name: "L37 an analytics import in a .jsx file fails", files: { "src/a.jsx": `import "@sentry/react";` }, expect: { rule: "tracker-import", file: "src/a.jsx" } },
   { name: "L38 a session-replay require in a .cjs file fails", files: { "worker/a.cjs": `const LR = require("logrocket");` }, expect: { rule: "tracker-import", file: "worker/a.cjs" } },
   { name: "L39 new URL to an audited host, a same-origin <img>, a local url() and a tapped outside link pass", files: { "src/search.ts": `const u = new URL("https://musicbrainz.org/ws/2/recording");\nconst v = x.url("https://musicbrainz.org/ws/2/recording");`, "worker/landing.ts": "const page = `<style>@font-face{src:url(./a.woff2)}</style><img src=\"/icon.png\"><a href=\"https://www.google.com/search?q=x\">Search</a>`;" }, expect: "clean" },
+  { name: "L40 an outside script from an IPv4 address injected by the bundle fails until it gets an audit row", files: { "dist/assets/i.js": `s=document.createElement("script");s.src="https://203.0.113.5/x.js";document.head.append(s)` }, expect: { rule: "unlisted-third-party-url", file: "dist/assets/i.js" } },
+  { name: "L41 a protocol-relative outside script from an IPv4 address fails", files: { "dist/assets/i.js": `s.src="//203.0.113.5:8080/x.js"` }, expect: { rule: "unlisted-third-party-url", file: "dist/assets/i.js" } },
+  { name: "L42 an outside fetch to an IPv6 address or a one-word host fails", files: { "dist/assets/i.js": `fetch("https://[2001:db8::1]/p");fetch("http://tracker:9000/p")` }, expect: { rule: "unlisted-third-party-url", file: "dist/assets/i.js" } },
+  { name: "L43 a manifest icon from an outside host fails", files: { "dist/manifest.webmanifest": `{"icons":[{"src":"https://cdn.example.net/i.png"}]}` }, expect: { rule: "unlisted-third-party-url", file: "dist/manifest.webmanifest" } },
+  { name: "L44 an SVG in the build that loads an outside image fails", files: { "dist/icon.svg": `<svg xmlns="http://www.w3.org/2000/svg"><image href="https://px.example.net/p.png"/></svg>` }, expect: { rule: "third-party-embed", file: "dist/icon.svg" } },
+  { name: "L45 a Worker page whose inline script injects an outside script fails", files: { "worker/landing.ts": "const page = `<script>const s=document.createElement('script');s.src='https://cdn.example.net/x.js';document.head.append(s)</script>`;" }, expect: { rule: "unlisted-third-party-url", file: "worker/landing.ts" } },
+  { name: "L46 a Worker page whose inline script sends a beacon outside fails", files: { "worker/landing.ts": "const page = `<script>navigator.sendBeacon('https://px.example.net/p')</script>`;" }, expect: { rule: "unlisted-third-party-url", file: "worker/landing.ts" } },
+  { name: "L47 a same-origin manifest, a Worker page script with local paths and a version number pass", files: { "dist/manifest.webmanifest": `{"start_url":"./","icons":[{"src":"./icon-192.png"}]}`, "dist/assets/v.js": `const v="1.2.3.4",p="/api/me",q="./x.js";`, "worker/landing.ts": "const page = `<script>location.href='/?open=band'</script>`;" }, expect: "clean" },
 ];
 
 let failures = 0;
@@ -274,18 +282,42 @@ function routesThatStoreProfileAfterSignUp(source: string): string[] {
     .map((key) => key[1].split(" ")[1]);
 }
 
+function profileRoutes(root: string): string[] {
+  const file = path.join(root, "worker", "directory-account.ts");
+  return existsSync(file) ? routesThatStoreProfileAfterSignUp(readFileSync(file, "utf8")) : [];
+}
+
+const PLANTED_PROFILE_ROUTES = `export const ROUTES: Record<string, Route> = {
+  async "POST /api/me/rename"(c) {
+    const user = await signedIn(c);
+    c.sql.exec("UPDATE users SET name = ? WHERE id = ?", name, user.id);
+  },
+  "POST /api/me/handle": Object.assign(async (c: Context) => {
+    const user = await signedIn(c);
+    c.sql.exec("UPDATE users SET handle = ? WHERE id = ?", handle, user.id);
+  }, { limit: 5 }),
+};
+`;
+
 function runDocCases() {
   const rows = todoRows(ROOT);
   for (const known of KNOWN_URLS) {
     const cited = /LEGAL-TODO row (\d+)/.exec(known.why);
     if (!cited) continue;
-    const service = new URL(known.prefix).hostname.split(".").slice(-2)[0];
+    const host = new URL(known.prefix).hostname.replace(/^www\./, "");
     const row = rows.get(Number(cited[1])) ?? "";
-    report(row.toLowerCase().includes(service), `D1 the KNOWN_URLS row for ${service} cites a LEGAL-TODO row that names it`, `row ${cited[1]} does not mention ${service}`);
+    report(row.toLowerCase().includes(host), `D1 the KNOWN_URLS row for ${host} cites a LEGAL-TODO row that names it`, `row ${cited[1]} does not mention ${host}`);
   }
-  const routes = routesThatStoreProfileAfterSignUp(readFileSync(path.join(ROOT, "worker", "directory-account.ts"), "utf8"));
+  const routes = profileRoutes(ROOT);
   const missing = routes.filter((route) => !(rows.get(1) ?? "").includes(route));
   report(routes.length > 0 && missing.length === 0, `D2 LEGAL-TODO row 1 names every signed-in route that stores a profile field (${routes.join(", ")})`, `row 1 is missing ${missing.join(", ") || "(no routes found)"}`);
+  const root = plant({ "worker/directory.ts": PLANTED_PROFILE_ROUTES });
+  try {
+    const planted = profileRoutes(root);
+    report(planted.includes("/api/me/rename") && planted.includes("/api/me/handle"), "D3 a signed-in route that stores a profile field in any Worker file, in either route form, reaches D2", `found ${JSON.stringify(planted)}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 }
 
 const ITEMS: { name: string; rules: string[] }[] = [

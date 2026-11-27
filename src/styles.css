@@ -832,8 +832,12 @@ a:focus-visible {
 }
 
 @media (min-width: 430px) and (max-width: 539px) {
+  .notes-switch {
+    gap: 0;
+  }
+
   .notes-switch [role="radio"] {
-    padding: 0 3px;
+    padding: 0 2px;
     font-size: 11px;
     letter-spacing: -0.02em;
   }

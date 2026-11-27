@@ -47,6 +47,7 @@
                     "check:learn-local":  "node --experimental-strip-types scripts/check-learn-local.ts",
                     "check:learn-songs":  "node --experimental-strip-types scripts/check-learn-songs.ts",
                     "check:learn-words":  "node --experimental-strip-types scripts/check-learn-words.ts",
+                    "check:list-rows":  "tsc -p worker && node --experimental-strip-types scripts/check-list-rows.ts",
                     "check:library-consistency":  "tsc -p worker \u0026\u0026 node --experimental-strip-types scripts/check-library-consistency.ts",
                     "check:links":  "tsc -p worker \u0026\u0026 node --experimental-strip-types scripts/check-links.ts",
                     "check:look-ahead":  "node --experimental-strip-types scripts/check-look-ahead.ts",

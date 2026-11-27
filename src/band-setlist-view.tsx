@@ -7,6 +7,7 @@ import { getFromPhone, heldFor, onPhoneChange, phoneGeneration } from "./phone-d
 import { bandLiveHref, type Route } from "./route";
 import { BandSetlistCode, CodeOfferButton } from "./setlist-code";
 import { codeOffer } from "./setlist-code-model";
+import { SongRowText } from "./song-row";
 import type { Song } from "./types";
 
 type HeldSetlist = { name: string; songIds: string[] };
@@ -125,18 +126,27 @@ export function BandSetlistView({
         <p className="account-note">No songs in this setlist yet.</p>
       ) : (
         <ol className="band-setlist-songs">
-          {setlist.songIds.map((songId) => (
-            <li key={songId}>
-              <span className="band-library-name">{titleOf(byId.get(songId))}</span>
-              {onPhone.has(songId) ? (
-                <small>Downloaded ✓</small>
-              ) : gig ? (
-                <button type="button" className="account-secondary" disabled={busy} onClick={() => onDownload(gig)}>
-                  Download
-                </button>
-              ) : null}
-            </li>
-          ))}
+          {setlist.songIds.map((songId) => {
+            const song = byId.get(songId);
+            return (
+              <li key={songId}>
+                {song ? (
+                  <span className="song-row-lines">
+                    <SongRowText song={song.song} facts titleClass="band-library-name" />
+                  </span>
+                ) : (
+                  <span className="band-library-name">{titleOf(undefined)}</span>
+                )}
+                {onPhone.has(songId) ? (
+                  <small>Downloaded ✓</small>
+                ) : gig ? (
+                  <button type="button" className="account-secondary" disabled={busy} onClick={() => onDownload(gig)}>
+                    Download
+                  </button>
+                ) : null}
+              </li>
+            );
+          })}
         </ol>
       )}
       <div className="account-row">

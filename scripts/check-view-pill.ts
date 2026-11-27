@@ -148,6 +148,7 @@ const CASE_NAMES = [
   "V12 folded bar",
   "V13 instant theme switch",
   "V14 long key label",
+  "V15 beside Key from 430 px",
 ];
 
 let site: Site | null = null;
@@ -897,6 +898,28 @@ if (site) {
       await phone(360);
       for (const line of bad) console.log(`     ${line}`);
       assert.equal(bad.length, 0, `${bad.length} long-key layout problems (listed above)`);
+    });
+
+    // ------------------------------------------------------------------ V15 beside Key from 430 px
+    // A short key leaves room, so from 430 px the pill shares Key's line and stays inside the control row.
+    await check("V15 beside Key from 430 px", async () => {
+      const bad: string[] = [];
+      for (const width of [430, 431, 432, 480, 539, 540, 600]) {
+        await phone(width);
+        await openSong(701);
+        const geo = await s.evaluate<{ pill: number[]; key: number[]; row: number[] }>(`(() => {
+          const box = (sel) => { const r = document.querySelector(sel).getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; };
+          return { pill: box(".controls .notes-switch"), key: box(".controls .transpose"), row: box(".controls > .control-row") };
+        })()`);
+        const [pl, pt, pr] = geo.pill;
+        const [, kt, kr, kb] = geo.key;
+        if (pt >= kb - 0.5 || pl < kr) bad.push(`@${width}: pill ${js(geo.pill.map(Math.round))} is not beside Key ${js(geo.key.map(Math.round))}`);
+        if (pr > geo.row[2] + 0.5) bad.push(`@${width}: pill ends at ${pr.toFixed(1)}, past the row's edge ${geo.row[2].toFixed(1)}`);
+        if (Math.abs(pt - kt) > 4) bad.push(`@${width}: pill top ${pt.toFixed(1)} is not on Key's line (${kt.toFixed(1)})`);
+      }
+      await phone(360);
+      for (const line of bad) console.log(`     ${line}`);
+      assert.equal(bad.length, 0, `${bad.length} layouts lose the pill's place beside Key (listed above)`);
     });
 
     // Optional screenshot capture for report when VIEW_PILL_SHOTS is set

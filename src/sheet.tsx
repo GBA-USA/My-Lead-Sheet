@@ -4,34 +4,29 @@ import { useBattery } from "./battery";
 import { usePlayingLearned } from "./cues";
 import { onPlayhead, useLookAhead } from "./hooks";
 import { BeatDot, type MetronomeState } from "./metronome-view";
-import {
-  displayChordLine,
-  displayKeyLabel,
-  namesChords,
-  originalKey,
-  type Notation,
-} from "./music";
+import { displayChordLine, displayKeyLabel, namesChords, type Notation } from "./music";
 import { evenPlan } from "./scroll-timing";
+import { OriginalKeyHint, SongInfo } from "./song-info";
 import { hasTiming } from "./song-version";
 import { tempoText } from "./storage";
 import type { ChartLine, Song } from "./types";
 
+/** A song's sheet: title, the Key / Time / Tempo line, the Song info row (with the band's `notes` inside it), the chart. */
 export function LeadSheet({
   song,
   scale,
   semitones,
   notation,
   metronome,
+  notes,
 }: {
   song: Song;
   scale: number;
   semitones: number;
   notation: Notation;
   metronome: MetronomeState;
+  notes?: ReactNode;
 }) {
-  const notes = [song.keyNote, song.tempoNote].filter((note) => note.trim().length > 0);
-  const atAGlance = song.atAGlance ? displayChordLine(song.atAGlance, song, semitones, notation) : "";
-  const inOriginalKey = <OriginalKeyHint song={song} semitones={semitones} />;
   const battery = useBattery();
 
   return (
@@ -43,44 +38,13 @@ export function LeadSheet({
         <span className="sheet-artist"> — {song.artist}</span>
       </h1>
 
-      {song.sourceNote ? <p className="source">{song.sourceNote}</p> : null}
-
       <p className="meta">
         Key: {displayKeyLabel(song, semitones)} • Time: {song.timeSignature} • Tempo: {tempoText(song.tempo)}
       </p>
 
-      {song.feel ? <p className="feel">Feel: {song.feel}</p> : null}
-
-      {song.howToPlay ? (
-        <>
-          <h2 className="sheet-label">How to play{inOriginalKey}</h2>
-          <p className="prose">{song.howToPlay}</p>
-        </>
-      ) : null}
+      <SongInfo key={`info/${song.ref}`} song={song} semitones={semitones} notation={notation} notes={notes} />
 
       <Chart key={song.ref} song={song} scale={scale} semitones={semitones} notation={notation} />
-
-      {song.atAGlance ? (
-        <>
-          <h2 className="sheet-label">At a glance</h2>
-          <p className="prose">{atAGlance}</p>
-        </>
-      ) : null}
-
-      {song.practiceTip ? (
-        <>
-          <h2 className="sheet-label">Practice tip{inOriginalKey}</h2>
-          <p className="prose">{song.practiceTip}</p>
-        </>
-      ) : null}
-
-      {notes.length > 0 ? (
-        <>
-          <h2 className="sheet-label">Key &amp; tempo notes</h2>
-          {song.keyNote.trim() ? <p className="prose note-line">{song.keyNote}</p> : null}
-          {song.tempoNote.trim() ? <p className="prose note-line">{song.tempoNote}</p> : null}
-        </>
-      ) : null}
     </article>
   );
 }
@@ -99,11 +63,6 @@ function LookTag() {
 function BandLine() {
   const look = useLookAhead();
   return look ? <div className="band-line" style={{ top: look.bandAt }} aria-hidden="true" /> : null;
-}
-
-function OriginalKeyHint({ song, semitones }: { song: Song; semitones: number }) {
-  const original = originalKey(song, semitones);
-  return original ? <span className="hint"> · original key ({original})</span> : null;
 }
 
 function Chart({

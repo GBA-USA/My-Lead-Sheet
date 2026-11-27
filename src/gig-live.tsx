@@ -7,8 +7,10 @@ import { useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } 
 import type { LocalMs } from "./band-time";
 import type { BandView } from "./bands-model";
 import type { ChatEntry } from "./chat-model";
+import { CheckInWarning, rosterStore } from "./gig-check-in";
+import { asRoster } from "./gig-check-in-model";
 import { atPassEnd, downloadPack, packToShow, type GigPack } from "./gig-pack";
-import type { GigPlan } from "./gig-plan-model";
+import type { GigList, GigPlan } from "./gig-plan-model";
 import { useGigPosition, type GigPosition } from "./gig-position";
 import { position as positionAt } from "./gig-state";
 import { useGigPack } from "./gig-view";
@@ -34,7 +36,7 @@ import { followBand, stopMetronome } from "./metronome-audio";
 import type { MetronomeState } from "./metronome-view";
 import type { PersonalDefaults } from "./personal-settings-model";
 import { heldFor } from "./phone-db";
-import { gigHref, type Route } from "./route";
+import { gigHref, parseHash, type Route } from "./route";
 import { ApiError, api } from "./sign-in-methods";
 import { savePersonal } from "./storage";
 import { FREE_STUN } from "./sync-history";
@@ -79,10 +81,30 @@ const APP_DEPS: LiveDeps = {
   screenOn: holdScreen,
 };
 
+/** The band, and the gig on a gig's screen, when this phone shows a band's page or a gig's screen. */
+function bandOnScreen(hash: string): { bandId: string; gigId: string | null } | null {
+  const route = parseHash(hash);
+  if (route.name === "band") return { bandId: route.bandId, gigId: null };
+  if (route.name === "gig") return { bandId: route.bandId, gigId: route.gigId };
+  return null;
+}
+
+const two = (n: number) => String(n).padStart(2, "0");
+const todayHere = (day = new Date()) => `${day.getFullYear()}-${two(day.getMonth() + 1)}-${two(day.getDate())}`;
+
+/** The gig to watch: the one on screen, or on the band's page the live one, else tonight's, and only one this player is on the lineup of. */
+function watchedGig(list: GigList, me: string, gigId: string | null): GigPlan | null {
+  const mine = list.gigs.map((view) => view.gig).filter((gig) => gig.status !== "ended" && gig.lineup.includes(me));
+  if (gigId) return mine.find((gig) => gig.gigId === gigId) ?? null;
+  return mine.find((gig) => gig.status === "live") ?? mine.find((gig) => gig.date === todayHere()) ?? null;
+}
+
 type Joining = { gig: GigPlan; step: "getting" | "asking" | "failed"; pack: GigPack | null; starting: boolean };
 type Joined = { gig: GigPlan; pack: GigPack; room: RoomLine; session: LiveGig; starting: boolean };
 
 export type Live = {
+  /** The account this phone's gig belongs to. */
+  me: string | null;
   /** The gig the strip is about: the one this phone follows, or one it may join or start. */
   gig: GigPlan | null;
   strip: Strip | null;
@@ -214,28 +236,96 @@ export function useLiveGig({ me, stage = null, metronome, personal, onPersonal, 
     setJoining(null);
   }
 
-  function follow(gig: GigPlan, pack: GigPack, starting: boolean) {
-    if (!me) return;
-    const room = use.room(gig.bandId);
+  /** Follows the gig. `watched` is the room line a join without a tap already holds: it is kept, and the screen stays where it is. */
+  function follow(gig: GigPlan, pack: GigPack, starting: boolean, watched: RoomLine | null = null) {
+    if (!me) return watched?.close();
+    const room = watched ?? use.room(gig.bandId);
     const session = liveGig({ me, gigId: gig.gigId, room, stun: FREE_STUN, onChange: changed });
     setJoining(null);
     setEnded(null);
     setJoined({ gig, pack, room, session, starting });
     use.names(gig).then(setNames, () => {});
-    onOpen?.(gig);
+    if (!watched) onOpen?.(gig);
   }
 
-  async function begin(gig: GigPlan, held: GigPack | null, starting: boolean) {
-    if (!me) return;
+  async function begin(gig: GigPlan, held: GigPack | null, starting: boolean, watched: RoomLine | null = null) {
+    if (!me) return watched?.close();
     setJoining({ gig, step: "getting", pack: null, starting });
     try {
       const pack = held ?? (await use.pack(me, gig));
-      if (asksClick(personal)) setJoining({ gig, step: "asking", pack, starting });
-      else follow(gig, pack, starting);
+      if (asksClick(personal)) {
+        watched?.close();
+        setJoining({ gig, step: "asking", pack, starting });
+      } else follow(gig, pack, starting, watched);
     } catch {
+      watched?.close();
       setJoining({ gig, step: "failed", pack: null, starting });
     }
   }
+
+  // Joining without a tap: a player who answered the click question on an earlier gig, with this band's page or the
+  // gig's screen open, watches the gig in the room, and follows it the moment it is live, staying on that screen.
+  const [hash, setHash] = useState(() => location.hash);
+  useEffect(() => {
+    const moved = () => setHash(location.hash);
+    addEventListener("hashchange", moved);
+    return () => removeEventListener("hashchange", moved);
+  }, []);
+  const onScreen = me && !joined && !joining && !asksClick(personal) ? bandOnScreen(hash) : null;
+  const watchKey = onScreen ? `${onScreen.bandId}/${onScreen.gigId ?? ""}` : "";
+  const dismissedNow = useRef(dismissed);
+  dismissedNow.current = dismissed;
+  useEffect(() => {
+    if (!onScreen || !me) return;
+    let alive = true;
+    let line: RoomLine | null = null;
+    let stop = () => {};
+    api<GigList>("/api/bands/gig/list", { bandId: onScreen.bandId }).then(
+      (list) => {
+        const gig = alive ? watchedGig(list, me, onScreen.gigId) : null;
+        if (!gig || dismissedNow.current.includes(gig.gigId)) return;
+        const room = use.room(gig.bandId);
+        line = room;
+        const ask = () => room.send({ kind: "gig-state", gigId: gig.gigId });
+        stop = room.listen((message) => {
+          if (message.kind === "hello") return void ask();
+          const state = message.kind === "gig-state" ? (message.state as { gigId?: unknown; status?: unknown } | null) : null;
+          if (state?.gigId !== gig.gigId || state.status !== "live" || dismissedNow.current.includes(gig.gigId)) return;
+          stop();
+          line = null;
+          void begin(gig, null, false, room);
+        });
+        if (room.state === "open") ask();
+      },
+      () => {},
+    );
+    return () => {
+      alive = false;
+      stop();
+      line?.close();
+    };
+  }, [watchKey, me, use]);
+
+  // The Room's roster reaches only the phones of the player leading now and the band's admins. Asked once on joining and
+  // again whenever the line comes back; kept while the line is down, and marked old.
+  useEffect(() => {
+    if (!joined || !me) return;
+    const { room, gig, session } = joined;
+    const leaderNow = () => session.view().state?.leader ?? gig.leader;
+    const ask = () => room.send({ kind: "roster-ask", gigId: gig.gigId });
+    const stop = room.listen((message) => {
+      if (message.kind === "hello") return void ask();
+      if (message.kind === "room-down" || message.kind === "room-refused") return rosterStore.line(me, gig.gigId, "down");
+      if (message.kind === "gig-state") return rosterStore.leader(me, gig.gigId, leaderNow());
+      const roster = message.kind === "roster" ? asRoster(message) : null;
+      if (roster?.gigId === gig.gigId) rosterStore.put(me, gig.gigId, { rows: roster.rows, packRev: roster.packRev, leader: leaderNow() });
+    });
+    ask();
+    return () => {
+      stop();
+      rosterStore.drop(me, gig.gigId);
+    };
+  }, [joined, me]);
 
   const liveGigNow = gigs.find((gig) => gig.status === "live" && !dismissed.includes(gig.gigId));
   const startable = stage && stage.gig.status === "planned" && stage.gig.leader === me && !gigs.some((gig) => gig.gigId === stage.gig.gigId && gig.status === "live") ? stage : null;
@@ -280,6 +370,7 @@ export function useLiveGig({ me, stage = null, metronome, personal, onPersonal, 
   }, [session, me, names]);
 
   return {
+    me,
     gig,
     strip: shown,
     sleepy: !!joined && sleepy,
@@ -495,6 +586,7 @@ export function LiveGigStrip({ live }: { live: Live }) {
           close: closable ? live.dismiss : undefined,
         }}
       />
+      {joined && live.me ? <CheckInWarning me={live.me} bandId={joined.gig.bandId} gigId={joined.gig.gigId} /> : null}
       {live.asking ? (
         <div className="gig-question" role="group" aria-label={CLICK_QUESTION} style={{ ...STRIP_STYLE, ...TONE_STYLE.grey }}>
           <span>{CLICK_QUESTION}</span>

@@ -109,3 +109,17 @@ span.band-status-face {
   margin-right: 6px;
   font-weight: 800;
 }
+
+.band-status-why {
+  flex-basis: 100%;
+  color: var(--text);
+}
+
+.band-status-amber .band-status-why {
+  color: var(--danger);
+}
+
+.band-status-old {
+  font-style: italic;
+  border-bottom-style: dashed;
+}

@@ -1,3 +1,66 @@
+VERDICT: FAIL
+P2 | CLASS=other | C:\Users\order\cooks\EDGE-CASES.md:21 | Fix round 1 (8154404, 83652f8) added no EDGE-CASES row. EC-15 is the last row, and the file was last written at 22:24, the edfa0cf minute. Nothing records the bug class this round fixed: a privacy line names one send to an outside host (the typed search) while a second path sends more to the same host (paste lookup, src/song-search.ts:306, up to 2 sung lines). REVIEW.md lists "a fix round that added no EDGE-CASES.md row" as a P2.
+Nits:
+P3 | CLASS=other | scripts/build-privacy.ts:46 | The dictated line says "the title you typed", but the search box asks for "title or artist" (src/song-search.tsx:75) and sends what was typed. QUESTIONS.md item 1 holds this for Terry. Owner decision.
+P3 | CLASS=other | scripts/build-privacy.ts:47 | The brief's DONE MEANS asks for "one plain MusicBrainz line", and the page now has two. The first judge asked for the second. QUESTIONS.md item 1 asks Terry to keep it.
+P3 | CLASS=other | scripts/build-privacy.ts:47 | "with no title or artist" can read as both missing. The lookup also runs when only the artist is missing (src/song-editor.tsx:296 `missing`) and then sends the title. The next sentence covers this.
+P3 | CLASS=other | legal/TERMS-DRAFT.md:7 | Carried. The literal swap reads "[COMPANY NAME], Brian Pruitt (contact details to be added), and [STATE] will be filled in". The brief allows only that swap.
+P3 | CLASS=other | scripts/build-privacy.ts:55 | Carried. "Write to the contact below" names Brian Pruitt with no way to reach him yet. This waits on LEGAL-TODO rows 2 and 4.
+P3 | PRE-EXISTING | CLASS=other | scripts/build-privacy.ts:16 | Carried. `CONTACT_PLACEHOLDER` goes into the page without `escape`. It is a fixed string with no `&<>"'`.
+
+Judge pass 2 evidence (Opus, deep, 83652f8). Logs are in .verify-logs/judge2/. Laptop Edge, no path shim.
+- First-pass P2 (paste lookup) is fixed. build-privacy.ts:47 names the paste lookup and the sung lines it sends. check-privacy.ts bundles the real src/song-search.ts and requires that line exactly when pasteLookup sends something. At head, check:privacy exits 0 with "59 stored keys described" (head-privacy.log). With the paste line deleted it exits 1 with one FAIL, sent ["hold me close tonight","walking down the lonely road"] (mutant-no-paste-line.log). The file was restored and the tree is clean. Only paste starts the lookup: takePaste calls at song-editor.tsx:393 and 566, and the Try again button at 603 shows only after a failed paste lookup.
+- First-pass P3 (T3 detail) is fixed. T3 now reads "the file is missing" and still fails then. Only the detail text changed, and the assertion is the same. check:legal-audit exits 0 with T1-T4 ok (legal-audit.log).
+- The Terms draft still matches TERMS-DRAFT-SOURCE.md once the 6 placeholders are swapped (empty diff).
+- No check was weakened. The fix round only adds cases and one detail string. No src/, worker/ or package.json change. SQL and auth do not apply. The page is static paragraphs, so 360 and 390 widths carry no new layout risk.
+
+# legal-quickfix fix pass 2 (Nov 27 2026)
+
+Goal: answer judge pass 2 at `83652f8`. Its one P2 is a missing EDGE-CASES.md row. Logs are in `.verify-logs/fix2/` (gitignored). Laptop Edge, no path shim.
+
+- P2, no EDGE-CASES row. The case is a count of rows in `C:\Users\order\cooks\EDGE-CASES.md` that match `paste lookup|second (send )?path|sung lines`. Before, it counted 0, the last row was EC-15 and the file was last written at 22:24 (`red-edge-cases.log`). The fix appends EC-16. A privacy line names one send to an outside host while a second path sends more to the same host. Here that is `pasteLookup` (`src/song-search.ts:306`) sending up to two sung lines to musicbrainz.org. The row names the case that now catches it (check:privacy runs the real `pasteLookup`) and a trigger for any cook that adds an outside fetch or edits the privacy page. After, the same count reads 1 and the last row is EC-16 (`green-edge-cases.log`). That folder is in no git repo, so no commit holds the row.
+- P3, "the title you typed" while the box takes title or artist. Not changed. It is the dictated line, an owner decision. QUESTIONS.md item 1 now names it.
+- P3, two MusicBrainz lines where the brief asks for one. Not changed. QUESTIONS.md item 1 already asks Terry to keep, reword or remove the second.
+- P3, "with no title or artist" can read as both missing. Not changed. Any rewording is part of the same owner decision, and `check:privacy` pins the exact string. QUESTIONS.md item 1 now names it and offers "with no title, or no artist".
+- P3s carried (Terms line 7, "write to the contact below", `CONTACT_PLACEHOLDER` unescaped). Not changed, for the reasons in fix pass 1.
+
+Also run after the fix, both exit 0: `check:privacy` ("59 stored keys described") and `check:legal-audit` (T1-T4 ok). This round changes only VERIFY.md and QUESTIONS.md in the repo. No file under `src/`, `worker/`, `scripts/` or `package.json` changed.
+
+VERDICT: FAIL
+P2 | CLASS=data-shape | scripts/build-privacy.ts:46 | Paste a chart with no title into the song editor (src/song-editor.tsx:309-312 runs look() on paste, src/song-search.ts:306 pasteLookup). The app sends up to 2 sung lyric lines to musicbrainz.org with no search typed. Probe .verify-logs/judge/paste-probe.ts sent ["hold me close tonight","walking down the lonely road"]. The new privacy line says only "the title you typed" goes. The brief dictated that wording, so widening it to cover paste lookups needs Terry's OK, and check-privacy.ts:89 asserts the exact line.
+Nits:
+P3 | CLASS=other | legal/TERMS-DRAFT.md:7 | The literal swap reads "Placeholders such as [COMPANY NAME], Brian Pruitt (contact details to be added), and [STATE] will be filled in". The brief allows only that swap, and LEGAL-TODO row 3 records it.
+P3 | CLASS=other | scripts/check-legal-audit.ts:361 | With the file missing, T3's detail reads "0 @ found". T1 names the cause and T3 still fails.
+P3 | CLASS=other | scripts/build-privacy.ts:54 | "Write to the contact below" points at Brian Pruitt with no way to reach him yet. This waits on rows 2 and 4. No address was made up, as the brief requires.
+
+Judge evidence (Opus, deep, edfa0cf): every brief DONE MEANS item holds. The Terms file equals TERMS-DRAFT-SOURCE.md once the 6 placeholders are swapped (diff empty). The privacy root uses fileURLToPath. The STUN line matches the code (FREE_STUN is the only STUN outside the test overrides, src/connection-setting.tsx:59, src/gig-live.tsx:220). No existing assertion was removed or loosened. No SQL or Worker change. Rerun on laptop Edge: check:privacy exit 0 ("59 stored keys described"), check:legal-audit exit 0 (T1-T4 ok). Logs are in .verify-logs/judge/.
+
+# legal-quickfix fix pass 1 (Nov 27 2026)
+
+Goal: each judge finding gets a case that fails on `edfa0cf`, then the smallest fix that turns the same case green. Logs are in `.verify-logs/fix1/` (gitignored). Laptop Edge, no path shim.
+
+- P2, paste lookup. `8154404` adds the case alone. `check:privacy` bundles `src/song-search.ts`, runs the real `pasteLookup` on a chart with no title and records what it sends. The page must hold `PASTE_LOOKUP_LINE` exactly when that list is not empty. On `8154404` it exits 1 with one FAIL, "sent ["hold me close tonight","walking down the lonely road"]" (`red-privacy.log`). The fix adds one line to the page under the dictated one, which stays word for word: "When you paste a chart with no title or artist, the app looks it up on MusicBrainz. It sends the chart's title, or, when the chart has none, up to two of its sung lines." After it `check:privacy` exits 0, "59 stored keys described" (`green-privacy.log`). Mutation: a `pasteLookup` that sends no sung lines turns the same case red with "sent []" (`mutant-no-sung-lines.log`), so the line cannot outlive the behavior. The judge noted the wording needs Terry's OK. This round adds the line rather than leave the page untrue, and QUESTIONS.md item 1 asks Terry to keep, reword or remove it. LEGAL-TODO row 5 records it.
+- P3, T3 detail. With `legal/TERMS-DRAFT.md` moved aside, T3 read "0 @ found" on `edfa0cf` (`t3-before.log`) and now reads "the file is missing" (`t3-after.log`). T3 still fails there.
+- P3, Terms line 7. Not changed. The brief allows only the placeholder swap, and LEGAL-TODO row 3 holds the rewording for later.
+- P3, "write to the contact below". Not changed. It waits on Brian's details (LEGAL-TODO rows 2 and 4). No address was made up.
+
+Also run after the fix, all exit 0: `npm run build`, `check:legal-audit`, `check:portable`, `check:one-copy`. No file under `src/` or `worker/` changed.
+
+# legal-quickfix self-check (branch cook/legal-quickfix, Nov 27 2026)
+
+Cook verdict, superseded by the judge block above: PASS
+Pass 1 of 2. No P0, P1 or P2. Logs are in `C:\Users\order\cooks\reports\legal-quickfix-proof\` (outside the worktree).
+Nits:
+P3 | CLASS=other | scripts/check-legal-audit.ts:361 | With the Terms file missing, T3's detail reads "0 @ found". T1 names the real cause, and T3 still fails, so the case can still fail.
+P3 | PRE-EXISTING | CLASS=other | scripts/build-privacy.ts:16 | `CONTACT_PLACEHOLDER` goes into the page without `escape`. It is a fixed string with no `&<>"'`, so nothing renders wrong today. Only `VITE_PRIVACY_CONTACT` is dynamic, and it is escaped.
+P3 | CLASS=other | scripts/build-privacy.ts:54 | The page says "write to the contact below", and the contact names Brian Pruitt with details still to be added, so a reader cannot write yet. That waits on Terry and Brian (LEGAL-TODO rows 2 and 4). No address was made up.
+P3 | CLASS=other | legal/TERMS-DRAFT.md:7 | After the literal swap, the placeholder list reads "[COMPANY NAME], Brian Pruitt (contact details to be added), and [STATE] will be filled in". The brief forbids any other change to the Terms, so it is left for a later edit (LEGAL-TODO row 3).
+
+- Every new case fails before and passes after, on this Windows laptop with Edge and no path shim. Root case: red at 42b9884 ("root is /C:/.../lq-snap-42b9884/"), green from 15e48a2. MusicBrainz, STUN and Brian Pruitt contact cases: red at 15e48a2, green at fbb1372. T1-T4: red at 42b9884 and 15e48a2, green from e0e1750.
+- Nine mutations on a HEAD snapshot each turn their own case red (M1 MusicBrainz line gone, M2 STUN line gone, M3 an https address on the page, M4 the old placeholder, M5 an @ in the placeholder, M6 the `.pathname` root, M7 one `[CONTACT EMAIL]` back, M8 an @ in the Terms, M9 `[COMPANY NAME]` filled in). The restored snapshot is green again.
+- No case is weakened. The older "placeholder text, not an address" case still reads the live `CONTACT_PLACEHOLDER` and still forbids `@`.
+- Does not apply: parameterized SQL and leader-only routes (no Worker or SQL change), CAN-SPAM (the app sends no email), auto-renewal (no paid plan). No analytics SDK, no new font host, no login wall or age step, and DMCA and copyright are untouched.
+
 VERDICT: PASS
 Nits:
 P3 | CLASS=other | src/scroll-timing.ts:587 | The P0 fix (pass 1) and the P2 fix (pass 2) sit in a file outside the brief's owned list, against CLAUDE.md "stay inside the files your brief owns". QUESTIONS.md names both for the owner. Every check that touches scroll-timing is green apart from known Windows causes (.verify-logs/fix-p0, .verify-logs/fix-p2/after).

@@ -11,6 +11,34 @@ Owner: name this change in #130's brief, or cherry-pick the two commits onto mls
 Also seen, not fixed: `routeOfPair` calls local srflx with remote prflx "internet", so a phone that loses the same race
 on a Wi-Fi with unresolved `.local` names would call a Wi-Fi link "Over the internet".
 
+# p2-view-pill fix round (PR 127): check:scroll-sync's "no radio-edit choice" case and the pill's ARIA role conflict
+
+1. The brief makes the view pill a real radio group (`role="radiogroup"`, three `role="radio"` parts). The
+   `check:scroll-sync` case "the pace comes from the song alone; there is no album or radio-edit choice" matches
+   `/album|radio/i` against the whole SongControls markup, so it reads the role as a radio-edit choice and fails.
+   5e0549b stripped the roles to go green, which no brief named, and a planted two-way "Pace" radiogroup then
+   passed (`.verify-logs/fix127/p0-pace-loosened.log`). This round restores the line byte for byte, so
+   `check:scroll-sync` fails on this one case until you decide. Owner: name one of these in the brief.
+   a. Keep the case as is and drop the radio roles from the pill. That reverses the DECIDED radio group.
+   b. Change the line to strip only the view pill itself, found by its accessible name, then match the rest:
+      `const offered = html.replace(/<div[^>]*role="radiogroup"[^>]*aria-label="Chord view"[^>]*>.*?<\/div>/s, "");`
+      followed by `assert(!picker.test(offered), ...)`. A second radiogroup, such as a "Pace" picker, still
+      fails. Tested on sample markup: the pill alone passes, the pill plus "Pace" fails, "Radio edit" text fails.
+   c. Something else you name.
+
+   Deep fix round (after CI run 46075520876): chose a tighter form of b, so CI can go green without reversing the
+   DECIDED pill. This changes an existing assertion in another brief's check, which CLAUDE.md says not to do to get
+   past a failure. The reason is that the case and the brief cannot both hold on the same markup. Owner: revert it
+   if you prefer a. `offersAlbumOrRadio` drops only the `role` attributes inside the first group named "Chord view".
+   The pill's labels are still matched. The real markup and four planted samples go through the same function, and
+   each sample must still fail: a "Pace" radiogroup (Full, Short), a "Radio edit" button, an "Album" part inside the
+   pill, and a second group named "Chord view". Three mutations each turn the case red on their own sample:
+   stripping every radio role (the 5e0549b line), deleting the whole pill (the line under b above), and matching
+   every "Chord view" group. Logs are in `.verify-logs/fix-deep127/`.
+2. The pill no longer moves on ArrowDown and ArrowUp, only on Left and Right as brief item 4 says, so a page-turn
+   pedal or keyboard that sends Down/Up never changes the chart view. `check:view-pill` V3 pins it. Owner: say if
+   Up/Down should move the choice as the ARIA radio pattern does. V3's two new lines then flip.
+
 # p2-song-info self-check fix pass 2: opening Song info near the top of a scroll no longer drops the chart
 
 The self-check found that opening Song info 1 s into a scroll from the top dropped the reading row 20.6 px (1280x800)
@@ -86,6 +114,7 @@ it at 8.0 px. Every other case of the check passes on the laptop, including the 
 line skipped. Re-pinning on Windows or loosening the line would break the brief's rules, so neither was done.
 Owner: say if the Linux Deep verify's result for this check settles it, or if you want the chart font rendering
 changed (src/styles.css, not this cook's file).
+
 # c23 fix: Band status opens for the admin and the leader on a live gig, and says what it is waiting for
 
 What ships in PR #107: the faces strip and the Band status panel on the band page and the gig view. Before and after

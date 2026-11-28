@@ -67,7 +67,7 @@ const LOOK = `window.__look = {
     probe.remove();
     return out;
   },
-  chrome() { return [...document.querySelectorAll(".shell-header button, .shell-header .shell-title, .tabs .tab, .controls button, .controls [role=group]")].filter((el) => __look.shown(el)); },
+  chrome() { return [...document.querySelectorAll(".shell-header button, .shell-header .shell-title, .tabs .tab, .controls button, .controls [role=group], .controls [role=radiogroup]")].filter((el) => __look.shown(el)); },
   rows(els) { return new Set(els.map((el) => { const r = el.getBoundingClientRect(); return Math.round((r.top + r.height / 2) / 6); })).size; },
   chromeBottom() { return Math.max(0, ...__look.chrome().map((el) => el.getBoundingClientRect().bottom)); },
   lowest(scope) {
@@ -356,7 +356,7 @@ try {
       "Key −": `document.querySelector("[aria-label='Transpose down']")`,
       "Key readout": `document.querySelector(".key-readout")`,
       "Key +": `document.querySelector("[aria-label='Transpose up']")`,
-      Notes: `[...document.querySelectorAll(".controls button")].find((b) => b.textContent.trim() === "Notes")`,
+      Chords: `[...document.querySelectorAll(".controls button")].find((b) => b.textContent.trim() === "Chords")`,
       Nashville: `[...document.querySelectorAll(".controls button")].find((b) => b.textContent.trim() === "Nashville")`,
       Scroll: `[...document.querySelectorAll(".controls button")].find((b) => /^Scroll: (On|Off)$/.test(b.textContent.trim()))`,
       Metronome: `document.querySelector(".controls .metronome-pill")`,

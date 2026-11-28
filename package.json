@@ -107,6 +107,7 @@
                     "check:ux-shell-settings":  "tsc -p worker \u0026\u0026 node --experimental-strip-types scripts/check-ux-shell-settings.ts",
                     "check:ux-theme-sweep":  "tsc -p worker \u0026\u0026 node --experimental-strip-types scripts/check-ux-theme-sweep.ts",
                     "check:ux-theme-tokens":  "node --experimental-strip-types scripts/check-ux-theme-tokens.ts",
+                    "check:view-pill":  "node --experimental-strip-types scripts/check-view-pill.ts",
                     "dev":  "vite",
                     "preview":  "vite preview",
                     "verify":  "bash scripts/verify.sh"

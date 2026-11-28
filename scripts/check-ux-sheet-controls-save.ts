@@ -209,8 +209,8 @@ const chooserRows = () =>
   evaluate<{ text: string; disabled: boolean }[]>(`[...(${DIALOG}?.querySelectorAll(".learn-row") ?? [])].map((row) => ({ text: row.innerText.replace(/\\s+/g, " ").trim(), disabled: !!row.querySelector("button")?.disabled }))`);
 const boxes = (selector: string) =>
   evaluate<{ name: string; group: number; x: number; y: number; w: number; h: number }[]>(`(() => {
-    const groups = [...document.querySelectorAll("[role=group]")];
-    return [...document.querySelectorAll(${js(selector)})].filter((el) => el.getClientRects().length > 0).map((el) => { const r = el.getBoundingClientRect(); return { name: el.getAttribute("aria-label") || el.textContent.trim(), group: groups.indexOf(el.closest("[role=group]")), x: r.x, y: r.y, w: r.width, h: r.height }; });
+    const groups = [...document.querySelectorAll("[role=group], [role=radiogroup]")];
+    return [...document.querySelectorAll(${js(selector)})].filter((el) => el.getClientRects().length > 0).map((el) => { const r = el.getBoundingClientRect(); return { name: el.getAttribute("aria-label") || el.textContent.trim(), group: groups.indexOf(el.closest("[role=group], [role=radiogroup]")), x: r.x, y: r.y, w: r.width, h: r.height }; });
   })()`);
 const SONG_CONTROLS = ".controls button, .controls input, .shell-header .text-size button, .shell-header .song-line button";
 
@@ -232,7 +232,7 @@ try {
     await freshPhone();
     expect(!(await saveShown()) && !(await revertShown()), "Save or Revert shows on an untouched song");
     expect(loadDraft(null, `local/${CHAIN_BREAKER}`) === null && (await stored(DRAFT)) === null, "an untouched song has a stored draft");
-    await tap("Notes", `document.querySelector("[role=group][aria-label='Notes or Nashville']")`);
+    await tap("Chords", `document.querySelector("[role=radiogroup][aria-label='Chord view']")`);
     expect(!(await saveShown()), "tapping the notation already chosen shows Save");
   });
 
@@ -436,7 +436,7 @@ try {
       await settle();
       return shown;
     };
-    const notation = () => evaluate<string>(`document.querySelector("[role=group][aria-label='Notes or Nashville'] [aria-pressed=true]")?.textContent ?? ""`);
+    const notation = () => evaluate<string>(`document.querySelector("[role=radiogroup][aria-label='Chord view'] [aria-checked=true]")?.textContent ?? ""`);
     const start = { bpm: await bpm(), percent: await percent(), notation: await notation() };
     await inMetronome(() => tap("Faster metronome", DIALOG));
     expect(await saveShown(), "a metronome change does not show Save");
@@ -474,7 +474,8 @@ try {
     await test(`the song screen has two control rows and the header holds A− A+${at}`, async () => {
       await freshPhone();
       const rows = await evaluate<number>(`new Set([...document.querySelectorAll(".controls button, .controls input, .controls [role=group]")].filter((el) => el.getClientRects().length).map((el) => { const r = el.getBoundingClientRect(); return Math.round(r.top + r.height / 2); })).size`);
-      expect(rows === 2, `the controls sit on ${rows} rows`);
+      const wantRows = pixels < 430 ? 3 : 2;
+      expect(rows === wantRows, `the controls sit on ${rows} rows (want ${wantRows})`);
       expect((await has("Smaller text", HEADER)) && (await has("Larger text", HEADER)), "A− A+ are not in the header");
       expect(!(await has("Smaller text", CONTROLS)) && !(await has("Original Key")), "A− or an Original Key button is still in the rows");
     });
@@ -592,7 +593,8 @@ try {
     await test(`the chart's first chord stays at the same x and y as before the regroup${at}`, async () => {
       await freshPhone();
       const rows = await evaluate<number>(`new Set([...document.querySelectorAll(".controls button, .controls [role=group]")].filter((el) => el.getClientRects().length).map((el) => Math.round(el.getBoundingClientRect().top))).size`);
-      expect(rows === 2, `the rows are not regrouped (${rows} rows)`);
+      const wantRows = pixels < 430 ? 3 : 2;
+      expect(rows === wantRows, `the rows are not regrouped (${rows} rows, want ${wantRows})`);
       const first = await evaluate<{ x: number; y: number; row: Row }>(`(() => {
         const sheet = document.querySelector("article.sheet").getBoundingClientRect();
         const pair = document.querySelector(".chart .pair");

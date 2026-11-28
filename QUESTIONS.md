@@ -1,3 +1,15 @@
+# legal-quickfix fix round 3 (Nov 28 2026): the STUN line now names Test with a bandmate
+
+The judge found a third path to stun.cloudflare.com that the dictated STUN line left out: Test with a bandmate
+(`src/connection-setting.tsx:174`) opens `BandmateSheet` with `configNow()`, whose `stun` is `FREE_STUN`, and its internet
+route hands that server to the peer connection on both phones (`src/sync-bandmate.tsx:118,208`). This round took the
+judge's example wording: "A live-gig link between bandmates, and Test now and Test with a bandmate in the connection
+setting, ask stun.cloudflare.com for the public network address of this phone." Owner (Terry): keep it or reword it.
+`check:privacy` pins it as `LIVE_GIG_LINE`, and a new case runs the real `showSide` and fails while the line leaves out
+Test with a bandmate, so a rewording must keep those words or edit that case too.
+
+---
+
 # legal-quickfix fix pass 1 (Nov 27 2026): the privacy page's MusicBrainz wording
 
 1. The brief dictated one line: "When you search for a song, the app sends the title you typed to MusicBrainz

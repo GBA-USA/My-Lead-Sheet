@@ -39,7 +39,7 @@ const KNOWN_URLS: { prefix: string; why: string }[] = [
   { prefix: "https://react.dev/errors/", why: "React's own error help text, never fetched" },
   { prefix: "https://www.google.com/search?q=", why: "a web search the player opens by tapping, nothing loads by itself" },
   { prefix: "https://musicbrainz.org/ws/2/recording", why: "song search sends the typed title when the player searches; LEGAL-TODO row 5" },
-  { prefix: "stun:stun.cloudflare.com:3478", why: "a live-gig link or Test now asks this STUN server for the phone's public address; LEGAL-TODO row 8" },
+  { prefix: "stun:stun.cloudflare.com:3478", why: "a live-gig link, Test now or Test with a bandmate asks this STUN server for the phone's public address; LEGAL-TODO row 8" },
 ];
 const URL_TAIL = String.raw`(?::\d+)?[^\s"'\x60<>)\\]*`;
 const DOTTED_OR_IP = String.raw`(?:[a-z0-9-]+\.)+[a-z]{2,}|\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-f:.]+\]`;

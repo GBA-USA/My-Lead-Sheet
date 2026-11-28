@@ -45,7 +45,7 @@ export function privacyHtml(contact: string | undefined): string {
     <h2>Song search and live-gig links</h2>
     <p>When you search for a song, the app sends the title you typed to MusicBrainz (musicbrainz.org), a public music catalog.</p>
     <p>When you paste a chart with no title or artist, the app looks it up on MusicBrainz. It sends the chart's title, or, when the chart has none, up to two of its sung lines.</p>
-    <p>A live-gig link between bandmates, and Test now in the connection setting, ask stun.cloudflare.com for the public network address of this phone.</p>
+    <p>A live-gig link between bandmates, and Test now and Test with a bandmate in the connection setting, ask stun.cloudflare.com for the public network address of this phone.</p>
 
     <h2>Signing in with Google</h2>
     <p>If you sign in with Google, Google tells the app your name, your email address, and the account number Google uses to recognise you next time. That is all. The app gets no access to your mail, contacts, files, calendar or anything else in your Google account.</p>

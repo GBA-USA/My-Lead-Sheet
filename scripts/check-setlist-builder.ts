@@ -319,6 +319,8 @@ const BROWSER_CASES = [
   "B31 every refused write shows the words and what is stored",
   "B32 a friend's private copy keeps its copy mark when reordered and renamed",
   "B33 the builder loads apart from the main script, and a load that fails says so",
+  "B34 with no signal, the builder still opens",
+  "B35 the couldn't-load sheet fits at 360 px, light and dark",
 ] as const;
 
 let apiBase = "";
@@ -2201,6 +2203,96 @@ try {
       await s.send("Network.setBypassServiceWorker", { bypass: false });
       await s.send("Network.disable");
     }
+  });
+
+  const tapNewSetlist = () =>
+    s.evaluate<boolean>(`(() => {
+      const btn = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "+ New setlist");
+      btn?.click();
+      return !!btn;
+    })()`);
+  const reloadToNewSetlist = async () => {
+    await s.evaluate(`location.hash = "#/setlists"`);
+    await s.send("Page.reload");
+    await app.library();
+    await phone360();
+    await app.until(`location.hash === "#/setlists" && [...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "+ New setlist")`, "Setlists screen after reload");
+  };
+
+  // ---------------------------------------------------------------------------------------------- B34
+  await check("B34 with no signal, the builder still opens", async () => {
+    await reloadToNewSetlist();
+    await app.until(`!!navigator.serviceWorker?.controller`, "the service worker in control", 15000);
+    await app.until(
+      `(async () => { for (const key of await caches.keys()) for (const req of await (await caches.open(key)).keys()) if (req.url.includes("/assets/setlist-builder-")) return true; return false; })()`,
+      "the builder script in the phone's cache",
+      15000,
+    );
+    await s.send("Network.enable");
+    await s.send("Network.emulateNetworkConditions", { offline: true, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+    try {
+      // The service worker leaves /api/ alone, so this asks the page's own network, which is the one that is down.
+      const probe = () => s.evaluate<string>(`fetch("/api/no-such-route-" + Math.random(), { cache: "no-store" }).then((r) => "answered " + r.status, () => "no network")`);
+      assert.equal(await probe(), "no network", "the phone has no signal");
+      await reloadToNewSetlist();
+      assert.equal(await probe(), "no network", "still no signal after the reload");
+      assert.ok(await tapNewSetlist(), "+ New setlist to tap");
+      await app.until(`!!document.querySelector(".setlist-builder[role=dialog] .setlist-builder-name")`, "the builder with no signal");
+      assert.equal(await s.evaluate<boolean>(`!!document.querySelector("[role=alertdialog]")`), false, "no couldn't-load sheet");
+      const served = await s.evaluate<{ name: string; workerStart: number }[]>(
+        `performance.getEntriesByType("resource").filter((e) => e.name.includes("/assets/setlist-builder-")).map((e) => ({ name: e.name.split("/").pop(), workerStart: e.workerStart }))`,
+      );
+      assert.ok(served.length > 0 && served.every((e) => e.workerStart > 0), `the builder script came through the service worker (${js(served)})`);
+      await closeBuilder();
+    } finally {
+      await s.send("Network.emulateNetworkConditions", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+      await s.send("Network.disable");
+    }
+  });
+
+  // ---------------------------------------------------------------------------------------------- B35
+  await check("B35 the couldn't-load sheet fits at 360 px, light and dark", async () => {
+    await s.send("Network.enable");
+    await s.send("Network.setBypassServiceWorker", { bypass: true });
+    await s.send("Network.setBlockedURLs", { urls: ["*/assets/setlist-builder-*"] });
+    let theme0: string | null = null;
+    try {
+      await reloadToNewSetlist();
+      theme0 = await s.evaluate<string | null>(`document.documentElement.getAttribute("data-theme")`);
+      assert.ok(await tapNewSetlist(), "+ New setlist to tap");
+      await app.until(`!!document.querySelector("[role=alertdialog]")`, "the couldn't-load sheet");
+      for (const theme of ["day", "stage"]) {
+        await s.evaluate(`document.documentElement.dataset.theme = ${js(theme)}`);
+        await settle(100);
+        const seen = await s.evaluate<{ close: { w: number; h: number } | null; page: number; left: number; right: number; title: string }>(`(() => {
+          const sheet = document.querySelector("[role=alertdialog]");
+          const close = sheet.querySelector('[aria-label="Close"]')?.getBoundingClientRect();
+          const box = sheet.getBoundingClientRect();
+          return {
+            close: close ? { w: close.width, h: close.height } : null,
+            page: document.documentElement.scrollWidth,
+            left: box.left,
+            right: box.right,
+            title: document.getElementById(sheet.getAttribute("aria-labelledby"))?.textContent.trim() ?? "",
+          };
+        })()`);
+        assert.ok(seen.close && seen.close.w >= 44 && seen.close.h >= 44, `${theme}: Close is at least 44 px (${js(seen.close)})`);
+        assert.ok(seen.page <= WIDTH, `${theme}: nothing scrolls sideways (${seen.page})`);
+        assert.ok(seen.left >= 0 && seen.right <= WIDTH, `${theme}: the sheet is on screen (${seen.left} to ${seen.right})`);
+        assert.equal(seen.title, "New setlist", `${theme}: the sheet is titled`);
+        await shoot(`couldnt-load-${theme === "day" ? "light" : "dark"}`);
+      }
+      await s.evaluate(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+      await app.until(`!document.querySelector("[role=alertdialog]")`, "Escape closes the couldn't-load sheet");
+    } finally {
+      await s.evaluate(`(() => { const t = ${js(theme0)}; if (t === null) document.documentElement.removeAttribute("data-theme"); else document.documentElement.setAttribute("data-theme", t); })()`);
+      await s.send("Network.setBlockedURLs", { urls: [] });
+      await s.send("Network.setBypassServiceWorker", { bypass: false });
+      await s.send("Network.disable");
+    }
+    await reloadToNewSetlist();
+    const errors = await app.errors();
+    assert.deepEqual(errors, [], `page raised no errors (${js(errors)})`);
   });
 } finally {
   await site.close();

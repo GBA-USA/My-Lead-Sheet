@@ -1,3 +1,18 @@
+# legal-quickfix self-check (branch cook/legal-quickfix, Nov 27 2026)
+
+VERDICT: PASS
+Pass 1 of 2. No P0, P1 or P2. Logs are in `C:\Users\order\cooks\reports\legal-quickfix-proof\` (outside the worktree).
+Nits:
+P3 | CLASS=other | scripts/check-legal-audit.ts:361 | With the Terms file missing, T3's detail reads "0 @ found". T1 names the real cause, and T3 still fails, so the case can still fail.
+P3 | PRE-EXISTING | CLASS=other | scripts/build-privacy.ts:16 | `CONTACT_PLACEHOLDER` goes into the page without `escape`. It is a fixed string with no `&<>"'`, so nothing renders wrong today. Only `VITE_PRIVACY_CONTACT` is dynamic, and it is escaped.
+P3 | CLASS=other | scripts/build-privacy.ts:54 | The page says "write to the contact below", and the contact names Brian Pruitt with details still to be added, so a reader cannot write yet. That waits on Terry and Brian (LEGAL-TODO rows 2 and 4). No address was made up.
+P3 | CLASS=other | legal/TERMS-DRAFT.md:7 | After the literal swap, the placeholder list reads "[COMPANY NAME], Brian Pruitt (contact details to be added), and [STATE] will be filled in". The brief forbids any other change to the Terms, so it is left for a later edit (LEGAL-TODO row 3).
+
+- Every new case fails before and passes after, on this Windows laptop with Edge and no path shim. Root case: red at 42b9884 ("root is /C:/.../lq-snap-42b9884/"), green from 15e48a2. MusicBrainz, STUN and Brian Pruitt contact cases: red at 15e48a2, green at fbb1372. T1-T4: red at 42b9884 and 15e48a2, green from e0e1750.
+- Nine mutations on a HEAD snapshot each turn their own case red (M1 MusicBrainz line gone, M2 STUN line gone, M3 an https address on the page, M4 the old placeholder, M5 an @ in the placeholder, M6 the `.pathname` root, M7 one `[CONTACT EMAIL]` back, M8 an @ in the Terms, M9 `[COMPANY NAME]` filled in). The restored snapshot is green again.
+- No case is weakened. The older "placeholder text, not an address" case still reads the live `CONTACT_PLACEHOLDER` and still forbids `@`.
+- Does not apply: parameterized SQL and leader-only routes (no Worker or SQL change), CAN-SPAM (the app sends no email), auto-renewal (no paid plan). No analytics SDK, no new font host, no login wall or age step, and DMCA and copyright are untouched.
+
 VERDICT: PASS
 Nits:
 P3 | PRE-EXISTING | CLASS=other | spike/server/drill.mjs:190 | check:spike-server failed both CI attempts at f63b714 on "relayed-ping spread p95 <= 8 ms" (87.7, 56.91 ms) and once on "room counted 278 leader messages, leader sent 281". This PR does not touch spike/ or worker/. No reproducing case for the spread failure and no fix here, so it can redden CI again. Details below.

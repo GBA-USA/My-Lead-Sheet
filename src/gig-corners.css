@@ -1,0 +1,86 @@
+/* The leading phone's chart corners (gig-corners.tsx). The layer has no height and sits on the stage bar's top edge, so
+   the pairs ride on the bar's top whatever its height or the phone's bottom inset. */
+
+.gig-corners {
+  position: relative;
+  z-index: 4;
+  flex: none;
+  height: 0;
+}
+
+.gig-corner {
+  position: absolute;
+  bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gig-corner-text {
+  left: calc(12px + env(safe-area-inset-left));
+}
+
+.gig-corner-speed {
+  right: calc(12px + env(safe-area-inset-right));
+}
+
+.gig-corners .text-size {
+  display: flex;
+  gap: 8px;
+}
+
+.gig-corners .text-size button,
+.gig-corners .step {
+  width: 56px;
+  height: 56px;
+  min-width: 56px;
+  min-height: 56px;
+  padding: 0;
+  border: var(--control-border);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  box-shadow: 0 0 0 1px var(--divider);
+  color: var(--text-strong);
+  font-size: 18px;
+  font-weight: 800;
+  display: grid;
+  place-items: center;
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+  touch-action: manipulation;
+}
+
+.gig-corners .text-size button:disabled,
+.gig-corners .step:disabled {
+  opacity: 0.35;
+}
+
+.gig-corner-percent {
+  position: absolute;
+  right: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
+  color: var(--text-strong);
+  font-size: 14px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.gig-corner-percent:empty {
+  display: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .gig-corner {
+    animation: gig-corner-in 160ms ease-out;
+  }
+}
+
+@keyframes gig-corner-in {
+  from {
+    opacity: 0;
+  }
+}

@@ -5,6 +5,7 @@ import { usePlayingLearned } from "./cues";
 import { onPlayhead, useLookAhead } from "./hooks";
 import { BeatDot, type MetronomeState } from "./metronome-view";
 import { displayChordLine, displayKeyLabel, namesChords, type Notation } from "./music";
+import { useReadingRow } from "./reading-row";
 import { evenPlan } from "./scroll-timing";
 import { OriginalKeyHint, SongInfo } from "./song-info";
 import { hasTiming } from "./song-version";
@@ -28,6 +29,7 @@ export function LeadSheet({
   notes?: ReactNode;
 }) {
   const battery = useBattery();
+  useReadingRow(scale);
 
   return (
     <article className="sheet" style={{ fontSize: `calc(16px * ${scale})` }}>

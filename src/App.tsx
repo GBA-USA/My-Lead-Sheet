@@ -486,7 +486,7 @@ export function App() {
       </div>
 
       {stage && stage.count > 0 && (activeSong || stageCanMove) ? (
-        <GigStageBar gig={following && owner ? { session: following.session, me: owner, names: live.names } : null} set={stage} canMove={stageCanMove} bpm={metronome.bpm} song={activeSong ?? null}
+        <GigStageBar gig={following && owner ? { session: following.session, me: owner, names: live.names } : null} set={stage} canMove={stageCanMove} bpm={metronome.bpm} song={activeSong ?? null} text={{ index: textIndex, count: TEXT_SCALES.length, onChange: changeText }}
           scroll={activeSong ? { on: performance.scrolling, toggle: () => (take ? stopTake(take) : performance.setScrolling((on) => !on)) } : undefined} />
       ) : null}
     </div>

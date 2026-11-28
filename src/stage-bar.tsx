@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
 import { bandSong, type BandPlay } from "./band-setlist-view";
+import { GigCorners, type TextSteps } from "./gig-corners";
 import type { GigPack } from "./gig-pack";
 import type { GigPosition } from "./gig-position";
 import { position, type GigState, type Refusal, type SongKey, type UserId } from "./gig-state";
@@ -146,7 +147,8 @@ type Panel = "menu" | "hand-off" | "backup" | "order" | null;
 /** The controls a phone in a live gig holds: the leader's whole stage, or for anyone else the Scroll bar with the ••• its role allows. */
 export type GigStage = { session: LiveGig; me: UserId; names: Record<UserId, string> };
 
-type BarProps = { set: StageSet; canMove: boolean; scroll?: { on: boolean; toggle: () => void }; bpm: number | null; song: Song | null };
+/** `text` is this phone's text size steps, for the corner A− A+ while this phone leads. */
+type BarProps = { set: StageSet; canMove: boolean; scroll?: { on: boolean; toggle: () => void }; bpm: number | null; song: Song | null; text?: TextSteps };
 
 /**
  * The bar App mounts on a stage route. Outside a live gig it is `StageBar`, unchanged. In one, the phone that leads gets
@@ -160,7 +162,7 @@ export function GigStageBar({ gig, ...bar }: BarProps & { gig: GigStage | null }
   return <InGig key={`${gig.me}/${state.gigId}`} gig={gig} {...bar} />;
 }
 
-function InGig({ gig, set, canMove, scroll, bpm, song }: BarProps & { gig: GigStage }) {
+function InGig({ gig, set, canMove, scroll, bpm, song, text }: BarProps & { gig: GigStage }) {
   const { session, me, names } = gig;
   const view = session.view();
   const state = view.state!;
@@ -443,6 +445,8 @@ function InGig({ gig, set, canMove, scroll, bpm, song }: BarProps & { gig: GigSt
     ) : null;
 
   return (
+    <>
+    {text && song && !locked && !panel ? <GigCorners text={text} scrolling={!!scroll?.on} /> : null}
     <nav className="stage-bar" data-stage-bar="" aria-label="Stage" style={{ "--stage-hold": `${HOLD_MS}ms` } as CSSProperties}>
       {panel && !locked ? panels[panel] : null}
       {status}
@@ -486,5 +490,6 @@ function InGig({ gig, set, canMove, scroll, bpm, song }: BarProps & { gig: GigSt
         {next}
       </div>
     </nav>
+    </>
   );
 }

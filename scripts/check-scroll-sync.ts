@@ -298,11 +298,14 @@ test("the current lyric+chord line is at the vertical midpoint, with lines ahead
   }
 });
 
-/** Windows with Song info closed: the chart's first line is `firstLine` px down a sheet `clientHeight` px tall, above its middle. */
+/**
+ * Windows with Song info closed: the chart's first line is `firstLine` px down a sheet `clientHeight` px tall, above
+ * its middle. Opening Song info drops the chart `infoOpens` px.
+ */
 const ABOVE_MIDDLE = [
-  { name: "360 x 740", clientHeight: 444, firstLine: 207 },
-  { name: "390 x 844", clientHeight: 548, firstLine: 207 },
-  { name: "1280 x 800", clientHeight: 554, firstLine: 192 },
+  { name: "360 x 740", clientHeight: 444, firstLine: 207, infoOpens: 1102 },
+  { name: "390 x 844", clientHeight: 548, firstLine: 207, infoOpens: 1035 },
+  { name: "1280 x 800", clientHeight: 554, firstLine: 192, infoOpens: 473 },
 ];
 
 test("chart above middle: sung line reaches and holds the middle", () => {
@@ -339,6 +342,39 @@ test("chart above middle: sung line reaches and holds the middle", () => {
     assert(Math.abs(arriving.shown - middle) <= 2, `${name}: the sung line reaches the middle by ${arriving.label}, the first one centered past ${reached} px (its center is ${arriving.shown.toFixed(1)} px down a ${clientHeight} px sheet)`);
     const drifted = later.filter((line) => Math.abs(line.shown - middle) > 2).map((line) => `${line.label}'s center is ${line.shown.toFixed(1)} px down`);
     assert(drifted.length === 0, `${name}: every later line's center is at ${middle} px at its time, to the song's end: ${drifted.join("; ")}`);
+  }
+});
+
+test("chart moved mid-scroll: sung line stays where an untouched scroll has it", () => {
+  const expected = expectedLines(FIRE_AWAY);
+  const songEnd = expected.at(-1)!.start + expected.at(-1)!.length;
+  for (const { name, clientHeight, firstLine, infoOpens } of ABOVE_MIDDLE) {
+    const start = () => perform(app, app.scrollMotion(fireAway, null, null, 116, 100), fireAway, clientHeight, undefined, firstLine - ROW.heading);
+    const still = start();
+    still.run(songEnd + 5);
+    still.cancel();
+
+    const moved = start();
+    moved.run(1);
+    const opened = moved.seen.length;
+    // Song info opens. The chart and all below it drop, and Song info scrolls the sheet as far, so the row being read stays put.
+    const { chart, sheet } = moved;
+    chart.chartTop += infoOpens;
+    chart.chartBottom += infoOpens;
+    for (const part of chart.laid) {
+      part.heading.top += infoOpens;
+      for (const row of part.rows) row.top += infoOpens;
+    }
+    sheet.scrollHeight += infoOpens;
+    sheet.scrollTop += infoOpens;
+    moved.run(songEnd + 5);
+    moved.cancel();
+
+    assert(opened > 0 && moved.seen.length === still.seen.length, `${name}: the moved scroll ends when the untouched one does (${moved.seen.length} frames, untouched ${still.seen.length})`);
+    const off = moved.seen.slice(opened).map((frame, i) => ({ t: frame.t, px: frame.top - infoOpens - still.seen[opened + i].top }));
+    assert(Math.abs(off[0].px) <= 2, `${name}: on the frame after Song info opens the row being read stays put (it is ${off[0].px.toFixed(1)} px from where an untouched scroll has it)`);
+    const worst = off.reduce((most, each) => (Math.abs(each.px) > Math.abs(most.px) ? each : most));
+    assert(Math.abs(worst.px) <= 2, `${name}: to the song's end every row is within 2 px of where an untouched scroll has it (${worst.px.toFixed(1)} px off, ${worst.t.toFixed(2)} s in)`);
   }
 });
 

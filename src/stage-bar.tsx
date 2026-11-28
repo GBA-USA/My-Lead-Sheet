@@ -447,7 +447,7 @@ function InGig({ gig, set, canMove, scroll, bpm, song, text }: BarProps & { gig:
   return (
     <>
     {text && song && !locked && !panel ? <GigCorners text={text} scrolling={!!scroll?.on} /> : null}
-    <nav className="stage-bar" data-stage-bar="" aria-label="Stage" style={{ "--stage-hold": `${HOLD_MS}ms` } as CSSProperties}>
+    <nav className="stage-bar" data-stage-bar="" data-stage-corners={text && song ? "" : undefined} aria-label="Stage" style={{ "--stage-hold": `${HOLD_MS}ms` } as CSSProperties}>
       {panel && !locked ? panels[panel] : null}
       {status}
       {locked ? noteLine : (

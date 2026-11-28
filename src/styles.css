@@ -1215,15 +1215,15 @@ a:focus-visible {
   white-space: nowrap;
 }
 
-.app:has(.gig-corners) .shell-header .text-size {
+.app:has([data-stage-corners]) .shell-header .text-size {
   display: none;
 }
 
-.app:has(.gig-corners) .song-header {
+.app:has([data-stage-corners]) .song-header {
   grid-template-columns: 48px minmax(0, 1fr) 48px;
 }
 
-.app:has(.gig-corners) .sheet {
+.app:has([data-stage-corners]) .sheet {
   padding-bottom: 80px;
 }
 

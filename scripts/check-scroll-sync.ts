@@ -147,8 +147,8 @@ class Sheet {
 }
 
 /** Runs the app's scroll over a laid-out chart and records where the reading line is, in chart px, every frame. */
-function perform(app: App, motion: ReturnType<Timing["scrollMotion"]>, song: Song, clientHeight: number, lines?: () => number[]) {
-  const chart = layOut(song, 1200);
+function perform(app: App, motion: ReturnType<Timing["scrollMotion"]>, song: Song, clientHeight: number, lines?: () => number[], chartTop = 1200) {
+  const chart = layOut(song, chartTop);
   const sheet = new Sheet(clientHeight, chart.chartBottom + clientHeight);
   const ref = { current: motion };
   const clock = { current: 0 };
@@ -295,6 +295,50 @@ test("the current lyric+chord line is at the vertical midpoint, with lines ahead
       if (run.chart.boxes[i + 1] && run.chart.boxes[i + 1].top < reading) wrong.push(`line ${i + 2} (ahead) is not below the middle`);
     }
     assert(wrong.length === 0, `at ${clientHeight} px the line being sung sits at ${clientHeight / 2} px: ${wrong.join("; ")}`);
+  }
+});
+
+/** Windows with Song info closed: the chart's first line is `firstLine` px down a sheet `clientHeight` px tall, above its middle. */
+const ABOVE_MIDDLE = [
+  { name: "360 x 740", clientHeight: 444, firstLine: 207 },
+  { name: "390 x 844", clientHeight: 548, firstLine: 207 },
+  { name: "1280 x 800", clientHeight: 554, firstLine: 192 },
+];
+
+test("chart above middle: sung line reaches and holds the middle", () => {
+  const expected = expectedLines(FIRE_AWAY);
+  const songEnd = expected.at(-1)!.start + expected.at(-1)!.length;
+  for (const { name, clientHeight, firstLine } of ABOVE_MIDDLE) {
+    const middle = clientHeight / 2;
+    const run = perform(app, app.scrollMotion(fireAway, null, null, 116, 100), fireAway, clientHeight, undefined, firstLine - ROW.heading);
+    run.run(songEnd + 5);
+    run.cancel();
+    const first = run.chart.boxes[0].top;
+    assert(first < middle, `${name}: the first line starts ${first} px down, above the middle at ${middle} px`);
+
+    const opening = run.seen.filter((frame) => frame.t <= 2.5);
+    const still = opening.filter((frame, i) => frame.top <= (opening[i - 1]?.top ?? 0));
+    assert(opening.length > 100 && still.length === 0, `${name}: the sheet moves on every frame from Scroll On, with no hold (${still.length} of ${opening.length} frames in the first 2.5 s did not move, the first ${still[0]?.t.toFixed(2)} s in)`);
+
+    // At half the song's pace the sung line drops 1 px for every 2 px of chart sung, so it is on the middle once the
+    // song is twice the opening gap down the chart.
+    const reached = first + 2 * (middle - first);
+    const lines = expected.map((line, i) => {
+      const box = run.chart.boxes.find((each) => each.section === line.section && each.line === line.line)!;
+      const frame = run.seen.reduce((best, each) => (Math.abs(each.t - line.mid) < Math.abs(best.t - line.mid) ? each : best));
+      const center = (box.top + box.bottom) / 2;
+      return { label: `line ${i + 1}`, center, shown: center - frame.top };
+    });
+    const easing = lines.filter((line) => line.center < reached);
+    const held = lines.filter((line) => line.center >= reached);
+    assert(easing.length >= 1 && held.length >= 10, `${name}: the chart has lines sung before the middle is reached and after (${easing.length} before, ${held.length} after)`);
+
+    const offPace = easing.filter((line) => Math.abs(line.shown - (first + line.center) / 2) > 2).map((line) => `${line.label}'s center is ${line.shown.toFixed(1)} px down, want ${((first + line.center) / 2).toFixed(1)} px`);
+    assert(offPace.length === 0, `${name}: while the sung line eases down to the middle the sheet moves at half the song's pace: ${offPace.join("; ")}`);
+    const [arriving, ...later] = held;
+    assert(Math.abs(arriving.shown - middle) <= 2, `${name}: the sung line reaches the middle by ${arriving.label}, the first one centered past ${reached} px (its center is ${arriving.shown.toFixed(1)} px down a ${clientHeight} px sheet)`);
+    const drifted = later.filter((line) => Math.abs(line.shown - middle) > 2).map((line) => `${line.label}'s center is ${line.shown.toFixed(1)} px down`);
+    assert(drifted.length === 0, `${name}: every later line's center is at ${middle} px at its time, to the song's end: ${drifted.join("; ")}`);
   }
 });
 

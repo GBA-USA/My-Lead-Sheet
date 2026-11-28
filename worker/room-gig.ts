@@ -337,6 +337,26 @@ export const gigRoom = {
     return viewOf(band, row);
   },
 
+  /**
+   * What a live gig's roster is made from: the lineup's active members, the pack rev, each player's receipt, and who
+   * receives it, read from the Room's own records each time: the player leading now and the band's admins. A gig that
+   * is not live has no roster.
+   */
+  roster(band: RoomStore, gigId: string): { lineup: string[]; packRev: number; receipts: PackReceipt[]; to: Set<string> } | null {
+    const row = gigRow(band.sql, gigId);
+    if (!row || row.status !== "live") return null;
+    const active = activeIds(band.sql);
+    const receipts = band.sql
+      .exec<{ user_id: string; pack_rev: number; at: number }>(`SELECT user_id, pack_rev, at FROM pack_receipts WHERE gig_id = ?`, gigId)
+      .toArray()
+      .map((receipt): PackReceipt => ({ userId: receipt.user_id, packRev: receipt.pack_rev, at: receipt.at }));
+    const admins = band.sql.exec<{ user_id: string }>(`SELECT user_id FROM members WHERE state = ? AND role = ?`, "active", "admin").toArray();
+    const lead = leadingNow(row);
+    const to = new Set(admins.map((admin) => admin.user_id));
+    if (active.has(lead)) to.add(lead);
+    return { lineup: lineupOf(row).filter((id) => active.has(id)), packRev: row.rev, receipts, to };
+  },
+
   /** The leader, the backup or an admin ends the gig for everyone. Ending it again changes nothing and answers the same. */
   end(band: RoomStore, userId: string, gigId: string, now: number): GigView {
     const { me } = inRoom(band.sql, userId);

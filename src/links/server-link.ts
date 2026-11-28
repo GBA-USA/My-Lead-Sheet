@@ -1,5 +1,6 @@
 import type { BandMs } from "../band-time";
 import { NOT_A_MEMBER_CLOSE } from "../chat-model";
+import { BEAT, BEAT_EVERY_MS } from "../gig-check-in-model";
 import { NOT_ON_LINEUP_CLOSE } from "./link";
 import { LINK_LOST, WiredLink, asWire } from "./wire";
 
@@ -21,6 +22,8 @@ const REFUSED_WORDS: Record<number, string> = {
 export const refusedWords = (code: number) => REFUSED_WORDS[code] ?? NO_SIGNAL;
 
 const ROOM_RETRY_MS = 3000;
+/** Beats in a row with nothing heard back before the line counts as dropped, since a phone that lost its radio hears no close. */
+const BEATS_UNANSWERED = 3;
 
 /** The refusals the room answers an upgrade with before any socket exists, as the close code it uses for an open socket. */
 const REFUSED_AT_CONNECT: Record<string, number> = { "signed-out": SIGNED_OUT_CLOSE, "not-a-member": NOT_A_MEMBER_CLOSE };
@@ -60,8 +63,33 @@ export function roomLine(url: string): RoomLine {
   const listeners = new Set<(message: RoomIn) => void>();
   const tell = (message: RoomIn) => [...listeners].forEach((cb) => cb(message));
 
+  // The heartbeat: from the first join-gig on a socket until it closes, one fixed frame every few seconds. The room
+  // answers each with the same frame; anything heard back counts as an answer.
+  let beats: ReturnType<typeof setInterval> | null = null;
+  let unanswered = 0;
+  const stopBeats = () => {
+    if (beats) clearInterval(beats);
+    beats = null;
+    unanswered = 0;
+  };
+  const startBeats = (socket: WebSocket) => {
+    if (beats) return;
+    const beat = () => {
+      if (ws !== socket) return stopBeats();
+      if (unanswered >= BEATS_UNANSWERED) {
+        lost(socket, 1006);
+        return socket.close();
+      }
+      unanswered += 1;
+      socket.send(BEAT);
+    };
+    beat();
+    beats = setInterval(beat, BEAT_EVERY_MS);
+  };
+
   const lost = (socket: WebSocket | null, code: number) => {
     if (stopped || ws !== socket) return;
+    stopBeats();
     ws = null;
     if (code === NOT_ON_LINEUP_CLOSE) {
       tell({ kind: "room-refused", code });
@@ -80,6 +108,7 @@ export function roomLine(url: string): RoomLine {
   function connect() {
     if (retry) clearTimeout(retry);
     retry = null;
+    stopBeats();
     if (stopped) return;
     state = "connecting";
     let socket: WebSocket;
@@ -93,6 +122,8 @@ export function roomLine(url: string): RoomLine {
     let greeted = false;
     socket.addEventListener("message", (event) => {
       if (ws !== socket || typeof event.data !== "string") return;
+      unanswered = 0;
+      if (event.data === BEAT) return;
       let message: unknown;
       try {
         message = JSON.parse(event.data);
@@ -120,6 +151,7 @@ export function roomLine(url: string): RoomLine {
     send(message) {
       if (state !== "open" || ws?.readyState !== WebSocket.OPEN) return false;
       ws.send(JSON.stringify(message));
+      if ((message as { kind?: unknown }).kind === "join-gig") startBeats(ws);
       return true;
     },
     listen(cb) {
@@ -128,6 +160,7 @@ export function roomLine(url: string): RoomLine {
     },
     close() {
       stopped = true;
+      stopBeats();
       if (retry) clearTimeout(retry);
       retry = null;
       ws?.close();

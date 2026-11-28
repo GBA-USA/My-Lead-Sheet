@@ -956,6 +956,97 @@ async function run(site: Site, script: string, css: string) {
     }
   });
 
+  it("H5 lock and panels while the sheet scrolls", async () => {
+    await asLeader({ scrollAlong: true });
+    await countIn();
+    if (!(await need(FASTER, "while the band scroll runs, Scroll faster"))) return;
+    await tap(FASTER);
+    await tap(FASTER);
+    const both = async (when: string) => {
+      check((await shown(TEXT_PAIR)) && (await shown(SPEED_PAIR)), `${when}, both pairs are back`);
+      check((await text(PERCENT)) === "110%", `${when}, the live speed is still 110% (${js(await text(PERCENT))})`);
+    };
+    await tap('[data-stage="lock"]');
+    check(!(await has(TEXT_PAIR)) && !(await has(SPEED_PAIR)), "locked while the sheet scrolls, the text pair and the speed pair are gone");
+    await hold('[data-stage="unlock"]');
+    await settle();
+    await both("held to unlock");
+    for (const [open, name] of [['[data-stage="more"]', "•••"], ['[data-stage="edit-order"]', "Order"]]) {
+      await tap(open);
+      await until(`the ${name} panel`, () => has("[data-stage-menu], [data-stage-order]"), Boolean);
+      check(!(await has(TEXT_PAIR)) && !(await has(SPEED_PAIR)), `with ${name} open while the sheet scrolls, the text pair and the speed pair are gone`);
+      await tap('[data-stage="cancel"]');
+      await both(`after Close on ${name}`);
+    }
+  });
+
+  it("H6 no message of any kind leaves", async () => {
+    await asLeader({ scrollAlong: true });
+    await countIn();
+    if (!(await need(FASTER, "while the band scroll runs, Scroll faster")) || !(await need(C_LARGER, "the corner Larger text"))) return;
+    await sleep(500);
+    await page(`(() => {
+      const hub = window.__hub;
+      hub.all = [];
+      for (const [who, room] of hub.rooms) {
+        if (who !== "terry" || room.__seen) continue;
+        const send = room.send.bind(room);
+        room.send = (m) => { hub.all.push(m.kind === "link" && m.body && m.body.k === "ping" ? "ping" : m.kind + (m.body && m.body.k ? ":" + m.body.k : "")); return send(m); };
+        room.__seen = true;
+      }
+      performance.clearResourceTimings();
+      window.__asked = [];
+      new PerformanceObserver((list) => window.__asked.push(...list.getEntries().map((e) => e.name))).observe({ type: "resource" });
+    })()`);
+    for (let i = 0; i < 4; i += 1) await tap(FASTER);
+    for (let i = 0; i < 2; i += 1) await tap(SLOWER);
+    await tap(C_LARGER);
+    await tap(C_SMALLER);
+    await tap(C_LARGER);
+    await sleep(500);
+    const kinds = await page<string[]>(`window.__hub.all.filter((k) => k !== "ping")`);
+    const pings = await page<number>(`window.__hub.all.filter((k) => k === "ping").length`);
+    const asked = await page<string[]>(`[...window.__asked, ...performance.getEntriesByType("resource").map((e) => e.name)]`);
+    console.log(`       across the taps the leader's room sent ${js(kinds)} besides ${pings} clock pings; the page asked for ${js(asked)}`);
+    check(kinds.length === 0, `the leader's room sent nothing but clock pings across the taps (${js(kinds)})`);
+    check(asked.length === 0, `the page asked the network for nothing across the taps (${js(asked)})`);
+  });
+
+  it("H7 the corner A+ while the band scroll runs", async () => {
+    await metrics(SMALL);
+    try {
+      await asLeader({ scrollAlong: true });
+      await countIn();
+      if (!(await need(C_LARGER, "while the band scroll runs, the corner Larger text"))) return;
+      await until("the band scroll to pass the first rows", scrollTop, (top) => top > 120, 20_000);
+      const before = await rate();
+      const was = await page<{ top: number; height: number; at: number; scroll: number }>(`(() => { const row = window.__look.rows().find((r) => r.getBoundingClientRect().top > window.__look.sheetTop() + 40); window.__held = row; const r = row.getBoundingClientRect(); return { top: r.top - window.__look.sheetTop(), height: r.height, at: performance.now(), scroll: document.getElementById("sheet-scroll").scrollTop }; })()`);
+      await press(C_LARGER, TAP_MS);
+      const seen = await page<{ top: number; at: number; height: number }[]>(`new Promise((done) => {
+        const out = [];
+        const start = performance.now();
+        const frame = () => {
+          const r = window.__held.getBoundingClientRect();
+          out.push({ top: r.top - window.__look.sheetTop(), at: performance.now(), height: r.height });
+          if (performance.now() - start < 1500) requestAnimationFrame(frame); else done(out);
+        };
+        requestAnimationFrame(frame);
+      })`);
+      check((await sheetFont()) === "18.4px", `the corner A+ took the sheet to 18.4 px (${await sheetFont()})`);
+      const after = await rate();
+      console.log(`       band scroll ${before.rate.toFixed(1)} px/s before the tap, ${after.rate.toFixed(1)} px/s after; the row ${was.top.toFixed(1)} px below the bar, then ${seen.filter((_, i) => i % 15 === 0).map((s) => s.top.toFixed(1)).join(", ")}`);
+      check(before.rate > 2 && after.rate > 2 && (await shown(SPEED_PAIR)), `the corner A+ does not stop the band scroll (${before.rate.toFixed(1)} → ${after.rate.toFixed(1)} px/s, speed pair ${await shown(SPEED_PAIR)})`);
+      const off = seen.filter((s) => {
+        const travel = 1.5 * Math.max(before.rate, after.rate) * ((s.at - was.at) / 1000);
+        const delta = s.top - was.top;
+        return delta > s.height || delta < -(s.height + travel);
+      });
+      check(seen.length > 30 && off.length === 0, `on every frame of the 1.5 s after the tap the row holds within a row height plus the band scroll's own travel (${off.length} of ${seen.length} frames off${off[0] ? `, first at ${off[0].top.toFixed(1)} px against ${was.top.toFixed(1)}` : ""})`);
+    } finally {
+      await metrics(PHONE);
+    }
+  });
+
   it("G1 guard", async () => {
     const lines = readFileSync(join(root, "src", "App.tsx"), "utf8").replace(/\r\n/g, "\n").replace(/\n$/, "").split("\n").length;
     check(lines <= APP_LINES, `src/App.tsx has ${lines} lines, at most the ${APP_LINES} it has on origin/mls-int-20261113`);

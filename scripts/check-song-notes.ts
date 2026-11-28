@@ -27,7 +27,8 @@ import type { BandFile } from "../worker/room-export.ts";
  *   with no notes exports no `notes` key, so its file reads the same as one made before notes. Importing maps each
  *   note to the imported song id and keeps author name, body and created at; importing again adds none twice; a file
  *   with no `notes` still imports; a note on a song the file doesn't hold is 400 bad-file.
- * - The band song screen and the gig-mode sheet show `.song-notes` (heading "Band notes") above `.sheet`, with one
+ * - The band song screen and the gig-mode sheet show `.song-notes` (heading "Band notes") in the open Song info panel
+ *   above the chart (`.sheet .chart`), with one
  *   `.song-note` per shown note holding its body, author name and `<time datetime=ISO>`. Collapsed, a `N more` button
  *   expands it and `Show less` folds it again. An admin, and only an admin, sees `Add a note`, which opens a textarea
  *   labelled "Note for the band" (maxlength 500) with `Save note` and `Cancel`, and a `Delete` on each note, which asks
@@ -327,7 +328,7 @@ try {
     };
     const layout = () =>
       site.evaluate<{ page: number; width: number; strip: DOMRect | null; sheet: DOMRect | null; before: boolean; out: string[]; small: string[] }>(`(() => {
-        const strip = document.querySelector(".song-notes"), sheet = document.querySelector(".sheet");
+        const strip = document.querySelector(".song-notes"), sheet = document.querySelector(".sheet .chart");
         const out = [], small = [];
         for (const el of strip ? [strip, ...strip.querySelectorAll("*")] : []) {
           const box = el.getBoundingClientRect();
@@ -344,7 +345,14 @@ try {
           small,
         };
       })()`);
+    const openInfo = async () => {
+      const row = `[...document.querySelectorAll(".sheet button")].find((b) => b.textContent.trim().startsWith("Song info"))`;
+      await app.until(`!!${row}`, "the Song info row");
+      if ((await site.evaluate<string>(`${row}.getAttribute("aria-expanded")`)) !== "true") await site.evaluate(`${row}.click()`);
+      await app.until(`${row}.getAttribute("aria-expanded") === "true"`, "the Song info panel open");
+    };
     const fitsAt = async (width: number, what: string) => {
+      await openInfo();
       const seen = await layout();
       assert.ok(seen.strip && seen.sheet, `the strip and the chart are both on screen ${what} at ${width} (${js(seen)})`);
       assert.ok(seen.before && seen.strip!.bottom <= seen.sheet!.top + 0.5, `the strip sits above the chart and never covers it ${what} at ${width} (strip ${Math.round(seen.strip!.top)}..${Math.round(seen.strip!.bottom)}, chart from ${Math.round(seen.sheet!.top)})`);
@@ -465,6 +473,7 @@ try {
       await app.until(`!!${strip}`, "the admin's strip with no notes");
       assert.deepEqual(await shownNotes(), [], "no notes yet");
       assert.deepEqual(await buttonsIn(strip), ["Add a note"], "only Add a note");
+      await openInfo();
       await app.click("Add a note", strip);
       const box = ".song-notes textarea[aria-label='Note for the band']";
       await app.until(`!!document.querySelector(${js(box)})`, "the note box");

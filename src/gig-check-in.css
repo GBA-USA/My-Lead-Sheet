@@ -1,0 +1,119 @@
+.tonight-open {
+  align-self: flex-start;
+  min-height: var(--touch);
+}
+
+.tonight-sheet {
+  max-height: calc(100% - var(--touch));
+  box-sizing: border-box;
+}
+
+.tonight-rows {
+  display: grid;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tonight-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: var(--touch);
+  border-bottom: 1px solid var(--row-rule);
+  color: var(--text);
+  font-size: 16px;
+}
+
+.tonight-pick {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 12px;
+  min-height: var(--touch);
+  cursor: pointer;
+}
+
+.tonight-pick input {
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.tonight-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  font-weight: 800;
+}
+
+.tonight-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.tonight-tag {
+  margin-left: auto;
+  color: var(--text-dim);
+}
+
+.tonight-error {
+  color: var(--danger);
+}
+
+.tonight-save {
+  min-height: var(--touch);
+}
+
+.check-in-warning {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap);
+  padding: 4px 12px;
+  border-bottom: 2px dashed var(--danger);
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.check-in-count {
+  color: var(--danger);
+}
+
+.check-in-count::before {
+  content: var(--band-status-amber-mark, "!");
+  margin-right: 6px;
+  font-weight: 800;
+}
+
+.check-in-see {
+  min-height: var(--touch);
+  padding: 0 14px;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+
+/* Two classes, so the 40 px `.icon-btn` in styles.css, which loads later, cannot shrink it. */
+.check-in-warning .check-in-dismiss {
+  margin-left: auto;
+  width: var(--touch);
+  height: var(--touch);
+  min-width: var(--touch);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .check-in-warning,
+  .tonight-row {
+    transition: none;
+  }
+}

@@ -63,6 +63,27 @@ P3 | CLASS=other | legal/TERMS-DRAFT.md:7 | After the literal swap, the placehol
 
 VERDICT: PASS
 Nits:
+P3 | CLASS=other | src/scroll-timing.ts:587 | The P0 fix (pass 1) and the P2 fix (pass 2) sit in a file outside the brief's owned list, against CLAUDE.md "stay inside the files your brief owns". QUESTIONS.md names both for the owner. Every check that touches scroll-timing is green apart from known Windows causes (.verify-logs/fix-p0, .verify-logs/fix-p2/after).
+P3 | CLASS=other | scripts/check-ux-metronome-sheet.ts:570 | The chord x assert moved after the y lines (same value, same 0.5 px). The reorder cannot change the verdict and is named in the report, but not in the brief.
+P3 | CLASS=other | src/song-info.css:1 | `.sheet > .meta` changes to 0.84em/600, a visible type change the brief did not ask for.
+P3 | CLASS=other | src/sheet.tsx:268 | No case fails without the FONT_SETTLE_FRAMES=60 rAF refit.
+P3 | CLASS=other | src/song-info.tsx:84 | onPointerDownCapture stopPropagation hides a row tap from every ancestor pointerdown listener, not only auto-scroll's.
+P3 | CLASS=stale-ui | src/sheet.tsx:45 | The same song twice in one setlist or gig shares the key info/<ref>, so Song info stays open when moving between the two entries.
+P3 | CLASS=state-machine | src/song-info.tsx:18 | MOVING_MS 1000: an auto-scroll slower than about 1 px/s reads as at rest, so the open is not held.
+P3 | CLASS=stale-ui | src/song-notes.tsx:63 | No check drives the strip's unmount report {0,false}. I15 leaves the sheet first.
+P3 | CLASS=layout-width | src/song-info.tsx:75 | A band song with no fields: the row appears when the notes reply lands and the chart drops 44 px.
+P3 | CLASS=other | src/song-info.tsx:68 | The gig look-ahead band-follow scroll is not traced through a toggle (the report names it).
+P3 | PRE-EXISTING | CLASS=layout-width | scripts/check-ux-metronome-sheet.ts:570 | Windows Edge chord x reads 112.00 against the Linux pin 109.59, the same as on the untouched base.
+
+Self-check fix pass 2. The one P2 and its test-gap P3 are closed; none left open at P0 to P2.
+CLOSED | CLASS=state-machine | src/scroll-timing.ts:587 | The P2: opening Song info 1 s into a scroll from the top dropped the reading row 20.6 px (1280x800) and 27.7 px (390x844) on the next frame. Root cause: `runScroll` worked the path out from where the chart sits in the scroller, and the path's top-of-chart part changes shape, not only place, when the chart moves down. The hold in song-info.tsx was right. Fix: `runScroll` notes the chart's start as a run begins and moves the whole path by however far the chart has moved since. A run in which the chart never moves gets the same path. check:song-info I17 (song 10 from scrollTop 0, every frame of the 600 ms after a real tap within 2 px of an untouched scroll, 390x844 and 1280x800) failed at 8fb07a3 ("27.7 px from where it was 24 ms after the tap, an untouched scroll -1.0 px") and passes with the fix, three runs in a row (26 ok). The judge's probe now reads within 0.6 px of the untouched run at every sample to 6 s at all three widths (.verify-logs/fix-p2/probe-fixed.txt).
+CLOSED | CLASS=other | scripts/check-song-info.ts:478 | The test-gap P3 (the hold was measured part-way down, inside the click task only) is covered by I17, which reads every frame after the tap from the top of the chart.
+CLOSED | CLASS=other | scripts/check-ux-sheet-controls-save.ts:508 | The prior P0 is fixed. The Song info tap before the pill is gone, and the case failed at 53e7532 and passes at e4b6cf0. I16 (song 10, 1280x800, closed, top > 0 after the pill) failed at 53e7532 and passes now. Auto-scroll stays on after a toggle at every width (probe-head.txt, `on` true in all samples).
+
+# mls-int-20261113 VERIFY.md at 7b60f1c (PR 127 p2-view-pill and earlier, kept verbatim for the merge into cook/p2-song-info)
+
+VERDICT: PASS
+Nits:
 P3 | PRE-EXISTING | CLASS=other | spike/server/drill.mjs:190 | check:spike-server failed both CI attempts at f63b714 on "relayed-ping spread p95 <= 8 ms" (87.7, 56.91 ms) and once on "room counted 278 leader messages, leader sent 281". This PR does not touch spike/ or worker/. No reproducing case for the spread failure and no fix here, so it can redden CI again. Details below.
 P3 | CLASS=layout-width | src/styles.css:683 | Not changed. Folded under 430 px, the pill parts are unequal (46, 57 and 72 px), and from 430 to 539 px the text is 11 px. A layout change is not a small fix here. Left for the owner.
 P3 | CLASS=layout-width | src/styles.css:640 | Not changed. Folded at 360 px a long key reads "A (pra?". Same reason.

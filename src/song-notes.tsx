@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { newMsgId } from "./chat-model";
 import type { GigPack } from "./gig-pack";
 import { useEscape } from "./hooks";
 import type { Route } from "./route";
 import { api, ApiError } from "./sign-in-methods";
+import { NotesReport } from "./song-info";
 import { NOTE_MAX_CHARS, visibleNotes, type NoteList, type SongNote } from "./song-notes-model";
 import "./song-notes.css";
 
@@ -34,9 +35,9 @@ function targetOf(route: Route, pack: GigPack | null | undefined): Target | null
 }
 
 /**
- * Band notes above a band song's chart, on the band song screen and in gig mode. Keyed by account and song, so another
- * account on the phone starts with nothing. Notes are never kept on the phone: with no signal, or for a song the band no
- * longer has, the strip is absent.
+ * Band notes in a band song's Song info panel, on the band song screen and in gig mode. Keyed by account and song, so
+ * another account on the phone starts with nothing. Notes are never kept on the phone: with no signal, or for a song the
+ * band no longer has, the strip is absent. It tells the panel how many notes it holds and whether it draws anything.
  */
 export function BandSongNotes({ route, me, pack }: { route: Route; me: string | null; pack: GigPack | null | undefined }) {
   const target = targetOf(route, pack);
@@ -54,6 +55,12 @@ function NotesStrip({ bandId, songId, onStage }: Target) {
   const [confirming, setConfirming] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const report = useContext(NotesReport);
+  const count = list?.notes.length ?? 0;
+  const draws = !!list && (count > 0 || (list.canWrite && !onStage));
+
+  useEffect(() => report({ count, shown: draws }), [report, count, draws]);
+  useEffect(() => () => report({ count: 0, shown: false }), [report]);
 
   useEffect(() => {
     let live = true;
@@ -66,9 +73,8 @@ function NotesStrip({ bandId, songId, onStage }: Target) {
     };
   }, [bandId, songId]);
 
-  if (!list) return null;
+  if (!list || !draws) return null;
   const canWrite = list.canWrite && !onStage;
-  if (list.notes.length === 0 && !canWrite) return null;
   const { shown, more } = visibleNotes(list.notes, expanded);
 
   const run = async (call: () => Promise<void>) => {

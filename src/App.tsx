@@ -460,10 +460,10 @@ export function App() {
         {gigRoute && gigRoute.index === null && !holding ? (
           <GigViewScreen key={`${owner}/${gigRoute.gigId}`} me={owner ?? null} bandId={gigRoute.bandId} gigId={gigRoute.gigId} pack={pack} position={position} onSignIn={() => setAccountOpen(true)} onSignedOut={() => setAccount(null)} />
         ) : null}
-        {holding ? null : <BandSongNotes route={route} me={owner ?? null} pack={pack} />}
         {!holding && (route.name === "live" || bandRoute || (gigRoute && gigRoute.index !== null)) ? (
           shownSong ? (
             <LeadSheet
+              notes={<BandSongNotes route={route} me={owner ?? null} pack={pack} />}
               song={shownSong}
               scale={TEXT_SCALES[textIndex]}
               semitones={draft?.semitones ?? 0}

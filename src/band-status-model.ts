@@ -1,4 +1,5 @@
 import type { BandView } from "./bands-model";
+import type { CheckIn } from "./gig-check-in-model";
 import { downloaded, type GigStatus, type GigView } from "./gig-plan-model";
 import { LOST_AFTER_MS } from "./links/attempt";
 import { CHOICE_WORDS, ROUTE_WORDS, type LinkRoute, type RouteChoice } from "./routes";
@@ -6,13 +7,13 @@ import { rateRoute, type Rating } from "./sync-rating";
 
 /**
  * What the leader's phone will hear from one follower's ping replies (PLAN.md 7.5, 7.6). Nothing produces this list
- * yet: the live Room feed that carries it is p6-gig-check-in's work. `heardAt` is on the clock the strip's `now` reads.
+ * yet, so a feed passes an empty one. `heardAt` is on the clock the strip's `now` reads.
  */
 export type PlayerStatus = { id: string; route: LinkRoute; spreadMs: number; p99Ms: number; lateRate: number; inTime: boolean; heardAt: number };
 
 /**
  * Where one lineup player stands in a live gig: waiting (this phone has no feed yet, so nothing is known), leading it,
- * never heard yet, or heard over a route. The live Room feed that replaces `waiting` is p6-gig-check-in's work.
+ * never heard yet, or heard over a route. A phone holding the Room's roster has a feed, and its players are never `waiting`.
  */
 export type Live =
   | { kind: "waiting" }
@@ -21,8 +22,18 @@ export type Live =
   | { kind: "heard"; route: LinkRoute; spreadMs: number; p99Ms: number; lateRate: number; inTime: boolean; heardMsAgo: number };
 type Heard = Extract<Live, { kind: "heard" }>;
 
-/** One lineup player as the status strip shows them. `live` is null until a live gig feeds it. */
-export type Player = { id: string; name: string; leader: boolean; you: boolean; route: RouteChoice; downloaded: boolean; live: Live | null };
+/**
+ * One lineup player as the status strip shows them. `live` is null until a live gig feeds it. `checkIn` is what the
+ * Room's roster says of them tonight; a player without one is drawn exactly as before.
+ */
+export type Player = { id: string; name: string; leader: boolean; you: boolean; route: RouteChoice; downloaded: boolean; live: Live | null; checkIn?: CheckIn };
+
+/** The roster's words for a player not heard over a route yet, and why one is Not synced. */
+export const CHECK_IN_WORDS: Record<CheckIn["kind"], string> = { connected: "Connected", "not-connected": "Not connected", "not-synced": "Not synced" };
+export const NOT_SYNCED_WHY: Record<Extract<CheckIn, { kind: "not-synced" }>["why"], string> = {
+  never: "Has not downloaded tonight's set",
+  older: "Has an older set. They need to download again.",
+};
 
 /** The gig's lineup in order, named from the band's members. A lineup id that is no longer a member has no name to show, so it has no face. */
 export function playersFrom(gig: GigView, band: BandView, me: string): Player[] {
@@ -106,12 +117,19 @@ export type StatusRow = {
   inTime: string;
   heard: string;
   tone: Tone;
+  /** Why a player reads Not synced. Present only on such a row. */
+  checkInWhy?: string;
 };
 
-function liveText(p: Player): Pick<StatusRow, "routeText" | "bars" | "barsText" | "inTime" | "heard" | "tone"> {
+function liveText(p: Player): Pick<StatusRow, "routeText" | "bars" | "barsText" | "inTime" | "heard" | "tone" | "checkInWhy"> {
   const live = p.live;
   if (live === null) return { routeText: CHOICE_WORDS[p.route].name, bars: null, barsText: "", inTime: "", heard: "Heard —", tone: "steady" };
   if (live.kind === "waiting" || live.kind === "leading") return { routeText: "", bars: null, barsText: "", inTime: "", heard: "", tone: "steady" };
+  if (live.kind === "not-joined" && p.checkIn) {
+    const checkIn = p.checkIn;
+    const row = { routeText: CHECK_IN_WORDS[checkIn.kind], bars: null, barsText: "", inTime: "", heard: "", tone: checkIn.kind === "connected" ? ("steady" as const) : ("amber" as const) };
+    return checkIn.kind === "not-synced" ? { ...row, checkInWhy: NOT_SYNCED_WHY[checkIn.why] } : row;
+  }
   if (live.kind === "not-joined") return { routeText: "Not joined", bars: null, barsText: "", inTime: "", heard: "", tone: "grey" };
   return {
     routeText: `${ROUTE_WORDS[live.route]} · ${liveRating(live)}`,
@@ -135,6 +153,7 @@ export function panelLine(players: readonly Player[]): string | null {
   if (players.every((p) => p.live === null)) return "Sync and timing show during a live gig.";
   if (players.every((p) => p.live?.kind === "waiting")) return "Live sync and timing will show once players are connected.";
   const leading = players.find((p) => p.live?.kind === "leading");
-  if (leading?.you && !players.some((p) => p.live?.kind === "heard")) return "Just you so far";
+  const here = (p: Player) => p.live?.kind === "heard" || (p.live?.kind === "not-joined" && p.checkIn !== undefined && p.checkIn.kind !== "not-connected");
+  if (leading?.you && !players.some(here)) return "Just you so far";
   return null;
 }

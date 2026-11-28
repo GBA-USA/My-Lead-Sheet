@@ -13,7 +13,7 @@ export const SECONDS = {
   "check:learn": 319, "check:guest": 219, "check:learn-songs": 204, "check:gig-check-in": 177,
   "check:ux-collapse-everywhere": 172, "check:links": 167, "check:ux-theme-sweep": 150,
   "check:ux-sheet-controls-save": 135, "check:mirror": 115, "check:stage": 114, "check:update-now": 98,
-  "check:ux-band-status": 94, "check:ux-layout-fix": 94, "check:heard": 92, "check:ux-metronome-sheet": 88,
+  "check:ux-band-status": 94, "check:ux-layout-fix": 94, "check:heard": 92, "check:setlist-builder": 91, "check:ux-metronome-sheet": 88,
   "check:song-info": 67, "check:ux-invite-links": 66, "check:bands": 66, "check:join-links": 61,
   "check:ux-gig-view": 56, "check:new-song": 54, "check:ux-chords-only": 52, "check:song-paste": 52,
   "check:ux-band-page": 50, "check:gig-plan-record": 49, "check:song-import": 43, "check:learn-words": 43,

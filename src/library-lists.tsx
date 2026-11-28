@@ -1,8 +1,10 @@
-import { lazy, Suspense, useEffect, useId, useRef, useState, useSyncExternalStore, type ComponentProps, type ComponentType, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type ComponentProps, type KeyboardEvent } from "react";
 import { bandSongRef, songFromSent } from "./band-library-model";
+import { CloseMark } from "./close-mark";
 import { PRIVACY_HREF } from "./data-kinds";
 import { GigSong } from "./gig-plan";
 import { useEscape } from "./hooks";
+import { lazySheet } from "./lazy-sheet";
 import type { useMetronome } from "./metronome-view";
 import type { Notation } from "./music";
 import { allOnPhone, heldFor, onPhoneChange, phoneGeneration, type CachedBandSong } from "./phone-db";
@@ -220,44 +222,42 @@ export function SongList({ songs, userId, onAdd, onImport }: { songs: Song[]; us
 
 type BuilderProps = ComponentProps<typeof Builder>;
 
-/**
- * The builder loads on the first tap, so the main script keeps its size. The service worker holds every built file,
- * so it opens offline too. Code that still cannot load shows why, and the next tap loads again.
- */
-const loadBuilder = () =>
-  lazy<ComponentType<BuilderProps>>(() =>
-    import("./setlist-builder").then(
-      (module) => ({ default: module.SetlistBuilder }),
-      () => ({ default: BuilderUnloaded }),
-    ),
-  );
-let SetlistBuilder = loadBuilder();
+/** The builder loads on the first tap, so the main script keeps its size. The service worker holds every built file, so it opens offline too. */
+const SetlistBuilder = lazySheet<BuilderProps>(
+  () => import("./setlist-builder").then((module) => module.SetlistBuilder),
+  (props) => <BuilderNote {...props} failed />,
+  (props) => <BuilderNote {...props} failed={false} />,
+);
 
 const MESSAGES = {
   notLoaded: "The setlist builder couldn't load. Check your connection and try again.",
+  opening: "Opening the setlist builder…",
   newSetlist: "New setlist",
   close: "Close",
 };
 
-function BuilderUnloaded({ target, setlists, onClose }: BuilderProps) {
+/** Stands where the builder will be: while its code is on its way, or `failed` once it cannot load. */
+function BuilderNote({ target, setlists, onClose, failed }: BuilderProps & { failed: boolean }) {
   const titleId = useId();
-  const close = () => {
-    SetlistBuilder = loadBuilder();
-    onClose();
-  };
-  useEscape(close);
+  useEscape(onClose);
   const heading = target.kind === "edit" ? (setlists.find((setlist) => setlist.id === target.id)?.name ?? MESSAGES.newSetlist) : MESSAGES.newSetlist;
   return (
-    <div className="account-backdrop" onClick={close}>
-      <section className="setlist-builder" role="alertdialog" aria-modal="true" aria-labelledby={titleId} onClick={(event) => event.stopPropagation()}>
+    <div className="account-backdrop" onClick={onClose}>
+      <section
+        className={failed ? "setlist-builder" : "setlist-builder-wait"}
+        role={failed ? "alertdialog" : undefined}
+        aria-modal={failed || undefined}
+        aria-labelledby={titleId}
+        onClick={(event) => event.stopPropagation()}
+      >
         <header className="account-top">
           <h2 id={titleId}>{heading}</h2>
-          <button type="button" className="account-close" aria-label={MESSAGES.close} onClick={close}>
-            ✕
+          <button type="button" className="account-close" aria-label={MESSAGES.close} onClick={onClose}>
+            <CloseMark />
           </button>
         </header>
-        <p className="account-error" role="alert">
-          {MESSAGES.notLoaded}
+        <p className={failed ? "account-error" : undefined} role={failed ? "alert" : "status"}>
+          {failed ? MESSAGES.notLoaded : MESSAGES.opening}
         </p>
       </section>
     </div>
@@ -353,16 +353,14 @@ export function SetlistList({ setlists, songs, onShowCode }: { setlists: Setlist
         </div>
       )}
       {builder ? (
-        <Suspense fallback={null}>
-          <SetlistBuilder
-            target={builder}
-            setlists={setlists}
-            songs={songs}
-            onShowCode={onShowCode}
-            onCreated={(id) => setBuilder({ kind: "edit", id })}
-            onClose={closeBuilder}
-          />
-        </Suspense>
+        <SetlistBuilder
+          target={builder}
+          setlists={setlists}
+          songs={songs}
+          onShowCode={onShowCode}
+          onCreated={(id) => setBuilder({ kind: "edit", id })}
+          onClose={closeBuilder}
+        />
       ) : null}
     </>
   );

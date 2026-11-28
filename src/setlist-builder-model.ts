@@ -2,9 +2,9 @@ import type { SongRef } from "./types";
 
 export const MAX_SETLIST_NAME = 60;
 export const HOLD_MS = 500;
-export const MOVE_LIMIT_PX = 10;
+const MOVE_LIMIT_PX = 10;
 
-export type NamedResult = { ok: true; name: string } | { ok: false; reason: "empty" | "too-long" };
+type NamedResult = { ok: true; name: string } | { ok: false; reason: "empty" | "too-long" };
 
 /** Trims a setlist name and refuses empty names or names over 60 characters. */
 export function named(raw: string): NamedResult {
@@ -62,10 +62,4 @@ export function dragMove(state: DragState, currentY: number, over: number): Drag
     return state.over === over ? state : { ...state, over };
   }
   return state;
-}
-
-export function dragHoldReady(state: DragState, now: number): DragState {
-  if (state.kind !== "pressing") return state;
-  if (now - state.startedAt < HOLD_MS) return state;
-  return { kind: "dragging", index: state.index, over: state.index };
 }

@@ -61,7 +61,8 @@
   }
 }
 
-.setlist-builder {
+.setlist-builder,
+.setlist-builder-wait {
   width: min(100%, 420px);
   box-sizing: border-box;
   max-height: calc(100dvh - 24px - var(--keyboard, 0px));

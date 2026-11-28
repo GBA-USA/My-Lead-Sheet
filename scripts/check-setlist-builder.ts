@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
+import { build as viteBuild } from "vite";
 import { newSalt, passwordKey } from "../src/password.ts";
 import type { ChordProStoredSong } from "../src/storage.ts";
 import type { Library, LibraryFile, Song, SongRef } from "../src/types.ts";
@@ -284,6 +287,27 @@ type BuilderModel = {
   }
 }
 
+// ---------------------------------------------------------------------------------------------- B39, B40 (source)
+
+const sourceFiles = (readdirSync(join(root, "src"), { recursive: true }) as string[])
+  .map((name) => name.replaceAll("\\", "/"))
+  .filter((name) => /\.tsx?$/.test(name))
+  .map((name) => ({ name: `src/${name}`, text: readFileSync(join(root, "src", name), "utf8") }));
+
+await check("B39 every sheet that loads on first open goes through lazySheet", () => {
+  const raw = sourceFiles.filter((file) => file.name !== "src/lazy-sheet.tsx" && /\blazy\s*[<(]/.test(file.text)).map((file) => file.name);
+  assert.deepEqual(raw, [], `React lazy outside src/lazy-sheet.tsx cannot reload onto a new deploy; use lazySheet (${js(raw)})`);
+});
+
+await check("B40 every export of the builder model is used", () => {
+  const model = sourceFiles.find((file) => file.name === "src/setlist-builder-model.ts");
+  assert.ok(model, "src/setlist-builder-model.ts");
+  const names = [...model.text.matchAll(/^export (?:function|const|type) (\w+)/gm)].map((found) => found[1]);
+  const others = sourceFiles.filter((file) => file !== model);
+  const unused = names.filter((name) => !others.some((file) => new RegExp(`\\b${name}\\b`).test(file.text)));
+  assert.deepEqual(unused, [], `exported and never used (${js(unused)})`);
+});
+
 // ---------------------------------------------------------------------------------------------- Browser + Worker cases (B1 to B18)
 
 const BROWSER_CASES = [
@@ -321,6 +345,9 @@ const BROWSER_CASES = [
   "B33 the builder loads apart from the main script, and a load that fails says so",
   "B34 with no signal, the builder still opens",
   "B35 the couldn't-load sheet fits at 360 px, light and dark",
+  "B37 a builder load that stalls says so, and Close leaves",
+  "B38 the couldn't-load sheet closes with the builder's own mark",
+  "B36 a deploy under an open page reloads onto it, so the builder opens",
 ] as const;
 
 let apiBase = "";
@@ -2293,6 +2320,142 @@ try {
     await reloadToNewSetlist();
     const errors = await app.errors();
     assert.deepEqual(errors, [], `page raised no errors (${js(errors)})`);
+  });
+
+  // ---------------------------------------------------------------------------------------------- B37
+  await check("B37 a builder load that stalls says so, and Close leaves", async () => {
+    await s.send("Network.enable");
+    await s.send("Network.setBypassServiceWorker", { bypass: true });
+    await s.send("Fetch.enable", { patterns: [{ urlPattern: "*/assets/setlist-builder-*.js", requestStage: "Request" }] });
+    try {
+      await reloadToNewSetlist();
+      assert.ok(await tapNewSetlist(), "+ New setlist to tap");
+      await app.until(`!!document.querySelector(".setlist-builder-wait")`, "a note that the builder is on its way", 5000);
+      const note = await s.evaluate<{ words: string; mark: boolean; builder: boolean; refused: boolean }>(`({
+        words: document.querySelector(".setlist-builder-wait [role=status]")?.textContent.trim() ?? "",
+        mark: !!document.querySelector('.setlist-builder-wait [aria-label="Close"] svg'),
+        builder: !!document.querySelector(".setlist-builder[role=dialog]"),
+        refused: !!document.querySelector("[role=alertdialog]"),
+      })`);
+      assert.deepEqual(note, { words: "Opening the setlist builder…", mark: true, builder: false, refused: false }, "the note says the builder is opening, with a Close");
+      await s.evaluate(`document.querySelector('.setlist-builder-wait [aria-label="Close"]').click()`);
+      await app.until(`!document.querySelector(".setlist-builder-wait")`, "Close leaves the note");
+    } finally {
+      await s.send("Fetch.disable");
+      await s.send("Network.setBypassServiceWorker", { bypass: false });
+      await s.send("Network.disable");
+    }
+    assert.ok(await tapNewSetlist(), "+ New setlist to tap again");
+    await app.until(`!!document.querySelector(".setlist-builder[role=dialog]")`, "the builder once its script arrives", 15000);
+    await closeBuilder();
+  });
+
+  // ---------------------------------------------------------------------------------------------- B38
+  await check("B38 the couldn't-load sheet closes with the builder's own mark", async () => {
+    await s.send("Network.enable");
+    await s.send("Network.setBypassServiceWorker", { bypass: true });
+    await s.send("Network.setBlockedURLs", { urls: ["*/assets/setlist-builder-*"] });
+    try {
+      await reloadToNewSetlist();
+      assert.ok(await tapNewSetlist(), "+ New setlist to tap");
+      await app.until(`!!document.querySelector("[role=alertdialog]")`, "the couldn't-load sheet");
+      const close = await s.evaluate<{ text: string | null; mark: string | null }>(`(() => {
+        const button = document.querySelector('[role=alertdialog] [aria-label="Close"]');
+        return { text: button?.textContent.trim() ?? null, mark: button?.querySelector("svg path")?.getAttribute("d") ?? null };
+      })()`);
+      assert.deepEqual(close, { text: "", mark: "M4 4l8 8M12 4l-8 8" }, "Close is the builder's svg mark, not a text glyph");
+      await s.evaluate(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+      await app.until(`!document.querySelector("[role=alertdialog]")`, "Escape closes the couldn't-load sheet");
+    } finally {
+      await s.send("Network.setBlockedURLs", { urls: [] });
+      await s.send("Network.setBypassServiceWorker", { bypass: false });
+      await s.send("Network.disable");
+    }
+    await reloadToNewSetlist();
+  });
+
+  // ---------------------------------------------------------------------------------------------- B36 (last: it moves the tab to a site of its own)
+  await check("B36 a deploy under an open page reloads onto it, so the builder opens", async () => {
+    const scratch = mkdtempSync(join(tmpdir(), "check-setlist-builder-deploy-"));
+    const live = join(scratch, "live");
+    const TYPES: Record<string, string> = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml", ".woff2": "font/woff2" };
+    const server = createServer((request, response) => {
+      const path = new URL(request.url ?? "/", "http://localhost").pathname;
+      const file = join(live, path === "/" ? "index.html" : path);
+      try {
+        const body = readFileSync(file);
+        response.writeHead(200, { "content-type": TYPES[extname(file)] ?? "application/octet-stream" });
+        response.end(body);
+      } catch {
+        response.writeHead(404);
+        response.end();
+      }
+    });
+    const publish = (from: string) => {
+      rmSync(live, { recursive: true, force: true });
+      cpSync(from, live, { recursive: true });
+    };
+    const asset = (dir: string, stem: string) => readdirSync(join(dir, "assets")).find((name) => name.startsWith(`${stem}-`) && name.endsWith(".js")) ?? "";
+    const inCache = (file: string) =>
+      `(async () => { for (const key of await caches.keys()) for (const req of await (await caches.open(key)).keys()) if (req.url.endsWith(${js(`/assets/${file}`)})) return true; return false; })()`;
+    const tapFirstName = () => s.evaluate<boolean>(`(() => { const b = document.querySelector("section.setlist .setlist-head button"); b?.click(); return !!b; })()`);
+    try {
+      const before = process.env.MLS_BUILD_ID;
+      const built: string[] = [];
+      try {
+        for (const id of ["setlist-deploy-a", "setlist-deploy-b"]) {
+          process.env.MLS_BUILD_ID = id;
+          const out = join(scratch, id);
+          await viteBuild({ root, logLevel: "silent", build: { outDir: out, emptyOutDir: true } });
+          built.push(out);
+        }
+      } finally {
+        if (before === undefined) delete process.env.MLS_BUILD_ID;
+        else process.env.MLS_BUILD_ID = before;
+      }
+      const [a, b] = built;
+      const [chunkA, chunkB] = [asset(a, "setlist-builder"), asset(b, "setlist-builder")];
+      assert.ok(chunkA && chunkB && chunkA !== chunkB, `the two deploys name the builder script apart (${chunkA}, ${chunkB})`);
+
+      publish(a);
+      await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+      const address = server.address();
+      const here = `http://127.0.0.1:${typeof address === "object" && address ? address.port : 0}`;
+      await s.send("Page.navigate", { url: `${here}/#/setlists` });
+      await app.library();
+      await phone360();
+      await app.until(`document.querySelectorAll("section.setlist").length > 0`, "Setlists screen of the first deploy");
+      await app.until(`!!navigator.serviceWorker?.controller`, "the first deploy's worker in control", 15000);
+      await app.until(inCache(chunkA), "the first deploy's builder script in the phone's cache", 15000);
+
+      publish(b);
+      await s.evaluate(`navigator.serviceWorker.getRegistration().then((r) => r?.update()).then(() => true)`);
+      await app.until(`(async () => (await ${inCache(chunkB)}) && !(await ${inCache(chunkA)}))()`, "the second deploy's worker in charge, with its files alone in the cache", 30000);
+
+      await s.evaluate(`window.__firstDeployPage = true`);
+      assert.ok(await tapFirstName(), "a setlist name to tap");
+      let seen = "loading";
+      for (const end = Date.now() + 30000; Date.now() < end; await sleep(100)) {
+        seen = await s
+          .evaluate<string>(
+            `document.querySelector("[role=alertdialog]") ? "couldn't-load sheet" : window.__firstDeployPage ? "loading" : document.querySelectorAll("section.setlist").length > 0 ? "reloaded" : "loading"`,
+          )
+          .catch(() => "loading");
+        if (seen !== "loading") break;
+      }
+      assert.equal(seen, "reloaded", `the tap reloads onto the published deploy instead of offering a retry that cannot work (saw ${seen})`);
+      const running = await s.evaluate<string>(`document.querySelector('script[type=module][src*="/assets/index-"]')?.src.split("/").pop() ?? ""`);
+      assert.equal(running, asset(b, "index"), "the page now runs the second deploy");
+      await phone360();
+      assert.ok(await tapFirstName(), "the setlist name to tap again");
+      await app.until(`!!document.querySelector(".setlist-builder[role=dialog]")`, "the builder on the new deploy", 15000);
+      await closeBuilder();
+      const errors = await app.errors();
+      assert.deepEqual(errors, [], `page raised no errors (${js(errors)})`);
+    } finally {
+      server.close();
+      rmSync(scratch, { recursive: true, force: true });
+    }
   });
 } finally {
   await site.close();

@@ -11,6 +11,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { createPortal } from "react-dom";
+import { CloseMark } from "./close-mark";
 import { useEscape, useKeyboardInset } from "./hooks";
 import { matchingSongs } from "./search";
 import {
@@ -763,14 +764,6 @@ export function SetlistBuilder({
   );
 
   return createPortal(sheet, document.body);
-}
-
-function CloseMark() {
-  return (
-    <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-      <path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
-  );
 }
 
 function BackMark() {

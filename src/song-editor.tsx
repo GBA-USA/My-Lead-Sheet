@@ -1,7 +1,8 @@
-import { lazy, Suspense, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { content } from "./band-library";
 import { tempoChoices } from "./bpm-detect";
 import { useEscape } from "./hooks";
+import { lazySheet } from "./lazy-sheet";
 import { useMetronome } from "./metronome-view";
 import { songHref } from "./route";
 import { songYouHave } from "./search";
@@ -22,39 +23,28 @@ import "./song-editor.css";
 /** Which song sheet is open over the page: timing, a new song, the open song's chart, the Delete question, Import files, or a paste from the start panel. */
 export type SongEdit = "timing" | "new" | "chart" | "delete" | "import" | { paste: string };
 
-/**
- * Import files and its readers load on the first tap, so the main script keeps its size. The service worker holds
- * every built file, so it opens offline too. Code that still cannot load shows why, and the next tap loads again.
- */
-const loadImport = () =>
-  lazy(() =>
-    // @ts-expect-error TS5097: song-import.ts holds the same stem, so only ".tsx" names this file in tsc, Vite and esbuild.
-    import("./song-import.tsx").then(
-      (module: { SongImport: (props: ImportProps) => ReactNode }) => ({ default: module.SongImport }),
-      () => ({ default: ImportUnloaded }),
-    ),
-  );
 type ImportProps = { songs: Song[]; files: File[]; editor: (start: Draft, done: (songId: number | null) => void) => ReactNode; onClose: () => void };
-let SongImport = loadImport();
+/** Import files and its readers load on the first tap, so the main script keeps its size. The service worker holds every built file, so it opens offline too. */
+const SongImport = lazySheet<ImportProps>(
+  // @ts-expect-error TS5097: song-import.ts holds the same stem, so only ".tsx" names this file in tsc, Vite and esbuild.
+  () => import("./song-import.tsx").then((module: { SongImport: (props: ImportProps) => ReactNode }) => module.SongImport),
+  ImportUnloaded,
+);
 
 const NOT_LOADED = "Import files couldn't load. Check your connection and try again.";
 
 function ImportUnloaded({ onClose }: ImportProps) {
   const titleId = useId();
-  const close = () => {
-    SongImport = loadImport();
-    onClose();
-  };
-  useEscape(close);
+  useEscape(onClose);
   return (
-    <div className="song-data-backdrop" onClick={close}>
+    <div className="song-data-backdrop" onClick={onClose}>
       <div className="song-data" role="alertdialog" aria-modal="true" aria-labelledby={titleId} onClick={(event) => event.stopPropagation()}>
         <h2 id={titleId}>Import files</h2>
         <p className="song-editor-problem" role="alert">
           {NOT_LOADED}
         </p>
         <div className="song-data-actions">
-          <button type="button" onClick={close}>
+          <button type="button" onClick={onClose}>
             Close
           </button>
         </div>
@@ -192,11 +182,7 @@ export function SongEditors({
   if (editing === "import") {
     if (!userId || owner.current !== userId) return null;
     const editor = (start: Draft, done: (songId: number | null) => void): ReactNode => <SongEditor songs={songs} start={start} onSaved={done} onClose={() => done(null)} />;
-    return (
-      <Suspense fallback={null}>
-        <SongImport key={userId} songs={songs} files={files} editor={editor} onClose={onClose} />
-      </Suspense>
-    );
+    return <SongImport key={userId} songs={songs} files={files} editor={editor} onClose={onClose} />;
   }
   if (editing === "new") return <SongEditor songs={songs} onClose={onClose} />;
   if (!song) return null;

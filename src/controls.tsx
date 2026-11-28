@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useScrollSpeed } from "./hooks";
 import { MetronomeSheet } from "./metronome-sheet";
@@ -54,32 +54,75 @@ export function StepButton({
   );
 }
 
-const NOTATION_LABELS: [Notation, string][] = [
-  ["notes", "Notes"],
+export const NOTATION_LABELS: [Notation, string][] = [
+  ["notes", "Chords"],
   ["nashville", "Nashville"],
   ["chords", "Chords only"],
 ];
 
-/** On a narrow phone the switch scrolls sideways, and the mode in use is scrolled into view. */
-function NotationSwitch({ value, onChange }: { value: Notation; onChange: (next: Notation) => void }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const pressed = useRef<HTMLButtonElement>(null);
+const PILL_STEPS: Partial<Record<string, 1 | -1>> = { ArrowRight: 1, ArrowLeft: -1 };
 
-  useLayoutEffect(() => {
-    const [box, on] = [ref.current, pressed.current];
-    if (!box || !on) return;
-    box.scrollLeft = Math.min(Math.max(box.scrollLeft, on.offsetLeft + on.offsetWidth - box.clientWidth), on.offsetLeft);
-  }, [value]);
+/** Rounded segmented radio group with equal parts, roving tabIndex, and Left/Right arrow-key navigation. */
+export function SegmentedPill<T extends string>({
+  options,
+  value,
+  onChange,
+  label,
+  className,
+}: {
+  options: readonly [T, string][];
+  value: T;
+  onChange: (next: T) => void;
+  label: string;
+  className?: string;
+}) {
+  const buttons = useRef<(HTMLButtonElement | null)[]>([]);
+  const activeIndex = Math.max(
+    0,
+    options.findIndex(([option]) => option === value),
+  );
+
+  const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const step = PILL_STEPS[event.key];
+    if (!step) return;
+    event.preventDefault();
+    const nextIndex = (activeIndex + step + options.length) % options.length;
+    onChange(options[nextIndex][0]);
+    buttons.current[nextIndex]?.focus();
+  };
 
   return (
-    <div className="notes-switch" role="group" aria-label="Notes or Nashville" ref={ref}>
-      {NOTATION_LABELS.map(([notation, label]) => (
-        <button key={notation} type="button" aria-pressed={value === notation} ref={value === notation ? pressed : undefined} onClick={() => onChange(notation)}>
-          {label}
-        </button>
-      ))}
+    <div
+      className={className ? `segmented-pill ${className}` : "segmented-pill"}
+      role="radiogroup"
+      aria-label={label}
+      style={{ "--pill-count": options.length } as CSSProperties}
+      onKeyDown={onKeyDown}
+    >
+      {options.map(([option, text], index) => {
+        const checked = option === value;
+        return (
+          <button
+            key={option}
+            ref={(el) => {
+              buttons.current[index] = el;
+            }}
+            type="button"
+            role="radio"
+            aria-checked={checked}
+            tabIndex={checked ? 0 : -1}
+            onClick={() => onChange(option)}
+          >
+            {text}
+          </button>
+        );
+      })}
     </div>
   );
+}
+
+function NotationSwitch({ value, onChange }: { value: Notation; onChange: (next: Notation) => void }) {
+  return <SegmentedPill className="notes-switch" label="Chord view" options={NOTATION_LABELS} value={value} onChange={onChange} />;
 }
 
 /** Key − and +, and the readout, which a tap puts back in the original key. */
@@ -260,7 +303,7 @@ function ScrollSpeed() {
 }
 
 /**
- * The song's two control rows. Row 1: the key and Notes | Nashville | Chords only. Row 2: the Scroll pill with its caret to the
+ * The song's control rows. Key strip and Chords | Nashville | Chords only (on its own row under 430 px), plus the Scroll pill with its caret to the
  * Scroll sheet, the Metronome pill and its sheet, and Send when `onSend` is given. A take puts `take` in row 2's place.
  * While the scroll runs, outside a take, the live speed group shows too.
  * `onMetronome` is unused since the pill opens its own sheet.

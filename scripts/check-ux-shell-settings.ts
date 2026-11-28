@@ -51,7 +51,7 @@ async function tap(text: string, scope = "document") {
   await settle();
 }
 const pressed = (group: string, scope = "document") =>
-  evaluate<string[]>(`[...(${scope}?.querySelector(${js(`[role=group][aria-label="${group}"]`)})?.querySelectorAll("button[aria-pressed=true]") ?? [])].map((b) => b.textContent.trim())`);
+  evaluate<string[]>(`[...(${scope}?.querySelector(${js(`:is([role=group],[role=radiogroup])[aria-label="${group}"]`)})?.querySelectorAll("button:is([aria-pressed=true],[aria-checked=true])") ?? [])].map((b) => b.textContent.trim())`);
 const stored = (key: string) => evaluate<string | null>(`localStorage.getItem(${js(key)})`);
 const text = (selector: string) => evaluate<string>(`document.querySelector(${js(selector)})?.textContent?.trim() ?? ""`);
 
@@ -192,20 +192,20 @@ try {
 
   await test("Chords default applies to a song never switched and not to one that was", async () => {
     await freshPhone("#/song/2");
-    await tap("Notes", `document.querySelector("[role=group][aria-label='Notes or Nashville']")`);
+    await tap("Chords", `document.querySelector("[role=radiogroup][aria-label='Chord view']")`);
     await evaluate(`location.hash = "#/songs"`);
     await openSettings();
     await tap("Nashville", `document.querySelector(".settings [role=group][aria-label=Chords]")`);
     expect((await pressed("Chords", SETTINGS)).join() === "Nashville", `the Chords default shows ${await pressed("Chords", SETTINGS)}`);
     await evaluate(`location.hash = "#/song/10"`);
     await until(`!!document.querySelector("article.sheet")`, "song 10");
-    expect((await pressed("Notes or Nashville")).join() === "Nashville", `a song never switched opens in ${await pressed("Notes or Nashville")}`);
+    expect((await pressed("Chord view")).join() === "Nashville", `a song never switched opens in ${await pressed("Chord view")}`);
     expect((await stored("leadSheetsNotation.10")) === null, "opening a song wrote its notation");
     await evaluate(`location.hash = "#/song/2"`);
     await settle(400);
-    expect((await pressed("Notes or Nashville")).join() === "Notes", `a song switched to Notes opens in ${await pressed("Notes or Nashville")}`);
+    expect((await pressed("Chord view")).join() === "Chords", `a song switched to Chords opens in ${await pressed("Chord view")}`);
     await load("#/song/10");
-    expect((await pressed("Notes or Nashville")).join() === "Nashville", "the Chords default did not survive a reload");
+    expect((await pressed("Chord view")).join() === "Nashville", "the Chords default did not survive a reload");
   });
 
   await test("Transpose default −1 opens a song one semitone down, and the readout tap returns to the default", async () => {

@@ -360,10 +360,13 @@ export function useLiveGig({ me, stage = null, metronome, personal, onPersonal, 
   }, [joined]);
 
   // Who leads is the session's, so the copy follows each change it makes, this phone's own take-over too: the Room
-  // forwards a change to every gig socket but the one that sent it.
+  // forwards a change to every gig socket but the one that sent it. The Room's "not leading" answered the lead the ask
+  // was sent under, so it goes when the lead moves.
+  const ledBy = joined ? (joined.session.view().state?.leader ?? joined.gig.leader) : null;
   useEffect(() => {
-    if (joined && me) rosterStore.leader(me, joined.gig.gigId, joined.session.view().state?.leader ?? joined.gig.leader);
+    if (joined && me && ledBy) rosterStore.leader(me, joined.gig.gigId, ledBy);
   }, [version, joined, me]);
+  useEffect(() => setUpdateRefused(false), [ledBy]);
 
   const liveGigNow = gigs.find((gig) => gig.status === "live" && !dismissed.includes(gig.gigId));
   // The held pack says planned until it is fetched again, so a listing that is live or ended wins over it.

@@ -136,7 +136,15 @@
 
 .update-panel {
   flex-direction: column;
+  flex-wrap: nowrap;
   align-items: stretch;
+}
+
+.update-panel > .update-button,
+.update-panel > .update-note,
+.update-panel > .update-rows,
+.update-panel > .update-ask {
+  flex: none;
 }
 
 .update-self-words,

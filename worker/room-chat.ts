@@ -10,9 +10,17 @@ type MessageRow = { seq: number; msg_id: string; author: string; author_name: st
 /** Columns added after a table first shipped. A room made before them has its table as it was, so each is added there once. */
 const MESSAGE_COLUMNS_ADDED: Record<string, string> = { kind: "TEXT NOT NULL DEFAULT 'text'", ref: "TEXT", mentions: "TEXT" };
 
+/** The only table and column names, and column types, `addColumns` puts into SQL text. */
+const SQL_NAME = /^[a-z][a-z0-9_]*$/;
+const SQL_COLUMN_TYPE = /^(TEXT|INTEGER|REAL|BLOB)( NOT NULL)?( DEFAULT ('[a-z]*'|-?[0-9]+))?$/;
+
 export function addColumns(sql: SqlStorage, table: string, columns: Record<string, string>) {
+  if (!SQL_NAME.test(table)) throw new Error("bad-sql-name");
   const have = new Set(sql.exec<{ name: string }>(`PRAGMA table_info(${table})`).toArray().map((row) => row.name));
-  for (const [name, type] of Object.entries(columns)) if (!have.has(name)) sql.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
+  for (const [name, type] of Object.entries(columns)) {
+    if (!SQL_NAME.test(name) || !SQL_COLUMN_TYPE.test(type)) throw new Error("bad-sql-name");
+    if (!have.has(name)) sql.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
+  }
 }
 
 export function createChatTables(sql: SqlStorage) {

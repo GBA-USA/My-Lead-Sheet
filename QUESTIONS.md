@@ -9,6 +9,12 @@
    the paste lookup to stop sending sung lines. `check:privacy` pins both strings, so a rewording edits
    `SONG_SEARCH_LINE` and `PASTE_LOOKUP_LINE` in `scripts/check-privacy.ts` too.
 
+   Fix pass 2 adds two wording points for the same decision, with no text changed. The dictated line says "the title
+   you typed", but the search box asks for a "title or artist" (`src/song-search.tsx:75`) and sends what was typed.
+   The added line's "with no title or artist" can read as both missing, while the lookup also runs when only the
+   artist is missing (`missing`, `src/song-editor.tsx:293`) and then sends the title. "with no title, or no artist" would be
+   plainer.
+
 # p2-view-pill fix round (PR 127): check:scroll-sync's "no radio-edit choice" case and the pill's ARIA role conflict
 
 1. The brief makes the view pill a real radio group (`role="radiogroup"`, three `role="radio"` parts). The

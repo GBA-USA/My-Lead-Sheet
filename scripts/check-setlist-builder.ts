@@ -317,6 +317,7 @@ const BROWSER_CASES = [
   "B29 a list filled by a sync can be dragged",
   "B30 a rename from another phone keeps a name being typed",
   "B31 every refused write shows the words and what is stored",
+  "B32 a friend's private copy keeps its copy mark when reordered and renamed",
 ] as const;
 
 let apiBase = "";
@@ -1519,6 +1520,71 @@ try {
     assert.ok(!where.startsWith("setlists:"), `focus stays out of the Setlists screen behind the code sheet (${where})`);
     await s.evaluate(`document.querySelector(".setlist-code-sheet .account-close")?.click()`);
     await app.until(`!document.querySelector(".setlist-code-sheet")`, "the code sheet closes");
+  });
+
+  // ---------------------------------------------------------------------------------------------- B32 a friend's private copy keeps its copy mark
+  // Every builder save of a friend's copy must keep its `copy` mark: the mark is the copy's lineage, and its
+  // canSendOn=false is what keeps Show code off a private copy. Signed in, so Show code would show if the mark went.
+  await check("B32 a friend's private copy keeps its copy mark when reordered and renamed", async () => {
+    const NAME = "Dana Copy Set";
+    const MARK = { id: "copy-priv-909", canSendOn: false, from: { name: "Dana" } };
+    const NAME_BOX = '.setlist-builder input[aria-label="Setlist name"]';
+    const showCode = () => s.evaluate<boolean>(`!!document.querySelector(".setlist-builder .setlist-code-show")`);
+    await ensureSignedIn();
+    await s.evaluate(`(() => {
+      const lib = JSON.parse(localStorage.getItem("leadSheetsLibraryV2") || "{}");
+      lib.setlists = [...(lib.setlists || []).filter((each) => each.id !== 909), { id: 909, name: ${js(NAME)}, songIds: [801, 802, 803], copy: ${js(MARK)} }];
+      localStorage.setItem("leadSheetsLibraryV2", JSON.stringify(lib));
+    })()`);
+    await reloadSetlists();
+    assert.deepEqual((await storedSetlist(909))?.copy, MARK, "the seeded copy mark is stored");
+
+    // Reorder: ArrowDown on the first handle saves the new order and keeps the mark.
+    await openBuilderFor(NAME);
+    assert.equal(await showCode(), false, "a private copy offers no Show code before any save");
+    const before = await builderTitles();
+    await s.evaluate(`(() => {
+      const handle = document.querySelectorAll(".setlist-builder .setlist-builder-handle")[0];
+      if (!handle) throw new Error("no drag handle 0");
+      handle.focus();
+      handle.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+    })()`);
+    await settle(150);
+    const moved = [before[1], before[0], ...before.slice(2)];
+    assert.deepEqual(await builderTitles(), moved, "ArrowDown moved the first song down one place");
+    assert.deepEqual((await storedSetlist(909))?.songRefs, ["local/802", "local/801", "local/803"], "the reorder is stored");
+    assert.deepEqual((await storedSetlist(909))?.copy, MARK, "a reorder keeps the copy mark");
+    assert.equal(await showCode(), false, "a reordered private copy offers no Show code");
+
+    // Rename: type in the name box and leave it. The new name is stored and the mark is kept.
+    await s.evaluate(`(() => {
+      const el = document.querySelector(${js(NAME_BOX)});
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    })()`);
+    await s.send("Input.insertText", { text: " Live" });
+    await settle(50);
+    await s.evaluate(`document.querySelector(${js(NAME_BOX)}).blur()`);
+    await settle(150);
+    assert.equal((await storedSetlist(909))?.name, `${NAME} Live`, "the rename is stored");
+    assert.deepEqual((await storedSetlist(909))?.copy, MARK, "a rename keeps the copy mark");
+    await closeBuilder();
+
+    // After a reload the order, the name and the mark hold, and the builder still offers no Show code.
+    await reloadSetlists();
+    const after = await storedSetlist(909);
+    assert.deepEqual(after?.songRefs, ["local/802", "local/801", "local/803"], "after a reload: the reorder holds");
+    assert.deepEqual(after?.copy, MARK, "after a reload: the copy mark holds");
+    await openBuilderFor(`${NAME} Live`);
+    assert.equal(await showCode(), false, "after a reload: the private copy still offers no Show code");
+
+    // Leave the library as the cases after this one expect it.
+    await app.click("Delete setlist", `document.querySelector(".setlist-builder")`);
+    await app.until(`!!document.querySelector(".setlist-builder-confirm")`, "delete confirm");
+    await app.click("Yes, delete", `document.querySelector(".setlist-builder")`);
+    await app.until(`!document.querySelector(".setlist-builder[role=dialog]")`, "builder closes once the delete is saved");
+    await settle(150);
+    assert.ok(!(await readStoredLibrary()).setlists.some((each) => each.id === 909), "the test setlist is deleted");
   });
 
   // Set up Phone B on the same account via password for B12, B16, B17

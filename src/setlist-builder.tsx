@@ -151,11 +151,19 @@ export function SetlistBuilder({
     if (editId !== null) sheetRef.current?.focus({ preventScroll: true });
   }, [editId]);
 
-  // Sync draft name when opening or updating an existing setlist
+  // Sync draft name when opening or updating an existing setlist, but never over a name the player is typing:
+  // a rename from another phone that lands mid-typing leaves the box alone, and leaving the box saves what was typed
+  const shownNameRef = useRef<{ id: number; name: string } | null>(null);
   useEffect(() => {
-    if (target.kind === "edit" && setlist) {
-      setNameDraft(setlist.name);
-    }
+    if (target.kind !== "edit" || !setlist) return;
+    const shown = shownNameRef.current;
+    const typing =
+      shown !== null &&
+      shown.id === setlist.id &&
+      nameDraft !== shown.name &&
+      document.activeElement === nameInputRef.current;
+    shownNameRef.current = { id: setlist.id, name: setlist.name };
+    if (!typing) setNameDraft(setlist.name);
   }, [target.kind, setlist?.id, setlist?.name]);
 
   // Close if the open setlist vanished externally (for example via backup sync)
@@ -650,6 +658,7 @@ export function SetlistBuilder({
           <>
             <div className="setlist-builder-name-wrap">
               <input
+                ref={nameInputRef}
                 type="text"
                 className="account-input setlist-builder-name"
                 aria-label={MESSAGES.nameLabel}

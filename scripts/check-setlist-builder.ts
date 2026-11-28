@@ -1743,7 +1743,11 @@ try {
     }
     assert.equal(await nameValue(), "Filled Again Live", "Phone A has typed its new name");
     await renameOnPhoneB("Filled Third");
-    assert.equal(await nameValue(), "Filled Again Live", "a rename from Phone B does not replace the name Phone A is typing");
+    const afterB = await s.evaluate<{ value: string; focus: string }>(`(() => {
+      const a = document.activeElement;
+      return { value: document.querySelector(${js(nameBox)})?.value ?? "", focus: a ? a.tagName + "." + a.className + (a.getAttribute("aria-label") ? "[" + a.getAttribute("aria-label") + "]" : "") : "none" };
+    })()`);
+    assert.equal(afterB.value, "Filled Again Live", `a rename from Phone B does not replace the name Phone A is typing (${js(afterB)})`);
     assert.equal(
       await s.evaluate<boolean>(`document.activeElement === document.querySelector(${js(nameBox)})`),
       true,

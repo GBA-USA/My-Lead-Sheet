@@ -1,3 +1,22 @@
+# ci-shard-balance self-check (branch cook/ci-shard-balance, Nov 28 2026)
+
+Cook verdict: PASS
+Pass 2 of 2. No P0, P1 or P2 open. Logs are in `.verify-logs/ci-shard/` (gitignored), mutations in `.verify-logs/ci-shard/mutate.sh` (exit 0 = every mutant red, splitter restored). Laptop, no browser checks involved.
+Pass 1 changed case 4b, and pass 2 reverted that change because the brief says not to edit the cases after commit 1. scripts/check-ci-shard.ts is byte-equal to 29f9f9f.
+Nits:
+P3 | CLASS=other | scripts/check-ci-shard.ts:98 | Future false red, green today. Case 4b asserts the brief's mutation (check:guest and check:learn-songs planned at 20 s) turns case 2 red. Today it reads 1.108 x. With check:update-now plus 8 more 60 s checks in package.json it reads 1.093 x, and check:ci-shard would fail for a cook that only adds a check. Proposed fix for the owner: 4b asserts a scale-free mutation (shard 4's checks moved onto shard 1, 2.000 x) and prints the brief's mutant as a note. Not applied, because the brief forbids editing the cases.
+P3 | CLASS=other | scripts/check-ci-shard.ts:74 | Case 1 checks that every recorded time is in SECONDS. It does not check the other way: a SECONDS entry with no row in ci-check-seconds.json goes unflagged. Today both hold the same 106 names.
+P3 | CLASS=other | scripts/ci-shard.mjs:7 | check:ci-shard has no recorded time, so it is planned at 60 s and runs in about 1 s. The merge step summary lists it, so the next refresh can add it.
+P3 | PRE-EXISTING | CLASS=other | scripts/check-ci-deep.ts:328 | On this Windows checkout check:ci-deep case 5 fails because autocrlf gives pages.yml CRLF line endings. The committed blob hashes to the expected 96f37f60…, and .github is untouched. Cases 1-4, which drive this splitter's plan and merge, pass.
+
+- Before (bare base c4221c1 plus the check): `plan 4` stderr says about 519 s per shard, but recorded seconds are 964 / 627 / 662 / 1577 (1.647 x). Case 2 FAIL, case 3 ok, then the import runs the old command line (no exports, usage, exit 2).
+- Base plus exports only: case 1 FAIL (44 recorded checks with no entry, 44 more with different values), case 2 FAIL (1.647 x), 4a-4c ok.
+- After: `plan 4` stderr says about 958 / 958 / 957 / 957 s, and recorded seconds are 958 / 958 / 957 / 957 (1.001 x). All cases ok, one `warn unrecorded check:ci-shard (default 60 s)`.
+- File mutations, each restored: M1 SECONDS guest and learn-songs at 20 s turns cases 1 and 2 red (1.108 x). M2 the planner drops check:links turns case 3 red. M3 the planner runs check:links twice turns cases 2 and 3 red. M4 BOUND = Infinity in the check turns 4b red. M5 coverage never counting turns 4c red.
+- Merge with GITHUB_STEP_SUMMARY set, 4 green fake shards: exit 0. The summary adds "**Checks with no recorded time** (planned at 60 s; …): check:ci-shard 2s".
+- No check, timeout, retry, shard count, workflow or BOX_ONLY entry changed. 4 shards, 106 checks, each once. SQL, login wall, fonts, COPPA, CAN-SPAM, auto-renewal and DMCA do not apply (a CI planner only).
+- Exit codes: `npm run build` 0, `npm run check:ci-shard` 0, `npm run check:portable` 0. There is no lint script.
+
 VERDICT: FAIL
 P2 | CLASS=other | C:\Users\order\cooks\EDGE-CASES.md:21 | Fix round 1 (8154404, 83652f8) added no EDGE-CASES row. EC-15 is the last row, and the file was last written at 22:24, the edfa0cf minute. Nothing records the bug class this round fixed: a privacy line names one send to an outside host (the typed search) while a second path sends more to the same host (paste lookup, src/song-search.ts:306, up to 2 sung lines). REVIEW.md lists "a fix round that added no EDGE-CASES.md row" as a P2.
 Nits:

@@ -311,6 +311,10 @@ const BROWSER_CASES = [
   "B23 Show code keeps focus out of the screen behind",
   "B24 no setlists yet",
   "B25 a song that arrives while ticked is added once",
+  "B26 a long drag scrolls the list",
+  "B27 a press inside let go on the backdrop keeps the builder open",
+  "B28 a sync in the middle of a drag moves nothing",
+  "B29 a list filled by a sync can be dragged",
 ] as const;
 
 let apiBase = "";
@@ -940,6 +944,81 @@ try {
     assert.deepEqual((await readStoredLibrary()).songs.map((song) => song.ref).sort(), songsBefore, "My Songs is unchanged");
   });
 
+  // ---------------------------------------------------------------------------------------------- B26 a long drag scrolls the list
+  await check("B26 a long drag scrolls the list", async () => {
+    await openBuilderFor("Long Swipe Set");
+    const titles = ["Lantern Road", "Copper Kettle", "Evening Ferry", "Windmill Waltz", "Rain on Tin", "Morning Freight", "Timberline", "Canyon Echo", "Silver Birch"];
+    assert.deepEqual(await builderTitles(), titles, "Long Swipe Set opens in its stored order");
+    const list = () =>
+      s.evaluate<{ top: number; bottom: number; scrollTop: number; maxScroll: number }>(`(() => {
+        const el = document.querySelector(".setlist-builder-list");
+        const r = el.getBoundingClientRect();
+        return { top: r.top, bottom: r.bottom, scrollTop: el.scrollTop, maxScroll: el.scrollHeight - el.clientHeight };
+      })()`);
+    const before = await list();
+    assert.equal(before.scrollTop, 0, "the list starts at the top");
+    assert.ok(before.maxScroll > 60, `the last row starts out of sight (${js(before)})`);
+
+    const start = await rowCenter(0);
+    await touchStart(start.x, start.y);
+    try {
+      await sleep(600);
+      const edgeY = before.bottom - 8;
+      for (let step = 1; step <= 10; step += 1) {
+        await touchMove(start.x, start.y + ((edgeY - start.y) * step) / 10);
+        await sleep(20);
+      }
+      for (let held = 0; held < 80 && (await list()).scrollTop < before.maxScroll; held += 1) {
+        await touchMove(start.x, edgeY - (held % 2));
+        await sleep(20);
+      }
+      const during = await list();
+      assert.equal(during.scrollTop, during.maxScroll, `holding the lifted song at the bottom edge scrolls the list to its end (${js(during)})`);
+    } finally {
+      await touchEnd();
+      await settle(150);
+    }
+
+    const expected = [...titles.slice(1), "Lantern Road"];
+    assert.deepEqual(await builderTitles(), expected, "the lifted song lands at the end, out of the first view");
+    assert.deepEqual(
+      (await storedSetlist(902))?.songRefs,
+      ["local/802", "local/803", "local/804", "local/805", "local/806", "local/807", "local/808", "local/809", "local/801"],
+      "the long drag is saved",
+    );
+    await closeBuilder();
+    await reloadSetlists();
+    assert.deepEqual(await setlistScreenTitles("Long Swipe Set"), expected, "the long drag holds after a reload");
+  });
+
+  // ---------------------------------------------------------------------------------------------- B27 a press inside let go on the backdrop keeps the builder open
+  await check("B27 a press inside let go on the backdrop keeps the builder open", async () => {
+    await openBuilderFor("Twin Check");
+    const inside = await centerOf(nameBox);
+    const outside = { x: WIDTH / 2, y: 24 };
+    assert.equal(
+      await s.evaluate<boolean>(`document.elementFromPoint(${outside.x}, ${outside.y})?.classList.contains("account-backdrop") ?? false`),
+      true,
+      "the top of the screen above the builder is the backdrop",
+    );
+    await s.send("Input.dispatchMouseEvent", { type: "mousePressed", x: inside.x, y: inside.y, button: "left", buttons: 1, clickCount: 1 });
+    for (let step = 1; step <= 6; step += 1) {
+      const x = inside.x + ((outside.x - inside.x) * step) / 6;
+      const y = inside.y + ((outside.y - inside.y) * step) / 6;
+      await s.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y, button: "left", buttons: 1 });
+      await sleep(20);
+    }
+    await s.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: outside.x, y: outside.y, button: "left", buttons: 0, clickCount: 1 });
+    await settle(200);
+    assert.equal(await s.evaluate<boolean>(`!!document.querySelector(".setlist-builder[role=dialog]")`), true, "a press that began in the name box and ended on the backdrop leaves the builder open");
+    assert.equal((await storedSetlist(903))?.name, "Twin Check", "the name is unchanged");
+
+    await s.send("Input.dispatchMouseEvent", { type: "mousePressed", x: outside.x, y: outside.y, button: "left", buttons: 1, clickCount: 1 });
+    await s.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: outside.x, y: outside.y, button: "left", buttons: 0, clickCount: 1 });
+    await app.until(`!document.querySelector(".setlist-builder[role=dialog]")`, "a click that begins and ends on the backdrop still closes the builder");
+    await settle(100);
+  });
+
   // ---------------------------------------------------------------------------------------------- B11 delete
   await check("B11 delete", async () => {
     // 1. Built-in setlist has no Delete button and shows its line
@@ -1492,6 +1571,80 @@ try {
     await closeBuilder();
     await reloadSetlists();
     assert.deepEqual((await storedSetlist(raceId))?.songRefs, ["local/802", "local/801", "local/804"], "Race Set through the reader after a reload");
+  });
+
+  // ---------------------------------------------------------------------------------------------- B28 a sync in the middle of a drag moves nothing
+  await check("B28 a sync in the middle of a drag moves nothing", async () => {
+    const raceId = (await readStoredLibrary()).setlists.find((entry) => entry.name === "Race Set")?.id;
+    assert.ok(raceId !== undefined, "Race Set is there from B25");
+    await syncPhoneA();
+    await runPhoneB(async (mod) => {
+      assert.ok((await mod.syncBackup()).ok);
+      assert.deepEqual(mod.loadLibrary().setlists.find((entry) => entry.id === raceId)?.songRefs, ["local/802", "local/801", "local/804"], "Phone B starts from Phone A's order");
+    });
+
+    await openBuilderFor("Race Set");
+    assert.deepEqual(await builderTitles(), ["Copper Kettle", "Lantern Road", "Windmill Waltz"], "Race Set opens in its stored order");
+    const first = await rowCenter(0);
+    const lifted = await rowCenter(2);
+    await touchStart(lifted.x, lifted.y);
+    try {
+      await sleep(600);
+      for (let step = 1; step <= 10; step += 1) {
+        await touchMove(lifted.x, lifted.y + ((first.top - 10 - lifted.y) * step) / 10);
+        await sleep(20);
+      }
+      assert.deepEqual(await builderTitles(), ["Windmill Waltz", "Copper Kettle", "Lantern Road"], "Windmill Waltz is lifted above the first row");
+
+      await runPhoneB(async (mod) => {
+        assert.ok(mod.saveOwnSetlist(raceId, "Race Set", ["local/804", "local/802", "local/801"]), "Phone B puts Windmill Waltz first");
+        assert.ok((await mod.syncBackup()).ok);
+      });
+      await syncPhoneA();
+      await app.until(
+        `JSON.stringify(JSON.parse(localStorage.getItem("leadSheetsLibraryV2")).setlists.find((each) => each.id === ${raceId})?.songIds) === "[804,802,801]"`,
+        "Phone B's order reaches Phone A while the finger is still down",
+      );
+      await settle(100);
+      assert.deepEqual(await builderTitles(), ["Windmill Waltz", "Copper Kettle", "Lantern Road"], "the screen shows Phone B's order, with no lifted row");
+      assert.equal(await s.evaluate<number>(`document.querySelectorAll(".setlist-builder .is-dragging").length`), 0, "the sync puts the lifted row down");
+    } finally {
+      await touchEnd();
+      await settle(150);
+    }
+    assert.deepEqual(await builderTitles(), ["Windmill Waltz", "Copper Kettle", "Lantern Road"], "letting go after the sync moves no song");
+    assert.deepEqual((await storedSetlist(raceId))?.songRefs, ["local/804", "local/802", "local/801"], "letting go after the sync saves nothing");
+    await closeBuilder();
+    await reloadSetlists();
+    assert.deepEqual(await setlistScreenTitles("Race Set"), ["Windmill Waltz", "Copper Kettle", "Lantern Road"], "Race Set after a reload");
+  });
+
+  // ---------------------------------------------------------------------------------------------- B29 a list filled by a sync can be dragged
+  await check("B29 a list filled by a sync can be dragged", async () => {
+    await openNewBuilder();
+    await setInputValue(nameBox, "Filled Later");
+    await app.click("Save", `document.querySelector(".setlist-builder")`);
+    await app.until(`document.querySelector(".setlist-builder h2")?.textContent?.trim() === "Filled Later"`, "Filled Later created");
+    const fillId = (await readStoredLibrary()).setlists.find((entry) => entry.name === "Filled Later")?.id;
+    assert.ok(fillId !== undefined, "Filled Later has an id");
+    assert.ok((await app.text(".setlist-builder")).includes("No songs yet."), "the new setlist starts empty");
+    await syncPhoneA();
+    await runPhoneB(async (mod) => {
+      assert.ok((await mod.syncBackup()).ok);
+      assert.ok(mod.saveOwnSetlist(fillId, "Filled Later", ["local/805", "local/806", "local/807"]), "Phone B fills Filled Later");
+      assert.ok((await mod.syncBackup()).ok);
+    });
+    await syncPhoneA();
+    await app.until(`document.querySelectorAll(".setlist-builder [data-builder-row]").length === 3`, "Phone B's songs appear in the open builder");
+    assert.deepEqual(await builderTitles(), ["Rain on Tin", "Morning Freight", "Timberline"], "the open builder shows Phone B's songs");
+
+    const first = await rowCenter(0);
+    await holdAndDrag(2, first.top - 10, { holdMs: 600 });
+    assert.deepEqual(await builderTitles(), ["Timberline", "Rain on Tin", "Morning Freight"], "the third song drags to the top");
+    assert.deepEqual((await storedSetlist(fillId))?.songRefs, ["local/807", "local/805", "local/806"], "the drag is saved");
+    await closeBuilder();
+    await reloadSetlists();
+    assert.deepEqual(await setlistScreenTitles("Filled Later"), ["Timberline", "Rain on Tin", "Morning Freight"], "Filled Later after a reload");
   });
 
   // ---------------------------------------------------------------------------------------------- B13 signed out, and a shared phone

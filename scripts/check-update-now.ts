@@ -6,7 +6,7 @@
  * in its folder with the other build's, so its open page is really old and a reload really lands on the new one. The
  * server can also cut that phone's network, and counts the requests it gets for build.json.
  *
- * Cases U1 to U14 print `ok   <name>` or `FAIL <name>: <reason>`; the check exits 1 on any FAIL.
+ * Cases U1 to U17 print `ok   <name>` or `FAIL <name>: <reason>`; the check exits 1 on any FAIL.
  * `UPDATE_NOW_SHOTS=<dir>` writes the 360 px screenshots, light and dark.
  */
 import assert from "node:assert/strict";
@@ -17,6 +17,7 @@ import { tmpdir } from "node:os";
 import { extname, join } from "node:path";
 import type { Duplex } from "node:stream";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
 import { passwordKey } from "../src/password.ts";
 import { startApi } from "./api-session.ts";
@@ -54,6 +55,8 @@ const NEEDS = "Needs the update";
 const ASK_THEM = "A phone on an older version can't be reached from here. Ask them to close the app and open it again.";
 const READY = "A new version is ready.";
 const OFFLINE = "Connect to the internet, then tap again.";
+const NOT_LEADING = "You're not leading now";
+const ASKED = "Asked. Their phones show the update now.";
 
 let failed = 0;
 const ONLY = (process.env.UPDATE_NOW_CASES ?? "").split(",").filter(Boolean);
@@ -851,6 +854,132 @@ try {
     assert.ok(lee.front.buildJsonGets > tapped, "tapping Reload asked again");
     await waitFor("Lee's page to join again", 20000, async () => (await lee.reported(gigId)) !== "(no join yet)");
     assert.equal(await lee.reported(gigId), OLD_ID, "and the page now runs the published version");
+  });
+
+  // ---- U15 to U17: the Room's refusal on the leader's page, and the version boxes inside the screen ------------------
+
+  const gigOpsCode = (await esbuild({ stdin: { contents: 'export { reduce } from "./src/gig-state.ts";', resolveDir: root, loader: "ts" }, bundle: true, write: false, format: "esm", platform: "node", logLevel: "silent" })).outputFiles[0].text;
+  const gigOps = (await import(`data:text/javascript;base64,${Buffer.from(gigOpsCode).toString("base64")}`)) as typeof import("../src/gig-state.ts");
+  /** Reads the Room's copy of the gig on `sock`, then sends `who`'s op on it as their own phone would. */
+  const opBy = async (sock: Sock, who: Account, op: Json) => {
+    const from = sock.heard.length;
+    sock.send({ kind: "gig-state", gigId });
+    const copy = await waitFor(`the Room's copy of the gig on ${who.name}'s socket`, 5000, () => sock.heard.slice(from).find((m) => m.kind === "gig-state" && m.state?.gigId === gigId));
+    const now = Date.now();
+    const full = { opId: `${who.handle}-${op.kind}-${now}`, epoch: copy.state.epoch, ...op };
+    const out = gigOps.reduce(copy.state, full as never, { by: who.userId, now: now as never, lead: 0 });
+    assert.ok(out.ok, `${who.name} may ${op.kind} (${js(out)})`);
+    sock.send({ kind: "gig-op", op: full, state: out.state, at: now });
+    await pause(500);
+    assert.ok(!sock.heard.slice(from).some((m) => m.kind === "gig-refused"), `the Room takes ${who.name}'s ${op.kind}`);
+  };
+  /** Lee's phone leads on the published version and Bo's phone is on the other one, so Update now shows. */
+  const leeLeadsWithBoBehind = async () => {
+    const leeOn = await lee.reported(gigId);
+    if (publishedIn(leeDir) !== leeOn) publish(leeDir, leeOn === NEW_ID ? newBuild : oldBuild);
+    if ((await bo.reported(gigId)) === leeOn) {
+      publish(boDir, leeOn === NEW_ID ? oldBuild : newBuild);
+      await bo.mark();
+      await bo.site.send("Page.reload", { ignoreCache: true });
+      await waitFor("Bo's page to load the other version", 20000, () => bo.reloaded());
+      await waitFor("Bo's page to join again on the other version", 20000, async () => ![leeOn, "(no join yet)"].includes((await bo.reported(gigId)) as string));
+    }
+    const sockets = await lee.evaluate<number>(`window.__rooms.length`);
+    await lee.blink();
+    await lee.until(`window.__rooms.slice(${sockets}).some((ws) => ws.readyState === 1 && ws.url.includes("/api/rooms/"))`, "Lee's page to open a new room socket after the blink", 20000);
+    await waitFor("Lee's phone to follow its gig", 20000, () => following(lee));
+    await rowReads("Bo", NEEDS, "Bo's row on Lee's roster to read Needs the update", 20000);
+    assert.ok(await updateNowOnLee(), "Update now is offered on Lee's panel");
+  };
+  /** Every box of `selector` on `page` that leaves the screen or a box that clips it, each named. */
+  const outside = (page: Page, selector: string) =>
+    page.evaluate<string[]>(`(() => {
+      const root = document.querySelector(${js(selector)});
+      if (!root) return [${js(`no ${selector} on the page`)}];
+      const misses = [];
+      const name = (el) => el.tagName.toLowerCase() + (typeof el.className === "string" && el.className.trim() ? "." + el.className.trim().split(/\\s+/).join(".") : "");
+      const span = (r) => Math.round(r.left) + ".." + Math.round(r.right) + " x " + Math.round(r.top) + ".." + Math.round(r.bottom);
+      for (const el of [root, ...root.querySelectorAll("*")]) {
+        const r = el.getBoundingClientRect();
+        if (r.width === 0 && r.height === 0) continue;
+        if (r.left < -0.5 || r.right > window.innerWidth + 0.5) misses.push(name(el) + " at " + span(r) + " leaves the " + window.innerWidth + " px screen");
+        for (let box = el.parentElement; box; box = box.parentElement) {
+          const style = getComputedStyle(box);
+          const c = box.getBoundingClientRect();
+          const clipsX = style.overflowX !== "visible";
+          const clipsY = style.overflowY === "hidden" || style.overflowY === "clip";
+          if ((clipsX && (r.left < c.left - 0.5 || r.right > c.right + 0.5)) || (clipsY && (r.top < c.top - 0.5 || r.bottom > c.bottom + 0.5)))
+            misses.push(name(el) + " at " + span(r) + " is cut off by " + name(box) + " at " + span(c));
+        }
+      }
+      return misses;
+    })()`);
+  const insideAt360And390 = async (page: Page, selector: string) => {
+    for (const width of [360, 390]) {
+      await page.site.send("Emulation.setDeviceMetricsOverride", { width, height: 780, deviceScaleFactor: 2, mobile: true });
+      await pause(300);
+      const misses = await outside(page, selector);
+      assert.deepEqual(misses, [], `every box of ${selector} on ${page.name}'s phone is inside the screen and its clipping boxes at ${width} px (${misses.join("; ")})`);
+    }
+    await page.site.send("Emulation.setDeviceMetricsOverride", { width: WIDTH, height: 780, deviceScaleFactor: 2, mobile: true });
+  };
+
+  await check("U15 a refusal goes with the lead", async () => {
+    await leeLeadsWithBoBehind();
+    const moSock = await (await openSock(mo, bandId)).join(gigId, NEW_ID);
+    await opBy(moSock, mo, { kind: "takeOver" });
+    await lee.until(`!document.querySelector(".update-panel")`, "Lee's panel to go once Mo leads");
+    // Lee's tap reaches the Room just after Mo took the lead, so the Room refuses it.
+    await lee.until(`window.__rooms.some((ws) => ws.readyState === 1 && ws.url.includes("/api/rooms/"))`, "Lee's page to have its room socket open", 15000);
+    await lee.evaluate(`window.__rooms.filter((ws) => ws.readyState === 1 && ws.url.includes("/api/rooms/")).forEach((ws) => ws.send(${js(js({ kind: "update-now", gigId }))}))`);
+    await lee.until(`window.__got.some((s) => s.includes('"update-refused"') && s.includes(${js(gigId)}))`, "the Room to refuse Lee's ask while Mo leads");
+    await opBy(moSock, mo, { kind: "setBackup", userId: leeA.userId });
+    const leeSock = await (await openSock(leeA, bandId)).join(gigId, await lee.reported(gigId));
+    await opBy(leeSock, leeA, { kind: "takeOver" });
+    await waitFor("Lee's panel back once Lee leads again", 20000, () => updateNowOnLee());
+    await pause(1000);
+    const panel = await lee.evaluate<string>(`document.querySelector(".update-panel")?.innerText ?? ""`);
+    assert.ok(!panel.includes(NOT_LEADING), `Lee leads again, so the panel does not say ${NOT_LEADING} (${js(panel)})`);
+    await leeSock.close();
+    await moSock.close();
+  });
+
+  await check("U16 the leader's page says the Room's refusal", async () => {
+    await leeLeadsWithBoBehind();
+    await lee.evaluate(
+      `window.__rooms.filter((ws) => ws.readyState === 1 && ws.url.includes("/api/rooms/")).forEach((ws) => ws.dispatchEvent(new MessageEvent("message", { data: ${js(js({ kind: "update-refused", gigId, refused: "not-leading" }))} })))`,
+    );
+    await lee.until(`[...document.querySelectorAll(".update-panel [role=status]")].some((p) => p.textContent.trim() === ${js(NOT_LEADING)})`, `Lee's panel to say ${NOT_LEADING} when the Room refuses the ask`);
+    await lee.tap("Update now", ".update-panel");
+    await lee.until(`(() => { const words = document.querySelector(".update-panel")?.innerText ?? ""; return words.includes(${js(ASKED)}) && !words.includes(${js(NOT_LEADING)}); })()`, "the next tap to replace the refusal with the asked line");
+  });
+
+  await check("U17 every version box inside 360 and 390 px", async () => {
+    await leeLeadsWithBoBehind();
+    await lee.tap("Update now", ".update-panel");
+    await lee.until(`(document.querySelector(".update-panel")?.innerText ?? "").includes(${js(ASKED)})`, "Lee's panel to hold the asked line above the rows");
+    await insideAt360And390(lee, ".update-panel");
+    await waitFor("Bo's prompt after Lee's tap", 10000, async () => (await bo.prompts()) === 1);
+    await insideAt360And390(bo, ".update-prompt");
+    const leeOn = await lee.reported(gigId);
+    publish(leeDir, leeOn === NEW_ID ? oldBuild : newBuild);
+    await lee.blink();
+    await lee.until(`!!document.querySelector(".update-self")`, "Lee's strip to say to update this phone first", 20000);
+    await insideAt360And390(lee, ".update-self");
+    const reload = await lee.evaluate<{ icon: number; worded: string[] } | null>(`(() => {
+      const button = ${lee.buttonIn("Reload", ".update-self")};
+      if (!button) return null;
+      const icon = button.querySelector("svg")?.getBoundingClientRect().width ?? 0;
+      const worded = [button, ...button.querySelectorAll("*")]
+        .filter((el) => [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()))
+        .map((el) => el.getBoundingClientRect())
+        .filter((r) => r.width > 1 || r.height > 1)
+        .map((r) => Math.round(r.width) + "x" + Math.round(r.height));
+      return { icon, worded };
+    })()`);
+    assert.ok(reload, "Lee's strip has a button named Reload");
+    assert.ok(reload.icon >= 16, `Reload draws its icon (${reload.icon} px wide)`);
+    assert.deepEqual(reload.worded, [], "Reload is icon-only: the word is its name and draws no box (UI rule 1)");
   });
 } catch (error) {
   failed += 1;

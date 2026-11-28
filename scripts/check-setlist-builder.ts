@@ -1138,6 +1138,62 @@ try {
     await s.evaluate(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
     await app.until(`!document.querySelector(".setlist-picker")`, "picker closes");
 
+    // Every view again at 390 x 844 too, and the delete confirm at both widths: no control under 44 px, no sideways scroll
+    const viewAudit = (label: string) =>
+      s.evaluate<{ label: string; small: string[]; pageW: number; innerW: number; controls: number }>(`(() => {
+        const dlg = document.querySelector(".setlist-builder");
+        const small = [];
+        let controls = 0;
+        for (const el of dlg.querySelectorAll("button, input, a")) {
+          if (!el.getClientRects().length || getComputedStyle(el).visibility === "hidden") continue;
+          controls += 1;
+          const r = el.getBoundingClientRect();
+          if (r.height < 43.5 || r.width < 43.5) small.push((el.textContent.trim() || el.getAttribute("aria-label") || el.tagName) + ":" + Math.round(r.width) + "x" + Math.round(r.height));
+        }
+        return { label: ${js(label)}, small, pageW: document.documentElement.scrollWidth, innerW: innerWidth, controls };
+      })()`);
+    const auditAll = async (width: number) => {
+      const audits = [await viewAudit(`songs view at ${width}`)];
+      await app.click("+ Add songs", `document.querySelector(".setlist-builder")`);
+      await app.until(`!!document.querySelector(".setlist-picker")`, "picker opens");
+      audits.push(await viewAudit(`picker at ${width}`));
+      await s.evaluate(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+      await app.until(`!document.querySelector(".setlist-picker")`, "picker closes");
+      await app.click("Delete setlist", `document.querySelector(".setlist-builder")`);
+      await app.until(`(document.querySelector(".setlist-builder")?.textContent ?? "").includes("Delete this setlist? Your songs stay in My Songs.")`, "delete confirm");
+      const confirm = await viewAudit(`delete confirm at ${width}`);
+      const confirmButtons = await s.evaluate<string[]>(`[...document.querySelectorAll(".setlist-builder-confirm button")].map((b) => b.textContent.trim())`);
+      assert.deepEqual(confirmButtons, ["Yes, delete", "Keep"], `the delete confirm at ${width} offers Yes, delete and Keep (${js(confirmButtons)})`);
+      audits.push(confirm);
+      if (width === 390) await shoot("delete-confirm-390");
+      await app.click("Keep", `document.querySelector(".setlist-builder")`);
+      await app.until(`!document.querySelector(".setlist-builder-confirm")`, "Keep goes back to the songs");
+      for (const audit of audits) {
+        assert.ok(audit.controls >= 3, `${audit.label} has its controls (${audit.controls})`);
+        assert.deepEqual(audit.small, [], `every control in the ${audit.label} is at least 44 x 44 px (${js(audit.small)})`);
+        assert.ok(audit.pageW <= audit.innerW + 0.5, `the ${audit.label} does not scroll sideways (${audit.pageW} > ${audit.innerW})`);
+      }
+    };
+    await auditAll(360);
+    await s.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 3, mobile: true });
+    await s.evaluate(`new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))`);
+    try {
+      await auditAll(390);
+      await shoot("builder-390");
+      const at390 = await builderTitles();
+      const top390 = await rowCenter(0);
+      await holdAndDrag(2, top390.top - 10, { holdMs: 600 });
+      const moved390 = await builderTitles();
+      assert.ok(at390.length >= 3, `Drag Trio has at least three songs (${js(at390)})`);
+      assert.deepEqual(moved390, [at390[2], ...at390.filter((_, i) => i !== 2)], `a drag at 390 x 844 moves the third song to the top (${js(at390)} -> ${js(moved390)})`);
+      const last390 = await rowCenter(2);
+      await holdAndDrag(0, last390.bottom + 10, { holdMs: 600 });
+      const back390 = await builderTitles();
+      assert.deepEqual(back390, at390, `a drag at 390 x 844 puts it back third (${js(back390)})`);
+    } finally {
+      await phone360();
+    }
+
     // Full phone: make setItem throw for leadSheetsLibraryV2; drop shows words and reverts list to stored order
     const storedBefore = await builderTitles();
     await s.evaluate(`(() => {

@@ -123,7 +123,9 @@ export type Live = {
   askToLead(): void;
   /** The leader's ask to update, on this phone's strip, until the player taps Not now or the page reloads. */
   update: UpdatePromptState | null;
+  /** The player's tap: the prompt waits for the new version, then the page reloads onto it or the prompt says why not. */
   updateNow(): void;
+  /** Closes the prompt and calls off a reload still waiting. */
   notNow(): void;
   /** The leader's Update now. False when the room line is down, so nothing was sent. */
   askUpdate(): boolean;
@@ -343,20 +345,29 @@ export function useLiveGig({ me, stage = null, metronome, personal, onPersonal, 
   }, [joined, me]);
 
   // The leader's ask to update reaches this phone only from the Room. A second ask while one shows changes nothing, and
-  // nothing reloads until the player taps; Not now waits for the leader to ask again.
+  // nothing reloads until the player taps; Not now waits for the leader to ask again. A tap's reload belongs to the
+  // prompt: Not now, leaving the gig or switching accounts calls it off, however long it has waited.
   const [update, setUpdate] = useState<UpdatePromptState | null>(null);
   const [updateRefused, setUpdateRefused] = useState(false);
-  const updating = useRef(false);
+  const pendingUpdate = useRef<AbortController | null>(null);
+  const stopUpdate = () => {
+    pendingUpdate.current?.abort();
+    pendingUpdate.current = null;
+  };
   useEffect(() => {
     setUpdate(null);
     setUpdateRefused(false);
     if (!joined) return;
     const { room, gig } = joined;
-    return room.listen((message) => {
+    const stop = room.listen((message) => {
       if (message.gigId !== gig.gigId) return;
       if (message.kind === "update-now") setUpdate((now) => now ?? "asked");
       if (message.kind === "update-refused") setUpdateRefused(true);
     });
+    return () => {
+      stop();
+      stopUpdate();
+    };
   }, [joined]);
 
   // Who leads is the session's, so the copy follows each change it makes, this phone's own take-over too: the Room
@@ -438,14 +449,20 @@ export function useLiveGig({ me, stage = null, metronome, personal, onPersonal, 
     askToLead: () => session?.askToLead(),
     update,
     updateNow() {
-      if (updating.current) return;
-      updating.current = true;
-      void reloadOntoPublished().then((outcome) => {
-        updating.current = false;
-        if (outcome !== "reloading") setUpdate(outcome);
+      if (pendingUpdate.current) return;
+      const attempt = new AbortController();
+      pendingUpdate.current = attempt;
+      setUpdate("waiting");
+      void reloadOntoPublished(attempt.signal).then((outcome) => {
+        if (pendingUpdate.current !== attempt) return;
+        pendingUpdate.current = null;
+        if (outcome === "offline" || outcome === "current") setUpdate(outcome);
       });
     },
-    notNow: () => setUpdate(null),
+    notNow() {
+      stopUpdate();
+      setUpdate(null);
+    },
     askUpdate() {
       if (!joined) return false;
       setUpdateRefused(false);

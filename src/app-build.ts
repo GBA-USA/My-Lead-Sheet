@@ -22,18 +22,19 @@ export async function publishedBuild(): Promise<string | null> {
   }
 }
 
-/** What a reload onto the published version came to: it could not reach it, this page already runs it, or it is reloading. */
-export type ReloadOutcome = "offline" | "current" | "reloading";
+/** What a reload onto the published version came to: it could not reach it, this page already runs it, it was called off, or it is reloading. */
+export type ReloadOutcome = "offline" | "current" | "stopped" | "reloading";
 
 /** How long a new service worker gets to fetch every file of the published version before the update counts as failed. */
 const NEW_WORKER_WAIT_MS = 120_000;
 
 /**
  * True once the newest service worker is the active one, so the next page load is answered from its copy of the
- * published files even when the network is too slow to wait for. False when the new worker failed to install, or did
- * not finish within `ms`: the worker still active then holds the old version, and a reload would land back on it.
+ * published files even when the network is too slow to wait for. False when the new worker failed to install, did not
+ * finish within `ms`, or `stop` called the wait off: the worker still active then holds the old version, and a reload
+ * would land back on it.
  */
-function newestWorkerActive(registration: ServiceWorkerRegistration, ms: number): Promise<boolean> {
+function newestWorkerActive(registration: ServiceWorkerRegistration, ms: number, stop: AbortSignal): Promise<boolean> {
   const leaving = registration.active;
   let sawIncoming = false;
   return new Promise((resolve) => {
@@ -42,9 +43,12 @@ function newestWorkerActive(registration: ServiceWorkerRegistration, ms: number)
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      stop.removeEventListener("abort", quit);
       resolve(ok);
     };
-    const timer = setTimeout(() => settle(false), ms);
+    const quit = () => settle(false);
+    const timer = setTimeout(quit, ms);
+    stop.addEventListener("abort", quit);
     const look = () => {
       if (settled) return;
       const incoming = registration.installing ?? registration.waiting;
@@ -60,28 +64,38 @@ function newestWorkerActive(registration: ServiceWorkerRegistration, ms: number)
       }
       settle(!sawIncoming || active !== leaving);
     };
-    look();
+    if (stop.aborted) quit();
+    else look();
   });
 }
 
 /**
- * Reloads onto the published version, only once this phone can fetch it and it differs from this page's. The service
- * worker is asked to update, and the reload waits until the new worker is in charge: before that the old one answers
- * the reload and, on a slow network, opens its own old copy. Nothing stored on the phone is touched.
+ * Whether this phone can reload onto the published version: only once it can fetch it and it differs from this page's.
+ * The service worker is asked to update, and this waits until the new worker is in charge: before that the old one
+ * answers the reload and, on a slow network, opens its own old copy.
  */
-export async function reloadOntoPublished(): Promise<ReloadOutcome> {
+async function readyToReload(stop: AbortSignal): Promise<"offline" | "current" | "ready"> {
   const published = await publishedBuild();
   if (published === null) return "offline";
   if (published === BUILD_ID) return "current";
   const registration = await navigator.serviceWorker?.getRegistration().catch(() => undefined);
-  if (registration) {
-    try {
-      await registration.update();
-    } catch {
-      return "offline";
-    }
-    if (!(await newestWorkerActive(registration, NEW_WORKER_WAIT_MS))) return "offline";
+  if (!registration) return "ready";
+  try {
+    await registration.update();
+  } catch {
+    return "offline";
   }
+  return (await newestWorkerActive(registration, NEW_WORKER_WAIT_MS, stop)) ? "ready" : "offline";
+}
+
+/**
+ * Reloads onto the published version once `readyToReload` says it can. `stop` calls it off at any point of the wait,
+ * as Not now or leaving the gig does: once it is aborted nothing reloads. Nothing stored on the phone is touched.
+ */
+export async function reloadOntoPublished(stop: AbortSignal): Promise<ReloadOutcome> {
+  const ready = await readyToReload(stop);
+  if (stop.aborted) return "stopped";
+  if (ready !== "ready") return ready;
   location.reload();
   return "reloading";
 }

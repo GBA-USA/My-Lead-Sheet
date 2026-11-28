@@ -32,6 +32,7 @@ const VERSION_WORDS = {
   askThem: "A phone on an older version can't be reached from here. Ask them to close the app and open it again.",
   asked: "Asked. Their phones show the update now.",
   ready: "A new version is ready.",
+  getting: "Getting the new version.",
 };
 const LIVE_LINE = MESSAGES["not-allowed"];
 const SOMETHING_WRONG = "Something went wrong. Try again.";
@@ -185,7 +186,11 @@ export function VersionCheck({ me, gigId, names, ask, refused }: VersionProps) {
   const watching = copy !== null && copy.leader === me && copy.line === "open";
   const [published, setPublished] = useState<string | null>(null);
   const [line, setLine] = useState("");
-  const reloading = useRef(false);
+  const pendingReload = useRef<AbortController | null>(null);
+  const [waiting, setWaiting] = useState(false);
+
+  // Leaving the gig or switching accounts calls off a Reload still waiting for the new version.
+  useEffect(() => () => pendingReload.current?.abort(), []);
 
   useEffect(() => {
     setPublished(null);
@@ -202,21 +207,29 @@ export function VersionCheck({ me, gigId, names, ask, refused }: VersionProps) {
 
   if (published !== BUILD_ID) {
     const reload = async () => {
-      if (reloading.current) return;
-      reloading.current = true;
+      if (pendingReload.current) return;
+      const attempt = new AbortController();
+      pendingReload.current = attempt;
       setLine("");
-      const outcome = await reloadOntoPublished();
-      reloading.current = false;
+      setWaiting(true);
+      const outcome = await reloadOntoPublished(attempt.signal);
+      if (attempt.signal.aborted || outcome === "reloading") return;
+      pendingReload.current = null;
+      setWaiting(false);
       if (outcome === "offline") setLine(MESSAGES["update-offline"]);
       if (outcome === "current") setPublished(BUILD_ID);
     };
     return (
       <div className="update-self" role="status">
         <span className="update-self-words">{VERSION_WORDS.selfFirst}</span>
-        <button type="button" className="account-primary update-button update-reload" onClick={reload}>
-          <ReloadIcon />
-          <span className="update-label">Reload</span>
-        </button>
+        {waiting ? (
+          <span className="update-note">{VERSION_WORDS.getting}</span>
+        ) : (
+          <button type="button" className="account-primary update-button update-reload" onClick={reload}>
+            <ReloadIcon />
+            <span className="update-label">Reload</span>
+          </button>
+        )}
         <span className="update-note">{VERSION_WORDS.betweenSongs}</span>
         {line ? (
           <span className="update-note" role="alert">
@@ -267,18 +280,30 @@ function ReloadIcon() {
   );
 }
 
-/** What a player's prompt shows: the ask, or the ask with why a tap did not reload. */
-export type UpdatePromptState = "asked" | "offline" | "current";
+/** What a player's prompt shows: the ask, the wait after a tap, or the ask with why a tap did not reload. */
+export type UpdatePromptState = "asked" | "waiting" | "offline" | "current";
 
-/** The leader's ask on a player's strip: one tap reloads onto the new version once this phone can fetch it; Not now closes it. */
+const PROMPT_LINE: Record<UpdatePromptState, string> = {
+  asked: "",
+  waiting: VERSION_WORDS.getting,
+  offline: MESSAGES["update-offline"],
+  current: MESSAGES["update-current"],
+};
+
+/**
+ * The leader's ask on a player's strip: one tap reloads onto the new version once this phone can fetch it, and the
+ * prompt says it is getting it meanwhile. Not now closes it and calls off a reload still waiting.
+ */
 export function UpdatePrompt({ state, onUpdate, onLater }: { state: UpdatePromptState; onUpdate(): void; onLater(): void }) {
-  const why = state === "offline" ? MESSAGES["update-offline"] : state === "current" ? MESSAGES["update-current"] : "";
+  const why = PROMPT_LINE[state];
   return (
     <div className="update-prompt" role="group" aria-label={VERSION_WORDS.ready}>
       <span className="update-prompt-words">{VERSION_WORDS.ready}</span>
-      <button type="button" className="account-primary update-button" onClick={onUpdate}>
-        Update now
-      </button>
+      {state === "waiting" ? null : (
+        <button type="button" className="account-primary update-button" onClick={onUpdate}>
+          Update now
+        </button>
+      )}
       <button type="button" className="account-secondary update-button" onClick={onLater}>
         Not now
       </button>

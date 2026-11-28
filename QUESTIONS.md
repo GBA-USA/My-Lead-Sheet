@@ -1,3 +1,13 @@
+# p6-setlist-builder self-check fix pass 1 (Nov 28 2026): a rename from another phone while you type (owner: Brian or Terry)
+
+Before this pass, when Phone B renamed a setlist while Phone A was typing a new name for it, Phone A's half-typed name
+was silently replaced by B's. Now the name box keeps what Phone A is typing, and leaving the box saves it over B's name
+(the last edit wins, as with every other setlist edit). While Phone A types, the sheet's heading already shows B's
+name. Escape or Close still throws Phone A's typing away and keeps B's name (B20). Case B30. Ask: is the last edit
+winning right here, or should Phone A see a line such as "Renamed on another phone to ..." before it saves?
+
+---
+
 # p6-setlist-builder fix round (Nov 28 2026): B6 stays green under "let a ticked duplicate through" (owner: CoS)
 
 The brief's mutation table says this mutation must turn B6 red. It does not, in either shape (no dedupe in `added`, or

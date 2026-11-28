@@ -1731,6 +1731,15 @@ try {
     await renameOnPhoneB("Filled Again");
     assert.equal(await nameValue(), "Filled Again", "with the name box left alone, Phone B's rename shows");
 
+    // 1b. Focused but nothing typed: Phone B's rename still shows, and leaving the box keeps B's name
+    await s.evaluate(`document.querySelector(${js(nameBox)}).focus()`);
+    await renameOnPhoneB("Filled Twice");
+    assert.equal(await nameValue(), "Filled Twice", "with the name box focused but untouched, Phone B's rename shows");
+    await s.evaluate(`document.querySelector(${js(nameBox)}).blur()`);
+    await settle(150);
+    assert.equal((await storedSetlist(fillId))?.name, "Filled Twice", "leaving an untouched box keeps Phone B's name");
+    await renameOnPhoneB("Filled Again");
+
     // 2. Typing: Phone A's half-typed name stays in the box and in focus while Phone B's rename arrives
     await s.evaluate(`(() => {
       const el = document.querySelector(${js(nameBox)});

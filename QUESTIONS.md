@@ -29,6 +29,29 @@ as this mutation's proof, or should B6 be rewritten to cover it?
   need to read the icon instead of `disabled`)?
 - Rule 1 (icons over words for add). The brief dictates the words "+ New setlist" and "+ Add songs", the same pattern
   as the existing "+ New band". Kept as dictated. Ask: icon only, or keep the words?
+# p6-update-now: 2026-11-27: where the brief and the Groovist UI rules disagree (kept to the rules)
+
+**Rule 3, no dead controls.** In "Empty and error states", the brief says that when only phones from before this cook
+are behind, "Update now is off with the same line as its reason". A control that is off is a dead control. So Update now
+does not appear at all, and the ask-them line ("A phone on an older version can't be reached from here. Ask them to
+close the app and open it again.") is the only thing shown. U8 checks this: Update now is not offered, and the line shows.
+
+**Rule 1, icons over words.** The brief asks for "a Reload button". Reload has a universal icon (the circular arrow,
+like the reset icon in the icon map), so the button shows only that icon. "Reload" is its accessible name, in text that
+is hidden on screen.
+
+**Rule 4, state in the icon.** I read rule 4 as covering the on/off state of this phone's own controls. "On the new
+version" and "Needs the update" report someone else's phone. The brief fixes these words and U3 checks them, so they stay
+as words. If Brian reads rule 4 as covering this too, the row needs an icon form, and that is a new brief.
+
+**Rule 3, and words the brief does not name (deep fix, 2026-11-28).** Since 9347b91 a tap can wait up to 120 s for the
+new service worker, so the player's prompt and the leader's strip now say "Getting the new version." while it waits.
+The brief names no words for this wait. While it waits, the button that started it (Update now on the prompt, Reload
+on the leader's strip) is hidden, because a second tap would do nothing (rule 3). Not now stays and calls the wait off.
+So during the wait, the leader's strip shows "Getting the new version." in place of Reload, which steps outside pass
+condition 1's "only Update this phone first, Reload and Between songs is best". U19, U21 and U23 check these words. If the
+owner wants other words, or Reload kept on screen with a busy icon (rule 4), that is a one-line change in
+src/gig-check-in.tsx `VERSION_WORDS.getting` and the check's `GETTING`.
 
 ---
 
@@ -120,12 +143,12 @@ assert.ok(await has(gigView(gigId)), "the gig's screen is still showing");
 ```
 
 `has(selector)` runs `document.querySelector(selector)`. `gigView(gigId)` is not a selector. It returns the JS
-expression `document.querySelector(".gig-view[data-gig=\"…\"]")`, which every other caller drops into `evaluate` or
-`until`. So `querySelector` throws `SyntaxError: … is not a valid selector` on every run, whatever the app does. On the
+expression `document.querySelector(".gig-view[data-gig=\"â€¦\"]")`, which every other caller drops into `evaluate` or
+`until`. So `querySelector` throws `SyntaxError: â€¦ is not a valid selector` on every run, whatever the app does. On the
 first build run K3 failed on exactly that line:
 
 ```
-FAIL K3 joins without a tap: … SyntaxError: Failed to execute 'querySelector' on 'Document':
+FAIL K3 joins without a tap: â€¦ SyntaxError: Failed to execute 'querySelector' on 'Document':
 'document.querySelector(".gig-view[data-gig=\"gig_FMCF4Y8cK2sOWlQpIP3lJA\"]")' is not a valid selector.
 ```
 
@@ -251,7 +274,7 @@ If the Linux Deep verify fails the y line alone, the glyph's offset in its row i
 # p2-song-info: check:ux-metronome-sheet's chord x pin cannot pass on the Windows laptop
 
 The brief asks every listed check to exit 0 before the push, and says pixel pins come from Linux. One case of
-check:ux-metronome-sheet ("the chart's first chord moves up by exactly the block's height…", renamed in fix pass 2 to
+check:ux-metronome-sheet ("the chart's first chord moves up by exactly the block's heightâ€¦", renamed in fix pass 2 to
 "with Song info closed, the chart's first chord and the card's blocks sit exactly at their pinned places") pins the first chord's x
 at 109.59 px at 390 px. On the laptop it reads 112.00, at this branch and on the untouched base 4d4ba74. The chart font
 is the app's own IBM Plex Mono file. Linux draws it at 7.8 px a character, and Windows Edge at a whole 8.0 px:
@@ -264,7 +287,7 @@ changed (src/styles.css, not this cook's file).
 # c23 fix: Band status opens for the admin and the leader on a live gig, and says what it is waiting for
 
 What ships in PR #107: the faces strip and the Band status panel on the band page and the gig view. Before and after
-a gig, anyone in the band can open it and it reads the planned route, Downloaded ✓ or Not yet (from the pack receipts),
+a gig, anyone in the band can open it and it reads the planned route, Downloaded âœ“ or Not yet (from the pack receipts),
 and "Sync and timing show during a live gig." During a live gig, only the band's admin and the gig's leader can open
 it. Members and the backup see the faces as pictures.
 
@@ -609,7 +632,7 @@ The build (c8c061e) is committed. Under the queue rules I did not edit the commi
 `scripts/check-stage.ts:550`, in "two holds in flight: Next, then a section chip before Next lands, and both land". The
 case starts the band's click with `startClick()`, which holds Count in, so the page-side room records three ops from the
 leader: `countIn`, `goTo`, `section`. The assertion asks for exactly two, `[goTo, section]`, so it fails on correct
-behavior. Every other line in the case passes: the pending Next is kept, the chip says "On 4 ▸", and Sam's phone turns
+behavior. Every other line in the case passes: the pending Next is kept, the chip says "On 4 â–¸", and Sam's phone turns
 the section and flips the song each at its own landing.
 
 **Fix (counter only):** count the ops after the click started. No requirement moves.
@@ -714,7 +737,7 @@ index c620867..8f59583 100644
 +      const dropped = await until("dropped", () => view(samSite), (v) => v.strips.some((s) => s.key === "dropped"), 40_000);
        const droppedLog = dropped.strips.filter((s) => s.key === "dropped").pop()!;
        const droppedAfter = (droppedLog.local - droppedLog.heardAt!) / 1000;
-       assert.equal(dropped.strip.words, `Mike's phone dropped · still on ${songNumber}`);
+       assert.equal(dropped.strip.words, `Mike's phone dropped Â· still on ${songNumber}`);
 @@ -683,7 +684,7 @@ async function fakeClock() {
      const at = turned.last.at;
      room.push(turned, at - truth() + 200);

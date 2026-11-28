@@ -110,9 +110,11 @@ function fileIn(body: Record<string, unknown>): ImportedFile {
   return { exportedFrom: textIn(body.exportedFrom, 200), exportedAt: textIn(body.exportedAt, 40), band: { name: textIn(band.name, 60) }, songs, setlists, notes };
 }
 
+const SONG_HELD_AS = `SELECT song_id AS id FROM band_songs WHERE share_id IN (SELECT id FROM shares WHERE parent_id = ?)`;
+const SETLIST_HELD_AS = `SELECT setlist_id AS id FROM band_setlists WHERE share_id IN (SELECT id FROM shares WHERE parent_id = ?)`;
+
 /** The local id of the item already imported under `movedId`, the share row that stands for the item in its source band. */
-const heldAs = (sql: SqlStorage, table: "band_songs" | "band_setlists", column: "song_id" | "setlist_id", movedId: string) =>
-  sql.exec<{ id: string }>(`SELECT ${column} AS id FROM ${table} WHERE share_id IN (SELECT id FROM shares WHERE parent_id = ?)`, movedId).toArray()[0]?.id;
+const heldAs = (sql: SqlStorage, query: typeof SONG_HELD_AS | typeof SETLIST_HELD_AS, movedId: string) => sql.exec<{ id: string }>(query, movedId).toArray()[0]?.id;
 
 function importBand(storage: DurableObjectStorage, band: RoomStore, adminId: string, origin: string | undefined, file: ImportedFile, prints: string[], now: number): Imported {
   bandRoom.requireAdmin(band, adminId);
@@ -125,7 +127,7 @@ function importBand(storage: DurableObjectStorage, band: RoomStore, adminId: str
     const counts: Imported = { songs: { added: 0, skipped: 0 }, setlists: { added: 0, skipped: 0 } };
     const localIds = new Map<string, string>();
     file.songs.forEach((item, index) => {
-      const held = heldAs(sql, "band_songs", "song_id", movedId(item.id));
+      const held = heldAs(sql, SONG_HELD_AS, movedId(item.id));
       if (held) {
         counts.songs.skipped += 1;
         localIds.set(item.id, held);
@@ -136,7 +138,7 @@ function importBand(storage: DurableObjectStorage, band: RoomStore, adminId: str
       counts.songs.added += 1;
     });
     for (const item of file.setlists) {
-      if (heldAs(sql, "band_setlists", "setlist_id", movedId(item.id))) {
+      if (heldAs(sql, SETLIST_HELD_AS, movedId(item.id))) {
         counts.setlists.skipped += 1;
         continue;
       }

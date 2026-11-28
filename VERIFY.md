@@ -1,3 +1,24 @@
+# p4-gig-corners self-check fix pass 1 (Nov 28 2026)
+
+Goal: answer the judge block below. Its two P2s are merge mojibake from b2edfbc. Logs are in `.verify-logs/fix1/` (gitignored). No product code changed.
+
+- The case is `.verify-logs/fix1/merge-lines.mjs <ref>`. For QUESTIONS.md and VERIFY.md at `<ref>` it counts lines in neither parent of b2edfbc, lines holding `â` or `Â`, and numstat deletions against each parent, and exits 1 on any non-zero count. At b2edfbc it exits 1 with 8 FAIL: QUESTIONS.md has 11 lines in neither parent (14, 32, 40, 41, 159, 160, 164, 290, 303, 648, 753), 11 mojibake lines, and 11 and 7 deletions. VERIFY.md has 3 (10, 16, 110), 3, and 1 and 2 (`red-b2edfbc.log`).
+- The fix is 7ecf18e. `merge-lines.mjs --repair` undoes the UTF-8-read-as-cp1252 round trip on each line in neither parent and keeps the result only when it is a line of a parent. All 14 came back as exact parent lines (`repair.log`). The commit changes only those 14 lines (numstat 11/11 and 3/3).
+- At 7ecf18e the same case exits 0 with 8 ok: 0 lines in neither parent, 0 mojibake lines, and 0 deletions against both parents for both files (`green-repair.log`).
+- Merge seam: none of the 30 files the merge changed has a line in neither parent with `â` or `Â`.
+- After the repair commit, this commit only adds this block and the judge block above the old first line. The judge's own lines quote the mojibake on purpose and are left as written.
+- P3s carried, not changed: the member-side `setSpeed(1)` on an InGig mount (no case), `data-stage-corners` while locked (matches the brief, H2 pins it), the `join-gig` fixture swap (no weaker assertion), and the open C6 and rule 11 owner questions in QUESTIONS.md.
+
+VERDICT: FAIL
+P2 | CLASS=data-shape | QUESTIONS.md:14 | Merge b2edfbc mojibakes 11 QUESTIONS.md lines found in neither parent (14, 32, 40, 41, 159, 160, 164, 290, 303, 648, 753), for example `4 → 12` becomes `4 â†’ 12` and `A−` becomes `Aâˆ’` in this cook's own owner question. Repro: `git show b2edfbc:QUESTIONS.md | grep -vxFf <(git show b2edfbc^1:QUESTIONS.md) | grep -vxFf <(git show b2edfbc^2:QUESTIONS.md)` prints 11 lines. The cook parent has 0 `â`/`Â` lines and the merge has 9 (grep -c). Fix: take each line from its parent, then confirm 0 lines in neither parent and 0 numstat deletions against both parents.
+P2 | CLASS=data-shape | VERIFY.md:10 | The same merge mojibakes 3 VERIFY.md lines found in neither parent (10, 16, 110). `96f37f60…` becomes `96f37f60â€¦`, and `−` in the gig-corners nit becomes `âˆ’`. Same repro as above with VERIFY.md.
+Nits:
+P3 | CLASS=state-machine | src/stage-bar.tsx:190 | `if (!leading) setSpeed(1)` also runs on a member's InGig mount, so a solo speed set before joining resets to 100%. Matches the intent, but no case covers the member side (H8 covers only a leader who stops leading).
+P3 | CLASS=stale-ui | src/stage-bar.tsx:453 | `data-stage-corners` keys on `text && song`, not on `!locked && !panel`, so the leader has no A− A+ anywhere while locked. This matches the brief ("leader's top bar drops A− A+"), and H2 pins it.
+P3 | CLASS=other | scripts/check-gig-corners.ts | Since commit 1, the only removed check line is the fake room's `join-gig` reply (b32f4eb), replaced by the `leadingNow` tell that worker/room.ts sends. That is a fixture change with no weaker assertion: C1-C13 and T1-T5 are unchanged in assertion text.
+P3 | CLASS=other | QUESTIONS.md:1 | The C6 owner question (gig-only counter, state read instead of a drawn follower) and rule 11 `~96 bpm` (tempoText in do-not-touch storage.ts) are still open. H6 covers every room kind. No ruling was given to this judge.
+Checked and sound: every brief case C1-C13, T1-T5 and G1 has a named `it`, plus guards and test-gap cases H1-H8. The corners render only past InGig's `if (!leading)` return, gated on `song && !locked && !panel`. The speed pair uses useScrollSpeed/stepSpeed/SPEED_MIN/SPEED_MAX and never touches scrollPercent. No new fetch, storage key, Worker or SQL. App.tsx changes one line, with the prop on the same line. CSS uses theme tokens only and respects reduced motion. Buttons are 56 px.
+
 # ci-shard-balance self-check (branch cook/ci-shard-balance, Nov 28 2026)
 
 Cook verdict: PASS

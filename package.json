@@ -91,6 +91,7 @@
                     "check:teach":  "node --experimental-strip-types scripts/check-teach.ts",
                     "check:teach-screen":  "node --experimental-strip-types scripts/check-teach-screen.ts",
                     "check:time":  "node --experimental-strip-types scripts/check-time.ts",
+                    "check:update-now":  "tsc -p worker && node --experimental-strip-types scripts/check-update-now.ts",
                     "check:ux-band-page":  "tsc -p worker \u0026\u0026 node --experimental-strip-types scripts/check-ux-band-page.ts",
                     "check:ux-band-status":  "tsc -p worker \u0026\u0026 node --experimental-strip-types scripts/check-ux-band-status.ts",
                     "check:ux-chat-rooms":  "tsc -p worker \u0026\u0026 node --experimental-strip-types scripts/check-ux-chat-rooms.ts",

@@ -1,3 +1,32 @@
+# p4-gig-corners: 2026-11-28: may case C6 be amended? The Opus judge fails the cook on C6 as written in commit 1
+
+Judge round 4 (54e4b38, `.verify-logs/judge/verdict-54e4b38.md`) is `VERDICT: FAIL` on two P2s, both about case C6,
+which the brief locks after commit 1 ("do not edit or weaken a case"):
+
+1. C6 counts only room messages whose kind starts with `gig` (`scripts/check-gig-corners.ts:191`), so a raw room kind
+   `tempo` would not be counted.
+2. "The follower's scroll rate" is read from Sam's gig state (`state.scroll[...].value.rate`), not measured on a drawn
+   follower sheet.
+
+Facts for the ruling:
+- C6's row says "the room received no gig message", and its counter counts exactly that.
+- Mutation C6a sends a `tempo` op on Scroll faster through the stage's own send path, the app's real way to send a tempo.
+  It turns C6 red: room gig messages 4 → 12, gig rev 1 → 5, Sam's rate 1 → 1.033 (`.verify-logs/mutate/C6a.log`).
+- Case H6 (added in 54e4b38) records every room send from the leader across the same taps, of any kind, and every
+  network request in the page. Three mutations check it:
+  - H6a, a `fetch` on Scroll faster, turns H6 red.
+  - H6c, a raw `{ kind: "speed" }` room message, turns H6 red and catches 4 sends. C6 stays green under it, which is
+    the judge's point.
+  - H6b, `askToLead`, is equivalent to no change: the leader's phone sends nothing.
+- The brief's harness has one page with the leader's App and Sam as a live session, with no drawn follower sheet. The
+  live speed store is module-level, so a second App in the same page would share it. A drawn follower needs a second
+  page.
+- Four fresh judges rated the gig-only counter P3, P3, P2 and P2.
+
+**Asking (yes/no):** may C6 be amended to count every non-ping room send and to measure a drawn follower's rate on a
+second page? If no, H6 and the state read stand and the judge's two P2s are ruled out. Kept to the brief: C6 is
+unchanged, and the cook stops here without a PASS.
+
 # p4-gig-corners: 2026-11-28: UI rule 11, the gig top line still reads `~96 bpm`
 
 The gig sheet's top line, `3 of 12 · A major · ~96 bpm`, is drawn by `src/App.tsx:295` with `tempoText` from

@@ -1,3 +1,29 @@
+VERDICT: FAIL
+P2 | CLASS=test-gap | scripts/check-gig-corners.ts:191 | C6 does not catch its own stated mutation. The C6 count (`__gigSends`, checked at :544) only counts room messages whose kind starts with `gig`. A message of kind `tempo`, or a `link` message with a `tempo` body, never enters the count. `fakeRoom` passes no `link` message on to Sam, so his state cannot change either. C6 turns red on "Send a `tempo` message on Scroll faster" only if the cook happens to send it as a `gig-op`. H6 would catch it, but H6 is not C6.
+P2 | CLASS=case-mismatch | scripts/check-gig-corners.ts:546 | C6's row says "the follower's scroll rate". The check at :532 reads `state.scroll[...].value?.rate` from Sam's stored gig state. That is not a rate measured on a sheet, and Sam's sheet is never drawn. It repeats the state-equality check at :545 and adds nothing, so a speed change that reached Sam's screen by another path would not be seen.
+P3 | CLASS=test-gap | scripts/check-gig-corners.ts:563 | C7 checks for two rows of section chips only before `hold next`. It never checks again in the grown state. If next changes the song before the pending move settles, song 3 has one row of chips, and the "status row and two chip rows at once" condition is not proven.
+P3 | CLASS=test-gap | scripts/check-gig-corners.ts:609 | C9 checks Sam's side on a freshly booted App with the lead already his (`keepGig`). It does not check Sam's mounted bar picking up the lead while live. Only Terry's half can fail the "work out leading once" mutation.
+P3 | CLASS=layout-luck | src/gig-corners.css:29 | The pair width is 56+8+56 = 120 px, exactly 360/3. C10's "at most a third" passes with 0 px to spare, and any border, gap or box-sizing change breaks it.
+P3 | CLASS=layout-luck | src/styles.css:1228 | The bottom room is a fixed `80px`, not derived from the pair (56 + 8) or the percent label above the speed pair. While the sheet scrolls at its end, the label and speed pair can sit over the last row. C12 only tests with the scroll stopped.
+P3 | CLASS=scope | src/styles.css:1224 | `grid-template-columns: 48px minmax(0, 1fr) 48px` on the leader's `.song-header` is a fifth styles.css rule, beyond the four the brief lists. It hard-codes the header's back and ••• track widths. Only the extra case H1 guards it.
+P3 | CLASS=layout-luck | src/styles.css:1433 | The title cap hard-codes `16px` as the base, copied from `calc(16px * scale)` in sheet.tsx. If the base changes, the cap stops landing on the 1.15 step.
+P3 | CLASS=scope | src/styles.css:1211 | The one-line title rule only applies under `.gig-stage`. The goal says "every song sheet", but `#/song` and `#/live` are covered only by the H4 guard, not by the rule.
+P3 | CLASS=rule | src/reading-row.ts:51 | The hook writes refs and reads layout (`getBoundingClientRect`) while React renders, which breaks React's rules for render. Also, `unheard` (:39) swallows any real scroll event on the sheet for up to two frames when the browser clamps the corrective `scrollTop` and no scroll event of its own fires.
+P3 | CLASS=a11y | src/gig-corners.tsx:24 | The `role="status"` label goes empty at 100%, so going back to 100% is announced as nothing.
+P3 | CLASS=self-reference | scripts/check-gig-corners.ts:223 | T3's and T4's "sheet top" adds the product's own `--chrome-over` value. The test takes as ground truth the same number the code under test writes.
+P3 | CLASS=test-gap | scripts/check-gig-corners.ts:28 | G1 compares against a hard-coded `APP_LINES = 494` instead of reading origin's src/App.tsx at the first commit. The diff cannot show that 494 is right.
+
+# p4-gig-corners self-check and judge rounds (cook's notes, below the judge's verdict)
+
+Judge rounds, each a fresh Opus session given only `git diff origin/mls-int-20261113...HEAD` and the pass conditions:
+round 1 at 929e50b FAIL (top bar A− A+ came back while locked; C10 measured without the percent), closed by H2/H3 and
+4bea449; round 2 at 4bea449 FAIL (`#/live` `#/song` one-line scope), ruled out by guard H4; round 3 at 27bcf94 FAIL
+(C8, C6 and T4 test gaps), closed by H5, H6, H7 in 54e4b38; round 4 at 54e4b38 FAIL above.
+OPEN | CLASS=test-gap | scripts/check-gig-corners.ts:191 | Round 4's two P2s are about C6 as written in commit 1, which the brief locks. Not edited. QUESTIONS.md (top entry) asks the owner whether C6 may be amended. H6 covers every room kind and the network (mutations H6a and H6c red). C6a, the stage's tempo op, turns C6 red (.verify-logs/mutate/C6a.log).
+P3 | CLASS=state-machine | src/reading-row.ts:39 | `unheard` listens before the corrective scrollTop write; when the write is clamped no scroll event fires and a real one can be hushed for up to two frames. Left as a P3: a src change now would void the suite, mutations and shots.
+P3 | CLASS=test-gap | scripts/check-gig-corners.ts:1015 | H7 is a guard: during the band scroll the engine (`scrollChart`, src/hooks.ts) re-measures each frame and holds the row; reading-row mutations H7a and H7b leave H7 green, and H7c reddens it only by a timeout.
+P3 | CLASS=other | VERIFY.md:1 | check:ux-sheet-controls-save exits 1 on this laptop on the head and the untouched base alike (Windows chord x 112.00 against the Linux pin 109.59).
+
 VERDICT: PASS
 Nits:
 P3 | CLASS=other | src/scroll-timing.ts:587 | The P0 fix (pass 1) and the P2 fix (pass 2) sit in a file outside the brief's owned list, against CLAUDE.md "stay inside the files your brief owns". QUESTIONS.md names both for the owner. Every check that touches scroll-timing is green apart from known Windows causes (.verify-logs/fix-p0, .verify-logs/fix-p2/after).

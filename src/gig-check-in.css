@@ -103,10 +103,12 @@
   font: inherit;
 }
 
-.check-in-dismiss {
+/* Two classes, so the 40 px `.icon-btn` in styles.css, which loads later, cannot shrink it. */
+.check-in-warning .check-in-dismiss {
   margin-left: auto;
   width: var(--touch);
   height: var(--touch);
+  min-width: var(--touch);
 }
 
 @media (prefers-reduced-motion: reduce) {

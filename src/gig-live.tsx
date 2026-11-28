@@ -155,7 +155,7 @@ export function useLiveGig({ me, stage = null, metronome, personal, onPersonal, 
     setDismissed([]);
     setEnded(null);
   }
-  const [, changed] = useReducer((n: number) => n + 1, 0);
+  const [version, changed] = useReducer((n: number) => n + 1, 0);
   const [, setFrame] = useState("");
   const release = useRef<(() => void) | null>(null);
 
@@ -323,7 +323,6 @@ export function useLiveGig({ me, stage = null, metronome, personal, onPersonal, 
     const stop = room.listen((message) => {
       if (message.kind === "hello") return void ask();
       if (message.kind === "room-down" || message.kind === "room-refused") return rosterStore.line(me, gig.gigId, "down");
-      if (message.kind === "gig-state") return rosterStore.leader(me, gig.gigId, leaderNow());
       const roster = message.kind === "roster" ? asRoster(message) : null;
       if (roster?.gigId === gig.gigId) rosterStore.put(me, gig.gigId, { rows: roster.rows, packRev: roster.packRev, leader: leaderNow() });
     });
@@ -333,6 +332,12 @@ export function useLiveGig({ me, stage = null, metronome, personal, onPersonal, 
       rosterStore.drop(me, gig.gigId);
     };
   }, [joined, me]);
+
+  // Who leads is the session's, so the copy follows each change it makes, this phone's own take-over too: the Room
+  // forwards a change to every gig socket but the one that sent it.
+  useEffect(() => {
+    if (joined && me) rosterStore.leader(me, joined.gig.gigId, joined.session.view().state?.leader ?? joined.gig.leader);
+  }, [version, joined, me]);
 
   const liveGigNow = gigs.find((gig) => gig.status === "live" && !dismissed.includes(gig.gigId));
   // The held pack says planned until it is fetched again, so a listing that is live or ended wins over it.

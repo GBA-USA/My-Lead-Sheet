@@ -866,6 +866,24 @@ async function run(site: Site, script: string, css: string) {
     }
   });
 
+  it("H1 the leader's top bar end", async () => {
+    try {
+      for (const phone of PHONES) {
+        await metrics(phone);
+        await asMember();
+        const member = { more: await box(".song-header > .menu-anchor"), title: await box(".song-header > .shell-title"), bar: await box(".song-header") };
+        await asLeader();
+        const leader = { more: await box(".song-header > .menu-anchor"), title: await box(".song-header > .shell-title"), bar: await box(".song-header") };
+        if (!check(!!(member.more && member.title && member.bar && leader.more && leader.title && leader.bar), `at ${phone.width} px both gig sheets have a top bar with a title and •••`)) continue;
+        check(Math.abs(leader.more!.right - member.more!.right) <= 1, `at ${phone.width} px the leader's ••• ends where the member's does (${leader.more!.right} against ${member.more!.right})`);
+        check(leader.title!.width > member.title!.width, `at ${phone.width} px the leader's title takes the room A− A+ left (${leader.title!.width} against ${member.title!.width} px)`);
+        check(leader.more!.x - leader.title!.right <= member.more!.x - member.title!.right + 1, `at ${phone.width} px no empty track sits between the leader's title and ••• (${leader.more!.x - leader.title!.right} px)`);
+      }
+    } finally {
+      await metrics(PHONE);
+    }
+  });
+
   it("G1 guard", async () => {
     const lines = readFileSync(join(root, "src", "App.tsx"), "utf8").replace(/\r\n/g, "\n").replace(/\n$/, "").split("\n").length;
     check(lines <= APP_LINES, `src/App.tsx has ${lines} lines, at most the ${APP_LINES} it has on origin/mls-int-20261113`);

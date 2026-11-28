@@ -7,8 +7,9 @@ import { useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } 
 import type { LocalMs } from "./band-time";
 import type { BandView } from "./bands-model";
 import type { ChatEntry } from "./chat-model";
-import { CheckInWarning, rosterStore } from "./gig-check-in";
-import { asRoster } from "./gig-check-in-model";
+import { BUILD_ID, reloadOntoPublished } from "./app-build";
+import { CheckInWarning, rosterStore, UpdatePrompt, VersionCheck, type UpdatePromptState } from "./gig-check-in";
+import { asRoster, type UpdateNow } from "./gig-check-in-model";
 import { atPassEnd, downloadPack, packToShow, type GigPack } from "./gig-pack";
 import type { GigList, GigPlan } from "./gig-plan-model";
 import { useGigPosition, type GigPosition } from "./gig-position";
@@ -71,7 +72,7 @@ const APP_DEPS: LiveDeps = {
     const held = heldFor(me) ? await packToShow(gig.gigId).catch(() => null) : null;
     return held ?? downloadPack(me, gig.bandId, gig.gigId);
   },
-  room: (bandId) => roomLine(roomUrl(bandId)),
+  room: (bandId) => roomLine(roomUrl(bandId), { build: BUILD_ID }),
   names: (gig) =>
     bandOf(gig.bandId).then(
       (band) => Object.fromEntries(band.members.map((member) => [member.userId, firstName(member.name)])),
@@ -120,6 +121,16 @@ export type Live = {
   dismiss(): void;
   tap(body: OpBody): void;
   askToLead(): void;
+  /** The leader's ask to update, on this phone's strip, until the player taps Not now or the page reloads. */
+  update: UpdatePromptState | null;
+  /** The player's tap: the prompt waits for the new version, then the page reloads onto it or the prompt says why not. */
+  updateNow(): void;
+  /** Closes the prompt and calls off a reload still waiting. */
+  notNow(): void;
+  /** The leader's Update now. False when the room line is down, so nothing was sent. */
+  askUpdate(): boolean;
+  /** The Room turned the last Update now down: this phone is not leading now. */
+  updateRefused: boolean;
 };
 
 type Args = {
@@ -333,11 +344,40 @@ export function useLiveGig({ me, stage = null, metronome, personal, onPersonal, 
     };
   }, [joined, me]);
 
-  // Who leads is the session's, so the copy follows each change it makes, this phone's own take-over too: the Room
-  // forwards a change to every gig socket but the one that sent it.
+  // The leader's ask to update reaches this phone only from the Room. A second ask while one shows changes nothing, and
+  // nothing reloads until the player taps; Not now waits for the leader to ask again. A tap's reload belongs to the
+  // prompt: Not now, leaving the gig or switching accounts calls it off, however long it has waited.
+  const [update, setUpdate] = useState<UpdatePromptState | null>(null);
+  const [updateRefused, setUpdateRefused] = useState(false);
+  const pendingUpdate = useRef<AbortController | null>(null);
+  const stopUpdate = () => {
+    pendingUpdate.current?.abort();
+    pendingUpdate.current = null;
+  };
   useEffect(() => {
-    if (joined && me) rosterStore.leader(me, joined.gig.gigId, joined.session.view().state?.leader ?? joined.gig.leader);
+    setUpdate(null);
+    setUpdateRefused(false);
+    if (!joined) return;
+    const { room, gig } = joined;
+    const stop = room.listen((message) => {
+      if (message.gigId !== gig.gigId) return;
+      if (message.kind === "update-now") setUpdate((now) => now ?? "asked");
+      if (message.kind === "update-refused") setUpdateRefused(true);
+    });
+    return () => {
+      stop();
+      stopUpdate();
+    };
+  }, [joined]);
+
+  // Who leads is the session's, so the copy follows each change it makes, this phone's own take-over too: the Room
+  // forwards a change to every gig socket but the one that sent it. The Room's "not leading" answered the lead the ask
+  // was sent under, so it goes when the lead moves.
+  const ledBy = joined ? (joined.session.view().state?.leader ?? joined.gig.leader) : null;
+  useEffect(() => {
+    if (joined && me && ledBy) rosterStore.leader(me, joined.gig.gigId, ledBy);
   }, [version, joined, me]);
+  useEffect(() => setUpdateRefused(false), [ledBy]);
 
   const liveGigNow = gigs.find((gig) => gig.status === "live" && !dismissed.includes(gig.gigId));
   // The held pack says planned until it is fetched again, so a listing that is live or ended wins over it.
@@ -407,6 +447,28 @@ export function useLiveGig({ me, stage = null, metronome, personal, onPersonal, 
     },
     tap: (body) => void session?.tap(body),
     askToLead: () => session?.askToLead(),
+    update,
+    updateNow() {
+      if (pendingUpdate.current) return;
+      const attempt = new AbortController();
+      pendingUpdate.current = attempt;
+      setUpdate("waiting");
+      void reloadOntoPublished(attempt.signal).then((outcome) => {
+        if (pendingUpdate.current !== attempt) return;
+        pendingUpdate.current = null;
+        if (outcome === "offline" || outcome === "current") setUpdate(outcome);
+      });
+    },
+    notNow() {
+      stopUpdate();
+      setUpdate(null);
+    },
+    askUpdate() {
+      if (!joined) return false;
+      setUpdateRefused(false);
+      return joined.room.send({ kind: "update-now", gigId: joined.gig.gigId } satisfies UpdateNow);
+    },
+    updateRefused,
   };
 }
 
@@ -600,6 +662,8 @@ export function LiveGigStrip({ live }: { live: Live }) {
         }}
       />
       {joined && live.me ? <CheckInWarning me={live.me} bandId={joined.gig.bandId} gigId={joined.gig.gigId} /> : null}
+      {joined && live.me ? <VersionCheck me={live.me} gigId={joined.gig.gigId} names={live.names} ask={live.askUpdate} refused={live.updateRefused} /> : null}
+      {joined && live.update ? <UpdatePrompt state={live.update} onUpdate={live.updateNow} onLater={live.notNow} /> : null}
       {live.asking ? (
         <div className="gig-question" role="group" aria-label={CLICK_QUESTION} style={{ ...STRIP_STYLE, ...TONE_STYLE.grey }}>
           <span>{CLICK_QUESTION}</span>

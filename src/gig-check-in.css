@@ -117,3 +117,121 @@
     transition: none;
   }
 }
+
+/* ---- Versions: the leader's own phone, who needs the update, and a player's prompt ---- */
+
+.update-self,
+.update-panel,
+.update-prompt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap);
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.update-panel {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+}
+
+.update-panel > .update-button,
+.update-panel > .update-note,
+.update-panel > .update-rows,
+.update-panel > .update-ask {
+  flex: none;
+}
+
+.update-self-words,
+.update-prompt-words {
+  flex: 1 1 100%;
+}
+
+.update-button {
+  min-height: var(--touch);
+}
+
+.update-reload {
+  display: inline-grid;
+  place-items: center;
+  position: relative;
+  min-width: var(--touch);
+  padding: 0;
+}
+
+.update-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.update-panel .update-button {
+  align-self: flex-start;
+}
+
+.update-note,
+.update-ask {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.update-rows {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.update-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  min-height: 32px;
+  align-items: center;
+  border-bottom: 1px solid var(--row-rule);
+}
+
+.update-name {
+  overflow-wrap: anywhere;
+}
+
+.update-word {
+  font-weight: 500;
+}
+
+.update-row.is-behind .update-word {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.update-prompt {
+  animation: update-prompt-in 180ms ease-out;
+}
+
+@keyframes update-prompt-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .update-prompt {
+    animation: none;
+  }
+}

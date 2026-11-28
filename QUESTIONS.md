@@ -11,7 +11,7 @@ which the brief locks after commit 1 ("do not edit or weaken a case"):
 Facts for the ruling:
 - C6's row says "the room received no gig message", and its counter counts exactly that.
 - Mutation C6a sends a `tempo` op on Scroll faster through the stage's own send path, the app's real way to send a tempo.
-  It turns C6 red: room gig messages 4 → 12, gig rev 1 → 5, Sam's rate 1 → 1.033 (`.verify-logs/mutate/C6a.log`).
+  It turns C6 red: room gig messages 4 â†’ 12, gig rev 1 â†’ 5, Sam's rate 1 â†’ 1.033 (`.verify-logs/mutate/C6a.log`).
 - Case H6 (added in 54e4b38) records every room send from the leader across the same taps, of any kind, and every
   network request in the page. Three mutations check it:
   - H6a, a `fetch` on Scroll faster, turns H6 red.
@@ -29,7 +29,7 @@ unchanged, and the cook stops here without a PASS.
 
 # p4-gig-corners: 2026-11-28: UI rule 11, the gig top line still reads `~96 bpm`
 
-The gig sheet's top line, `3 of 12 · A major · ~96 bpm`, is drawn by `src/App.tsx:295` with `tempoText` from
+The gig sheet's top line, `3 of 12 Â· A major Â· ~96 bpm`, is drawn by `src/App.tsx:295` with `tempoText` from
 `src/storage.ts`, and `tempoText` writes the `~`. This cook does not draw that line: the brief lets it add one prop to
 App's `GigStageBar` mount and nothing else in `src/App.tsx`, and `src/storage.ts` is on its do-not-touch list. The same
 `tempoText` writes the sheet's own `Tempo: ~96 bpm` meta line, so changing it is one change for every screen.
@@ -37,11 +37,65 @@ Kept to the brief: the line is unchanged. **Asking:** which cook owns `tempoText
 
 # p4-gig-corners: 2026-11-28: UI rule 3 and the corner buttons at their ends
 
-Rule 3 says nothing disabled or greyed is ever shown. The brief (empty states, C3, C4) has A− off and dim at the smallest
-text size, A+ at the largest, Scroll slower at 50% and Scroll faster at 150%, the way the top bar's A− A+ and the song
+Rule 3 says nothing disabled or greyed is ever shown. The brief (empty states, C3, C4) has Aâˆ’ off and dim at the smallest
+text size, A+ at the largest, Scroll slower at 50% and Scroll faster at 150%, the way the top bar's Aâˆ’ A+ and the song
 page's speed group already behave. Read here as no conflict: rule 3 is about controls that do not work, and a stepper at
 its end works and says where the end is (rule 9 asks every stepper to look and behave the same). Built as the brief says.
 **Asking:** only if Brian reads rule 3 as covering a stepper's end stop.
+# p6-update-now: 2026-11-27: where the brief and the Groovist UI rules disagree (kept to the rules)
+
+**Rule 3, no dead controls.** In "Empty and error states", the brief says that when only phones from before this cook
+are behind, "Update now is off with the same line as its reason". A control that is off is a dead control. So Update now
+does not appear at all, and the ask-them line ("A phone on an older version can't be reached from here. Ask them to
+close the app and open it again.") is the only thing shown. U8 checks this: Update now is not offered, and the line shows.
+
+**Rule 1, icons over words.** The brief asks for "a Reload button". Reload has a universal icon (the circular arrow,
+like the reset icon in the icon map), so the button shows only that icon. "Reload" is its accessible name, in text that
+is hidden on screen.
+
+**Rule 4, state in the icon.** I read rule 4 as covering the on/off state of this phone's own controls. "On the new
+version" and "Needs the update" report someone else's phone. The brief fixes these words and U3 checks them, so they stay
+as words. If Brian reads rule 4 as covering this too, the row needs an icon form, and that is a new brief.
+
+**Rule 3, and words the brief does not name (deep fix, 2026-11-28).** Since 9347b91 a tap can wait up to 120 s for the
+new service worker, so the player's prompt and the leader's strip now say "Getting the new version." while it waits.
+The brief names no words for this wait. While it waits, the button that started it (Update now on the prompt, Reload
+on the leader's strip) is hidden, because a second tap would do nothing (rule 3). Not now stays and calls the wait off.
+So during the wait, the leader's strip shows "Getting the new version." in place of Reload, which steps outside pass
+condition 1's "only Update this phone first, Reload and Between songs is best". U19, U21 and U23 check these words. If the
+owner wants other words, or Reload kept on screen with a busy icon (rule 4), that is a one-line change in
+src/gig-check-in.tsx `VERSION_WORDS.getting` and the check's `GETTING`.
+
+---
+
+# legal-quickfix fix round 3 (Nov 28 2026): the STUN line now names Test with a bandmate
+
+The judge found a third path to stun.cloudflare.com that the dictated STUN line left out: Test with a bandmate
+(`src/connection-setting.tsx:174`) opens `BandmateSheet` with `configNow()`, whose `stun` is `FREE_STUN`, and its internet
+route hands that server to the peer connection on both phones (`src/sync-bandmate.tsx:118,208`). This round took the
+judge's example wording: "A live-gig link between bandmates, and Test now and Test with a bandmate in the connection
+setting, ask stun.cloudflare.com for the public network address of this phone." Owner (Terry): keep it or reword it.
+`check:privacy` pins it as `LIVE_GIG_LINE`, and a new case runs the real `showSide` and fails while the line leaves out
+Test with a bandmate, so a rewording must keep those words or edit that case too.
+
+---
+
+# legal-quickfix fix pass 1 (Nov 27 2026): the privacy page's MusicBrainz wording
+
+1. The brief dictated one line: "When you search for a song, the app sends the title you typed to MusicBrainz
+   (musicbrainz.org), a public music catalog." The judge found it is not the whole story. Pasting a chart with no
+   title sends up to two of its sung lines to musicbrainz.org with nothing typed (`src/song-search.ts:306`). The
+   search box also sends an artist when one is typed. This round kept the dictated line word for word and added one:
+   "When you paste a chart with no title or artist, the app looks it up on MusicBrainz. It sends the chart's title,
+   or, when the chart has none, up to two of its sung lines." Owner (Terry): keep both lines, reword them, or ask for
+   the paste lookup to stop sending sung lines. `check:privacy` pins both strings, so a rewording edits
+   `SONG_SEARCH_LINE` and `PASTE_LOOKUP_LINE` in `scripts/check-privacy.ts` too.
+
+   Fix pass 2 adds two wording points for the same decision, with no text changed. The dictated line says "the title
+   you typed", but the search box asks for a "title or artist" (`src/song-search.tsx:75`) and sends what was typed.
+   The added line's "with no title or artist" can read as both missing, while the lookup also runs when only the
+   artist is missing (`missing`, `src/song-editor.tsx:293`) and then sends the title. "with no title, or no artist" would be
+   plainer.
 
 ---
 
@@ -102,12 +156,12 @@ assert.ok(await has(gigView(gigId)), "the gig's screen is still showing");
 ```
 
 `has(selector)` runs `document.querySelector(selector)`. `gigView(gigId)` is not a selector. It returns the JS
-expression `document.querySelector(".gig-view[data-gig=\"…\"]")`, which every other caller drops into `evaluate` or
-`until`. So `querySelector` throws `SyntaxError: … is not a valid selector` on every run, whatever the app does. On the
+expression `document.querySelector(".gig-view[data-gig=\"â€¦\"]")`, which every other caller drops into `evaluate` or
+`until`. So `querySelector` throws `SyntaxError: â€¦ is not a valid selector` on every run, whatever the app does. On the
 first build run K3 failed on exactly that line:
 
 ```
-FAIL K3 joins without a tap: … SyntaxError: Failed to execute 'querySelector' on 'Document':
+FAIL K3 joins without a tap: â€¦ SyntaxError: Failed to execute 'querySelector' on 'Document':
 'document.querySelector(".gig-view[data-gig=\"gig_FMCF4Y8cK2sOWlQpIP3lJA\"]")' is not a valid selector.
 ```
 
@@ -233,7 +287,7 @@ If the Linux Deep verify fails the y line alone, the glyph's offset in its row i
 # p2-song-info: check:ux-metronome-sheet's chord x pin cannot pass on the Windows laptop
 
 The brief asks every listed check to exit 0 before the push, and says pixel pins come from Linux. One case of
-check:ux-metronome-sheet ("the chart's first chord moves up by exactly the block's height…", renamed in fix pass 2 to
+check:ux-metronome-sheet ("the chart's first chord moves up by exactly the block's heightâ€¦", renamed in fix pass 2 to
 "with Song info closed, the chart's first chord and the card's blocks sit exactly at their pinned places") pins the first chord's x
 at 109.59 px at 390 px. On the laptop it reads 112.00, at this branch and on the untouched base 4d4ba74. The chart font
 is the app's own IBM Plex Mono file. Linux draws it at 7.8 px a character, and Windows Edge at a whole 8.0 px:
@@ -246,7 +300,7 @@ changed (src/styles.css, not this cook's file).
 # c23 fix: Band status opens for the admin and the leader on a live gig, and says what it is waiting for
 
 What ships in PR #107: the faces strip and the Band status panel on the band page and the gig view. Before and after
-a gig, anyone in the band can open it and it reads the planned route, Downloaded ✓ or Not yet (from the pack receipts),
+a gig, anyone in the band can open it and it reads the planned route, Downloaded âœ“ or Not yet (from the pack receipts),
 and "Sync and timing show during a live gig." During a live gig, only the band's admin and the gig's leader can open
 it. Members and the backup see the faces as pictures.
 
@@ -591,7 +645,7 @@ The build (c8c061e) is committed. Under the queue rules I did not edit the commi
 `scripts/check-stage.ts:550`, in "two holds in flight: Next, then a section chip before Next lands, and both land". The
 case starts the band's click with `startClick()`, which holds Count in, so the page-side room records three ops from the
 leader: `countIn`, `goTo`, `section`. The assertion asks for exactly two, `[goTo, section]`, so it fails on correct
-behavior. Every other line in the case passes: the pending Next is kept, the chip says "On 4 ▸", and Sam's phone turns
+behavior. Every other line in the case passes: the pending Next is kept, the chip says "On 4 â–¸", and Sam's phone turns
 the section and flips the song each at its own landing.
 
 **Fix (counter only):** count the ops after the click started. No requirement moves.
@@ -696,7 +750,7 @@ index c620867..8f59583 100644
 +      const dropped = await until("dropped", () => view(samSite), (v) => v.strips.some((s) => s.key === "dropped"), 40_000);
        const droppedLog = dropped.strips.filter((s) => s.key === "dropped").pop()!;
        const droppedAfter = (droppedLog.local - droppedLog.heardAt!) / 1000;
-       assert.equal(dropped.strip.words, `Mike's phone dropped · still on ${songNumber}`);
+       assert.equal(dropped.strip.words, `Mike's phone dropped Â· still on ${songNumber}`);
 @@ -683,7 +684,7 @@ async function fakeClock() {
      const at = turned.last.at;
      room.push(turned, at - truth() + 200);

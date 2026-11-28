@@ -74,6 +74,7 @@
                     "check:share-guard":  "node --experimental-strip-types scripts/check-share-guard.ts",
                     "check:share-rule":  "node --experimental-strip-types scripts/check-share-rule.ts",
                     "check:song-import":  "node --experimental-strip-types scripts/check-song-import.ts",
+                    "check:song-info":  "tsc -p worker \u0026\u0026 node --experimental-strip-types scripts/check-song-info.ts",
                     "check:song-notes":  "tsc -p worker \u0026\u0026 node --experimental-strip-types scripts/check-song-notes.ts",
                     "check:song-paste":  "node --experimental-strip-types scripts/check-song-paste.ts",
                     "check:song-search":  "node --experimental-strip-types scripts/check-song-search.ts",

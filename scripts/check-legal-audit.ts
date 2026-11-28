@@ -345,6 +345,23 @@ function runDocCases() {
   }
 }
 
+const TERMS_FILE = "legal/TERMS-DRAFT.md";
+const TERMS_CONTACT = "Brian Pruitt (contact details to be added)";
+const count = (text: string, part: string) => text.split(part).length - 1;
+
+function runTermsCases() {
+  const file = path.join(ROOT, TERMS_FILE);
+  const text = existsSync(file) ? readFileSync(file, "utf8") : "";
+  report(text !== "", `T1 ${TERMS_FILE} is in the repo`, "the file is missing");
+  report(
+    count(text, TERMS_CONTACT) === 6 && !text.includes("[CONTACT EMAIL]"),
+    `T2 each of the six [CONTACT EMAIL] placeholders in the Terms draft reads ${TERMS_CONTACT}`,
+    `found ${count(text, TERMS_CONTACT)} named, ${count(text, "[CONTACT EMAIL]")} [CONTACT EMAIL] left`,
+  );
+  report(text !== "" && !text.includes("@"), "T3 the Terms draft holds no @, so no address was made up", `${count(text, "@")} @ found`);
+  report(text.includes("[COMPANY NAME]") && text.includes("[STATE]"), "T4 the Terms draft keeps its [COMPANY NAME] and [STATE] placeholders", "a placeholder is gone");
+}
+
 const ITEMS: { name: string; rules: string[] }[] = [
   { name: "R0 the build exists", rules: ["no-build"] },
   { name: "R2 no outside font, stylesheet, script, image or frame in index.html, public, dist, the Worker pages or the privacy page", rules: ["font-or-cdn-host", "third-party-script", "third-party-link", "third-party-embed", "css-remote-load", "remote-script-import"] },
@@ -370,5 +387,6 @@ runRealTree();
 runCases();
 runPathCases();
 runDocCases();
+runTermsCases();
 console.log(`check:legal-audit ${failures ? `failed ${failures}` : "passed"} in ${((Date.now() - started) / 1000).toFixed(1)} s`);
 process.exit(failures ? 1 : 0);

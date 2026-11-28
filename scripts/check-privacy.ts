@@ -16,6 +16,15 @@ function check(ok: boolean, message: string) {
   }
 }
 
+check(existsSync(join(root, "src")) && existsSync(join(root, "worker")), `the privacy scan root is a real folder that holds src and worker (root is ${root})`);
+if (failures > 0) {
+  console.error("check:privacy failed: the scan root is not the repo folder, so no stored key can be read");
+  process.exit(1);
+}
+
+const SONG_SEARCH_LINE = "When you search for a song, the app sends the title you typed to MusicBrainz (musicbrainz.org), a public music catalog.";
+const LIVE_GIG_LINE = "A live-gig link between bandmates, and Test now in the connection setting, ask stun.cloudflare.com for the public network address of this phone.";
+
 function filesUnder(dir: string): string[] {
   if (!existsSync(dir)) return [];
   return (readdirSync(dir, { recursive: true }) as string[]).map((file) => join(dir, file)).filter((file) => statSync(file).isFile());
@@ -76,6 +85,9 @@ try {
   check(html.includes(`<p id="contact">${contact}</p>`), "the privacy page shows the contact from VITE_PRIVACY_CONTACT");
   for (const kind of DATA_KINDS) check(html.includes(kind.what), `the privacy page describes ${kind.key}`);
   check(/name, your email address/.test(html) && /Deleting your data/.test(html), "the privacy page covers Google sign-in and deleting data");
+  check(html.includes(SONG_SEARCH_LINE), "the privacy page says song search sends the typed title to MusicBrainz (musicbrainz.org)");
+  check(html.includes(LIVE_GIG_LINE), "the privacy page says a live-gig link and Test now ask stun.cloudflare.com for the public network address of this phone");
+  check(!/\/\/|stun:/i.test(html), "the privacy page names outside hosts as plain text, with no web or stun: address");
 
   await site.send("Page.navigate", { url: `${site.origin}/#/songs` });
   let opened = "";
@@ -99,6 +111,11 @@ await build({ root, logLevel: "silent", build: { outDir: plain, emptyOutDir: tru
 const plainPage = join(plain, PRIVACY_HREF);
 const plainHtml = existsSync(plainPage) ? readFileSync(plainPage, "utf8") : "";
 check(plainHtml.includes(`<p id="contact">${CONTACT_PLACEHOLDER}</p>`) && !plainHtml.includes("@"), "a build without VITE_PRIVACY_CONTACT shows placeholder text, not an address");
+const plainContact = /<p id="contact">([^<]*)<\/p>/.exec(plainHtml)?.[1] ?? "";
+check(
+  /\bBrian Pruitt\b/.test(plainContact) && /\b(?:to be added|pending)\b/.test(plainContact) && !plainContact.includes("@") && !CONTACT_PLACEHOLDER.includes("@"),
+  `a build without VITE_PRIVACY_CONTACT names Brian Pruitt as the contact with details still to be added, and no address (reads "${plainContact}")`,
+);
 rmSync(plain, { recursive: true, force: true });
 
 if (failures > 0) {

@@ -6,8 +6,8 @@ import { useEscape } from "./hooks";
 import "./band-status.css";
 
 /**
- * A live gig's feed: who leads now, and the leader's statuses on the clock `now` reads. No mount passes one yet; the
- * live Room feed is p6-gig-check-in's work. Until it lands a live gig draws `waitingPlayers`.
+ * A live gig's feed: who leads now, and the leader's statuses on the clock `now` reads. The gig's screen passes one
+ * once this phone holds the Room's roster for the gig; without one a live gig draws `waitingPlayers`.
  */
 export type LiveFeed = { leader: string; statuses: () => readonly PlayerStatus[]; now: () => number };
 
@@ -29,7 +29,11 @@ function faceClass(row: StatusRow, live: boolean): string {
   return ["band-status-face", row.leader && "band-status-face-leader", status].filter(Boolean).join(" ");
 }
 
-export function BandStatusPanel({ players, onClose }: { players: Player[]; onClose: () => void }) {
+/**
+ * `note` is the line for a roster this phone can no longer refresh: its rows are kept and marked old, so no one is shown
+ * Not connected because this phone lost the band.
+ */
+export function BandStatusPanel({ players, note = null, onClose }: { players: Player[]; note?: string | null; onClose: () => void }) {
   const titleId = useId();
   useEscape(onClose);
   const line = panelLine(players);
@@ -45,11 +49,12 @@ export function BandStatusPanel({ players, onClose }: { players: Player[]; onClo
         </header>
         <ul className="band-status-rows">
           {statusRows(players).map((row) => (
-            <li key={row.id} className={ROW_TONE[row.tone]}>
+            <li key={row.id} className={note ? `${ROW_TONE[row.tone]} band-status-old` : ROW_TONE[row.tone]}>
               <span className="band-status-name">{row.name}</span>
               {row.leader ? <span className="band-status-tag">Leader</span> : null}
               {row.you ? <span className="band-status-tag">You</span> : null}
               {row.routeText ? <span className="band-status-route">{row.routeText}</span> : null}
+              {row.checkInWhy ? <span className="band-status-why">{row.checkInWhy}</span> : null}
               {row.bars === null ? null : (
                 <span className="band-status-bars">
                   {row.barsText || (
@@ -75,6 +80,11 @@ export function BandStatusPanel({ players, onClose }: { players: Player[]; onClo
             </li>
           ))}
         </ul>
+        {note ? (
+          <p className="account-note band-status-line" role="status">
+            {note}
+          </p>
+        ) : null}
         {line ? <p className="account-note band-status-line">{line}</p> : null}
       </section>
     </div>
@@ -98,7 +108,7 @@ function useTick(on: boolean) {
  * panel, and getting it back does not reopen it. The panel mounts on `.app`, because `.scroll` is its own stacking
  * context under the shell header.
  */
-export function BandStatusFaces({ players, status, admin, live }: { players: Player[]; status: GigStatus; admin: boolean; live?: LiveFeed }) {
+export function BandStatusFaces({ players, status, admin, live, note = null }: { players: Player[]; status: GigStatus; admin: boolean; live?: LiveFeed; note?: string | null }) {
   const [sheetHost, setSheetHost] = useState<Element | null>(null);
   const feed = status === "live" ? live : undefined;
   useTick(!!feed);
@@ -125,7 +135,7 @@ export function BandStatusFaces({ players, status, admin, live }: { players: Pla
           );
         })}
       </div>
-      {sheetHost ? createPortal(<BandStatusPanel players={shown} onClose={() => setSheetHost(null)} />, sheetHost) : null}
+      {sheetHost ? createPortal(<BandStatusPanel players={shown} note={feed ? note : null} onClose={() => setSheetHost(null)} />, sheetHost) : null}
     </>
   );
 }

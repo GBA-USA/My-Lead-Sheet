@@ -6,7 +6,7 @@
  * in its folder with the other build's, so its open page is really old and a reload really lands on the new one. The
  * server can also cut that phone's network, and counts the requests it gets for build.json.
  *
- * Cases U1 to U17 print `ok   <name>` or `FAIL <name>: <reason>`; the check exits 1 on any FAIL.
+ * Cases U1 to U18 print `ok   <name>` or `FAIL <name>: <reason>`; the check exits 1 on any FAIL.
  * `UPDATE_NOW_SHOTS=<dir>` writes the 360 px screenshots, light and dark.
  */
 import assert from "node:assert/strict";
@@ -38,6 +38,9 @@ const BUILD_ENV = "MLS_BUILD_ID";
 const OLD_ID = "zz-first-version-of-tonight";
 const NEW_ID = "aa-second-version-of-tonight";
 const SHOTS = process.env.UPDATE_NOW_SHOTS ?? "";
+/** How long public/sw.js waits for the network before it opens its cached page; U18's slow network answers later. */
+const NAVIGATION_WAIT_MS = Number(/const NAVIGATION_WAIT_MS = (\d+);/.exec(readFileSync(join(root, "public", "sw.js"), "utf8"))?.[1]);
+assert.ok(NAVIGATION_WAIT_MS > 0, "public/sw.js still names NAVIGATION_WAIT_MS");
 const started = Date.now();
 const pause = (ms: number) => new Promise((done) => setTimeout(done, ms));
 const newGigId = () => `gig_${Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString("base64url")}`;
@@ -238,19 +241,24 @@ const TYPES: Record<string, string> = {
 let apiBase = "";
 let appOrigin = "";
 
-type Front = { origin: string; dir: string; buildJsonGets: number; setOff(off: boolean): void; close(): Promise<void> };
+type Front = { origin: string; dir: string; buildJsonGets: number; setOff(off: boolean): void; setSlow(ms: number): void; close(): Promise<void> };
 
 /**
  * A phone's site. The Worker lets in one app origin, so the API's Origin is set to it on the way; everything else goes
- * as the browser sent it. Off, the site drops every open connection, the room socket too, and refuses new ones.
+ * as the browser sent it. Off, the site drops every open connection, the room socket too, and refuses new ones. Slow,
+ * every file it serves, build.json and sw.js included, answers that many milliseconds late.
  */
 async function front(dir: string): Promise<Front> {
   let off = false;
+  let slow = 0;
   const open = new Set<NetSocket | Duplex>();
   const site: Front = {
     origin: "",
     dir,
     buildJsonGets: 0,
+    setSlow(ms) {
+      slow = ms;
+    },
     setOff(next) {
       off = next;
       if (off) for (const socket of open) socket.destroy();
@@ -284,14 +292,18 @@ async function front(dir: string): Promise<Front> {
     }
     if (request.method === "GET" && path === "/build.json") site.buildJsonGets += 1;
     const file = join(site.dir, path === "/" ? "index.html" : decodeURIComponent(path));
-    try {
-      const body = readFileSync(file);
-      response.writeHead(200, { "content-type": TYPES[extname(file)] ?? "application/octet-stream" });
-      response.end(body);
-    } catch {
-      response.writeHead(404);
-      response.end();
-    }
+    const answer = () => {
+      try {
+        const body = readFileSync(file);
+        response.writeHead(200, { "content-type": TYPES[extname(file)] ?? "application/octet-stream" });
+        response.end(body);
+      } catch {
+        response.writeHead(404);
+        response.end();
+      }
+    };
+    if (slow) setTimeout(answer, slow);
+    else answer();
   });
   server.on("connection", (socket) => {
     if (off) return void socket.destroy();
@@ -980,6 +992,41 @@ try {
     assert.ok(reload, "Lee's strip has a button named Reload");
     assert.ok(reload.icon >= 16, `Reload draws its icon (${reload.icon} px wide)`);
     assert.deepEqual(reload.worded, [], "Reload is icon-only: the word is its name and draws no box (UI rule 1)");
+  });
+
+  await check("U18 one tap on a slow network", async () => {
+    await leeLeadsWithBoBehind();
+    const leeOn = await lee.reported(gigId);
+    const boWas = await bo.reported(gigId);
+    const workerHoldsThisPage = `(async () => {
+      const r = await navigator.serviceWorker.getRegistration();
+      const src = document.querySelector('script[type="module"][src]')?.src;
+      return !!r?.active && !r.installing && !r.waiting && !!src && !!(await caches.match(src));
+    })()`;
+    // A reload that skips the cache also skips the worker's own update check, so ask for it here.
+    await bo.evaluate(`navigator.serviceWorker.getRegistration().then((r) => r?.update()).then(() => true, () => false)`);
+    await waitFor("Bo's service worker to hold the version Bo's page runs", 30_000, () => bo.evaluate<boolean>(workerHoldsThisPage));
+    await bo.mark();
+    await bo.site.send("Page.reload", { ignoreCache: false });
+    await waitFor("Bo's page to load again under its service worker", 20000, () => bo.reloaded());
+    await waitFor("Bo's page to join again", 20000, async () => (await bo.reported(gigId)) === boWas);
+    assert.ok(await bo.evaluate<boolean>(`!!navigator.serviceWorker.controller`), "Bo's page is controlled by its service worker");
+    publish(boDir, leeOn === NEW_ID ? newBuild : oldBuild);
+    await lee.tap("Update now", ".update-panel");
+    await waitFor("Bo's prompt after Lee's tap", 10000, async () => (await bo.prompts()) === 1);
+    bo.front.setSlow(NAVIGATION_WAIT_MS + 500);
+    try {
+      await bo.mark();
+      await bo.tap("Update now", ".update-prompt");
+      await waitFor("Bo's page to reload", 150_000, () => bo.reloaded());
+      await waitFor("Bo's reloaded page to join the gig with no tap", 60_000, async () => (await bo.reported(gigId)) !== "(no join yet)");
+      const now = await bo.reported(gigId);
+      assert.equal(now, leeOn, `on a slow network the reload lands on the published version, not back on the one Bo had (${js(boWas)})`);
+    } finally {
+      bo.front.setSlow(0);
+    }
+    await waitFor("Bo back in the gig with no tap", 20000, () => following(bo));
+    assert.equal(await bo.prompts(), 0, "no prompt on the published version");
   });
 } catch (error) {
   failed += 1;

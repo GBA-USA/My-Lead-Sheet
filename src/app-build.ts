@@ -25,19 +25,62 @@ export async function publishedBuild(): Promise<string | null> {
 /** What a reload onto the published version came to: it could not reach it, this page already runs it, or it is reloading. */
 export type ReloadOutcome = "offline" | "current" | "reloading";
 
+/** How long a new service worker gets to fetch every file of the published version before the update counts as failed. */
+const NEW_WORKER_WAIT_MS = 120_000;
+
+/**
+ * True once the newest service worker is the active one, so the next page load is answered from its copy of the
+ * published files even when the network is too slow to wait for. False when the new worker failed to install, or did
+ * not finish within `ms`: the worker still active then holds the old version, and a reload would land back on it.
+ */
+function newestWorkerActive(registration: ServiceWorkerRegistration, ms: number): Promise<boolean> {
+  const leaving = registration.active;
+  let sawIncoming = false;
+  return new Promise((resolve) => {
+    let settled = false;
+    const settle = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(ok);
+    };
+    const timer = setTimeout(() => settle(false), ms);
+    const look = () => {
+      if (settled) return;
+      const incoming = registration.installing ?? registration.waiting;
+      if (incoming) {
+        sawIncoming = true;
+        incoming.addEventListener("statechange", look, { once: true });
+        return;
+      }
+      const active = registration.active;
+      if (active && active.state !== "activated") {
+        active.addEventListener("statechange", look, { once: true });
+        return;
+      }
+      settle(!sawIncoming || active !== leaving);
+    };
+    look();
+  });
+}
+
 /**
  * Reloads onto the published version, only once this phone can fetch it and it differs from this page's. The service
- * worker is asked to update first; it takes over at once and opens pages network first, so the reload lands on the new
- * version. Nothing stored on the phone is touched.
+ * worker is asked to update, and the reload waits until the new worker is in charge: before that the old one answers
+ * the reload and, on a slow network, opens its own old copy. Nothing stored on the phone is touched.
  */
 export async function reloadOntoPublished(): Promise<ReloadOutcome> {
   const published = await publishedBuild();
   if (published === null) return "offline";
   if (published === BUILD_ID) return "current";
-  try {
-    await (await navigator.serviceWorker?.getRegistration())?.update();
-  } catch {
-    // An update the worker cannot make now still leaves the reload network first.
+  const registration = await navigator.serviceWorker?.getRegistration().catch(() => undefined);
+  if (registration) {
+    try {
+      await registration.update();
+    } catch {
+      return "offline";
+    }
+    if (!(await newestWorkerActive(registration, NEW_WORKER_WAIT_MS))) return "offline";
   }
   location.reload();
   return "reloading";

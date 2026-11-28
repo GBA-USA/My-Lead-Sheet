@@ -80,6 +80,7 @@
                     "check:spend-guard":  "node --experimental-strip-types scripts/check-spend-guard.ts",
                     "check:spike-links":  "node --experimental-strip-types scripts/check-spike-links.ts",
                     "check:spike-server":  "node spike/server/check.mjs",
+                    "check:sql-audit":  "tsc -p worker && node --experimental-strip-types scripts/check-sql-audit.ts",
                     "check:stage":  "node --experimental-strip-types scripts/check-stage.ts",
                     "check:storage":  "node --experimental-strip-types scripts/check-storage.ts",
                     "check:sync-check":  "tsc -p worker \u0026\u0026 node --experimental-strip-types scripts/check-sync-check.ts",

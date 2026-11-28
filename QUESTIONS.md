@@ -1,3 +1,34 @@
+# legal-quickfix fix round 3 (Nov 28 2026): the STUN line now names Test with a bandmate
+
+The judge found a third path to stun.cloudflare.com that the dictated STUN line left out: Test with a bandmate
+(`src/connection-setting.tsx:174`) opens `BandmateSheet` with `configNow()`, whose `stun` is `FREE_STUN`, and its internet
+route hands that server to the peer connection on both phones (`src/sync-bandmate.tsx:118,208`). This round took the
+judge's example wording: "A live-gig link between bandmates, and Test now and Test with a bandmate in the connection
+setting, ask stun.cloudflare.com for the public network address of this phone." Owner (Terry): keep it or reword it.
+`check:privacy` pins it as `LIVE_GIG_LINE`, and a new case runs the real `showSide` and fails while the line leaves out
+Test with a bandmate, so a rewording must keep those words or edit that case too.
+
+---
+
+# legal-quickfix fix pass 1 (Nov 27 2026): the privacy page's MusicBrainz wording
+
+1. The brief dictated one line: "When you search for a song, the app sends the title you typed to MusicBrainz
+   (musicbrainz.org), a public music catalog." The judge found it is not the whole story. Pasting a chart with no
+   title sends up to two of its sung lines to musicbrainz.org with nothing typed (`src/song-search.ts:306`). The
+   search box also sends an artist when one is typed. This round kept the dictated line word for word and added one:
+   "When you paste a chart with no title or artist, the app looks it up on MusicBrainz. It sends the chart's title,
+   or, when the chart has none, up to two of its sung lines." Owner (Terry): keep both lines, reword them, or ask for
+   the paste lookup to stop sending sung lines. `check:privacy` pins both strings, so a rewording edits
+   `SONG_SEARCH_LINE` and `PASTE_LOOKUP_LINE` in `scripts/check-privacy.ts` too.
+
+   Fix pass 2 adds two wording points for the same decision, with no text changed. The dictated line says "the title
+   you typed", but the search box asks for a "title or artist" (`src/song-search.tsx:75`) and sends what was typed.
+   The added line's "with no title or artist" can read as both missing, while the lookup also runs when only the
+   artist is missing (`missing`, `src/song-editor.tsx:293`) and then sends the title. "with no title, or no artist" would be
+   plainer.
+
+---
+
 # PR #130 deep fix: check:links case 1 and Chrome's srflx-first pair (owner ruling needed)
 
 CI run 46071174653 failed `check:links` case 1 on both attempts at d3956f9, the same way PR #107's run 45281740592 did.

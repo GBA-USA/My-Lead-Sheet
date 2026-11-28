@@ -148,6 +148,23 @@
   min-height: var(--touch);
 }
 
+.update-reload {
+  display: inline-grid;
+  place-items: center;
+  position: relative;
+  min-width: var(--touch);
+  padding: 0;
+}
+
+.update-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .update-panel .update-button {
   align-self: flex-start;
 }

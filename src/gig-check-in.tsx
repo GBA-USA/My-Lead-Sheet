@@ -213,8 +213,9 @@ export function VersionCheck({ me, gigId, names, ask, refused }: VersionProps) {
     return (
       <div className="update-self" role="status">
         <span className="update-self-words">{VERSION_WORDS.selfFirst}</span>
-        <button type="button" className="account-primary update-button" onClick={reload}>
-          Reload
+        <button type="button" className="account-primary update-button update-reload" onClick={reload}>
+          <ReloadIcon />
+          <span className="update-label">Reload</span>
         </button>
         <span className="update-note">{VERSION_WORDS.betweenSongs}</span>
         {line ? (
@@ -254,6 +255,15 @@ export function VersionCheck({ me, gigId, names, ask, refused }: VersionProps) {
       </ul>
       {unreachable ? <p className="update-ask">{VERSION_WORDS.askThem}</p> : null}
     </section>
+  );
+}
+
+function ReloadIcon() {
+  return (
+    <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
+      <path d="M16 10a6 6 0 1 1-1.8-4.3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M15.5 2.5v4h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 

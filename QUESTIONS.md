@@ -1,3 +1,18 @@
+# p6-update-now: 2026-11-27: where the brief and the Groovist UI rules disagree (kept to the rules)
+
+**Rule 3, no dead controls.** In "Empty and error states", the brief says that when only phones from before this cook
+are behind, "Update now is off with the same line as its reason". A control that is off is a dead control. So Update now
+does not appear at all, and the ask-them line ("A phone on an older version can't be reached from here. Ask them to
+close the app and open it again.") is the only thing shown. U8 checks this: Update now is not offered, and the line shows.
+
+**Rule 1, icons over words.** The brief asks for "a Reload button". Reload has a universal icon (the circular arrow,
+like the reset icon in the icon map), so the button shows only that icon. "Reload" is its accessible name, in text that
+is hidden on screen.
+
+**Rule 4, state in the icon.** I read rule 4 as covering the on/off state of this phone's own controls. "On the new
+version" and "Needs the update" report someone else's phone. The brief fixes these words and U3 checks them, so they stay
+as words. If Brian reads rule 4 as covering this too, the row needs an icon form, and that is a new brief.
+
 # p6-gig-check-in, self-check fix pass 1: 2026-11-27: Hold to take the lead does nothing for a phone that joined after the leader's phone left
 
 **Seen in K25's first draft.** Lee led from the phone and signed out there. Ada, the admin, signed in on the same phone

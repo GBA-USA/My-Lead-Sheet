@@ -8,7 +8,7 @@ export type TextSteps = { index: number; count: number; onChange: (index: number
 /**
  * The leading phone's corners of the chart, as a zero-height layer that sits on the stage bar's top edge: A− A+ at the
  * left, and while the sheet scrolls, Scroll slower and Scroll faster at the right. The speed is this phone's live speed;
- * it goes to no one else and back to 100% on the next song.
+ * it goes to no one else and back to 100% on the next song or once this phone stops leading (`InGig` in stage-bar.tsx).
  */
 export function GigCorners({ text, scrolling }: { text: TextSteps; scrolling: boolean }) {
   const [speed, setSpeed] = useScrollSpeed();

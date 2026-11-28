@@ -5,7 +5,7 @@ import type { GigPack } from "./gig-pack";
 import type { GigPosition } from "./gig-position";
 import { position, type GigState, type Refusal, type SongKey, type UserId } from "./gig-state";
 import { mayTakeOver, type LeaderHeard, type LiveGig, type OpBody } from "./gig-live.js";
-import { useEscape } from "./hooks";
+import { useEscape, useScrollSpeed } from "./hooks";
 import { bandLiveHref, type Route } from "./route";
 import { songByRef } from "./storage";
 import type { Library, Song } from "./types";
@@ -187,6 +187,10 @@ function InGig({ gig, set, canMove, scroll, bpm, song, text }: BarProps & { gig:
     setDraft(null);
   }, []);
   useEscape(close);
+  const [, setSpeed] = useScrollSpeed();
+  useEffect(() => {
+    if (!leading) setSpeed(1);
+  }, [leading]);
 
   // One frame loop for the stage: it fires a hold that has lasted, measures the frame rate, turns the chart when the band's
   // section lands, and redraws only when the chip, Undo or a note comes or goes.

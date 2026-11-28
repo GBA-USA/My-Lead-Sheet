@@ -6,7 +6,7 @@
  * in its folder with the other build's, so its open page is really old and a reload really lands on the new one. The
  * server can also cut that phone's network, and counts the requests it gets for build.json.
  *
- * Cases U1 to U18 print `ok   <name>` or `FAIL <name>: <reason>`; the check exits 1 on any FAIL.
+ * Cases U1 to U22 print `ok   <name>` or `FAIL <name>: <reason>`; the check exits 1 on any FAIL.
  * `UPDATE_NOW_SHOTS=<dir>` writes the 360 px screenshots, light and dark.
  */
 import assert from "node:assert/strict";
@@ -41,6 +41,9 @@ const SHOTS = process.env.UPDATE_NOW_SHOTS ?? "";
 /** How long public/sw.js waits for the network before it opens its cached page; U18's slow network answers later. */
 const NAVIGATION_WAIT_MS = Number(/const NAVIGATION_WAIT_MS = (\d+);/.exec(readFileSync(join(root, "public", "sw.js"), "utf8"))?.[1]);
 assert.ok(NAVIGATION_WAIT_MS > 0, "public/sw.js still names NAVIGATION_WAIT_MS");
+/** How long Update now waits for the new service worker before it gives up; U21 waits it out. */
+const NEW_WORKER_WAIT_MS = Number(/const NEW_WORKER_WAIT_MS = ([\d_]+);/.exec(readFileSync(join(root, "src", "app-build.ts"), "utf8"))?.[1].replaceAll("_", ""));
+assert.ok(NEW_WORKER_WAIT_MS > 0, "src/app-build.ts still names NEW_WORKER_WAIT_MS");
 const started = Date.now();
 const pause = (ms: number) => new Promise((done) => setTimeout(done, ms));
 const newGigId = () => `gig_${Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString("base64url")}`;
@@ -60,6 +63,7 @@ const READY = "A new version is ready.";
 const OFFLINE = "Connect to the internet, then tap again.";
 const NOT_LEADING = "You're not leading now";
 const ASKED = "Asked. Their phones show the update now.";
+const GETTING = "Getting the new version.";
 
 let failed = 0;
 const ONLY = (process.env.UPDATE_NOW_CASES ?? "").split(",").filter(Boolean);
@@ -219,6 +223,13 @@ const publishedIn = (dir: string): unknown => {
   if (!existsSync(file)) return "(no build.json)";
   return (JSON.parse(readFileSync(file, "utf8")) as Json).id;
 };
+/** A file the new service worker must fetch to install `build`, and that no open page waits on: the one a case holds back or loses. */
+function precachedSpare(build: string) {
+  const files = (JSON.parse(/const BUILD = (\{.*?\});/.exec(readFileSync(join(build, "sw.js"), "utf8"))?.[1] ?? "{}") as { files?: string[] }).files;
+  const spare = files?.map((file) => file.replaceAll("\\", "/")).find((file) => file === "favicon.svg");
+  assert.ok(spare, `the worker of ${build} precaches favicon.svg (${js(files)})`);
+  return `/${spare}`;
+}
 /** Replaces every file a phone's site serves with the files of `from`. */
 function publish(dir: string, from: string) {
   for (const name of readdirSync(dir)) rmSync(join(dir, name), { recursive: true, force: true });
@@ -241,16 +252,29 @@ const TYPES: Record<string, string> = {
 let apiBase = "";
 let appOrigin = "";
 
-type Front = { origin: string; dir: string; buildJsonGets: number; setOff(off: boolean): void; setSlow(ms: number): void; close(): Promise<void> };
+type Front = {
+  origin: string;
+  dir: string;
+  buildJsonGets: number;
+  setOff(off: boolean): void;
+  setSlow(ms: number): void;
+  setHeld(path: string | null): void;
+  setMissing(path: string | null): void;
+  close(): Promise<void>;
+};
 
 /**
  * A phone's site. The Worker lets in one app origin, so the API's Origin is set to it on the way; everything else goes
  * as the browser sent it. Off, the site drops every open connection, the room socket too, and refuses new ones. Slow,
- * every file it serves, build.json and sw.js included, answers that many milliseconds late.
+ * every file it serves, build.json and sw.js included, answers that many milliseconds late. A held file gets no answer
+ * until it is let go, so a worker that precaches it cannot finish installing. A missing file answers 404.
  */
 async function front(dir: string): Promise<Front> {
   let off = false;
   let slow = 0;
+  let held: string | null = null;
+  let missing: string | null = null;
+  const holding: (() => void)[] = [];
   const open = new Set<NetSocket | Duplex>();
   const site: Front = {
     origin: "",
@@ -258,6 +282,13 @@ async function front(dir: string): Promise<Front> {
     buildJsonGets: 0,
     setSlow(ms) {
       slow = ms;
+    },
+    setHeld(path) {
+      held = path;
+      if (path === null) for (const go of holding.splice(0)) go();
+    },
+    setMissing(path) {
+      missing = path;
     },
     setOff(next) {
       off = next;
@@ -294,6 +325,7 @@ async function front(dir: string): Promise<Front> {
     const file = join(site.dir, path === "/" ? "index.html" : decodeURIComponent(path));
     const answer = () => {
       try {
+        if (path === missing) throw new Error(`${path} is missing`);
         const body = readFileSync(file);
         response.writeHead(200, { "content-type": TYPES[extname(file)] ?? "application/octet-stream" });
         response.end(body);
@@ -302,7 +334,8 @@ async function front(dir: string): Promise<Front> {
         response.end();
       }
     };
-    if (slow) setTimeout(answer, slow);
+    if (path === held) holding.push(answer);
+    else if (slow) setTimeout(answer, slow);
     else answer();
   });
   server.on("connection", (socket) => {
@@ -1027,6 +1060,149 @@ try {
     }
     await waitFor("Bo back in the gig with no tap", 20000, () => following(bo));
     assert.equal(await bo.prompts(), 0, "no prompt on the published version");
+  });
+
+  // ---- U19 to U22: an Update now that waits for the new service worker, and every way that wait ends ----------------
+
+  const workerHoldsItsPage = `(async () => {
+    const r = await navigator.serviceWorker.getRegistration();
+    const src = document.querySelector('script[type="module"][src]')?.src;
+    return !!r?.active && !r.installing && !r.waiting && !!src && !!(await caches.match(src));
+  })()`;
+  /** Remembers the page's active worker, so a case can tell when a different one takes charge. */
+  const rememberWorker = (page: Page) => page.evaluate<boolean>(`navigator.serviceWorker.getRegistration().then((r) => { window.__leavingWorker = r?.active ?? null; return !!r?.active; })`);
+  const newWorkerInstalling = (page: Page) => page.evaluate<boolean>(`navigator.serviceWorker.getRegistration().then((r) => !!r?.installing)`);
+  const newWorkerInCharge = (page: Page) =>
+    page.evaluate<boolean>(`navigator.serviceWorker.getRegistration().then((r) => !!r?.active && r.active !== window.__leavingWorker && r.active.state === "activated" && !r.installing && !r.waiting)`);
+  const boxOf = (page: Page, selector: string) =>
+    page.evaluate<{ words: string; buttons: string[] }>(`(() => {
+      const box = document.querySelector(${js(selector)});
+      return { words: box?.innerText ?? "", buttons: [...(box?.querySelectorAll("button") ?? [])].map((b) => b.textContent.trim()) };
+    })()`);
+  const builtAs = (id: unknown) => (id === NEW_ID ? newBuild : oldBuild);
+  /** Bo's page runs the version Lee's does not, is answered by its own service worker, and Lee's version is published. */
+  const boBehindUnderItsWorker = async () => {
+    await leeLeadsWithBoBehind();
+    const leeOn = await lee.reported(gigId);
+    const boWas = await bo.reported(gigId);
+    await bo.evaluate(`navigator.serviceWorker.getRegistration().then((r) => r?.update()).then(() => true, () => false)`);
+    await waitFor("Bo's service worker to hold the version Bo's page runs", 30_000, () => bo.evaluate<boolean>(workerHoldsItsPage));
+    await bo.mark();
+    await bo.site.send("Page.reload", { ignoreCache: false });
+    await waitFor("Bo's page to load again under its service worker", 20000, () => bo.reloaded());
+    await waitFor("Bo's page to join again", 20000, async () => (await bo.reported(gigId)) === boWas);
+    await waitFor("Bo following the gig again", 20000, () => following(bo));
+    assert.ok(await bo.evaluate<boolean>(`!!navigator.serviceWorker.controller`), "Bo's page is controlled by its service worker");
+    assert.ok(await rememberWorker(bo), "Bo's page has an active service worker");
+    publish(boDir, builtAs(leeOn));
+    return { leeOn, boWas, spare: precachedSpare(builtAs(leeOn)) };
+  };
+  /** Lee asks, and Bo taps Update now on the prompt. */
+  const boTapsUpdateNow = async () => {
+    await lee.tap("Update now", ".update-panel");
+    await waitFor("Bo's prompt after Lee's tap", 10000, async () => (await bo.prompts()) === 1);
+    await bo.mark();
+    await bo.tap("Update now", ".update-prompt");
+  };
+
+  await check("U19 Not now while Update now waits", async () => {
+    const { leeOn, boWas, spare } = await boBehindUnderItsWorker();
+    bo.front.setHeld(spare);
+    let waiting = { words: "", buttons: [] as string[] };
+    try {
+      await boTapsUpdateNow();
+      await waitFor("Bo's new service worker to start installing", 20000, () => newWorkerInstalling(bo));
+      waiting = await boxOf(bo, ".update-prompt");
+      await bo.tap("Not now", ".update-prompt");
+      await bo.until(`!document.querySelector(".update-prompt")`, "the prompt to close on Not now");
+    } finally {
+      bo.front.setHeld(null);
+    }
+    await waitFor("Bo's new service worker to take charge once its files arrive", 30000, () => newWorkerInCharge(bo));
+    await pause(4000);
+    assert.ok(!(await bo.reloaded()), "Bo's page did not reload after Bo tapped Not now");
+    assert.equal(await bo.reported(gigId), boWas, "Bo's page still runs the version Bo had");
+    assert.ok(await following(bo), "Bo still follows the gig");
+    assert.equal(await bo.prompts(), 0, "the prompt stays closed");
+    await rowReads("Bo", NEEDS, "Bo's row still reads Needs the update");
+    assert.ok(waiting.words.includes(GETTING), `while it waits, the prompt says ${GETTING} (${js(waiting.words)})`);
+    assert.deepEqual(waiting.buttons, ["Not now"], "while it waits, the prompt offers only Not now: Update now is not shown again (UI rule 3)");
+    await boTapsUpdateNow();
+    await waitFor("Bo's page to reload on the tap after Not now", 30000, () => bo.reloaded());
+    await waitFor("Bo's reloaded page to join the gig with no tap", 30000, async () => (await bo.reported(gigId)) !== "(no join yet)");
+    assert.equal(await bo.reported(gigId), leeOn, "the next Update now lands on the published version");
+    await waitFor("Bo back in the gig with no tap", 20000, () => following(bo));
+  });
+
+  await check("U20 an update that fails to install", async () => {
+    const { boWas, spare } = await boBehindUnderItsWorker();
+    bo.front.setMissing(spare);
+    try {
+      await boTapsUpdateNow();
+      await bo.until(`(document.querySelector(".update-prompt")?.textContent ?? "").includes(${js(OFFLINE)})`, "the line on Bo's prompt once the new worker fails to install", 30000);
+      await pause(3000);
+      assert.ok(!(await bo.reloaded()), "Bo's page did not reload onto the old worker");
+      assert.equal(await bo.reported(gigId), boWas, "Bo's page still runs the version Bo had");
+      assert.equal(await bo.prompts(), 1, "the prompt stays, so Bo can tap again");
+      assert.deepEqual((await boxOf(bo, ".update-prompt")).buttons, ["Update now", "Not now"], "Update now is offered again");
+      assert.ok(await following(bo), "Bo still follows the gig");
+    } finally {
+      bo.front.setMissing(null);
+    }
+    await bo.tap("Not now", ".update-prompt");
+  });
+
+  await check("U21 the leader's Reload waits, then gives up", async () => {
+    await leeLeadsWithBoBehind();
+    const leeOn = await lee.reported(gigId);
+    await lee.evaluate(`navigator.serviceWorker.getRegistration().then((r) => r?.update()).then(() => true, () => false)`);
+    await waitFor("Lee's service worker to hold the version Lee's page runs", 30_000, () => lee.evaluate<boolean>(workerHoldsItsPage));
+    assert.ok(await rememberWorker(lee), "Lee's page has an active service worker");
+    const other = leeOn === NEW_ID ? oldBuild : newBuild;
+    publish(leeDir, other);
+    lee.front.setHeld(precachedSpare(other));
+    let busy = { words: "", buttons: [] as string[] };
+    let tappedAt = 0;
+    try {
+      const sockets = await lee.evaluate<number>(`window.__rooms.length`);
+      await lee.blink();
+      await lee.until(`window.__rooms.slice(${sockets}).some((ws) => ws.readyState === 1 && ws.url.includes("/api/rooms/"))`, "Lee's page to open a new room socket", 20000);
+      await lee.until(`(document.querySelector(".update-self")?.textContent ?? "").includes(${js(SELF_FIRST)})`, "Update this phone first on Lee's strip", 20000);
+      await lee.mark();
+      await lee.tap("Reload", ".update-self");
+      tappedAt = Date.now();
+      await waitFor("Lee's new service worker to start installing", 20000, () => newWorkerInstalling(lee));
+      busy = await boxOf(lee, ".update-self");
+      await lee.until(`(document.querySelector(".update-self")?.textContent ?? "").includes(${js(OFFLINE)})`, "the line on Lee's strip once the wait runs out", NEW_WORKER_WAIT_MS + 30_000);
+      const waited = Date.now() - tappedAt;
+      assert.ok(waited >= NEW_WORKER_WAIT_MS - 1000, `the line comes when the ${NEW_WORKER_WAIT_MS / 1000} s wait runs out, not before (${(waited / 1000).toFixed(1)} s)`);
+      assert.ok(!(await lee.reloaded()), "Lee's page did not reload onto the old worker");
+      assert.deepEqual((await boxOf(lee, ".update-self")).buttons, ["Reload"], "Reload is offered again");
+    } finally {
+      lee.front.setHeld(null);
+    }
+    await waitFor("Lee's new service worker to take charge once its files arrive", 30000, () => newWorkerInCharge(lee));
+    await pause(4000);
+    assert.ok(!(await lee.reloaded()), "a wait that gave up never reloads later");
+    assert.ok(busy.words.includes(GETTING), `while it waits, Lee's strip says ${GETTING} (${js(busy.words)})`);
+    assert.deepEqual(busy.buttons, [], "while it waits, Reload is not shown again (UI rule 3)");
+  });
+
+  await check("U22 the gig ends while Update now waits", async () => {
+    const { boWas, spare } = await boBehindUnderItsWorker();
+    bo.front.setHeld(spare);
+    try {
+      await boTapsUpdateNow();
+      await waitFor("Bo's new service worker to start installing", 20000, () => newWorkerInstalling(bo));
+      ok(await ada.call("/api/bands/gig/end", { bandId, gigId }), "Ada ends the gig");
+      await waitFor("Bo's phone to leave the gig that ended", 30000, async () => !(await following(bo)) && (await bo.prompts()) === 0);
+    } finally {
+      bo.front.setHeld(null);
+    }
+    await waitFor("Bo's new service worker to take charge once its files arrive", 30000, () => newWorkerInCharge(bo));
+    await pause(4000);
+    assert.ok(!(await bo.reloaded()), "Bo's page did not reload after the gig ended");
+    assert.equal(await bo.reported(gigId), boWas, "Bo's page still runs the version Bo had");
   });
 } catch (error) {
   failed += 1;

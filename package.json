@@ -70,6 +70,7 @@
                     "check:scroll-sync":  "node --experimental-strip-types scripts/check-scroll-sync.ts",
                     "check:search":  "tsc -p worker \u0026\u0026 node --experimental-strip-types scripts/check-search.ts",
                     "check:send-song":  "tsc -p worker \u0026\u0026 node --experimental-strip-types scripts/check-send-song.ts",
+                    "check:setlist-builder":  "tsc -p worker && node --experimental-strip-types scripts/check-setlist-builder.ts",
                     "check:setlist-code":  "tsc -p worker \u0026\u0026 node --experimental-strip-types scripts/check-setlist-code.ts",
                     "check:share-guard":  "node --experimental-strip-types scripts/check-share-guard.ts",
                     "check:share-rule":  "node --experimental-strip-types scripts/check-share-rule.ts",

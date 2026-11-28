@@ -1,14 +1,16 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
+import { lazy, Suspense, useEffect, useId, useRef, useState, useSyncExternalStore, type ComponentProps, type ComponentType, type KeyboardEvent } from "react";
 import { bandSongRef, songFromSent } from "./band-library-model";
 import { PRIVACY_HREF } from "./data-kinds";
 import { GigSong } from "./gig-plan";
+import { useEscape } from "./hooks";
 import type { useMetronome } from "./metronome-view";
 import type { Notation } from "./music";
 import { allOnPhone, heldFor, onPhoneChange, phoneGeneration, type CachedBandSong } from "./phone-db";
 import { songHref, type TabName } from "./route";
 import { groupedSongs, keyName, matchingSetlists, NO_CHIPS } from "./search";
 import { SearchBox, SearchChips } from "./search-box";
-import { SetlistBuilder, type BuilderTarget } from "./setlist-builder";
+import type { BuilderTarget, SetlistBuilder as Builder } from "./setlist-builder";
+import "./setlist-builder.css";
 import { LeadSheet } from "./sheet";
 // @ts-expect-error TS5097: song-search.ts holds the same stem, so only ".tsx" names this file in tsc, Vite and esbuild.
 import { SongSearch } from "./song-search.tsx";
@@ -216,6 +218,52 @@ export function SongList({ songs, userId, onAdd, onImport }: { songs: Song[]; us
   );
 }
 
+type BuilderProps = ComponentProps<typeof Builder>;
+
+/**
+ * The builder loads on the first tap, so the main script keeps its size. The service worker holds every built file,
+ * so it opens offline too. Code that still cannot load shows why, and the next tap loads again.
+ */
+const loadBuilder = () =>
+  lazy<ComponentType<BuilderProps>>(() =>
+    import("./setlist-builder").then(
+      (module) => ({ default: module.SetlistBuilder }),
+      () => ({ default: BuilderUnloaded }),
+    ),
+  );
+let SetlistBuilder = loadBuilder();
+
+const MESSAGES = {
+  notLoaded: "The setlist builder couldn't load. Check your connection and try again.",
+  newSetlist: "New setlist",
+  close: "Close",
+};
+
+function BuilderUnloaded({ target, setlists, onClose }: BuilderProps) {
+  const titleId = useId();
+  const close = () => {
+    SetlistBuilder = loadBuilder();
+    onClose();
+  };
+  useEscape(close);
+  const heading = target.kind === "edit" ? (setlists.find((setlist) => setlist.id === target.id)?.name ?? MESSAGES.newSetlist) : MESSAGES.newSetlist;
+  return (
+    <div className="account-backdrop" onClick={close}>
+      <section className="setlist-builder" role="alertdialog" aria-modal="true" aria-labelledby={titleId} onClick={(event) => event.stopPropagation()}>
+        <header className="account-top">
+          <h2 id={titleId}>{heading}</h2>
+          <button type="button" className="account-close" aria-label={MESSAGES.close} onClick={close}>
+            ✕
+          </button>
+        </header>
+        <p className="account-error" role="alert">
+          {MESSAGES.notLoaded}
+        </p>
+      </section>
+    </div>
+  );
+}
+
 /** `onShowCode` is there only while signed in, since a code is made on the server. */
 export function SetlistList({ setlists, songs, onShowCode }: { setlists: Setlist[]; songs: Song[]; onShowCode?: (setlist: Setlist) => void }) {
   const [query, setQuery] = useState("");
@@ -305,14 +353,16 @@ export function SetlistList({ setlists, songs, onShowCode }: { setlists: Setlist
         </div>
       )}
       {builder ? (
-        <SetlistBuilder
-          target={builder}
-          setlists={setlists}
-          songs={songs}
-          onShowCode={onShowCode}
-          onCreated={(id) => setBuilder({ kind: "edit", id })}
-          onClose={closeBuilder}
-        />
+        <Suspense fallback={null}>
+          <SetlistBuilder
+            target={builder}
+            setlists={setlists}
+            songs={songs}
+            onShowCode={onShowCode}
+            onCreated={(id) => setBuilder({ kind: "edit", id })}
+            onClose={closeBuilder}
+          />
+        </Suspense>
       ) : null}
     </>
   );

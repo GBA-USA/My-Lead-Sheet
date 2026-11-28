@@ -1,4 +1,28 @@
-VERDICT: FAIL
+VERDICT: PASS
+Nits:
+P3 | CLASS=other | scripts/ci-check-seconds.json | Carried from pass 9, unchanged. No check:setlist-builder entry (grep count 0), so the shard plan uses the 60 s default for a multi-minute check. The brief leaves the weight to CoS.
+P3 | CLASS=other | src/setlist-builder-model.ts:67 | Carried from pass 8, unchanged. dragHoldReady is exported and never called; the component's own setTimeout starts the drag. No behavior differs.
+
+Corrective retry at f97ffd4 (Deep verify run 46170184729 red on check:song-import; Opus 5.5 on the laptop, Edge; logs in .verify-logs/ci-retry/, gitignored).
+- The red line, both CI attempts: "FAIL perf 1. the main script stays within 15 KB gzipped of the branch point: 242.38 KB is within 242.3 KB". The laptop build at f97ffd4 gives the same 242.38 KB; check:song-import exit 1 here with that one FAIL and 56 ok. The builder sat in the main script, and the merge with mls-int-20261113 took the shared budget 0.08 KB over.
+- Test first: check:setlist-builder B33 (added, no existing case edited) reads the served main script, blocks the builder script with the service worker bypassed, and taps + New setlist twice. At f97ffd4 it is red for the right reason: "the main script index-DD8g3Rfw.js holds the builder's words", with the other 32 cases ok.
+- Fix: src/library-lists.tsx loads SetlistBuilder with lazy() under Suspense, the shape song-editor.tsx uses for Import files. setlist-builder.css stays a static import, since it also styles + New setlist and the name buttons. A script that cannot load shows "The setlist builder couldn't load. Check your connection and try again." (MESSAGES), with Escape and the close button, and the next tap loads again. Main script 238.78 KB gzipped (3.52 KB under the budget), builder script 4.55 KB.
+- After: npm run build exit 0; check:setlist-builder exit 0 three runs in a row (33 ok each, 103 to 104 s); check:song-import exit 0 (57 ok, perf 1 at 238.78 KB); check:setlist-code, check:chordpro-phone, check:join-links, check:storage, check:library-consistency, check:phone-layout, check:search, check:screens, check:backup, check:portable and check:one-copy each exit 0.
+- Mutant: the fallback's close without a fresh lazy() turns B33 red ("timed out waiting for the builder on the next tap"); restored. The static import (f97ffd4 itself) is the other mutant.
+- EDGE-CASES row for this round: EC-28.
+
+# Judge pass 10 at f97ffd4 (its PASS was overtaken by the Deep verify above)
+Judge pass 10 evidence (Opus, deep, f97ffd4, laptop Edge; logs in .verify-logs/judge10/, gitignored).
+- Pass 9 P2 fixed. Mojibake byte count (â€, âœ, Â·) is 0 in QUESTIONS.md at ef161db, origin e0e0402 and HEAD, and 6 at a7530a2. QUESTIONS.md lines at HEAD found in neither parent: 0. `git diff --numstat origin/mls-int-20261113...HEAD` shows 0 deletions in QUESTIONS.md and VERIFY.md.
+- Pass 9 P3 (VERIFY.md history) fixed by the same numstat. The 4 mojibake hits left in VERIFY.md at HEAD all sit in quoted finding text the cook wrote (lines 2, 4, 19, 20 of the pre-pass-10 file), not in upstream lines.
+- The fix commit f97ffd4 touches only QUESTIONS.md and VERIFY.md. Against 71b65bc (judge pass 7 PASS), the branch's own non-md files differ only in package.json, and those are the two merged-in lines (check:ci-shard, check:update-now). The scripts at HEAD are the exact union of 71b65bc and origin, with no key changed.
+- Merge seam. Upstream changed 17 files since the old base. They overlap this branch only in QUESTIONS.md, VERIFY.md and package.json. No merged-in src file imports the storage helpers this branch adds (saveOwnSetlist, removeOwnSetlist, isBuiltInSetlist); gig-live.tsx imports only savePersonal.
+- Weakened checks: none. check-chordpro-phone, check-join-links and check-setlist-code only move the path to Show code into the builder (brief line 122). The Secret set "no Show code" assert now reads the builder, where the button lives.
+- EDGE-CASES row for this fix round: EC-27 in cooks/EDGE-CASES.md. fix-mojibake/case.mjs exits 1 at a7530a2 ("2 deleted") and 0 at HEAD.
+- Hands-on run of the riskiest path (brief "Live run"). After `npm run build` at HEAD (exit 0), .verify-logs/fix/live-run.ts ran on the merged build at 360 px, signed out, with real touch events, and exit 0. Results: after add ["Neon Moon","The Middle"], after drag ["The Middle","Neon Moon"], after reload the same; both songs still in My Songs; signed in, the Setlists screen has no Show code; page errors []. The 360 px light and dark shots in .verify-logs/judge10/shots show rows with title, artist, key and tempo, and the picker shows "Already in this setlist".
+- Not rerun: the cook's named checks (proven at this commit; src and scripts are byte-equal to a7530a2) and the earlier mutation runs (src unchanged since pass 7).
+
+# Judge pass 9 at a7530a2 (superseded by pass 10 above; its verdict was FAIL)
 P2 | CLASS=other | QUESTIONS.md:146 | Merge a7530a2 mojibakes upstream text: lines 146, 147, 151 and 277 read `â€¦` where both parents (ef161db and origin/mls-int-20261113 e0e0402) have `…`. Repro: `git show <ref>:QUESTIONS.md | grep -c $'\xc3\xa2\xe2\x82\xac'` gives 0 at both parents and 4 at a7530a2. So `git diff origin/mls-int-20261113...HEAD -- QUESTIONS.md` has 4 `-` lines that rewrite the p6-update-now and p2-song-info entries, and merging this PR would corrupt the shared log on mls-int. Fix: take origin's bytes for those 4 lines, and line 217 of the history below (see Nits).
 Nits:
 P3 | CLASS=other | VERIFY.md (history, ci-shard-balance section) | Same merge mojibake in one line: "planned at 60 s; â€¦" where origin has "…". It is the only `-` line in the VERIFY.md diff against origin. Kept verbatim below, so the fix round restores it with QUESTIONS.md.

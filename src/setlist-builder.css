@@ -356,7 +356,6 @@
 
 .setlist-picker-check:disabled {
   cursor: default;
-  opacity: 0.55;
 }
 
 .setlist-picker-check:focus-visible {

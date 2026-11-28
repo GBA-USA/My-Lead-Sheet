@@ -1,3 +1,26 @@
+VERDICT: PASS
+Nits:
+P3 | CLASS=state-machine | src/setlist-builder.tsx:174 | A drag that is in the air when a backup pull changes the same setlist drops with the indices it lifted, applied to the pulled list. Needs a pull to land inside one hold-and-drag; no song is lost (moved() never drops an entry, B19), only the order can be off by one place. Not changed.
+P3 | PRE-EXISTING | src/storage.ts | Carried from the judge: per-account mode, a built-in setlist one account edited is an own item under the built-in id, and another account's save of that id writes the same key (setOwn and withoutOthers came before this diff).
+P3 | PRE-EXISTING | scripts/check-setlist-code.ts:41 | `new URL("..", import.meta.url).pathname` is base code, not in this diff; on Windows it gives the doubled C:\C:\ path unless the path shim is loaded. Linux Deep verify is its gate.
+P3 | CLASS=other | ac4fa2e | Commit 1's message says B1-B14; it holds B1-B19. History is not rewritten.
+P3 | CLASS=ui-rule | QUESTIONS.md:1 | Rules 1 and 3 against the brief's dictated words and its non-tickable box: kept to rule 3 as far as the commit-1 cases allow (no grey, Add only once a song is ticked); the owner question is in QUESTIONS.md.
+
+# p6-setlist-builder fix round (Opus, Nov 28 2026)
+
+Answers the judge's FAIL on 439a1e6. Laptop Edge with the path shim; logs in `.verify-logs/fix/` and `.verify-logs/merged/` (gitignored).
+
+- P1 check:setlist-builder red. The builder section dropped `account-sheet` (src/setlist-builder.tsx:480) and setlist-builder.css carries the same look, so `.account-sheet` again means only the sign-in sheet. No assert changed. B9's signed-in half (Show code in the builder, none on the Setlists screen, "Add a song first", none for a Private copy), B13's second-account isolation and the final page-errors assert now run and pass. Mutation N6 (class put back) turns B9, B13 and B23 red.
+- P2 backdrop mid-rename. A mousedown on the backdrop is prevented (src/setlist-builder.tsx:472), so the name box never blurs and nothing saves. New case B20 types " Draft" and closes four ways: a real touch tap on the backdrop, a mouse click on the backdrop, a real Escape key, a tap on Close. Each keeps "Twin Check" stored and on screen, and after a reload. B20 was red at 439a1e6 ("a tap on the backdrop in the middle of a rename keeps the stored name"); mutation N1 turns it red again.
+- P2 missing cases. B21: tick Lantern Road, leave the picker by Back, by Escape and by Close; nothing is added on screen, stored or after a reload, and a reopened picker starts unticked (N2 red). B22: a seeded setlist names song 899, which the library lacks; the row reads "Missing from this library", is dragged to the top (saved as local/899 first) and removed, and My Songs is unchanged (N3 red). B24: the real SetlistList rendered in the built page with no setlists shows "No setlists yet." and + New setlist (N5 red). The shipped library always has built-in setlists that cannot be deleted, so the full app never reaches that screen.
+- P3 focus after Show code. The sheet takes focus when it opens on a setlist (src/setlist-builder.tsx:146) and the close refocus skips while another dialog is open (src/library-lists.tsx:236). B23 checks that focus is not on the Setlists screen behind the code sheet; red at 439a1e6 and under N4a and N4b.
+- Mutation table gap. "Let a ticked duplicate through" left B6 green in both shapes, because the picker never ticks a song already listed. B25 makes it happen for real: Phone B adds a ticked song through the real Worker while Phone A's picker is open; Add then puts it in once. Red under both shapes (M5a, M5b).
+- Rule 3. The picker's greyed Add and greyed in-setlist ticks are gone (Add shows once a song is ticked). QUESTIONS.md asks the owner about the rest.
+
+Results on the merged tree (959051b plus this round): build, check:portable, check:one-copy, check:privacy, check:legal-audit exit 0; check:setlist-builder exits 0 three runs in a row (65 s, 66 s, 67 s). Before the merge, also exit 0: check:storage, check:setlist-code, check:library-consistency, check:chordpro-phone, check:join-links, check:phone-layout, check:search, check:screens, check:backup. All 16 brief mutations plus N1-N6 turn their cases red (`.verify-logs/fix/mutations.txt`). Live run signed out at 360 px: drag held after a reload, both songs still in My Songs, no page errors.
+
+---
+
 VERDICT: FAIL
 P2 | CLASS=other | C:\Users\order\cooks\EDGE-CASES.md:21 | Fix round 1 (8154404, 83652f8) added no EDGE-CASES row. EC-15 is the last row, and the file was last written at 22:24, the edfa0cf minute. Nothing records the bug class this round fixed: a privacy line names one send to an outside host (the typed search) while a second path sends more to the same host (paste lookup, src/song-search.ts:306, up to 2 sung lines). REVIEW.md lists "a fix round that added no EDGE-CASES.md row" as a P2.
 Nits:

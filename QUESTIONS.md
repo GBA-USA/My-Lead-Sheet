@@ -1,3 +1,16 @@
+# p6-setlist-builder fix round (Nov 28 2026): UI rules 1 and 3 against the brief's words (owner: Brian or Terry)
+
+- Rule 3 (no disabled or greyed control). The brief says a song already in the setlist "cannot be ticked", and cases
+  B6, B7 and B15 (commit 1, which may not change) assert that its checkbox is `disabled`. Kept to the rule as far as
+  those cases allow: the box is no longer greyed and reads as a filled tick beside "Already in this setlist", and the
+  picker's Add button appears only once a song is ticked instead of showing greyed. The input itself stays `disabled`.
+  Ask: is a filled, unchangeable tick acceptable, or should the box become a plain check icon (B6, B7, B15 would then
+  need to read the icon instead of `disabled`)?
+- Rule 1 (icons over words for add). The brief dictates the words "+ New setlist" and "+ Add songs", the same pattern
+  as the existing "+ New band". Kept as dictated. Ask: icon only, or keep the words?
+
+---
+
 # legal-quickfix fix round 3 (Nov 28 2026): the STUN line now names Test with a bandmate
 
 The judge found a third path to stun.cloudflare.com that the dictated STUN line left out: Test with a bandmate

@@ -583,11 +583,13 @@ export function SetlistBuilder({
                 })}
               </ul>
             )}
-            <div className="setlist-builder-footer">
-              <button type="button" className="account-primary" disabled={pickedOrder.length === 0} onClick={commitAdd}>
-                {MESSAGES.addAction}
-              </button>
-            </div>
+            {pickedOrder.length > 0 ? (
+              <div className="setlist-builder-footer">
+                <button type="button" className="account-primary" onClick={commitAdd}>
+                  {MESSAGES.addAction}
+                </button>
+              </div>
+            ) : null}
           </div>
         ) : view === "delete" ? (
           <div className="setlist-builder-confirm">

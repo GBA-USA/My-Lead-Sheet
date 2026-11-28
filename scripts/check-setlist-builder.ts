@@ -310,6 +310,7 @@ const BROWSER_CASES = [
   "B22 a song missing from the library",
   "B23 Show code keeps focus out of the screen behind",
   "B24 no setlists yet",
+  "B25 a song that arrives while ticked is added once",
 ] as const;
 
 let apiBase = "";
@@ -1438,6 +1439,59 @@ try {
       const bSong = bLib.songs.find((song) => song.id === seedSong.id);
       assert.equal(bSong?.title, seedSong.title, `built-in song ${seedSong.id} unchanged`);
     }
+  });
+
+  // ---------------------------------------------------------------------------------------------- B25 a song that arrives while ticked is added once
+  await check("B25 a song that arrives while ticked is added once", async () => {
+    const pickerSearch = '.setlist-picker input[type="search"]';
+    const tickFirst = () => s.evaluate(`document.querySelector('.setlist-picker-row input[type="checkbox"]').click()`);
+    await openNewBuilder();
+    await setInputValue(nameBox, "Race Set");
+    await app.click("Save", `document.querySelector(".setlist-builder")`);
+    await app.until(`document.querySelector(".setlist-builder h2")?.textContent?.trim() === "Race Set"`, "Race Set created");
+    await app.click("+ Add songs", `document.querySelector(".setlist-builder")`);
+    await app.until(`!!document.querySelector(".setlist-picker")`, "the picker opens");
+    await setInputValue(pickerSearch, "Copper Kettle");
+    await settle(80);
+    await tickFirst();
+    await settle(50);
+    await app.click("Add", `document.querySelector(".setlist-builder")`);
+    await app.until(`!document.querySelector(".setlist-picker")`, "the picker closes");
+    const raceId = (await readStoredLibrary()).setlists.find((entry) => entry.name === "Race Set")?.id;
+    assert.ok(raceId !== undefined, "Race Set has an id");
+    await syncPhoneA();
+    await runPhoneB(async (mod) => {
+      assert.ok((await mod.syncBackup()).ok);
+      assert.deepEqual(mod.loadLibrary().setlists.find((entry) => entry.id === raceId)?.songRefs, ["local/802"], "Phone B has Race Set");
+    });
+
+    await app.click("+ Add songs", `document.querySelector(".setlist-builder")`);
+    await app.until(`!!document.querySelector(".setlist-picker")`, "the picker opens again");
+    for (const title of ["Lantern Road", "Windmill Waltz"]) {
+      await setInputValue(pickerSearch, title);
+      await settle(80);
+      await tickFirst();
+      await settle(50);
+    }
+    await setInputValue(pickerSearch, "");
+    await runPhoneB(async (mod) => {
+      assert.ok(mod.saveOwnSetlist(raceId, "Race Set", ["local/802", "local/801"]), "Phone B adds Lantern Road");
+      assert.ok((await mod.syncBackup()).ok);
+    });
+    await syncPhoneA();
+    await app.until(
+      `(() => {
+        const row = [...document.querySelectorAll(".setlist-picker-row")].find((el) => el.querySelector(".song-title")?.textContent?.trim() === "Lantern Road");
+        return !!row && row.textContent.includes("Already in this setlist");
+      })()`,
+      "Lantern Road arrives from Phone B while it is ticked",
+    );
+    await app.click("Add", `document.querySelector(".setlist-builder")`);
+    await app.until(`!document.querySelector(".setlist-picker")`, "the picker closes after Add");
+    assert.deepEqual(await builderTitles(), ["Copper Kettle", "Lantern Road", "Windmill Waltz"], "Lantern Road is in the setlist once");
+    await closeBuilder();
+    await reloadSetlists();
+    assert.deepEqual((await storedSetlist(raceId))?.songRefs, ["local/802", "local/801", "local/804"], "Race Set through the reader after a reload");
   });
 
   // ---------------------------------------------------------------------------------------------- B13 signed out, and a shared phone

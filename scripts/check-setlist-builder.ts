@@ -316,6 +316,7 @@ const BROWSER_CASES = [
   "B28 a sync in the middle of a drag moves nothing",
   "B29 a list filled by a sync can be dragged",
   "B30 a rename from another phone keeps a name being typed",
+  "B31 every refused write shows the words and what is stored",
 ] as const;
 
 let apiBase = "";
@@ -1214,6 +1215,170 @@ try {
       await s.evaluate(`if (window.__origSetItem) Storage.prototype.setItem = window.__origSetItem`);
     }
     await closeBuilder();
+  });
+
+  // ---------------------------------------------------------------------------------------------- B31 every refused write
+  // A full phone refuses each of the builder's writes in turn. Each one must show the words, leave the screen on what
+  // is stored and write nothing. The builder is reopened before each write, so words left by an earlier step cannot
+  // stand in for the next one.
+  await check("B31 every refused write shows the words and what is stored", async () => {
+    const FULL = "This phone couldn't save the setlist. Free some space and try again.";
+    const NAME = "Full Phone Set";
+    const NAME_BOX = '.setlist-builder input[aria-label="Setlist name"]';
+    const rawLibrary = () => s.evaluate<string | null>(`localStorage.getItem("leadSheetsLibraryV2")`);
+    const alertNow = () => s.evaluate<string>(`document.querySelector(".setlist-builder [role=alert]")?.textContent?.trim() ?? ""`);
+    const headingNow = () => s.evaluate<string>(`document.querySelector(".setlist-builder h2")?.textContent?.trim() ?? ""`);
+    const builderOpen = () => s.evaluate<boolean>(`!!document.querySelector(".setlist-builder[role=dialog]")`);
+    await s.evaluate(`(() => {
+      const lib = JSON.parse(localStorage.getItem("leadSheetsLibraryV2") || "{}");
+      lib.setlists = [...(lib.setlists || []).filter((each) => each.id !== 908), { id: 908, name: ${js(NAME)}, songIds: [801, 802, 803] }];
+      localStorage.setItem("leadSheetsLibraryV2", JSON.stringify(lib));
+    })()`);
+    await reloadSetlists();
+    const stored = await rawLibrary();
+    const setsBefore = (await readStoredLibrary()).setlists.length;
+    const reopen = async (step: string) => {
+      await openBuilderFor(NAME);
+      assert.equal(await alertNow(), "", `${step}: the builder opens with no words left from the step before`);
+      return builderTitles();
+    };
+    const refusedHere = async (step: string, titles: string[]) => {
+      assert.equal(await alertNow(), FULL, `${step}: a refused write shows the words (${js(await alertNow())})`);
+      assert.equal(await rawLibrary(), stored, `${step}: a refused write stores nothing`);
+      assert.deepEqual(await builderTitles(), titles, `${step}: the list on screen is the stored list`);
+    };
+    const keyOnHandle = async (index: number, key: "ArrowUp" | "ArrowDown") => {
+      await s.evaluate(`(() => {
+        const handle = document.querySelectorAll(".setlist-builder .setlist-builder-handle")[${index}];
+        if (!handle) throw new Error("no drag handle ${index}");
+        handle.focus();
+        handle.dispatchEvent(new KeyboardEvent("keydown", { key: ${js(key)}, bubbles: true, cancelable: true }));
+      })()`);
+      await settle(150);
+    };
+    await s.evaluate(`(() => {
+      window.__b31RealSetItem = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (k, v) {
+        if (k === "leadSheetsLibraryV2") throw new DOMException("full", "QuotaExceededError");
+        return window.__b31RealSetItem.call(this, k, v);
+      };
+    })()`);
+    let tickedTitle = "";
+    try {
+      // Rename: type a new name and leave the box. The box goes back to the stored name.
+      let titles = await reopen("rename");
+      await s.evaluate(`(() => {
+        const el = document.querySelector(${js(NAME_BOX)});
+        el.focus();
+        el.setSelectionRange(el.value.length, el.value.length);
+      })()`);
+      await s.send("Input.insertText", { text: " Live" });
+      await settle(50);
+      await s.evaluate(`document.querySelector(${js(NAME_BOX)}).blur()`);
+      await settle(150);
+      await refusedHere("rename", titles);
+      const box = await s.evaluate<string>(`document.querySelector(${js(NAME_BOX)}).value`);
+      assert.equal(box, NAME, `rename: the name box reads the stored name, not the unsaved one (${js(box)})`);
+      assert.equal(await headingNow(), NAME, "rename: the heading reads the stored name");
+      await closeBuilder();
+
+      // ArrowUp and ArrowDown on a handle: the order stays the stored order.
+      titles = await reopen("ArrowUp");
+      await keyOnHandle(1, "ArrowUp");
+      await refusedHere("ArrowUp", titles);
+      await closeBuilder();
+      titles = await reopen("ArrowDown");
+      await keyOnHandle(0, "ArrowDown");
+      await refusedHere("ArrowDown", titles);
+      await closeBuilder();
+
+      // Remove: the row stays.
+      titles = await reopen("remove");
+      await s.evaluate(`document.querySelectorAll(".setlist-builder [data-builder-row] .setlist-builder-remove")[0].click()`);
+      await settle(150);
+      await refusedHere("remove", titles);
+      await closeBuilder();
+
+      // Add: the picker stays open with the song still ticked.
+      titles = await reopen("add");
+      await app.click("+ Add songs", `document.querySelector(".setlist-builder")`);
+      await app.until(`!!document.querySelector(".setlist-picker")`, "picker opens");
+      tickedTitle = await s.evaluate<string>(`(() => {
+        const box = [...document.querySelectorAll('.setlist-picker-row input[type="checkbox"]')].find((each) => !each.disabled);
+        if (!box) return "";
+        box.click();
+        return box.closest(".setlist-picker-row")?.querySelector(".song-title")?.textContent?.trim() ?? "";
+      })()`);
+      assert.ok(tickedTitle, "add: the picker has a song to tick");
+      await settle(60);
+      await app.click("Add", `document.querySelector(".setlist-builder")`);
+      await settle(150);
+      assert.equal(await s.evaluate<boolean>(`!!document.querySelector(".setlist-picker")`), true, "add: a refused Add keeps the picker open");
+      assert.equal(await alertNow(), FULL, `add: a refused Add shows the words (${js(await alertNow())})`);
+      assert.equal(await rawLibrary(), stored, "add: a refused Add stores nothing");
+      const stillTicked = await s.evaluate<number>(`document.querySelectorAll('.setlist-picker-row input[type="checkbox"]:checked:not(:disabled)').length`);
+      assert.equal(stillTicked, 1, `add: the ticked song stays ticked (${stillTicked})`);
+    } finally {
+      await s.evaluate(`if (window.__b31RealSetItem) Storage.prototype.setItem = window.__b31RealSetItem`);
+    }
+    // Room again: the same Add now goes through, so a refused Add did not leave the picker stuck.
+    await app.click("Add", `document.querySelector(".setlist-builder")`);
+    await app.until(`!document.querySelector(".setlist-picker")`, "picker closes once Add is saved");
+    await settle(150);
+    const afterAdd = await builderTitles();
+    assert.equal(afterAdd[afterAdd.length - 1], tickedTitle, `add: with room again Add puts the ticked song last (${js(afterAdd)})`);
+    const withSong = await rawLibrary();
+    await closeBuilder();
+
+    await s.evaluate(`(() => {
+      window.__b31RealSetItem = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (k, v) {
+        if (k === "leadSheetsLibraryV2") throw new DOMException("full", "QuotaExceededError");
+        return window.__b31RealSetItem.call(this, k, v);
+      };
+    })()`);
+    try {
+      // Delete: the builder stays open on the setlist, and it is still listed.
+      await openBuilderFor(NAME);
+      assert.equal(await alertNow(), "", "delete: the builder opens with no words left from the step before");
+      await app.click("Delete setlist", `document.querySelector(".setlist-builder")`);
+      await app.until(`!!document.querySelector(".setlist-builder-confirm")`, "delete confirm");
+      await app.click("Yes, delete", `document.querySelector(".setlist-builder")`);
+      await settle(150);
+      assert.equal(await builderOpen(), true, "delete: a refused delete keeps the builder open");
+      assert.equal(await alertNow(), FULL, `delete: a refused delete shows the words (${js(await alertNow())})`);
+      assert.equal(await rawLibrary(), withSong, "delete: a refused delete stores nothing");
+      await closeBuilder();
+      assert.equal(await s.evaluate<boolean>(`!!document.querySelector(${js(`section.setlist[aria-label="${NAME}"]`)})`), true, "delete: the setlist is still listed");
+
+      // Create: the sheet stays on New setlist, and no setlist is made.
+      await openNewBuilder();
+      assert.equal(await alertNow(), "", "create: the sheet opens with no words");
+      await setInputValue(NAME_BOX, "Never Stored");
+      await app.click("Save", `document.querySelector(".setlist-builder")`);
+      await settle(150);
+      assert.equal(await alertNow(), FULL, `create: a refused Save shows the words (${js(await alertNow())})`);
+      assert.equal(await headingNow(), "New setlist", "create: the sheet stays on New setlist");
+      assert.equal(await rawLibrary(), withSong, "create: a refused Save stores nothing");
+      await closeBuilder();
+    } finally {
+      await s.evaluate(`if (window.__b31RealSetItem) Storage.prototype.setItem = window.__b31RealSetItem`);
+    }
+
+    await reloadSetlists();
+    const lib = await readStoredLibrary();
+    assert.equal(lib.setlists.length, setsBefore, "after a reload: no setlist was made or lost");
+    assert.ok(!lib.setlists.some((each) => each.name === "Never Stored" || each.name === `${NAME} Live`), "after a reload: no refused name is stored");
+    assert.deepEqual(await setlistScreenTitles(NAME), afterAdd, "after a reload: the list is the one stored with room");
+
+    // Leave the library as the cases after this one expect it.
+    await openBuilderFor(NAME);
+    await app.click("Delete setlist", `document.querySelector(".setlist-builder")`);
+    await app.until(`!!document.querySelector(".setlist-builder-confirm")`, "delete confirm");
+    await app.click("Yes, delete", `document.querySelector(".setlist-builder")`);
+    await app.until(`!document.querySelector(".setlist-builder[role=dialog]")`, "builder closes once the delete is saved");
+    await settle(150);
+    assert.ok(!(await readStoredLibrary()).setlists.some((each) => each.id === 908), "the test setlist is deleted with room again");
   });
 
   // ---------------------------------------------------------------------------------------------- B18 one write per drop

@@ -233,6 +233,7 @@ export function SetlistList({ setlists, songs, onShowCode }: { setlists: Setlist
     const target = returnFocusRef.current;
     setBuilder(null);
     requestAnimationFrame(() => {
+      if (document.querySelector("[role=dialog]")) return;
       if (target && target.isConnected) target.focus();
       else newBtnRef.current?.focus();
     });

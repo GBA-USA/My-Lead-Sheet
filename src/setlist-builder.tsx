@@ -95,6 +95,7 @@ export function SetlistBuilder({
   const [drag, setDrag] = useState<DragState>(IDLE_DRAG);
 
   const nameInputRef = useRef<HTMLInputElement>(null);
+  const sheetRef = useRef<HTMLElement>(null);
   const listRef = useRef<HTMLOListElement>(null);
   const dragRef = useRef<DragState>(IDLE_DRAG);
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -138,6 +139,12 @@ export function SetlistBuilder({
       nameInputRef.current?.focus();
     }
   }, [target.kind, cancelDrag]);
+
+  // Move focus into the sheet when it opens on an existing setlist
+  const editId = target.kind === "edit" ? target.id : null;
+  useEffect(() => {
+    if (editId !== null) sheetRef.current?.focus({ preventScroll: true });
+  }, [editId]);
 
   // Sync draft name when opening or updating an existing setlist
   useEffect(() => {
@@ -462,10 +469,15 @@ export function SetlistBuilder({
     <div
       className="account-backdrop"
       style={{ "--keyboard": `${keyboard}px` } as CSSProperties}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) event.preventDefault();
+      }}
       onClick={onClose}
     >
       <section
-        className="account-sheet setlist-builder"
+        ref={sheetRef}
+        tabIndex={-1}
+        className="setlist-builder"
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}

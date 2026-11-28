@@ -884,6 +884,56 @@ async function run(site: Site, script: string, css: string) {
     }
   });
 
+  it("H2 the leader's top bar while locked or a panel is open", async () => {
+    await asLeader();
+    if (!(await need(TEXT_PAIR, "the leader's text pair"))) return;
+    const look = async () => ({ more: (await box(".song-header > .menu-anchor"))?.right, room: await page<string>(`getComputedStyle(document.querySelector(".sheet")).paddingBottom`) });
+    const was = await look();
+    const same = async (when: string) => {
+      check(!(await shown(H_SMALLER)) && !(await shown(H_LARGER)), `${when}, the leader's top bar shows no A− A+`);
+      const now = await look();
+      check(now.more === was.more && now.room === was.room, `${when}, the leader's ••• and the sheet's bottom room stay put (••• right ${was.more} → ${now.more}, room ${was.room} → ${now.room})`);
+    };
+    await tap('[data-stage="lock"]');
+    await same("locked");
+    await hold('[data-stage="unlock"]');
+    await settle();
+    for (const [open, name] of [['[data-stage="more"]', "•••"], ['[data-stage="edit-order"]', "Order"]]) {
+      await tap(open);
+      await until(`the ${name} panel`, () => has("[data-stage-menu], [data-stage-order]"), Boolean);
+      await same(`with ${name} open`);
+      await tap('[data-stage="cancel"]');
+    }
+  });
+
+  it("H3 the speed pair with its percent showing", async () => {
+    try {
+      for (const phone of PHONES) {
+        await metrics(phone);
+        await asLeader({ scrollAlong: true });
+        await countIn();
+        if (!(await need(FASTER, `at ${phone.width} px Scroll faster`))) continue;
+        for (let i = 0; i < 10; i += 1) await tap(FASTER);
+        check((await text(PERCENT)) === "150%", `at ${phone.width} px the label reads 150% (${await text(PERCENT)})`);
+        const pair = (await box(SPEED_PAIR))!;
+        const label = await box(PERCENT);
+        const textPair = (await box(TEXT_PAIR))!;
+        if (!check(!!label, `at ${phone.width} px the percent label is on screen`)) continue;
+        const both = { x: Math.min(pair.x, label!.x), right: Math.max(pair.right, label!.right), y: Math.min(pair.y, label!.y), bottom: Math.max(pair.bottom, label!.bottom) };
+        const width = both.right - both.x;
+        check(width <= phone.width / 3, `at ${phone.width} px the speed pair with its label is at most a third of the screen wide (${width})`);
+        check(!meets(label!, textPair), `at ${phone.width} px the label does not meet the text pair`);
+        const sheet = (await box("#sheet-scroll"))!;
+        const covered = textPair.width * textPair.height + width * (both.bottom - both.y);
+        const share = covered / (sheet.width * sheet.height);
+        console.log(`       at ${phone.width} x ${phone.height} with the label showing the pairs cover ${Math.round(covered)} px² (${(share * 100).toFixed(1)}%)`);
+        if (phone === SMALL) check(share <= 0.15, `at 360 x 740 with the label showing the pairs cover at most 15% of the sheet's visible box (${(share * 100).toFixed(1)}%)`);
+      }
+    } finally {
+      await metrics(PHONE);
+    }
+  });
+
   it("G1 guard", async () => {
     const lines = readFileSync(join(root, "src", "App.tsx"), "utf8").replace(/\r\n/g, "\n").replace(/\n$/, "").split("\n").length;
     check(lines <= APP_LINES, `src/App.tsx has ${lines} lines, at most the ${APP_LINES} it has on origin/mls-int-20261113`);

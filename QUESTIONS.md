@@ -1,3 +1,14 @@
+# p6-setlist-builder fix round (Nov 28 2026): B6 stays green under "let a ticked duplicate through" (owner: CoS)
+
+The brief's mutation table says this mutation must turn B6 red. It does not, in either shape (no dedupe in `added`, or
+no double-tap guard and no dedupe). B6 ticks songs that are not yet in the setlist, and the picker never lets a listed
+song be ticked, so no duplicate can reach Add. Add also closes the picker, so a second quick tap lands on nothing. B6 is
+a commit-1 case and may not be edited. B25 builds the one real path, where a ticked song reaches the setlist by sync
+while the picker is open, and it turns red under both shapes. B19 turns red under the model shape. Ask: is B25 enough
+as this mutation's proof, or should B6 be rewritten to cover it?
+
+---
+
 # p6-setlist-builder fix round (Nov 28 2026): UI rules 1 and 3 against the brief's words (owner: Brian or Terry)
 
 - Rule 3 (no disabled or greyed control). The brief says a song already in the setlist "cannot be ticked", and cases

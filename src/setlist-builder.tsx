@@ -49,6 +49,7 @@ const MESSAGES = {
   searchSongs: "Search My Songs",
   noSongsYet: "No songs yet.",
   noSongsMatch: "No songs match.",
+  noSongsInLibrary: "My Songs has no songs yet.",
   alreadyIn: "Already in this setlist",
   missingSong: "Missing from this library",
   remove: "Remove",
@@ -63,6 +64,9 @@ const MESSAGES = {
 } as const;
 
 type SlotBox = { top: number; mid: number; bottom: number };
+
+const EDGE_PX = 48;
+const EDGE_STEP_PX = 24;
 
 /**
  * One-sheet personal setlist builder: create a setlist, rename it, hold-and-drag or arrow-key reorder rows,
@@ -96,6 +100,7 @@ export function SetlistBuilder({
 
   const nameInputRef = useRef<HTMLInputElement>(null);
   const sheetRef = useRef<HTMLElement>(null);
+  const pressedBackdropRef = useRef(false);
   const listRef = useRef<HTMLOListElement>(null);
   const dragRef = useRef<DragState>(IDLE_DRAG);
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -199,9 +204,25 @@ export function SetlistBuilder({
     return Math.max(0, Math.min(slots.length - 1, count));
   }, []);
 
+  // A drag lifted from one list never drops into a list a sync or another tab changed underneath it
+  const refsKey = setlist ? setlist.songRefs.join("\n") : "";
+  useEffect(() => {
+    cancelDrag();
+  }, [refsKey, cancelDrag]);
+
+  const hasRows = (setlist?.songRefs.length ?? 0) > 0;
+
   useEffect(() => {
     if (target.kind !== "edit" || view !== "songs") return;
     const list = listRef.current;
+
+    const scrollAtEdge = (clientY: number) => {
+      if (!list) return;
+      const box = list.getBoundingClientRect();
+      const reach = Math.min(EDGE_PX, box.height / 4);
+      if (clientY < box.top + reach) list.scrollTop -= Math.min(EDGE_STEP_PX, Math.ceil((box.top + reach - clientY) / 2));
+      else if (clientY > box.bottom - reach) list.scrollTop += Math.min(EDGE_STEP_PX, Math.ceil((clientY - box.bottom + reach) / 2));
+    };
 
     const onTouchMove = (event: TouchEvent) => {
       const cur = dragRef.current;
@@ -217,6 +238,7 @@ export function SetlistBuilder({
         return;
       }
       event.preventDefault();
+      scrollAtEdge(touch.clientY);
       const over = computeOver(touch.clientY, cur.index);
       const next = dragMove(cur, touch.clientY, over);
       if (next !== cur) setDragSync(next);
@@ -233,6 +255,7 @@ export function SetlistBuilder({
         }
         return;
       }
+      if (event.pointerType !== "touch") scrollAtEdge(event.clientY);
       const over = computeOver(event.clientY, cur.index);
       const next = dragMove(cur, event.clientY, over);
       if (next !== cur) setDragSync(next);
@@ -271,7 +294,7 @@ export function SetlistBuilder({
       window.removeEventListener("pointercancel", onCancel);
       window.removeEventListener("touchcancel", onCancel);
     };
-  }, [target.kind, view, clearHold, cancelDrag, computeOver, setDragSync]);
+  }, [target.kind, view, hasRows, clearHold, cancelDrag, computeOver, setDragSync]);
 
   const handleEscape = useCallback(() => {
     if (dragRef.current.kind !== "idle") {
@@ -469,10 +492,17 @@ export function SetlistBuilder({
     <div
       className="account-backdrop"
       style={{ "--keyboard": `${keyboard}px` } as CSSProperties}
+      onPointerDown={(event) => {
+        pressedBackdropRef.current = event.target === event.currentTarget;
+      }}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) event.preventDefault();
       }}
-      onClick={onClose}
+      onClick={(event) => {
+        const pressedHere = pressedBackdropRef.current;
+        pressedBackdropRef.current = false;
+        if (pressedHere && event.target === event.currentTarget) onClose();
+      }}
     >
       <section
         ref={sheetRef}
@@ -503,7 +533,13 @@ export function SetlistBuilder({
             ) : null}
             <h2 id={titleId}>{heading}</h2>
           </div>
-          <button type="button" className="account-close setlist-builder-close" aria-label={MESSAGES.close} onClick={onClose}>
+          <button
+            type="button"
+            className="account-close setlist-builder-close"
+            aria-label={MESSAGES.close}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={onClose}
+          >
             <CloseMark />
           </button>
         </header>
@@ -554,7 +590,7 @@ export function SetlistBuilder({
             </div>
             {filteredSongs.length === 0 ? (
               <p className="account-note" role="status">
-                {MESSAGES.noSongsMatch}
+                {pickerQuery.trim() ? MESSAGES.noSongsMatch : MESSAGES.noSongsInLibrary}
               </p>
             ) : (
               <ul className="setlist-picker-list">

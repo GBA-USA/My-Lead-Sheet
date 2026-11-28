@@ -1,3 +1,16 @@
+# p6-gig-check-in, self-check fix pass 1: 2026-11-27: Hold to take the lead does nothing for a phone that joined after the leader's phone left
+
+**Seen in K25's first draft.** Lee led from the phone and signed out there. Ada, the admin, signed in on the same phone
+and joined. Her strip showed "Hold to take the lead" (key `quiet`). The hold fired the way `leaderStarts` fires
+"Hold to start", but no `gig-op` left the phone. **Inferred from the code:** `src/leader-fanout.ts:212` `tap` returns
+`not-allowed` without sending while `bandNow()` is null, and a phone that joined with no leader socket in the gig has
+never measured a band clock. So for anyone who joins after the leader's phone is gone, the button is shown and does
+nothing, with no word. `src/leader-fanout.ts` and `src/gig-state.ts` are on this brief's "do not touch" list, so
+nothing here changes it. K25 now has Ada take the lead from a second socket, as K8's Bo does. **Asking:** should a
+taker with no band clock start one from its own (a new epoch), or should the strip hide the button and say why?
+
+---
+
 # p6-gig-check-in, step-up retry: 2026-11-27: UI rule 2, Band status has two doors on a live gig's screen
 
 **Rule 2** (one control, one home). The brief asks for both: the faces strip opens Band status (K18, C23's door), and

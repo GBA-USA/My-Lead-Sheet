@@ -31,7 +31,7 @@ import { openSite } from "./chrome.ts";
 
 type Json = Record<string, any>;
 type Reply = { status: number; body: Json };
-type Row = { userId: string; connected: boolean; packRev: number | null };
+type Row = { userId: string; connected: boolean; packRev: number | null; builds?: (string | null)[] };
 type Roster = { kind: "roster"; gigId: string; packRev: number; rows: Row[] };
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -120,10 +120,16 @@ function oracle(lineup: string[], sockets: Socket[], receipts: Receipt[], now: n
   for (const id of lineup) {
     if (rows.some((row) => row.userId === id)) continue;
     let connected = false;
-    for (const socket of sockets) if (socket.userId === id && (socket.lastBeat === null || now - socket.lastBeat <= 10_000)) connected = true;
+    const builds: (string | null)[] = [];
+    for (const socket of sockets) {
+      if (socket.userId === id && (socket.lastBeat === null || now - socket.lastBeat <= 10_000)) {
+        connected = true;
+        builds.push(null);
+      }
+    }
     let newest: Receipt | null = null;
     for (const receipt of receipts) if (receipt.userId === id && (newest === null || receipt.at > newest.at || (receipt.at === newest.at && receipt.packRev > newest.packRev))) newest = receipt;
-    rows.push({ userId: id, connected, packRev: newest ? newest.packRev : null });
+    rows.push({ userId: id, connected, packRev: newest ? newest.packRev : null, builds });
   }
   return rows;
 }
@@ -652,7 +658,7 @@ try {
     await waitFor("Ada, the admin, receives the roster too", 5000, () => admin.rosters(gigId).length > 0);
     const shape = leader.latest(gigId)!;
     assert.deepEqual(Object.keys(shape).sort(), ["gigId", "heardAt", "kind", "packRev", "rows"], "the roster carries the gig, its pack rev and the rows, nothing else");
-    for (const row of shape.rows) assert.deepEqual(Object.keys(row).sort(), ["connected", "packRev", "userId"], "a row is a user id, connected and a pack rev: no name, handle or socket id");
+    for (const row of shape.rows) assert.deepEqual(Object.keys(row).sort(), ["builds", "connected", "packRev", "userId"], "a row is a user id, connected, a pack rev and its phones' version ids: no name, handle or socket id");
     await pause(Math.max(0, joinedAt + 3000 - Date.now()));
     for (const sock of [member, backup, removed, guest]) assert.equal(sock.rosters(gigId).length, 0, `${sock.who.name}'s socket receives no roster in the 3 s after Ada joins`);
     for (const sock of [member, backup, guest]) sock.send({ kind: "roster-ask", gigId });

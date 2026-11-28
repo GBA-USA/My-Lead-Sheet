@@ -1,3 +1,29 @@
+# p6-update-now: 2026-11-27: where the brief and the Groovist UI rules disagree (kept to the rules)
+
+**Rule 3, no dead controls.** In "Empty and error states", the brief says that when only phones from before this cook
+are behind, "Update now is off with the same line as its reason". A control that is off is a dead control. So Update now
+does not appear at all, and the ask-them line ("A phone on an older version can't be reached from here. Ask them to
+close the app and open it again.") is the only thing shown. U8 checks this: Update now is not offered, and the line shows.
+
+**Rule 1, icons over words.** The brief asks for "a Reload button". Reload has a universal icon (the circular arrow,
+like the reset icon in the icon map), so the button shows only that icon. "Reload" is its accessible name, in text that
+is hidden on screen.
+
+**Rule 4, state in the icon.** I read rule 4 as covering the on/off state of this phone's own controls. "On the new
+version" and "Needs the update" report someone else's phone. The brief fixes these words and U3 checks them, so they stay
+as words. If Brian reads rule 4 as covering this too, the row needs an icon form, and that is a new brief.
+
+**Rule 3, and words the brief does not name (deep fix, 2026-11-28).** Since 9347b91 a tap can wait up to 120 s for the
+new service worker, so the player's prompt and the leader's strip now say "Getting the new version." while it waits.
+The brief names no words for this wait. While it waits, the button that started it (Update now on the prompt, Reload
+on the leader's strip) is hidden, because a second tap would do nothing (rule 3). Not now stays and calls the wait off.
+So during the wait, the leader's strip shows "Getting the new version." in place of Reload, which steps outside pass
+condition 1's "only Update this phone first, Reload and Between songs is best". U19, U21 and U23 check these words. If the
+owner wants other words, or Reload kept on screen with a busy icon (rule 4), that is a one-line change in
+src/gig-check-in.tsx `VERSION_WORDS.getting` and the check's `GETTING`.
+
+---
+
 # legal-quickfix fix round 3 (Nov 28 2026): the STUN line now names Test with a bandmate
 
 The judge found a third path to stun.cloudflare.com that the dictated STUN line left out: Test with a bandmate

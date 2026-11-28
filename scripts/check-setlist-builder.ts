@@ -318,6 +318,7 @@ const BROWSER_CASES = [
   "B30 a rename from another phone keeps a name being typed",
   "B31 every refused write shows the words and what is stored",
   "B32 a friend's private copy keeps its copy mark when reordered and renamed",
+  "B33 the builder loads apart from the main script, and a load that fails says so",
 ] as const;
 
 let apiBase = "";
@@ -2145,6 +2146,62 @@ try {
     const pageErrors = await app.errors();
     assert.deepEqual(pageErrors, [], `page raised no errors (${js(pageErrors)})`);
   }
+
+  // ---------------------------------------------------------------------------------------------- B33 (after the page errors check: it reloads the page)
+  await check("B33 the builder loads apart from the main script, and a load that fails says so", async () => {
+    const BUILDER_WORDS = "Already in this setlist";
+    const main = await s.evaluate<{ src: string; text: string }>(`(async () => {
+      const src = document.querySelector('script[type=module][src*="/assets/index-"]')?.src ?? "";
+      return { src, text: src ? await (await fetch(src, { cache: "no-store" })).text() : "" };
+    })()`);
+    assert.ok(main.src && main.text.length > 0, "the page names one main script");
+    assert.equal(main.text.includes(BUILDER_WORDS), false, `the main script ${main.src.split("/").pop()} holds the builder's words`);
+
+    await s.send("Network.enable");
+    await s.send("Network.setBypassServiceWorker", { bypass: true });
+    await s.send("Network.setBlockedURLs", { urls: ["*/assets/setlist-builder-*"] });
+    const tapNew = () =>
+      s.evaluate<boolean>(`(() => {
+        const btn = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "+ New setlist");
+        btn?.click();
+        return !!btn;
+      })()`);
+    try {
+      await s.evaluate(`location.hash = "#/setlists"`);
+      await s.send("Page.reload");
+      await app.library();
+      await phone360();
+      await app.until(`location.hash === "#/setlists" && [...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "+ New setlist")`, "Setlists screen after reload");
+      assert.ok(await tapNew(), "+ New setlist to tap");
+      await app.until(`!!document.querySelector("[role=alertdialog]")`, "the couldn't-load sheet");
+      const refused = await s.evaluate<{ text: string; builder: boolean }>(`({
+        text: document.querySelector("[role=alertdialog] [role=alert]")?.textContent.trim() ?? "",
+        builder: !!document.querySelector(".setlist-builder[role=dialog]"),
+      })`);
+      assert.equal(refused.text, "The setlist builder couldn't load. Check your connection and try again.", "the sheet says why");
+      assert.equal(refused.builder, false, "no builder while its code is missing");
+      await s.evaluate(`document.querySelector('[role=alertdialog] [aria-label="Close"]').click()`);
+      await app.until(`!document.querySelector("[role=alertdialog]")`, "the couldn't-load sheet closes");
+
+      await s.send("Network.setBlockedURLs", { urls: [] });
+      assert.ok(await tapNew(), "+ New setlist to tap again");
+      await app.until(`!!document.querySelector(".setlist-builder[role=dialog]")`, "the builder on the next tap");
+      const chunks = await s.evaluate<string[]>(`(async () => {
+        const names = performance.getEntriesByType("resource").map((e) => e.name).filter((n) => /\\/assets\\/[^/]+\\.js$/.test(n) && !n.includes("/assets/index-"));
+        const holding = [];
+        for (const name of names) if ((await (await fetch(name)).text()).includes(${js(BUILDER_WORDS)})) holding.push(name.split("/").pop());
+        return holding;
+      })()`);
+      assert.ok(chunks.some((name) => name.startsWith("setlist-builder-")), `a builder script of its own holds the builder's words (${js(chunks)})`);
+      await closeBuilder();
+      const errors = await app.errors();
+      assert.deepEqual(errors, [], `page raised no errors (${js(errors)})`);
+    } finally {
+      await s.send("Network.setBlockedURLs", { urls: [] });
+      await s.send("Network.setBypassServiceWorker", { bypass: false });
+      await s.send("Network.disable");
+    }
+  });
 } finally {
   await site.close();
   await worker.dispose();

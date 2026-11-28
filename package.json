@@ -27,6 +27,7 @@
                     "check:chordpro-worker":  "tsc -p worker \u0026\u0026 node --experimental-strip-types scripts/check-chordpro-worker.ts",
                     "check:chords":  "node --experimental-strip-types scripts/check-chords.ts",
                     "check:ci-deep":  "node --experimental-strip-types scripts/check-ci-deep.ts",
+                    "check:ci-shard":  "node --experimental-strip-types scripts/check-ci-shard.ts",
                     "check:codes":  "tsc -p worker \u0026\u0026 node --experimental-strip-types scripts/check-codes.ts",
                     "check:data":  "node scripts/check-library.mjs",
                     "check:fanout":  "tsc -p worker \u0026\u0026 node --experimental-strip-types scripts/check-fanout.ts",

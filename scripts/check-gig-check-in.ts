@@ -1319,6 +1319,78 @@ try {
     await endPageGig(band, gigId);
     await closeAll();
   });
+
+  await check("K28 a take-over on the phone: Ada, the admin, already following, holds to take the lead, and her strip warns and her faces name her the leader", async () => {
+    await pageAs(ada);
+    const band = await newBand("Taken Lead");
+    const gigId = await planGig(band, "Taken lead");
+    const lead = await startBySocket(band, gigId);
+    lead.startBeats();
+    // Lee's socket answers clock pings over the server route, as the leader's phone does, so Ada's phone has band time.
+    lead.ws.addEventListener("message", (event) => {
+      const m = typeof event.data === "string" && event.data.startsWith("{") ? JSON.parse(event.data) : null;
+      if (m?.kind === "link" && m.body?.k === "ping") lead.send({ kind: "link", to: m.from, body: { k: "pong", n: m.body.n, t0: m.body.t0, band: Date.now() } });
+    });
+    await go("#/songs", `!document.querySelector(".band-page")`, "the song list");
+    await visibleAgain();
+    await tapJoin(gigId);
+    await follows(gigId, 10000, "Ada follows the gig");
+    await until(`document.querySelector(".gig-strip")?.dataset.strip === "synced"`, "Ada's phone to have band time from Lee", 15000);
+    await waitFor("a roster on Ada's phone, the admin's", 10000, () => evaluate<boolean>(`window.__got.some((m) => m.includes('"roster"'))`));
+    assert.equal(await warningText(), "", "no warning on Ada's strip while Lee leads");
+    await until(`[...document.querySelectorAll(".gig-strip button")].some((b) => b.textContent.trim() === "Hold to take the lead")`, "Hold to take the lead on Ada's strip", 15000);
+    await evaluate(`[...document.querySelectorAll(".gig-strip button")].find((b) => b.textContent.trim() === "Hold to take the lead").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }))`);
+    await until(`document.querySelector(".gig-strip")?.dataset.strip === "leading"`, "Ada's strip to say she leads", 10000);
+    await waitFor("Lee's socket to hear Ada lead", 5000, () => lead.heard.find((m) => m.kind === "gig-state" && m.state?.leader === ada.userId));
+    await waitFor("the warning on Ada's strip, now the leader's", 8000, async () => /\d+ not ready/.test(await warningText()));
+    await openGigScreen(band, gigId);
+    const leaderFace = () => evaluate<string>(`${gigView(gigId)}.querySelector(".band-status-face-leader")?.getAttribute("aria-label") ?? ""`);
+    await waitFor("Ada's faces to name her the leader", 5000, async () => (await leaderFace()) === `${ada.name}, leader`).catch(async () => {
+      throw new Error(`the leader's face reads ${js(await leaderFace())}, not Ada`);
+    });
+    await endPageGig(band, gigId);
+    await closeAll();
+  });
+
+  await check("K29 at 360 and 390 px: Tonight's players and the leader's warning keep 44 px targets on screen and nothing scrolls sideways", async () => {
+    type Box = { what: string; left: number; right: number; width: number; height: number };
+    const boxes = (selector: string) =>
+      evaluate<Box[]>(`[...document.querySelectorAll(${js(selector)})].map((el) => { const r = el.getBoundingClientRect(); return { what: (el.getAttribute("aria-label") || el.textContent || "").trim().slice(0, 40), left: r.left, right: r.right, width: r.width, height: r.height }; })`);
+    const fits = async (selector: string, width: number, minWidth: number) => {
+      const found = await boxes(selector);
+      assert.ok(found.length > 0, `${selector} is on screen at ${width} px`);
+      for (const box of found) {
+        assert.ok(box.height >= 44 && box.width >= minWidth, `${js(box.what)} is at least ${minWidth}x44 px at ${width} px (${box.width}x${box.height})`);
+        assert.ok(box.left >= 0 && box.right <= width, `${js(box.what)} stays inside ${width} px (${box.left} to ${box.right})`);
+      }
+    };
+    const noSideways = async (width: number, what: string) => assert.ok(await evaluate<boolean>(`document.documentElement.scrollWidth <= ${width}`), `${what} does not scroll sideways at ${width} px`);
+    try {
+      for (const width of [360, 390]) {
+        await site.send("Emulation.setDeviceMetricsOverride", { width, height: 780, deviceScaleFactor: 2, mobile: true });
+        await pageAs(lee);
+        const band = await newBand(`Wide ${width}`);
+        const gigId = await planGig(band, `Wide ${width}`);
+        await openGigScreen(band, gigId);
+        await openTonight(gigId);
+        await fits(`${TONIGHT} .tonight-row`, width, 0);
+        await fits(`${TONIGHT} button`, width, 44);
+        await noSideways(width, "Tonight's players");
+        await evaluate(`document.querySelector(${js(`${TONIGHT} [aria-label=Close]`)}).click()`);
+        await until(`!document.querySelector(${js(TONIGHT)})`, "Tonight's players to close");
+        await leaderStarts(band, gigId);
+        await warningSays(3, 8000, `the warning at ${width} px`);
+        await until(`!!document.querySelector(${js(`${WARNING} .check-in-see`)})`, `See who at ${width} px`);
+        await fits(`${WARNING} button`, width, 44);
+        await fits(WARNING, width, 0);
+        await noSideways(width, "the leader's warning");
+        await endPageGig(band, gigId);
+        await closeAll();
+      }
+    } finally {
+      await site.send("Emulation.setDeviceMetricsOverride", { width: WIDTH, height: 780, deviceScaleFactor: 2, mobile: true });
+    }
+  });
 } finally {
   await closeAll();
   await site.close();

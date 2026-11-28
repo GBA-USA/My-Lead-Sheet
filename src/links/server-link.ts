@@ -47,7 +47,12 @@ async function refusedAtConnect(url: string): Promise<number | null> {
 export type RoomIn = { kind: string; [key: string]: unknown };
 export type RoomState = "connecting" | "open" | "down" | "refused";
 
-/** The band room's socket, kept up across drops. Links ride on it: introductions for data channels, and the server route itself. */
+/**
+ * The band room's socket, kept up across drops. Links ride on it: introductions for data channels, and the server route
+ * itself. With `build`, the version id of the page that opens it, both messages that attach a socket to a gig, `join-gig`
+ * and `gig-state`, carry that id, so the Room knows which version each phone in the gig runs, after a reload or a
+ * reconnect too.
+ */
 export interface RoomLine {
   readonly state: RoomState;
   send(message: object): boolean;
@@ -55,7 +60,7 @@ export interface RoomLine {
   close(): void;
 }
 
-export function roomLine(url: string): RoomLine {
+export function roomLine(url: string, { build = null }: { build?: string | null } = {}): RoomLine {
   let ws: WebSocket | null = null;
   let state: RoomState = "connecting";
   let retry: ReturnType<typeof setTimeout> | null = null;
@@ -150,7 +155,8 @@ export function roomLine(url: string): RoomLine {
     },
     send(message) {
       if (state !== "open" || ws?.readyState !== WebSocket.OPEN) return false;
-      ws.send(JSON.stringify(message));
+      const kind = (message as { kind?: unknown }).kind;
+      ws.send(JSON.stringify(build !== null && (kind === "join-gig" || kind === "gig-state") ? { ...message, build } : message));
       if ((message as { kind?: unknown }).kind === "join-gig") startBeats(ws);
       return true;
     },

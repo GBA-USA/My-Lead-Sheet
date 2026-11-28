@@ -3,7 +3,8 @@ import { createPortal } from "react-dom";
 import { BandStatusPanel, type LiveFeed } from "./band-status";
 import { livePlayers, playersFrom, type Player } from "./band-status-model";
 import type { BandView } from "./bands-model";
-import { checkInOf, notReady, QUIET_AFTER_MS, type RosterRow } from "./gig-check-in-model";
+import { BUILD_ID, publishedBuild, reloadOntoPublished } from "./app-build";
+import { checkInOf, notReady, QUIET_AFTER_MS, versionOf, type RosterRow } from "./gig-check-in-model";
 import type { GigView } from "./gig-plan-model";
 import { useEscape } from "./hooks";
 import type { LOST_AFTER_MS } from "./links/attempt";
@@ -19,6 +20,18 @@ const MESSAGES: Record<string, string> = {
   "not-allowed": "Only an admin can change the lineup once the gig is live.",
   "gig-ended": "That gig is over.",
   offline: "Can't reach the server. Check your connection and try again.",
+  "not-leading": "You're not leading now",
+  "update-offline": "Connect to the internet, then tap again.",
+  "update-current": "This phone already has the new version.",
+};
+const VERSION_WORDS = {
+  selfFirst: "Update this phone first",
+  betweenSongs: "Between songs is best.",
+  current: "On the new version",
+  behind: "Needs the update",
+  askThem: "A phone on an older version can't be reached from here. Ask them to close the app and open it again.",
+  asked: "Asked. Their phones show the update now.",
+  ready: "A new version is ready.",
 };
 const LIVE_LINE = MESSAGES["not-allowed"];
 const SOMETHING_WRONG = "Something went wrong. Try again.";
@@ -153,6 +166,118 @@ export function CheckInWarning({ me, bandId, gigId }: WarningProps) {
       </div>
       {panel}
     </>
+  );
+}
+
+// ---- Versions: the leader's own phone first, then who needs the update ---------------------------------------------
+
+type VersionProps = { me: string; gigId: string; names: Record<string, string>; ask(): boolean; refused: boolean };
+
+/**
+ * On the strip of the player leading a live gig. The published version is asked for when this phone's roster opens, and
+ * again each time its room line comes back or Reload is tapped, never on a timer; until it answers nothing shows. When
+ * this phone is behind it says only to update this phone first. When it is current and anyone's phone differs, each
+ * connected player reads On the new version or Needs the update, with Update now above them while any phone behind can
+ * show the ask. Everyone current, or the published version out of reach, shows nothing.
+ */
+export function VersionCheck({ me, gigId, names, ask, refused }: VersionProps) {
+  const copy = useRosterCopy(me, gigId);
+  const watching = copy !== null && copy.leader === me && copy.line === "open";
+  const [published, setPublished] = useState<string | null>(null);
+  const [line, setLine] = useState("");
+  const reloading = useRef(false);
+
+  useEffect(() => {
+    setPublished(null);
+    setLine("");
+    if (!watching) return;
+    let live = true;
+    publishedBuild().then((id) => live && setPublished(id));
+    return () => {
+      live = false;
+    };
+  }, [watching, me, gigId]);
+
+  if (!watching || !copy || published === null) return null;
+
+  if (published !== BUILD_ID) {
+    const reload = async () => {
+      if (reloading.current) return;
+      reloading.current = true;
+      setLine("");
+      const outcome = await reloadOntoPublished();
+      reloading.current = false;
+      if (outcome === "offline") setLine(MESSAGES["update-offline"]);
+      if (outcome === "current") setPublished(BUILD_ID);
+    };
+    return (
+      <div className="update-self" role="status">
+        <span className="update-self-words">{VERSION_WORDS.selfFirst}</span>
+        <button type="button" className="account-primary update-button" onClick={reload}>
+          Reload
+        </button>
+        <span className="update-note">{VERSION_WORDS.betweenSongs}</span>
+        {line ? (
+          <span className="update-note" role="alert">
+            {line}
+          </span>
+        ) : null}
+      </div>
+    );
+  }
+
+  const rows = copy.rows.filter((row) => row.builds.length > 0).map((row) => ({ row, stand: versionOf(published, row.builds) }));
+  if (rows.every(({ stand }) => stand === "current")) return null;
+  const reachable = rows.some(({ stand }) => stand === "needs-update");
+  const unreachable = rows.some(({ stand }) => stand === "cannot-be-reached");
+  const said = refused ? MESSAGES["not-leading"] : line;
+
+  return (
+    <section className="update-panel" aria-label="Versions">
+      {reachable ? (
+        <button type="button" className="account-primary update-button" onClick={() => setLine(ask() ? VERSION_WORDS.asked : MESSAGES.offline)}>
+          Update now
+        </button>
+      ) : null}
+      {said ? (
+        <p className="update-note" role="status">
+          {said}
+        </p>
+      ) : null}
+      <ul className="update-rows">
+        {rows.map(({ row, stand }) => (
+          <li key={row.userId} className={stand === "current" ? "update-row" : "update-row is-behind"}>
+            <span className="update-name">{names[row.userId] ?? "A bandmate"}</span>
+            <span className="update-word">{stand === "current" ? VERSION_WORDS.current : VERSION_WORDS.behind}</span>
+          </li>
+        ))}
+      </ul>
+      {unreachable ? <p className="update-ask">{VERSION_WORDS.askThem}</p> : null}
+    </section>
+  );
+}
+
+/** What a player's prompt shows: the ask, or the ask with why a tap did not reload. */
+export type UpdatePromptState = "asked" | "offline" | "current";
+
+/** The leader's ask on a player's strip: one tap reloads onto the new version once this phone can fetch it; Not now closes it. */
+export function UpdatePrompt({ state, onUpdate, onLater }: { state: UpdatePromptState; onUpdate(): void; onLater(): void }) {
+  const why = state === "offline" ? MESSAGES["update-offline"] : state === "current" ? MESSAGES["update-current"] : "";
+  return (
+    <div className="update-prompt" role="group" aria-label={VERSION_WORDS.ready}>
+      <span className="update-prompt-words">{VERSION_WORDS.ready}</span>
+      <button type="button" className="account-primary update-button" onClick={onUpdate}>
+        Update now
+      </button>
+      <button type="button" className="account-secondary update-button" onClick={onLater}>
+        Not now
+      </button>
+      {why ? (
+        <span className="update-note" role="alert">
+          {why}
+        </span>
+      ) : null}
+    </div>
   );
 }
 

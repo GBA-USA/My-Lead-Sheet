@@ -7,8 +7,9 @@ import { useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } 
 import type { LocalMs } from "./band-time";
 import type { BandView } from "./bands-model";
 import type { ChatEntry } from "./chat-model";
-import { CheckInWarning, rosterStore } from "./gig-check-in";
-import { asRoster } from "./gig-check-in-model";
+import { BUILD_ID, reloadOntoPublished } from "./app-build";
+import { CheckInWarning, rosterStore, UpdatePrompt, VersionCheck, type UpdatePromptState } from "./gig-check-in";
+import { asRoster, type UpdateNow } from "./gig-check-in-model";
 import { atPassEnd, downloadPack, packToShow, type GigPack } from "./gig-pack";
 import type { GigList, GigPlan } from "./gig-plan-model";
 import { useGigPosition, type GigPosition } from "./gig-position";
@@ -71,7 +72,7 @@ const APP_DEPS: LiveDeps = {
     const held = heldFor(me) ? await packToShow(gig.gigId).catch(() => null) : null;
     return held ?? downloadPack(me, gig.bandId, gig.gigId);
   },
-  room: (bandId) => roomLine(roomUrl(bandId)),
+  room: (bandId) => roomLine(roomUrl(bandId), { build: BUILD_ID }),
   names: (gig) =>
     bandOf(gig.bandId).then(
       (band) => Object.fromEntries(band.members.map((member) => [member.userId, firstName(member.name)])),
@@ -120,6 +121,14 @@ export type Live = {
   dismiss(): void;
   tap(body: OpBody): void;
   askToLead(): void;
+  /** The leader's ask to update, on this phone's strip, until the player taps Not now or the page reloads. */
+  update: UpdatePromptState | null;
+  updateNow(): void;
+  notNow(): void;
+  /** The leader's Update now. False when the room line is down, so nothing was sent. */
+  askUpdate(): boolean;
+  /** The Room turned the last Update now down: this phone is not leading now. */
+  updateRefused: boolean;
 };
 
 type Args = {
@@ -333,6 +342,23 @@ export function useLiveGig({ me, stage = null, metronome, personal, onPersonal, 
     };
   }, [joined, me]);
 
+  // The leader's ask to update reaches this phone only from the Room. A second ask while one shows changes nothing, and
+  // nothing reloads until the player taps; Not now waits for the leader to ask again.
+  const [update, setUpdate] = useState<UpdatePromptState | null>(null);
+  const [updateRefused, setUpdateRefused] = useState(false);
+  const updating = useRef(false);
+  useEffect(() => {
+    setUpdate(null);
+    setUpdateRefused(false);
+    if (!joined) return;
+    const { room, gig } = joined;
+    return room.listen((message) => {
+      if (message.gigId !== gig.gigId) return;
+      if (message.kind === "update-now") setUpdate((now) => now ?? "asked");
+      if (message.kind === "update-refused") setUpdateRefused(true);
+    });
+  }, [joined]);
+
   // Who leads is the session's, so the copy follows each change it makes, this phone's own take-over too: the Room
   // forwards a change to every gig socket but the one that sent it.
   useEffect(() => {
@@ -407,6 +433,22 @@ export function useLiveGig({ me, stage = null, metronome, personal, onPersonal, 
     },
     tap: (body) => void session?.tap(body),
     askToLead: () => session?.askToLead(),
+    update,
+    updateNow() {
+      if (updating.current) return;
+      updating.current = true;
+      void reloadOntoPublished().then((outcome) => {
+        updating.current = false;
+        if (outcome !== "reloading") setUpdate(outcome);
+      });
+    },
+    notNow: () => setUpdate(null),
+    askUpdate() {
+      if (!joined) return false;
+      setUpdateRefused(false);
+      return joined.room.send({ kind: "update-now", gigId: joined.gig.gigId } satisfies UpdateNow);
+    },
+    updateRefused,
   };
 }
 
@@ -600,6 +642,8 @@ export function LiveGigStrip({ live }: { live: Live }) {
         }}
       />
       {joined && live.me ? <CheckInWarning me={live.me} bandId={joined.gig.bandId} gigId={joined.gig.gigId} /> : null}
+      {joined && live.me ? <VersionCheck me={live.me} gigId={joined.gig.gigId} names={live.names} ask={live.askUpdate} refused={live.updateRefused} /> : null}
+      {joined && live.update ? <UpdatePrompt state={live.update} onUpdate={live.updateNow} onLater={live.notNow} /> : null}
       {live.asking ? (
         <div className="gig-question" role="group" aria-label={CLICK_QUESTION} style={{ ...STRIP_STYLE, ...TONE_STYLE.grey }}>
           <span>{CLICK_QUESTION}</span>

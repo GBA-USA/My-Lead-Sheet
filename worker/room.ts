@@ -1,6 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { NOT_A_MEMBER_CLOSE, type ChatMessage } from "../src/chat-model";
-import { anyBeat, BEAT, nextLookAt, rosterKey, rosterRows, type Roster, type RosterAsk } from "../src/gig-check-in-model";
+import { anyBeat, asBuildId, BEAT, nextLookAt, rosterKey, rosterRows, type Roster, type RosterAsk, type UpdateNow, type UpdateRefused } from "../src/gig-check-in-model";
 import { GIG_SEND_MAX_CHARS, asGigSend, type GigCopy, type GigRefused, type GigSend } from "../src/leader-fanout";
 import { NOT_ON_LINEUP_CLOSE, type GigPeers, type Hello, type JoinGig, type OnLineup } from "../src/links/link";
 import type { Person } from "./directory-http";
@@ -22,8 +22,17 @@ import type { StoredShare } from "./share-guard";
 const RELAYED = ["intro", "ping", "pong", "link"] as const;
 type RelayKind = (typeof RELAYED)[number];
 
-/** `gig-state` asks for the room's copy of the gig's state; `gig-op` and `gig-start` carry the leader's new state. */
-type Inbound = { kind: RelayKind; to: string; body: unknown } | JoinGig | { kind: "gig-state"; gigId: string } | GigSend | RosterAsk;
+/**
+ * `gig-state` asks for the room's copy of the gig's state; `gig-op` and `gig-start` carry the leader's new state. Both
+ * messages that attach a socket to a gig carry the version id its phone runs, null when it sent none or a bad one.
+ */
+type Inbound =
+  | { kind: RelayKind; to: string; body: unknown }
+  | (JoinGig & { build: string | null })
+  | { kind: "gig-state"; gigId: string; build: string | null }
+  | GigSend
+  | RosterAsk
+  | UpdateNow;
 
 type Outbound =
   | Hello
@@ -34,13 +43,18 @@ type Outbound =
   | GigRefused
   | OnLineup
   | Roster
+  | UpdateNow
+  | UpdateRefused
   | { kind: "error"; error: "bad-message" | "no-peer" | "not-on-lineup"; to?: string };
 
 /**
  * What a socket carries across hibernation: its session version, the gig it joined (and when its phone opened it) once
  * the lineup check passed, and a fingerprint of the last roster sent to it, so an unchanged roster is not sent again.
+ * `build` is the version id its phone reported on attaching to the gig. `asked` marks a leader's socket that asked the
+ * lineup to update, so a phone that joins later on another version is asked too; `told` marks a socket already sent that
+ * ask, so the same socket joining again is not asked twice. Neither is ever stored in a table.
  */
-type Attachment = { version: number; gigId?: string; openedAt?: number; joinedAt?: number; rosterKey?: string };
+type Attachment = { version: number; gigId?: string; openedAt?: number; joinedAt?: number; rosterKey?: string; build?: string | null; asked?: boolean; told?: boolean };
 
 function parseInbound(message: string | ArrayBuffer): Inbound | null {
   if (typeof message !== "string") return null;
@@ -51,11 +65,11 @@ function parseInbound(message: string | ArrayBuffer): Inbound | null {
     return null;
   }
   if (typeof value !== "object" || value === null) return null;
-  const { kind, to, body, gigId, openedAt } = value as Record<string, unknown>;
-  if (kind === "gig-state") return typeof gigId === "string" ? { kind, gigId } : null;
-  if (kind === "roster-ask") return typeof gigId === "string" ? { kind, gigId } : null;
+  const { kind, to, body, gigId, openedAt, build } = value as Record<string, unknown>;
+  if (kind === "gig-state") return typeof gigId === "string" ? { kind, gigId, build: asBuildId(build) } : null;
+  if (kind === "roster-ask" || kind === "update-now") return typeof gigId === "string" ? { kind, gigId } : null;
   if (kind === "gig-op" || kind === "gig-start") return message.length <= GIG_SEND_MAX_CHARS ? asGigSend(value) : null;
-  if (kind === "join-gig") return typeof gigId === "string" ? { kind, gigId, ...(Number.isFinite(openedAt) ? { openedAt: openedAt as number } : {}) } : null;
+  if (kind === "join-gig") return typeof gigId === "string" ? { kind, gigId, build: asBuildId(build), ...(Number.isFinite(openedAt) ? { openedAt: openedAt as number } : {}) } : null;
   if (!RELAYED.includes(kind as RelayKind) || typeof to !== "string") return null;
   return { kind: kind as RelayKind, to, body };
 }
@@ -404,11 +418,11 @@ export class Room extends DurableObject<Env> {
    * moves nobody. A reconnecting phone sends back the `openedAt` it was given (only ever earlier than now), so a room
    * blip keeps its place.
    */
-  private joinGig(ws: WebSocket, { gigId, openedAt }: JoinGig) {
+  private joinGig(ws: WebSocket, { gigId, openedAt, build }: JoinGig & { build: string | null }) {
     const leader = this.lineups(this.userOf(ws)).get(gigId);
     if (!leader) return ws.close(NOT_ON_LINEUP_CLOSE, "not-on-lineup");
     const now = Date.now();
-    ws.serializeAttachment({ ...attachment(ws), gigId, openedAt: Math.min(openedAt ?? now, now), joinedAt: now });
+    ws.serializeAttachment({ ...this.inGig(ws, gigId), gigId, openedAt: Math.min(openedAt ?? now, now), joinedAt: now, build });
     const sockets = this.gigSockets(gigId);
     const opened = (socket: WebSocket) => attachment(socket).openedAt ?? now;
     const leaderSocket = sockets.filter((other) => this.userOf(other) === leader).sort((a, b) => opened(a) - opened(b))[0];
@@ -417,15 +431,58 @@ export class Room extends DurableObject<Env> {
     if (leaderSocket === ws) for (const other of sockets) if (other !== ws) tell(other);
     tell(ws);
     this.pushRoster(gigId);
+    this.askedBefore(ws, gigId);
   }
 
   /** A lineup player asks for the room's copy. That also joins the gig's socket list, so every later copy reaches it. */
-  private askGig(ws: WebSocket, gigId: string) {
+  private askGig(ws: WebSocket, gigId: string, build: string | null) {
     if (!this.lineups(this.userOf(ws)).get(gigId)) return ws.close(NOT_ON_LINEUP_CLOSE, "not-on-lineup");
     const attaching = attachment(ws).gigId !== gigId;
-    if (attaching) ws.serializeAttachment({ ...attachment(ws), gigId, openedAt: Date.now() });
+    if (attaching) ws.serializeAttachment({ ...this.inGig(ws, gigId), gigId, openedAt: Date.now(), build });
     send(ws, gigRelay.copy(this.ctx.storage.sql, gigId));
-    if (attaching) this.pushRoster(gigId);
+    if (!attaching) return;
+    this.pushRoster(gigId);
+    this.askedBefore(ws, gigId);
+  }
+
+  /** A socket's attachment as it moves into `gigId`: what it was asked or told about another gig does not come along. */
+  private inGig(ws: WebSocket, gigId: string): Attachment {
+    const now = attachment(ws);
+    return now.gigId === gigId ? now : { ...now, asked: undefined, told: undefined };
+  }
+
+  /**
+   * The leader's Update now. Only a socket in the gig whose player leads it now, by the gig's own record, may send it,
+   * and only once the gig is live and that socket reported its version. The ask is kept on the leader's socket and passed
+   * to every lineup socket that reported a different version. A socket that reported none runs code from before this
+   * ask existed and cannot show it, so it is sent nothing.
+   */
+  private askUpdate(ws: WebSocket, gigId: string) {
+    const userId = this.userOf(ws);
+    const own = attachment(ws);
+    const leading = own.gigId === gigId && !shutOut(this.ctx.storage.sql, userId) && this.lineups(userId).get(gigId) === userId;
+    const source = leading ? gigRoom.roster(this.band, gigId) : null;
+    if (!source || typeof own.build !== "string") return send(ws, { kind: "update-refused", gigId, refused: "not-leading" });
+    ws.serializeAttachment({ ...own, asked: true });
+    for (const other of this.gigSockets(gigId)) if (other !== ws) this.tellUpdate(other, gigId, own.build, source.lineup);
+  }
+
+  /** Sends one socket the ask when its player is on the lineup and its phone reported a version other than `leaderBuild`. */
+  private tellUpdate(ws: WebSocket, gigId: string, leaderBuild: string, lineup: readonly string[]) {
+    const { build } = attachment(ws);
+    if (typeof build !== "string" || build === leaderBuild || !lineup.includes(this.userOf(ws))) return;
+    ws.serializeAttachment({ ...attachment(ws), told: true });
+    send(ws, { kind: "update-now", gigId });
+  }
+
+  /** A phone that joins after the player leading now asked, on another version, is asked as it joins, once per socket. */
+  private askedBefore(ws: WebSocket, gigId: string) {
+    if (attachment(ws).told) return;
+    const leader = this.lineups(this.userOf(ws)).get(gigId);
+    const asker = this.gigSockets(gigId).find((other) => other !== ws && attachment(other).asked && this.userOf(other) === leader);
+    const leaderBuild = asker ? attachment(asker).build : null;
+    const source = typeof leaderBuild === "string" ? gigRoom.roster(this.band, gigId) : null;
+    if (source && typeof leaderBuild === "string") this.tellUpdate(ws, gigId, leaderBuild, source.lineup);
   }
 
   /**
@@ -441,7 +498,12 @@ export class Room extends DurableObject<Env> {
     if (!source) return null;
     const open = this.gigSockets(gigId, gone).filter((ws) => ws.readyState === WebSocket.READY_STATE_OPEN);
     const now = Date.now();
-    const sockets = open.map((ws) => ({ userId: this.userOf(ws), lastBeat: this.ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime() ?? null, joinedAt: attachment(ws).joinedAt ?? null }));
+    const sockets = open.map((ws) => ({
+      userId: this.userOf(ws),
+      lastBeat: this.ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime() ?? null,
+      joinedAt: attachment(ws).joinedAt ?? null,
+      build: attachment(ws).build ?? null,
+    }));
     const roster: Roster = { kind: "roster", gigId, packRev: source.packRev, rows: rosterRows(source.lineup, sockets, source.receipts, now) };
     const key = rosterKey(roster);
     const to = open.filter((ws) => source.to.has(this.userOf(ws)));
@@ -516,7 +578,8 @@ export class Room extends DurableObject<Env> {
     const inbound = parseInbound(message);
     if (!inbound) return send(ws, { kind: "error", error: "bad-message" });
     if (inbound.kind === "join-gig") return this.joinGig(ws, inbound);
-    if (inbound.kind === "gig-state") return this.askGig(ws, inbound.gigId);
+    if (inbound.kind === "gig-state") return this.askGig(ws, inbound.gigId, inbound.build);
+    if (inbound.kind === "update-now") return this.askUpdate(ws, inbound.gigId);
     if (inbound.kind === "gig-op" || inbound.kind === "gig-start") return this.takeGig(ws, inbound);
     // Answered only on a socket in that gig whose player the Room sends the roster to; anyone else hears nothing.
     if (inbound.kind === "roster-ask") return void (attachment(ws).gigId === inbound.gigId && this.pushRoster(inbound.gigId, { asker: ws }));

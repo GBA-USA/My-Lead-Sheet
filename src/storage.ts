@@ -639,6 +639,46 @@ export function addOwnSetlist(setlist: Omit<StoredSetlist, "id">): number | null
   return id;
 }
 
+const SEED_SETLIST_IDS = new Set(seedLibrary.setlists.map((setlist) => setlist.id));
+
+/** True for a setlist shipped with the app, whether or not the player renamed or reordered it. */
+export const isBuiltInSetlist = (id: number): boolean => SEED_SETLIST_IDS.has(id);
+
+function localSongId(ref: SongRef): number | null {
+  if (!ref.startsWith(LOCAL)) return null;
+  const id = Number(ref.slice(LOCAL.length));
+  return Number.isInteger(id) ? id : null;
+}
+
+/** Saves a setlist's name and song refs, keeping its `copy` mark. False when missing, invalid, or the browser refused the write. */
+export function saveOwnSetlist(id: number, name: string, refs: readonly SongRef[]): boolean {
+  ensureOpened();
+  const raw = readRaw(LIBRARY_KEY);
+  const current = storedLibrary(parseStored(raw));
+  const existing = current.setlists.find((item) => item.id === id);
+  if (!existing) return false;
+  const songIds = refs.map(localSongId).filter((songId): songId is number => songId !== null);
+  if (songIds.length !== refs.length) return false;
+  const item: StoredSetlist = { id, name, songIds, ...(existing.copy !== undefined ? { copy: existing.copy } : {}) };
+  const seedPrint = current.seedPrints.setlists[id];
+  const entry: OwnEntry<StoredSetlist> = seedPrint === undefined ? { item } : { item, print: seedPrint };
+  if (!writeRaw(LIBRARY_KEY, withOwnLibraryItems(raw, new Map([[`${SETLIST_ROW}.${id}`, JSON.stringify(entry)]])))) return false;
+  storageChanged();
+  return true;
+}
+
+/** Removes a player-made setlist without touching any song. False for a built-in setlist, a missing id, or when the browser refused the write. */
+export function removeOwnSetlist(id: number): boolean {
+  ensureOpened();
+  if (isBuiltInSetlist(id)) return false;
+  const raw = readRaw(LIBRARY_KEY);
+  const existing = storedLibrary(parseStored(raw)).setlists.find((item) => item.id === id);
+  if (!existing) return false;
+  if (!writeRaw(LIBRARY_KEY, withOwnLibraryItems(raw, new Map([[`${SETLIST_ROW}.${id}`, null]])))) return false;
+  storageChanged();
+  return true;
+}
+
 /** Puts a new chart in an own song's place, read from what is stored now. */
 export const replaceOwnSong = (id: number, song: Omit<Song, "ref" | "id">) => {
   ensureOpened();

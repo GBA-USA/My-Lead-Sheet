@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import { bandSongRef, songFromSent } from "./band-library-model";
 import { PRIVACY_HREF } from "./data-kinds";
 import { GigSong } from "./gig-plan";
@@ -8,8 +8,7 @@ import { allOnPhone, heldFor, onPhoneChange, phoneGeneration, type CachedBandSon
 import { songHref, type TabName } from "./route";
 import { groupedSongs, keyName, matchingSetlists, NO_CHIPS } from "./search";
 import { SearchBox, SearchChips } from "./search-box";
-import { CodeOfferButton } from "./setlist-code";
-import { codeOffer } from "./setlist-code-model";
+import { SetlistBuilder, type BuilderTarget } from "./setlist-builder";
 import { LeadSheet } from "./sheet";
 // @ts-expect-error TS5097: song-search.ts holds the same stem, so only ".tsx" names this file in tsc, Vite and esbuild.
 import { SongSearch } from "./song-search.tsx";
@@ -220,19 +219,56 @@ export function SongList({ songs, userId, onAdd, onImport }: { songs: Song[]; us
 /** `onShowCode` is there only while signed in, since a code is made on the server. */
 export function SetlistList({ setlists, songs, onShowCode }: { setlists: Setlist[]; songs: Song[]; onShowCode?: (setlist: Setlist) => void }) {
   const [query, setQuery] = useState("");
+  const [builder, setBuilder] = useState<BuilderTarget | null>(null);
+  const newBtnRef = useRef<HTMLButtonElement>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
   const shown = matchingSetlists(setlists, songs, query);
+
+  const openBuilder = (target: BuilderTarget, trigger: HTMLElement | null) => {
+    returnFocusRef.current = trigger;
+    setBuilder(target);
+  };
+
+  const closeBuilder = () => {
+    const target = returnFocusRef.current;
+    setBuilder(null);
+    requestAnimationFrame(() => {
+      if (target && target.isConnected) target.focus();
+      else newBtnRef.current?.focus();
+    });
+  };
+
   return (
     <>
       <SearchBox label="Search setlists" value={query} onChange={setQuery} />
+      <div className="setlists-actions">
+        <button
+          ref={newBtnRef}
+          type="button"
+          className="setlists-new-btn"
+          onClick={(event) => openBuilder({ kind: "new" }, event.currentTarget)}
+        >
+          + New setlist
+        </button>
+      </div>
       {query && shown.length === 0 ? (
         <p className="search-empty" role="status">No setlists match.</p>
+      ) : setlists.length === 0 ? (
+        <p className="search-empty" role="status">No setlists yet.</p>
       ) : (
         <div className="setlists">
           {shown.map((setlist) => (
             <section key={setlist.id} className="setlist" aria-label={setlist.name}>
               <div className="setlist-head">
-                <h2>{setlist.name}</h2>
-                {onShowCode ? <CodeOfferButton offer={codeOffer(setlist.songRefs.length, setlist.copy?.canSendOn !== false)} onShow={() => onShowCode(setlist)} /> : null}
+                <h2>
+                  <button
+                    type="button"
+                    className="setlist-name-btn"
+                    onClick={(event) => openBuilder({ kind: "edit", id: setlist.id }, event.currentTarget)}
+                  >
+                    {setlist.name}
+                  </button>
+                </h2>
                 <a className="live-launch" href={`#/live/${setlist.id}/0`}>
                   Live
                 </a>
@@ -267,6 +303,16 @@ export function SetlistList({ setlists, songs, onShowCode }: { setlists: Setlist
           ))}
         </div>
       )}
+      {builder ? (
+        <SetlistBuilder
+          target={builder}
+          setlists={setlists}
+          songs={songs}
+          onShowCode={onShowCode}
+          onCreated={(id) => setBuilder({ kind: "edit", id })}
+          onClose={closeBuilder}
+        />
+      ) : null}
     </>
   );
 }

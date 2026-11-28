@@ -1241,8 +1241,10 @@ try {
 
     // 3. Mint a copy code
     await s.evaluate(`location.hash = "#/setlists"`);
-    await ui.until(`!!document.querySelector(".setlist-code-show")`, "Show code on setlist");
-    await s.evaluate(`document.querySelector(".setlist-code-show").click()`);
+    await ui.until(`!!document.querySelector("section.setlist .setlist-head button")`, "setlist name button");
+    await s.evaluate(`document.querySelector("section.setlist .setlist-head button").click()`);
+    await ui.until(`!!document.querySelector(".setlist-builder .setlist-code-show")`, "Show code in setlist builder");
+    await s.evaluate(`document.querySelector(".setlist-builder .setlist-code-show").click()`);
     await ui.until(`!!document.querySelector(".setlist-code-sheet")`, "My setlist code sheet");
     await ui.click("Public", `document.querySelector(".setlist-code-sheet")`);
     await ui.click("Show code", `document.querySelector(".setlist-code-sheet")`);

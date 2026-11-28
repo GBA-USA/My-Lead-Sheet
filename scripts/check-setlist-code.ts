@@ -332,7 +332,9 @@ try {
 
     await topTab("setlists");
     await app.until(`!!document.querySelector("section.setlist[aria-label='Worship Set']")`, "the Worship Set");
-    await app.click("Show code", `document.querySelector("section.setlist[aria-label='Worship Set']")`);
+    await app.click("Worship Set", `document.querySelector("section.setlist[aria-label='Worship Set']")`);
+    await app.until(`!!document.querySelector(".setlist-builder")`, "the Worship Set builder");
+    await app.click("Show code", `document.querySelector(".setlist-builder")`);
     await app.until(`document.querySelectorAll(".setlist-code-sheet input[type=checkbox]").length === 4`, "one box per song");
     assert.ok(await site.evaluate<boolean>(`[...document.querySelectorAll(".setlist-code-sheet input[type=checkbox]")].every((box) => box.checked)`), "every song starts ticked");
     await site.evaluate(`[...document.querySelectorAll(".setlist-code-sheet label")].find((l) => l.textContent.includes("Truth")).click()`);
@@ -395,7 +397,10 @@ try {
     await closeSheets();
     await topTab("setlists");
     await app.until(`!!document.querySelector("section.setlist[aria-label='Secret set']")`, "Sam's Secret set");
-    assert.ok(!(await buttonsIn(`document.querySelector("section.setlist[aria-label='Secret set']")`)).includes("Show code"), "Sam's Private copy has no Show code");
+    await app.click("Secret set", `document.querySelector("section.setlist[aria-label='Secret set']")`);
+    await app.until(`!!document.querySelector(".setlist-builder")`, "the Secret set builder");
+    assert.ok(!(await buttonsIn(`document.querySelector(".setlist-builder")`)).includes("Show code"), "Sam's Private copy has no Show code");
+    await closeSheets();
     const library = await stored();
     const held = library.setlists.find((setlist) => setlist.name === "Secret set");
     const heldSongs = held.songIds.map((id: number) => library.songs.find((song) => song.id === id));

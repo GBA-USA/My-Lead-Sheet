@@ -1,3 +1,56 @@
+VERDICT: PASS
+Nits:
+P3 | CLASS=other | src/setlist-builder-model.ts:67 | New. `dragHoldReady` is exported and never called. The component starts a drag from its own setTimeout (setlist-builder.tsx:384), so the brief's three-state machine is only partly in the model. No behavior differs.
+P3 | CLASS=state-machine | src/setlist-builder.tsx:383 | New, read only, not run. A second finger landing on another row mid-drag replaces the drag with a press (no guard on activePointerRef at :376), and the first row keeps its pointer capture. The first finger's lift then saves nothing. No data is lost.
+P3 | CLASS=other | C:\Users\order\cooks\reports\REPORT-ab-gemini-p6-setlist-builder.md | New. The report stops at 875b157. B30, B31 and B32 and their rounds are only in VERIFY.md and EDGE-CASES EC-24 to EC-26.
+P3 | CLASS=test-gap | scripts/check-setlist-builder.ts:1530 | Carried from pass 7 (S6, sendable friend copy). Equivalent today.
+P3 | CLASS=stale-ui | src/setlist-builder.tsx:156 | Carried. Phone B's rename while Phone A types, last edit wins. Owner question in QUESTIONS.md.
+P3 | CLASS=test-gap | src/setlist-builder.tsx:162 | Carried (C2/C3 guard clauses).
+P3 | CLASS=test-gap | src/setlist-builder.tsx:548 | Carried (Close mousedown preventDefault, Safari only, EC-21).
+P3 | CLASS=test-gap | src/setlist-builder.tsx:601 | Carried ("My Songs has no songs yet." unreachable).
+P3 | CLASS=stale-ui | src/setlist-builder.tsx:726 | Carried (+ Add songs clears the name error).
+P3 | CLASS=other | src/storage.ts:661 | Carried (missing setlist or non-local ref shows the full-phone words, unreachable).
+P3 | CLASS=test-gap | scripts/check-setlist-builder.ts:1316 | Carried (B31 Add step list assert, equivalent).
+P3 | CLASS=other | src/setlist-builder.tsx:469 | Carried (confirmed delete calls onClose twice).
+P3 | PRE-EXISTING | src/storage.ts | Carried (per-account built-in setlist stored as an own item).
+P3 | PRE-EXISTING | scripts/check-setlist-code.ts:41 | Carried (`.pathname` root is base code).
+P3 | CLASS=other | ac4fa2e | Carried (commit 1 message says B1-B14, holds B1-B19).
+P3 | CLASS=ui-rule | QUESTIONS.md | Carried owner decisions: UI rules 1 and 3, and B25 for the B6 ticked-duplicate mutation.
+
+Judge pass 8 evidence (Opus, deep, 71b65bc, laptop Edge; logs in .verify-logs/judge8/, gitignored).
+- Brief walked case by case. GOAL, the four model functions, the three drag states, the two storage helpers plus `isBuiltInSetlist`, "already in" as `songRefs.includes(ref)`, moves and removes by place, and every empty and error line in MESSAGES all match the brief. B1-B19 fail-before is in the report (harness log, 19 FAIL for the stated reasons).
+- Weakened checks: none. `git diff ac4fa2e HEAD -U0 -- scripts/check-setlist-builder.ts` has 796 added lines and no removed line. The edits to check-setlist-code, check-chordpro-phone and check-join-links only open the builder before Show code. Every assert is kept, and check-setlist-code adds one closeSheets().
+- Hands-on run of a path no earlier pass drove, real touch at 360 x 780, signed out (.verify-logs/judge8/probe-rename-then-act.ts). R1 types a new name and taps Remove on row 2, so the blur save and the remove land in one tap. R2 types a new name, hold-drags row 2 above row 1 with no blur, then taps + Add songs. Both hold after a reload, both songs stay in My Songs, no page errors: exit 0, 11 ok. Probe proof: mutant M1 (leaving the box saves nothing) turns R1 red, "Probe Set" stays (probe-M1-blur-saves-nothing.log). src was restored with git checkout and dist rebuilt. `git status` shows only VERIFY.md.
+- CSS uses theme tokens only, every control has a 44 px floor, and reduced motion turns off the row transition (setlist-builder.css:383).
+- No worker/ change, no SQL, no role route, and no new fetch. sql-injection and auth-check do not apply.
+- Not rerun: the cook's named checks (given as proven at this head) and the earlier judges' mutation runs. src/ has not changed since 858e9ad, and the check only grew.
+
+# Judge pass 7 at 71b65bc (same head; its verdict was PASS)
+VERDICT: PASS
+Nits:
+P3 | CLASS=test-gap | scripts/check-setlist-builder.ts:1530 | New. B32 seeds only a private copy (canSendOn false), and no case saves a sendable friend copy. Mutant S6 keeps the mark only when canSendOn is false (storage.ts:662), so a reorder of a sendable copy drops its setlistCopyId lineage, and check:setlist-builder still gives exit 0, 32 ok (.verify-logs/judge7/). The real line is one unconditional spread, so S6 adds a branch the code does not have. Equivalent today.
+P3 | CLASS=stale-ui | src/setlist-builder.tsx:156 | Carried. While Phone A types, a Phone B rename changes the heading but not the box, and leaving the box saves A's name over B's (last edit wins). Owner question at the top of QUESTIONS.md.
+P3 | CLASS=test-gap | src/setlist-builder.tsx:162 | Carried. The guard's same-id and focus clauses survive deletion (C2/C3). Equivalent today.
+P3 | CLASS=test-gap | src/setlist-builder.tsx:548 | Carried. The Close button's mousedown preventDefault matters only on Safari. No Edge or Chrome case can fail for it (EC-21).
+P3 | CLASS=test-gap | src/setlist-builder.tsx:601 | Carried. The picker's "My Songs has no songs yet." is unreachable with 15 built-in songs.
+P3 | CLASS=stale-ui | src/setlist-builder.tsx:726 | Carried. "+ Add songs" clears the name error. The rejected name is already reset, so nothing is lost.
+P3 | CLASS=other | src/storage.ts:661 | Carried. A missing setlist or a non-local ref also returns false and shows the full-phone words. Unreachable today.
+P3 | CLASS=test-gap | scripts/check-setlist-builder.ts:1316 | Carried. B31's Add step does not assert the list after the refused Add. Equivalent: the picker replaces the rows while it is open.
+P3 | CLASS=other | src/setlist-builder.tsx:469 | Carried. A confirmed delete calls onClose twice. Harmless today.
+P3 | PRE-EXISTING | src/storage.ts | Carried. Per-account mode: a built-in setlist one account edited is stored as an own item under the built-in id.
+P3 | PRE-EXISTING | scripts/check-setlist-code.ts:41 | Carried. The `.pathname` root is base code. Linux Deep verify is its gate.
+P3 | CLASS=other | ac4fa2e | Carried. Commit 1's message says B1-B14 but holds B1-B19.
+P3 | CLASS=ui-rule | QUESTIONS.md | Carried owner decisions: UI rules 1 and 3 against the brief's words, and B25 standing in for the B6 "ticked duplicate" mutation.
+
+Judge pass 7 evidence (Opus, deep, 71b65bc, laptop Edge; logs in .verify-logs/judge7/, gitignored).
+- The pass 6 P2 is fixed. ba28daf adds B32. It seeds setlist 909 with a private copy mark, ArrowDowns a handle and renames it. It deep-equals the stored mark after each save and after a reload, and it needs no Show code while signed in. Read through the real reader (`readLibraryFromRaw`, check:363).
+- Hands-on run of the riskiest path, the judge's own mutant on a fresh git-archive tree of 71b65bc (.verify-logs/judge7/mutate.mjs). S3 (the save drops the copy spread) gives exit 1, 31 ok, and B32 "a reorder keeps the copy mark" is the only FAIL. At 0278bc3 the same mutant gave exit 0, 31 ok (judge6). S6 survives (see the nit). The junction was removed first, then the tree. node_modules (70 entries) and `git status` are unchanged.
+- The fix round changed only scripts/check-setlist-builder.ts (+66/-0) and VERIFY.md. `git diff 0278bc3 71b65bc -U0 -- scripts` has no removed line. Nothing changed in src/, worker/, package.json or .github. B32 deletes 909 at the end, so later cases start where they did.
+- EDGE-CASES row EC-26 is in C:\Users\order\cooks\EDGE-CASES.md and names this round, ba28daf and B32.
+- No worker/ change, no SQL and no role route, so the sql-injection and auth-check classes do not apply.
+- Not rerun: the cook's named checks at this commit (given as proven), and the brief's three storage mutations (src/storage.ts unchanged since 439a1e6, the check only grew, so the earlier kills by judges 2, 4 and 5 still hold).
+
+# Judge pass 6 at 0278bc3 (superseded by pass 7 above; its verdict was FAIL)
 VERDICT: FAIL
 P2 | CLASS=data-shape | src/storage.ts:662 | No case covers the brief's "save an own setlist's name and song ids keeping its `copy` mark". Change the line to `{ id, name, songIds }` (drop the copy spread): check:setlist-builder 31/31 ok and check:setlist-code 11/11 ok. Under that mutant, open "Private Copy Set" (copy canSendOn false, seeded at check:498), ArrowDown its first handle, close and reload. Its builder then offers Show code (setlist-builder.tsx:737), and the setlistCopyId lineage is gone (setlist-code.tsx:127, :206). At 0278bc3 the same steps keep the mark and show no Show code. Logs: .verify-logs/judge6/.
 Nits:

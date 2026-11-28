@@ -315,6 +315,7 @@ const BROWSER_CASES = [
   "B27 a press inside let go on the backdrop keeps the builder open",
   "B28 a sync in the middle of a drag moves nothing",
   "B29 a list filled by a sync can be dragged",
+  "B30 a rename from another phone keeps a name being typed",
 ] as const;
 
 let apiBase = "";
@@ -1701,6 +1702,62 @@ try {
     await closeBuilder();
     await reloadSetlists();
     assert.deepEqual(await setlistScreenTitles("Filled Later"), ["Timberline", "Rain on Tin", "Morning Freight"], "Filled Later after a reload");
+  });
+
+  // ---------------------------------------------------------------------------------------------- B30 a rename from another phone keeps a name being typed
+  await check("B30 a rename from another phone keeps a name being typed", async () => {
+    const fillId = (await readStoredLibrary()).setlists.find((entry) => entry.name === "Filled Later")?.id;
+    assert.ok(fillId !== undefined, "Filled Later is there from B29");
+    const nameValue = () => s.evaluate<string>(`document.querySelector(${js(nameBox)})?.value ?? ""`);
+    const renameOnPhoneB = async (name: string) => {
+      await runPhoneB(async (mod) => {
+        assert.ok((await mod.syncBackup()).ok);
+        const refs = mod.loadLibrary().setlists.find((entry) => entry.id === fillId)?.songRefs;
+        assert.ok(refs && refs.length === 3, `Phone B holds Filled Later (${js(refs)})`);
+        assert.ok(mod.saveOwnSetlist(fillId, name, refs), `Phone B renames it ${name}`);
+        assert.ok((await mod.syncBackup()).ok);
+      });
+      await syncPhoneA();
+      await app.until(
+        `JSON.parse(localStorage.getItem("leadSheetsLibraryV2")).setlists.find((each) => each.id === ${fillId})?.name === ${js(name)}`,
+        `Phone B's name ${name} reaches Phone A`,
+      );
+      await settle(150);
+    };
+
+    // 1. Not typing: Phone B's rename shows in the open builder
+    await syncPhoneA();
+    await openBuilderFor("Filled Later");
+    await renameOnPhoneB("Filled Again");
+    assert.equal(await nameValue(), "Filled Again", "with the name box left alone, Phone B's rename shows");
+
+    // 2. Typing: Phone A's half-typed name stays in the box and in focus while Phone B's rename arrives
+    await s.evaluate(`(() => {
+      const el = document.querySelector(${js(nameBox)});
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    })()`);
+    for (const ch of [" ", "L", "i", "v", "e"]) {
+      await s.send("Input.insertText", { text: ch });
+      await settle(30);
+    }
+    assert.equal(await nameValue(), "Filled Again Live", "Phone A has typed its new name");
+    await renameOnPhoneB("Filled Third");
+    assert.equal(await nameValue(), "Filled Again Live", "a rename from Phone B does not replace the name Phone A is typing");
+    assert.equal(
+      await s.evaluate<boolean>(`document.activeElement === document.querySelector(${js(nameBox)})`),
+      true,
+      "the name box keeps focus",
+    );
+
+    // 3. Leaving the box saves what Phone A typed
+    await s.evaluate(`document.querySelector(${js(nameBox)}).blur()`);
+    await settle(150);
+    assert.equal((await storedSetlist(fillId))?.name, "Filled Again Live", "leaving the box saves the typed name");
+    assert.equal(await s.evaluate<string>(`document.querySelector(".setlist-builder h2")?.textContent?.trim() ?? ""`), "Filled Again Live", "the heading shows the saved name");
+    await closeBuilder();
+    await reloadSetlists();
+    assert.ok(await s.evaluate<boolean>(`!!document.querySelector('section.setlist[aria-label="Filled Again Live"]')`), "the typed name holds after a reload");
   });
 
   // ---------------------------------------------------------------------------------------------- B13 signed out, and a shared phone

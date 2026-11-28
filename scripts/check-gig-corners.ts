@@ -934,6 +934,28 @@ async function run(site: Site, script: string, css: string) {
     }
   });
 
+  it("H4 one line off the gig (guard)", async () => {
+    try {
+      for (const phone of PHONES) {
+        await metrics(phone);
+        await asMember();
+        const gigBar = (await box(".song-header"))!.height;
+        for (const hash of [SOLO_SONG, SOLO_LIVE]) {
+          await page(`window.__boot(${js({ me: null, hash, songs: SONGS, own: [song(11), song(9)] })})`);
+          await until("the sheet", () => has(".sheet .sheet-name"), Boolean);
+          await settle();
+          const name = await text(".sheet .sheet-name");
+          const title = await page<{ text: string; lines: number }>(`({ text: document.querySelector(".song-header .shell-title").textContent, lines: window.__look.lines(document.querySelector(".song-header .shell-title")) })`);
+          const bar = (await box(".song-header"))!.height;
+          console.log(`       at ${phone.width} px ${hash} on ${js(name)}: the top bar reads ${js(title.text)}, ${title.lines} line, ${bar} px`);
+          check(title.lines === 1 && bar === gigBar, `at ${phone.width} px ${hash}'s top bar is one line and as tall as the gig sheet's (${title.lines} lines, ${bar} against ${gigBar} px)`);
+        }
+      }
+    } finally {
+      await metrics(PHONE);
+    }
+  });
+
   it("G1 guard", async () => {
     const lines = readFileSync(join(root, "src", "App.tsx"), "utf8").replace(/\r\n/g, "\n").replace(/\n$/, "").split("\n").length;
     check(lines <= APP_LINES, `src/App.tsx has ${lines} lines, at most the ${APP_LINES} it has on origin/mls-int-20261113`);

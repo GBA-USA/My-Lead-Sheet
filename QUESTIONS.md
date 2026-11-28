@@ -1,3 +1,97 @@
+# PR #130 deep fix: check:links case 1 and Chrome's srflx-first pair (owner ruling needed)
+
+CI run 46071174653 failed `check:links` case 1 on both attempts at d3956f9, the same way PR #107's run 45281740592 did.
+The link was route "wifi" and open, but the follower's selected pair read `{"local":"srflx","remote":"host"}` and case 1
+requires local host. Chrome gathers host and srflx on one shared socket and names a connection after whichever it listed
+first. When the check's same-machine STUN reply beats the host's `.local` name, that is srflx. The product cannot pick
+that name and labels by the remote side (`routeOfPair`). PR #130 touches nothing in `src/links`. d0ea469 (case 1b replay,
+fails) and a20a8cf (case 1 accepts srflx at this machine's own address) are the shape of 5e02b90, which 61a4e57 reverted
+as a loosened check. A mutation run over `src/links` (11 mutants) shows the old local-host line decided none of them.
+Owner: name this change in #130's brief, or cherry-pick the two commits onto mls-int-20261113 and drop them here.
+Also seen, not fixed: `routeOfPair` calls local srflx with remote prflx "internet", so a phone that loses the same race
+on a Wi-Fi with unresolved `.local` names would call a Wi-Fi link "Over the internet".
+
+---
+
+# p6-gig-check-in, self-check fix pass 1: 2026-11-27: Hold to take the lead does nothing for a phone that joined after the leader's phone left
+
+**Seen in K25's first draft.** Lee led from the phone and signed out there. Ada, the admin, signed in on the same phone
+and joined. Her strip showed "Hold to take the lead" (key `quiet`). The hold fired the way `leaderStarts` fires
+"Hold to start", but no `gig-op` left the phone. **Inferred from the code:** `src/leader-fanout.ts:212` `tap` returns
+`not-allowed` without sending while `bandNow()` is null, and a phone that joined with no leader socket in the gig has
+never measured a band clock. So for anyone who joins after the leader's phone is gone, the button is shown and does
+nothing, with no word. `src/leader-fanout.ts` and `src/gig-state.ts` are on this brief's "do not touch" list, so
+nothing here changes it. K25 now has Ada take the lead from a second socket, as K8's Bo does. **Asking:** should a
+taker with no band clock start one from its own (a new epoch), or should the strip hide the button and say why?
+
+---
+
+# p6-gig-check-in, step-up retry: 2026-11-27: UI rule 2, Band status has two doors on a live gig's screen
+
+**Rule 2** (one control, one home). The brief asks for both: the faces strip opens Band status (K18, C23's door), and
+the leader's warning has "a way to open the roster" (item 4), which is the warning's See who. So on a live gig's screen
+the leader can reach Band status from two places. I kept both, because the brief names both and K7 and K18 check
+both, and the warning shows on every screen while the faces strip shows only on the gig's screen. **Asking:** keep
+both, or should See who go and the warning point only at the faces strip? No code waits on this.
+
+---
+
+# p6-gig-check-in, step-up retry: 2026-11-27: K3 is still the only red case, and still waits on the answer below
+
+The four fixes listed under "Where the build stands" below are in. The retry did not edit the check. With the one-line
+fix applied in an untracked scratch copy only, all 18 cases pass three runs in a row and all 17 mutations turn their
+cases red. On the registered check, 17 cases are ok and K3 fails on line 977 alone, so `npm run check:gig-check-in`
+exits 1 until the answer below. **Asking (unchanged):** may the cook change line 977 to
+`assert.ok(await evaluate<boolean>(`!!${gigView(gigId)}`), "the gig's screen is still showing");` and nothing else?
+
+---
+
+# p6-gig-check-in: 2026-11-27: K3 cannot pass as written (scripts/check-gig-check-in.ts:977)
+
+**What is wrong.** The last assertion of K3 is
+
+```ts
+assert.ok(await has(gigView(gigId)), "the gig's screen is still showing");
+```
+
+`has(selector)` runs `document.querySelector(selector)`. `gigView(gigId)` is not a selector. It returns the JS
+expression `document.querySelector(".gig-view[data-gig=\"…\"]")`, which every other caller drops into `evaluate` or
+`until`. So `querySelector` throws `SyntaxError: … is not a valid selector` on every run, whatever the app does. On the
+first build run K3 failed on exactly that line:
+
+```
+FAIL K3 joins without a tap: … SyntaxError: Failed to execute 'querySelector' on 'Document':
+'document.querySelector(".gig-view[data-gig=\"gig_FMCF4Y8cK2sOWlQpIP3lJA\"]")' is not a valid selector.
+```
+
+This is a defect in the check, not in the behavior under test. On the tests-only commit K3 failed earlier, at "Bo
+Connected on the earlier gig", which is the right reason, so the defect stayed hidden until the build reached the last line.
+
+**The fix I would make** (same assertion, same strength):
+
+```ts
+assert.ok(await evaluate<boolean>(`!!${gigView(gigId)}`), "the gig's screen is still showing");
+```
+
+**Why I stopped.** The brief says that after commit 1 no case may be edited or weakened, and that a case that looks
+wrong gets this file, a commit, and a stop. So I have not touched the line.
+
+**Asking:** may I make that one-line fix to K3 (and only that line), and carry on?
+
+**Where the build stands** (for the resume). The tests-only commit is `60875a9`; the WIP commit before this file holds the
+build so far. On its first run, K17, K8, K15 (count 0 then 1), K1, K2, K10 and K4 pass. Known fixes still to make, none
+of them to the check:
+
+1. `worker/room.ts` `webSocketClose`: echoing close code 1005 throws, so the client never finishes closing (K6, K7, K11,
+   K13, K16). Fall back to `ws.close(1000)`.
+2. Beats never wake the Room, so a socket that starts beating after its join never arms the alarm (K14). Look once a
+   short grace after each join-gig, and push from the alarm only once some socket in the gig has beaten, so K6 still
+   catches a missing close push.
+3. `src/gig-live.tsx` `startable`: an ended gig still offers Hold to start, because the held pack says planned and only
+   a live listing excludes it (K5, K9). Exclude any listing that is not planned.
+4. `src/band-status.css`: roster rows are 37 px; give `.band-status-row` a 44 px minimum (K12).
+
+---
 # p2-view-pill fix round (PR 127): check:scroll-sync's "no radio-edit choice" case and the pill's ARIA role conflict
 
 1. The brief makes the view pill a real radio group (`role="radiogroup"`, three `role="radio"` parts). The
@@ -25,6 +119,82 @@
 2. The pill no longer moves on ArrowDown and ArrowUp, only on Left and Right as brief item 4 says, so a page-turn
    pedal or keyboard that sends Down/Up never changes the chart view. `check:view-pill` V3 pins it. Owner: say if
    Up/Down should move the choice as the ARIA radio pattern does. V3's two new lines then flip.
+
+# p2-song-info self-check fix pass 2: opening Song info near the top of a scroll no longer drops the chart
+
+The self-check found that opening Song info 1 s into a scroll from the top dropped the reading row 20.6 px (1280x800)
+and 27.7 px (390x844) on the next frame, and the chart took about 3 s to catch up. The hold was right. The scroll path
+was wrong. It is worked out from where the chart sits in the scroller, and its top-of-chart part (the eased start from
+pass 1, and the hold at scrollTop 0 before that) changes shape, not only place, when the chart moves down.
+The fix is again in `src/scroll-timing.ts`, outside this cook's owned list. `runScroll` notes where the chart starts as
+a run begins. When what sits above the chart grows or shrinks mid-run, the whole path moves by that much. A run in which
+the chart never moves gets the same path as before. `check:song-info` I17 fails without the fix (27.7 px at 390x844).
+Owner: say if this belongs in a scroll cook instead. Reverting it turns I17 red.
+
+# p2-song-info self-check fix pass 1: the Scroll pill moves the closed-panel sheet at once (supersedes item 2 below)
+
+The self-check failed item 2 below: the tap on Song info hid a real change, since a player opens the sheet closed. The tap
+is gone, and the case fails at 1280 px without the fix, as on CI. The fix is in `src/scroll-timing.ts` `sungTrack`, a file
+outside this cook's owned list (CLAUDE.md "stay inside the files your brief owns"); nothing in the owned files decides
+where the song's own pace starts. A chart whose first line starts above the sheet's middle used to hold still until the
+song reached the middle. Now its sung line starts where the chart puts it and eases down to the middle while the sheet
+moves at half the song's pace. A chart whose first line starts at or below the middle gets the same path as before.
+Measured in Edge on song 10, Song info closed (first move after the pill, scrollTop 1.2 s after it):
+
+| Window | First row / middle | Before | After |
+| --- | --- | --- | --- |
+| 1280x800 | 192 / 279 px | 2.53 s, 0 px | 0.19 s, 4 px |
+| 390x844 | 207 / 304 px | 0.45 s, 1 px | 0.12 s, 10 px |
+| 360x740 | 207 / 252 px | 0.06 s, 36 px | 0.06 s, 35 px |
+
+By 10 s both trees are at the same place (62, 141, 192 px), so the change only affects the opening. Owner: say if you
+would rather keep the old hold, which reverts the three lines in `sungTrack` and leaves `check:song-info` I16 and the Scroll pill case red.
+
+# p2-song-info Deep verify fix: two check edits in check:ux-sheet-controls-save, one expected to be a product fix
+
+Deep verify run 46043279728 failed three checks. check:metronome and check:teach were a product bug: Song info's mount
+effect called `Element.closest`, which their stand-in DOM (`scripts/fake-dom.ts`) lacks, so the effect threw and React
+dropped the whole sheet. Song info now hears the scroll at the document, in the capture phase, and finds its own scroller
+and chart only inside that listener and on a tap. Neither check was edited. check:ux-sheet-controls-save got two edits:
+
+1. The first chord's y pins became 199.30 (390 px) and 179.56 (1280 px), the Linux values from that run. The plan moves
+   everything above the chart into the closed row, and check:ux-metronome-sheet works out the same two numbers from the
+   stylesheet and passed on that run. x is unchanged.
+2. The Scroll pill case taps Song info open before the pill. The handoff called this one a behavior regression, and it
+   is not one. The song's own pace holds the sung line at the sheet's middle, so a chart whose first rows start above
+   the middle does not move until the song reaches them. Measured in Edge on song 10: the base chart starts 343 px down
+   the 558 px tall scroller at 1280x800, with its first row at 383, below the 279 px middle, so it moves at once (top 175
+   after 1.2 s). The head chart starts at 152, with its first row at 192, so it holds (top 0). The base holds the same
+   way in a taller window (1280x1200, middle 479: top 0). Opening Song info puts the source, feel and How to play back
+   above the chart, so the case asserts the same `scroll on and top > 0` after the same 1.2 s. Owner: say if a player
+   should see the chart move at once even when its first rows already sit above the middle. That would change
+   src/scroll-timing.ts, which is outside this cook.
+
+# p2-song-info: check:ux-metronome-sheet's closed-panel chord y and tops come from the stylesheet, not from Windows
+
+Fix pass 1 replaced the Windows-measured numbers in the case "with Song info closed, the chart's first chord and the
+card's blocks sit exactly at their pinned places". Each y is now worked out in the check (`stack`) from the stylesheet
+and one Linux fact, the title's line count. The base's Linux pins put .source at 87.88 (390 px) and 68.14 (1280 px),
+which is 2 and 1 title lines of 27.744 px under the 20 and 28 px card padding plus .source's 12.416 px margin. Below
+the title every line height is unitless, the row is 44 px, and the chart heading is Inter's one normal line (16 px).
+The worked-out numbers match what Edge on Windows draws to 0.07 px. The case measures the card again in serif and every
+top holds, so no top depends on how a system draws text, only on the title's line count. The case still prints its
+`note at <width> px` lines. Owner: the first chord's glyph y also needs the IBM Plex Mono glyph to sit at its row's top,
+as it does on Windows. On the base at 1280 px Windows reads the Linux chord y to 0.01 px, so that should hold too.
+If the Linux Deep verify fails the y line alone, the glyph's offset in its row is the one number to re-pin.
+
+# p2-song-info: check:ux-metronome-sheet's chord x pin cannot pass on the Windows laptop
+
+The brief asks every listed check to exit 0 before the push, and says pixel pins come from Linux. One case of
+check:ux-metronome-sheet ("the chart's first chord moves up by exactly the block's height…", renamed in fix pass 2 to
+"with Song info closed, the chart's first chord and the card's blocks sit exactly at their pinned places") pins the first chord's x
+at 109.59 px at 390 px. On the laptop it reads 112.00, at this branch and on the untouched base 4d4ba74. The chart font
+is the app's own IBM Plex Mono file. Linux draws it at 7.8 px a character, and Windows Edge at a whole 8.0 px:
+16 + 12 x 8.0 = 112.0 against 16 + 12 x 7.8 = 109.6. Four browser flags and `text-rendering: geometricPrecision` leave
+it at 8.0 px. Every other case of the check passes on the laptop, including the one this cook edited, with that one
+line skipped. Re-pinning on Windows or loosening the line would break the brief's rules, so neither was done.
+Owner: say if the Linux Deep verify's result for this check settles it, or if you want the chart font rendering
+changed (src/styles.css, not this cook's file).
 
 # c23 fix: Band status opens for the admin and the leader on a live gig, and says what it is waiting for
 

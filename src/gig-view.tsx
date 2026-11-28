@@ -4,6 +4,7 @@ import { bandSong } from "./band-setlist-view";
 import { BandStatusFaces } from "./band-status";
 import { playersFrom } from "./band-status-model";
 import type { BandView } from "./bands-model";
+import { feedOf, opensTonight, staleNote, TonightsPlayers, useRosterCopy, withCheckIn } from "./gig-check-in";
 import { atPassEnd, downloadPack, packToShow, passGone, type GigPack } from "./gig-pack";
 import { gigLine, type GigView } from "./gig-plan-model";
 import type { GuestOpens } from "./guest-pass";
@@ -128,6 +129,8 @@ export function GigViewScreen({ me, bandId, gigId, pack, position, onSignIn, onS
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // The Room's roster for this gig, once this phone has joined it as its leader or an admin.
+  const roster = useRosterCopy(me, gigId);
 
   const refused = (caught: unknown) => {
     if (caught instanceof ApiError && caught.status === 401) return onSignedOut();
@@ -138,15 +141,16 @@ export function GigViewScreen({ me, bandId, gigId, pack, position, onSignIn, onS
   // Asked again when the pack leaves the phone or the room shuts a guest's Band chat, so a guest whose pass just ended hears why.
   const noPack = pack === null;
   const [shut, askAgain] = useReducer((n: number) => n + 1, 0);
+  // Every read of the gig lands here, the refresh and Tonight's players alike, so an ended gig says so whichever saw it.
+  const take = (view: GigView & { guest?: GuestOpens }) => {
+    setOpened(view);
+    if (view.gig.status === "ended") setProblem(MESSAGES["gig-ended"]);
+  };
   useGigRefresh(
     me
       ? (alive) =>
           api<GigView & { guest?: GuestOpens }>("/api/bands/gig/open", { bandId, gigId }).then(
-            (view) => {
-              if (!alive()) return;
-              setOpened(view);
-              if (view.gig.status === "ended") setProblem(MESSAGES["gig-ended"]);
-            },
+            (view) => alive() && take(view),
             (caught) => alive() && refused(caught),
           )
       : null,
@@ -216,6 +220,8 @@ export function GigViewScreen({ me, bandId, gigId, pack, position, onSignIn, onS
   const now = songs[position.index];
   const next = songs[position.index + 1];
   const mayEnd = gig !== undefined && (gig.leader === me || gig.backup === me || band?.role === "admin");
+  // A roster comes only for a live gig, so holding one says the gig went live before the next read of the gig does.
+  const status = roster && opened?.gig.status === "planned" ? "live" : (opened?.gig.status ?? "planned");
   const line = !online && !error ? NEEDS_CONNECTION : error;
   const meta = (song: (typeof songs)[number]) => `${displayKeyLabel(song, 0)} · ${tempoText(song.tempo)}`;
 
@@ -286,7 +292,18 @@ export function GigViewScreen({ me, bandId, gigId, pack, position, onSignIn, onS
           <p className="gig-meta">{meta(next)}</p>
         </section>
       ) : null}
-      <div className="band-status-slot">{opened && band ? <BandStatusFaces players={playersFrom(opened, band, me)} status={opened.gig.status} admin={band.role === "admin"} /> : null}</div>
+      <div className="band-status-slot">
+        {opened && band ? (
+          <BandStatusFaces
+            players={withCheckIn(playersFrom(opened, band, me), roster)}
+            status={status}
+            admin={band.role === "admin"}
+            live={roster && status === "live" ? feedOf(roster, opened.gig.leader) : undefined}
+            note={staleNote(roster)}
+          />
+        ) : null}
+      </div>
+      {opened && band && opensTonight(me, band, opened, status) ? <TonightsPlayers me={me} band={band} view={opened} status={status} onSaved={take} /> : null}
       {songs.length > 0 ? (
         <section className="gig-set">
           <h3>Set</h3>

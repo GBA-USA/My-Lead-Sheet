@@ -14,19 +14,14 @@ const check = (ok: boolean, message: string) => {
 };
 
 const COOKS = [
-  { letter: "W", brief: "chord-grab-worker" },
+  { letter: "H", brief: "chord-grab-shell" },
   { letter: "A", brief: "chord-grab-app" },
-  { letter: "C", brief: "chord-grab-canary" },
-  { letter: "S", brief: "chord-grab-share" },
 ];
 
 type Design = { what: string; heading: string; letter: string } & ({ kind: "list" } | { kind: "table"; firstColumn: string });
 const DESIGNED: Design[] = [
   { what: "the Grab flow", heading: "### The flow", letter: "A", kind: "list" },
   { what: "the table of what the player sees when a Grab fails", heading: "### What the player sees when something fails", letter: "A", kind: "table", firstColumn: "Case" },
-  { what: "the table of Worker refusals", heading: "### Routes", letter: "W", kind: "table", firstColumn: "Reason" },
-  { what: "the table of how a block and a layout change look", heading: "### How a block and a layout change look to the Worker", letter: "W", kind: "table", firstColumn: "What the site sends" },
-  { what: "the table of what a share shows", heading: "### Design", letter: "S", kind: "table", firstColumn: "What was shared" },
 ];
 
 const cases = new Map<string, string>();
@@ -134,18 +129,15 @@ for (const { letter, brief } of COOKS) {
   check(off.length === 0, `every place that says how far the ${brief} cases run says ${letter}1 to ${letter}${n}${off.length ? ` (${off.join("; ")})` : ""}`);
 }
 
-const section2 = plan.slice(plan.indexOf("\n## 2. "), plan.indexOf("\n## 3. "));
-const pageSteps = section2.slice(section2.indexOf("\n`page` does this."), section2.indexOf("\n### Guards"));
-const redirectSentences = (cases.get("W13") ?? "").split(/(?<=\.) /).filter((sentence) => /redirect/i.test(sentence));
-check(
-  pageSteps.includes('`redirect: "manual"`') && redirectSentences.some((sentence) => /sees no request/.test(sentence)),
-  'no request leaves a site\'s host: the `page` steps say `redirect: "manual"`, and W13 says the stub sees no request on a redirect that leaves the host',
-);
-const routes = section("### Routes").join("\n");
-check(
-  routes.includes("`CLAUDE.md`") && routes.includes("`BAND_ROUTES`"),
-  "the Routes text names the `CLAUDE.md` route pattern (`BAND_ROUTES` merged into the Directory `ROUTES`) that `/api/grab/` leaves",
-);
+const neverFetch =
+  plan.includes("The Worker no longer fetches chord sheets") &&
+  plan.includes("The Worker never fetches a chord site's page") &&
+  plan.includes("extraction runs on the phone after a tap");
+check(neverFetch, "the plan states that the Worker never fetches a chord site's page, and that extraction runs on the phone after a tap");
+const dropped = plan.includes("`chord-grab-worker`") && plan.includes("dropped") && plan.includes("canary stay dropped");
+check(dropped, "the plan records that the server-fetch cook and the canary stay dropped");
+const wrapper = plan.includes("Capacitor") && plan.includes("X-Frame-Options") && plan.includes("frame-ancestors");
+check(wrapper, "the plan states the Capacitor recommendation and why a web app cannot inject into a third-party page");
 
 if (failures > 0) {
   console.log(`${failures} failed`);

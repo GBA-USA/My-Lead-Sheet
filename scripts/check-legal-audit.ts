@@ -358,7 +358,7 @@ function runTermsCases() {
     `T2 each of the six [CONTACT EMAIL] placeholders in the Terms draft reads ${TERMS_CONTACT}`,
     `found ${count(text, TERMS_CONTACT)} named, ${count(text, "[CONTACT EMAIL]")} [CONTACT EMAIL] left`,
   );
-  report(text !== "" && !text.includes("@"), "T3 the Terms draft holds no @, so no address was made up", `${count(text, "@")} @ found`);
+  report(text !== "" && !text.includes("@"), "T3 the Terms draft holds no @, so no address was made up", text === "" ? "the file is missing" : `${count(text, "@")} @ found`);
   report(text.includes("[COMPANY NAME]") && text.includes("[STATE]"), "T4 the Terms draft keeps its [COMPANY NAME] and [STATE] placeholders", "a placeholder is gone");
 }
 

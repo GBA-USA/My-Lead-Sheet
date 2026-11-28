@@ -1,6 +1,26 @@
+VERDICT: FAIL
+P2 | CLASS=data-shape | scripts/build-privacy.ts:46 | Paste a chart with no title into the song editor (src/song-editor.tsx:309-312 runs look() on paste, src/song-search.ts:306 pasteLookup). The app sends up to 2 sung lyric lines to musicbrainz.org with no search typed. Probe .verify-logs/judge/paste-probe.ts sent ["hold me close tonight","walking down the lonely road"]. The new privacy line says only "the title you typed" goes. The brief dictated that wording, so widening it to cover paste lookups needs Terry's OK, and check-privacy.ts:89 asserts the exact line.
+Nits:
+P3 | CLASS=other | legal/TERMS-DRAFT.md:7 | The literal swap reads "Placeholders such as [COMPANY NAME], Brian Pruitt (contact details to be added), and [STATE] will be filled in". The brief allows only that swap, and LEGAL-TODO row 3 records it.
+P3 | CLASS=other | scripts/check-legal-audit.ts:361 | With the file missing, T3's detail reads "0 @ found". T1 names the cause and T3 still fails.
+P3 | CLASS=other | scripts/build-privacy.ts:54 | "Write to the contact below" points at Brian Pruitt with no way to reach him yet. This waits on rows 2 and 4. No address was made up, as the brief requires.
+
+Judge evidence (Opus, deep, edfa0cf): every brief DONE MEANS item holds. The Terms file equals TERMS-DRAFT-SOURCE.md once the 6 placeholders are swapped (diff empty). The privacy root uses fileURLToPath. The STUN line matches the code (FREE_STUN is the only STUN outside the test overrides, src/connection-setting.tsx:59, src/gig-live.tsx:220). No existing assertion was removed or loosened. No SQL or Worker change. Rerun on laptop Edge: check:privacy exit 0 ("59 stored keys described"), check:legal-audit exit 0 (T1-T4 ok). Logs are in .verify-logs/judge/.
+
+# legal-quickfix fix pass 1 (Nov 27 2026)
+
+Goal: each judge finding gets a case that fails on `edfa0cf`, then the smallest fix that turns the same case green. Logs are in `.verify-logs/fix1/` (gitignored). Laptop Edge, no path shim.
+
+- P2, paste lookup. `8154404` adds the case alone. `check:privacy` bundles `src/song-search.ts`, runs the real `pasteLookup` on a chart with no title and records what it sends. The page must hold `PASTE_LOOKUP_LINE` exactly when that list is not empty. On `8154404` it exits 1 with one FAIL, "sent ["hold me close tonight","walking down the lonely road"]" (`red-privacy.log`). The fix adds one line to the page under the dictated one, which stays word for word: "When you paste a chart with no title or artist, the app looks it up on MusicBrainz. It sends the chart's title, or, when the chart has none, up to two of its sung lines." After it `check:privacy` exits 0, "59 stored keys described" (`green-privacy.log`). Mutation: a `pasteLookup` that sends no sung lines turns the same case red with "sent []" (`mutant-no-sung-lines.log`), so the line cannot outlive the behavior. The judge noted the wording needs Terry's OK. This round adds the line rather than leave the page untrue, and QUESTIONS.md item 1 asks Terry to keep, reword or remove it. LEGAL-TODO row 5 records it.
+- P3, T3 detail. With `legal/TERMS-DRAFT.md` moved aside, T3 read "0 @ found" on `edfa0cf` (`t3-before.log`) and now reads "the file is missing" (`t3-after.log`). T3 still fails there.
+- P3, Terms line 7. Not changed. The brief allows only the placeholder swap, and LEGAL-TODO row 3 holds the rewording for later.
+- P3, "write to the contact below". Not changed. It waits on Brian's details (LEGAL-TODO rows 2 and 4). No address was made up.
+
+Also run after the fix, all exit 0: `npm run build`, `check:legal-audit`, `check:portable`, `check:one-copy`. No file under `src/` or `worker/` changed.
+
 # legal-quickfix self-check (branch cook/legal-quickfix, Nov 27 2026)
 
-VERDICT: PASS
+Cook verdict, superseded by the judge block above: PASS
 Pass 1 of 2. No P0, P1 or P2. Logs are in `C:\Users\order\cooks\reports\legal-quickfix-proof\` (outside the worktree).
 Nits:
 P3 | CLASS=other | scripts/check-legal-audit.ts:361 | With the Terms file missing, T3's detail reads "0 @ found". T1 names the real cause, and T3 still fails, so the case can still fail.

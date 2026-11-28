@@ -1,3 +1,14 @@
+# legal-quickfix fix pass 1 (Nov 27 2026): the privacy page's MusicBrainz wording
+
+1. The brief dictated one line: "When you search for a song, the app sends the title you typed to MusicBrainz
+   (musicbrainz.org), a public music catalog." The judge found it is not the whole story. Pasting a chart with no
+   title sends up to two of its sung lines to musicbrainz.org with nothing typed (`src/song-search.ts:306`). The
+   search box also sends an artist when one is typed. This round kept the dictated line word for word and added one:
+   "When you paste a chart with no title or artist, the app looks it up on MusicBrainz. It sends the chart's title,
+   or, when the chart has none, up to two of its sung lines." Owner (Terry): keep both lines, reword them, or ask for
+   the paste lookup to stop sending sung lines. `check:privacy` pins both strings, so a rewording edits
+   `SONG_SEARCH_LINE` and `PASTE_LOOKUP_LINE` in `scripts/check-privacy.ts` too.
+
 # p2-view-pill fix round (PR 127): check:scroll-sync's "no radio-edit choice" case and the pill's ARIA role conflict
 
 1. The brief makes the view pill a real radio group (`role="radiogroup"`, three `role="radio"` parts). The

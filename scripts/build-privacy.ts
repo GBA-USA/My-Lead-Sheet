@@ -44,6 +44,7 @@ export function privacyHtml(contact: string | undefined): string {
 
     <h2>Song search and live-gig links</h2>
     <p>When you search for a song, the app sends the title you typed to MusicBrainz (musicbrainz.org), a public music catalog.</p>
+    <p>When you paste a chart with no title or artist, the app looks it up on MusicBrainz. It sends the chart's title, or, when the chart has none, up to two of its sung lines.</p>
     <p>A live-gig link between bandmates, and Test now in the connection setting, ask stun.cloudflare.com for the public network address of this phone.</p>
 
     <h2>Signing in with Google</h2>

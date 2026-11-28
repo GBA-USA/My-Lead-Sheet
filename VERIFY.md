@@ -1,9 +1,10 @@
 # ci-shard-balance self-check (branch cook/ci-shard-balance, Nov 28 2026)
 
 Cook verdict: PASS
-Pass 2 of 2. Pass 1 found one P2 and fixed it. No P0 or P1. Logs are in `.verify-logs/ci-shard/` (gitignored). Laptop, no browser checks involved.
-P2 fixed | CLASS=other | scripts/check-ci-shard.ts:102 | As first committed, case 4b asserted the brief's literal mutation (check:guest and check:learn-songs planned at 20 s turns case 2 red). That mutant is only 1.108 x today. With check:update-now plus 8 more 60 s checks added to package.json it is 1.093 x, and check:ci-shard went red for a cook that only adds a check, against case 1's warn-not-fail rule. 4b now asserts a scale-free mutation (shard 4's checks moved onto shard 1, 2.000 x) and prints the stale-table mutant as a `note` line. Cases 1-3 are unchanged since commit 1.
+Pass 2 of 2. No P0, P1 or P2 open. Logs are in `.verify-logs/ci-shard/` (gitignored), mutations in `.verify-logs/ci-shard/mutate.sh` (exit 0 = every mutant red, splitter restored). Laptop, no browser checks involved.
+Pass 1 changed case 4b, and pass 2 reverted that change because the brief says not to edit the cases after commit 1. scripts/check-ci-shard.ts is byte-equal to 29f9f9f.
 Nits:
+P3 | CLASS=other | scripts/check-ci-shard.ts:98 | Future false red, green today. Case 4b asserts the brief's mutation (check:guest and check:learn-songs planned at 20 s) turns case 2 red. Today it reads 1.108 x. With check:update-now plus 8 more 60 s checks in package.json it reads 1.093 x, and check:ci-shard would fail for a cook that only adds a check. Proposed fix for the owner: 4b asserts a scale-free mutation (shard 4's checks moved onto shard 1, 2.000 x) and prints the brief's mutant as a note. Not applied, because the brief forbids editing the cases.
 P3 | CLASS=other | scripts/check-ci-shard.ts:74 | Case 1 checks that every recorded time is in SECONDS. It does not check the other way: a SECONDS entry with no row in ci-check-seconds.json goes unflagged. Today both hold the same 106 names.
 P3 | CLASS=other | scripts/ci-shard.mjs:7 | check:ci-shard has no recorded time, so it is planned at 60 s and runs in about 1 s. The merge step summary lists it, so the next refresh can add it.
 P3 | PRE-EXISTING | CLASS=other | scripts/check-ci-deep.ts:328 | On this Windows checkout check:ci-deep case 5 fails because autocrlf gives pages.yml CRLF line endings. The committed blob hashes to the expected 96f37f60…, and .github is untouched. Cases 1-4, which drive this splitter's plan and merge, pass.

@@ -1,7 +1,7 @@
 import type { Plugin } from "vite";
 import { APP_NAME, DATA_KINDS, PRIVACY_HREF, type DataPlace } from "../src/data-kinds.ts";
 
-export const CONTACT_PLACEHOLDER = "No contact has been set for this copy of the app yet.";
+export const CONTACT_PLACEHOLDER = "Brian Pruitt (contact details to be added).";
 
 const ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 const escape = (text: string) => text.replace(/[&<>"']/g, (char) => ESCAPES[char]);
@@ -41,6 +41,10 @@ export function privacyHtml(contact: string | undefined): string {
 
     <h2>The microphone</h2>
     <p>Find BPM and Learn listen only while they are open. The sound is worked out on the phone and is never saved or sent. Only the timings listed above are kept.</p>
+
+    <h2>Song search and live-gig links</h2>
+    <p>When you search for a song, the app sends the title you typed to MusicBrainz (musicbrainz.org), a public music catalog.</p>
+    <p>A live-gig link between bandmates, and Test now in the connection setting, ask stun.cloudflare.com for the public network address of this phone.</p>
 
     <h2>Signing in with Google</h2>
     <p>If you sign in with Google, Google tells the app your name, your email address, and the account number Google uses to recognise you next time. That is all. The app gets no access to your mail, contacts, files, calendar or anything else in your Google account.</p>

@@ -1208,6 +1208,25 @@ a:focus-visible {
   grid-area: more;
 }
 
+.gig-stage .song-header .shell-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app:has([data-stage-corners]) .shell-header .text-size {
+  display: none;
+}
+
+.app:has([data-stage-corners]) .song-header {
+  grid-template-columns: 48px minmax(0, 1fr) 48px;
+}
+
+.app:has([data-stage-corners]) .sheet {
+  padding-bottom: 80px;
+}
+
 .gig-view {
   display: grid;
   gap: 12px;
@@ -1412,7 +1431,7 @@ a:focus-visible {
 
 .sheet-title {
   margin: 0;
-  font-size: 1.7em;
+  font-size: min(1.7em, calc(1.7 * 16px * 1.15));
   font-weight: 800;
   line-height: 1.02;
   letter-spacing: -0.03em;

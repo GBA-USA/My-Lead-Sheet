@@ -1,3 +1,47 @@
+# p4-gig-corners: 2026-11-28: may case C6 be amended? The Opus judge fails the cook on C6 as written in commit 1
+
+Judge round 4 (54e4b38, `.verify-logs/judge/verdict-54e4b38.md`) is `VERDICT: FAIL` on two P2s, both about case C6,
+which the brief locks after commit 1 ("do not edit or weaken a case"):
+
+1. C6 counts only room messages whose kind starts with `gig` (`scripts/check-gig-corners.ts:191`), so a raw room kind
+   `tempo` would not be counted.
+2. "The follower's scroll rate" is read from Sam's gig state (`state.scroll[...].value.rate`), not measured on a drawn
+   follower sheet.
+
+Facts for the ruling:
+- C6's row says "the room received no gig message", and its counter counts exactly that.
+- Mutation C6a sends a `tempo` op on Scroll faster through the stage's own send path, the app's real way to send a tempo.
+  It turns C6 red: room gig messages 4 → 12, gig rev 1 → 5, Sam's rate 1 → 1.033 (`.verify-logs/mutate/C6a.log`).
+- Case H6 (added in 54e4b38) records every room send from the leader across the same taps, of any kind, and every
+  network request in the page. Three mutations check it:
+  - H6a, a `fetch` on Scroll faster, turns H6 red.
+  - H6c, a raw `{ kind: "speed" }` room message, turns H6 red and catches 4 sends. C6 stays green under it, which is
+    the judge's point.
+  - H6b, `askToLead`, is equivalent to no change: the leader's phone sends nothing.
+- The brief's harness has one page with the leader's App and Sam as a live session, with no drawn follower sheet. The
+  live speed store is module-level, so a second App in the same page would share it. A drawn follower needs a second
+  page.
+- Four fresh judges rated the gig-only counter P3, P3, P2 and P2.
+
+**Asking (yes/no):** may C6 be amended to count every non-ping room send and to measure a drawn follower's rate on a
+second page? If no, H6 and the state read stand and the judge's two P2s are ruled out. Kept to the brief: C6 is
+unchanged, and the cook stops here without a PASS.
+
+# p4-gig-corners: 2026-11-28: UI rule 11, the gig top line still reads `~96 bpm`
+
+The gig sheet's top line, `3 of 12 · A major · ~96 bpm`, is drawn by `src/App.tsx:295` with `tempoText` from
+`src/storage.ts`, and `tempoText` writes the `~`. This cook does not draw that line: the brief lets it add one prop to
+App's `GigStageBar` mount and nothing else in `src/App.tsx`, and `src/storage.ts` is on its do-not-touch list. The same
+`tempoText` writes the sheet's own `Tempo: ~96 bpm` meta line, so changing it is one change for every screen.
+Kept to the brief: the line is unchanged. **Asking:** which cook owns `tempoText` for rule 11 (exact `96 bpm` everywhere)?
+
+# p4-gig-corners: 2026-11-28: UI rule 3 and the corner buttons at their ends
+
+Rule 3 says nothing disabled or greyed is ever shown. The brief (empty states, C3, C4) has A− off and dim at the smallest
+text size, A+ at the largest, Scroll slower at 50% and Scroll faster at 150%, the way the top bar's A− A+ and the song
+page's speed group already behave. Read here as no conflict: rule 3 is about controls that do not work, and a stepper at
+its end works and says where the end is (rule 9 asks every stepper to look and behave the same). Built as the brief says.
+**Asking:** only if Brian reads rule 3 as covering a stepper's end stop.
 # p6-update-now: 2026-11-27: where the brief and the Groovist UI rules disagree (kept to the rules)
 
 **Rule 3, no dead controls.** In "Empty and error states", the brief says that when only phones from before this cook

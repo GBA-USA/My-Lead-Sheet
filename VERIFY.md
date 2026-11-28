@@ -1,3 +1,27 @@
+# p4-gig-corners self-check fix pass 1 (Nov 28 2026)
+
+Goal: answer the judge block below. Its two P2s are merge mojibake from b2edfbc. Logs are in `.verify-logs/fix1/` (gitignored). No product code changed.
+
+- The case is `.verify-logs/fix1/merge-lines.mjs <ref>`, in the gitignored log folder as with the earlier doc-only fixes, so no commit holds it. For QUESTIONS.md and VERIFY.md it takes the garbled set from the merge itself (the lines of b2edfbc in neither parent). At `<ref>` it asserts that none of those exact lines survives, that none of the survivors is mojibake, and that numstat deletes no line against either parent. It exits 1 on any FAIL. Lines a later commit prepends are printed as a note and not counted, so the judge block that quotes the garbled text does not turn it red.
+- Red at b2edfbc, exit 1 with 8 FAIL (`case-b2edfbc.log`). QUESTIONS.md keeps all 11 of the merge's lines (14, 32, 40, 41, 159, 160, 164, 290, 303, 648, 753), all 11 garbled, with 11 and 7 deletions. VERIFY.md keeps all 3 (10, 16, 110), all 3 garbled, with 1 and 2 deletions. The first, stricter form of the case (0 lines in neither parent at all) read the same at b2edfbc (`red-b2edfbc.log`).
+- The fix is 7ecf18e. `merge-lines.mjs --repair` undoes the UTF-8-read-as-cp1252 round trip on each line in neither parent and keeps the result only when it is an exact parent line. All 14 were (`repair.log`). The commit changes only those 14 lines (numstat 11/11 and 3/3).
+- Green at 7ecf18e and at the head, exit 0 with 8 ok (`case-7ecf18e.log`, `case-HEAD.log`). At 7ecf18e both files have 0 lines in neither parent at all (`green-repair.log`). At the head VERIFY.md has 15, every one of them prepended after the merge.
+- Merge seam, with no character filter: all 30 files the merge changed have 0 lines in neither parent at 7ecf18e (`seam-scan.log`). The merge is now a pure union.
+- Root cause, inferred. Only the two files listed as conflicts in the b2edfbc message are garbled, so the conflict resolution read UTF-8 as cp1252, the way a PowerShell pipe or Set-Content does.
+- EDGE-CASES.md EC-27 already held this class from merge a7530a2. It now names b2edfbc and 7ecf18e and this case (`edge-before.log` 0 rows name b2edfbc, `edge-after.log` 1). That file is in no git repo.
+- For the owner: this is the second time a verify caught this class, so CLAUDE.md "Rules added after repeat mistakes" calls for a rule 7 (mls-int has 6). Not added here, because CLAUDE.md is not this brief's file.
+- P3s carried with no new case. Member-side `setSpeed(1)` on an InGig mount: it matches the intent (an on-stage member has no speed control), and a case would pin a behavior the owner has not ruled on. `data-stage-corners` while locked: the brief asks for it and H2 pins it. The `join-gig` fixture swap: no assertion changed, so there is nothing to reproduce. C6 and rule 11: owner questions, still open in QUESTIONS.md.
+
+VERDICT: FAIL
+P2 | CLASS=data-shape | QUESTIONS.md:14 | Merge b2edfbc mojibakes 11 QUESTIONS.md lines found in neither parent (14, 32, 40, 41, 159, 160, 164, 290, 303, 648, 753), for example `4 → 12` becomes `4 â†’ 12` and `A−` becomes `Aâˆ’` in this cook's own owner question. Repro: `git show b2edfbc:QUESTIONS.md | grep -vxFf <(git show b2edfbc^1:QUESTIONS.md) | grep -vxFf <(git show b2edfbc^2:QUESTIONS.md)` prints 11 lines. The cook parent has 0 `â`/`Â` lines and the merge has 9 (grep -c). Fix: take each line from its parent, then confirm 0 lines in neither parent and 0 numstat deletions against both parents.
+P2 | CLASS=data-shape | VERIFY.md:10 | The same merge mojibakes 3 VERIFY.md lines found in neither parent (10, 16, 110). `96f37f60…` becomes `96f37f60â€¦`, and `−` in the gig-corners nit becomes `âˆ’`. Same repro as above with VERIFY.md.
+Nits:
+P3 | CLASS=state-machine | src/stage-bar.tsx:190 | `if (!leading) setSpeed(1)` also runs on a member's InGig mount, so a solo speed set before joining resets to 100%. Matches the intent, but no case covers the member side (H8 covers only a leader who stops leading).
+P3 | CLASS=stale-ui | src/stage-bar.tsx:453 | `data-stage-corners` keys on `text && song`, not on `!locked && !panel`, so the leader has no A− A+ anywhere while locked. This matches the brief ("leader's top bar drops A− A+"), and H2 pins it.
+P3 | CLASS=other | scripts/check-gig-corners.ts | Since commit 1, the only removed check line is the fake room's `join-gig` reply (b32f4eb), replaced by the `leadingNow` tell that worker/room.ts sends. That is a fixture change with no weaker assertion: C1-C13 and T1-T5 are unchanged in assertion text.
+P3 | CLASS=other | QUESTIONS.md:1 | The C6 owner question (gig-only counter, state read instead of a drawn follower) and rule 11 `~96 bpm` (tempoText in do-not-touch storage.ts) are still open. H6 covers every room kind. No ruling was given to this judge.
+Checked and sound: every brief case C1-C13, T1-T5 and G1 has a named `it`, plus guards and test-gap cases H1-H8. The corners render only past InGig's `if (!leading)` return, gated on `song && !locked && !panel`. The speed pair uses useScrollSpeed/stepSpeed/SPEED_MIN/SPEED_MAX and never touches scrollPercent. No new fetch, storage key, Worker or SQL. App.tsx changes one line, with the prop on the same line. CSS uses theme tokens only and respects reduced motion. Buttons are 56 px.
+
 # ci-shard-balance self-check (branch cook/ci-shard-balance, Nov 28 2026)
 
 Cook verdict: PASS
@@ -102,6 +126,13 @@ Checked and found sound:
 
 VERDICT: PASS
 Nits:
+P3 | CLASS=state-machine | src/stage-bar.tsx:190 | The reset runs on any InGig mount where `leading` is false, so a member who set a solo speed and then joins on stage is put back to 100% too. It matches the intent (an on-stage member has no speed control), but no case covers it. Round-1 P2 is fixed: before eedcd08 H8 gives a ratio of 1.299 / 1.282 (.verify-logs/fix1/h8b-before.log), after it about 1.0 in 3 of 3 runs (h8b-after-1..3.log).
+P3 | CLASS=other | scripts/check-gig-corners.ts:1124 | 1fae611 widens H8's tolerance from 0.05 to 0.1. H8 is new on this branch, not on the base, so this is not a P0, and 0.1 still catches the 1.2x leak (it measured 1.28-1.30).
+P3 | CLASS=other | scripts/check-gig-corners.ts:544 | C6 counts only `gig*` room kinds and reads Sam's rate from his gig state, not from a drawn sheet. The row's wording is still met (mutation C6a goes red, H6c catches other kinds). The owner question in QUESTIONS.md is still open.
+P3 | CLASS=other | src/reading-row.ts:40 | `unheard` listens before the scrollTop write. A clamped write fires no event, so a real scroll event can be swallowed for up to two frames.
+P3 | CLASS=layout-width | src/styles.css:1227 | The 80 px bottom room and the title cap's 16 px base are literals. At 360 px each pair is exactly a third of the screen wide, with no margin.
+P3 | CLASS=other | src/gig-corners.tsx:27 | The speed pair's − / + sit right above the stage bar's bpm − / + with the same glyphs. Only the accessible names tell them apart.
+P3 PRE-EXISTING | CLASS=other | src/App.tsx:295 | The gig top line still writes `~120 bpm` (rule 11). tempoText lives in src/storage.ts, outside this cook, and the owner question is open.
 P3 | CLASS=other | src/scroll-timing.ts:587 | The P0 fix (pass 1) and the P2 fix (pass 2) sit in a file outside the brief's owned list, against CLAUDE.md "stay inside the files your brief owns". QUESTIONS.md names both for the owner. Every check that touches scroll-timing is green apart from known Windows causes (.verify-logs/fix-p0, .verify-logs/fix-p2/after).
 P3 | CLASS=other | scripts/check-ux-metronome-sheet.ts:570 | The chord x assert moved after the y lines (same value, same 0.5 px). The reorder cannot change the verdict and is named in the report, but not in the brief.
 P3 | CLASS=other | src/song-info.css:1 | `.sheet > .meta` changes to 0.84em/600, a visible type change the brief did not ask for.

@@ -35,6 +35,7 @@
                     "check:friends":  "tsc -p worker \u0026\u0026 node --experimental-strip-types scripts/check-friends.ts",
                     "check:gig":  "node --experimental-strip-types scripts/check-gig.ts",
                     "check:gig-check-in":  "tsc -p worker && node --experimental-strip-types scripts/check-gig-check-in.ts",
+                    "check:gig-corners":  "node --experimental-strip-types scripts/check-gig-corners.ts",
                     "check:gig-plan":  "tsc -p worker \u0026\u0026 node --experimental-strip-types scripts/check-gig-plan.ts",
                     "check:gig-plan-record":  "tsc -p worker \u0026\u0026 node --experimental-strip-types scripts/check-gig-plan-record.ts",
                     "check:gig-songs":  "tsc -p worker \u0026\u0026 node --experimental-strip-types scripts/check-gig-songs.ts",

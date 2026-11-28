@@ -1085,6 +1085,7 @@ try {
     await leeLeadsWithBoBehind();
     const leeOn = await lee.reported(gigId);
     const boWas = await bo.reported(gigId);
+    publish(boDir, builtAs(boWas));
     await bo.evaluate(`navigator.serviceWorker.getRegistration().then((r) => r?.update()).then(() => true, () => false)`);
     await waitFor("Bo's service worker to hold the version Bo's page runs", 30_000, () => bo.evaluate<boolean>(workerHoldsItsPage));
     await bo.mark();

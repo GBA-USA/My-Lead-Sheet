@@ -6,7 +6,7 @@
  * in its folder with the other build's, so its open page is really old and a reload really lands on the new one. The
  * server can also cut that phone's network, and counts the requests it gets for build.json.
  *
- * Cases U1 to U22 print `ok   <name>` or `FAIL <name>: <reason>`; the check exits 1 on any FAIL.
+ * Cases U1 to U23 print `ok   <name>` or `FAIL <name>: <reason>`; the check exits 1 on any FAIL.
  * `UPDATE_NOW_SHOTS=<dir>` writes the 360 px screenshots, light and dark.
  */
 import assert from "node:assert/strict";
@@ -1114,6 +1114,7 @@ try {
       await boTapsUpdateNow();
       await waitFor("Bo's new service worker to start installing", 20000, () => newWorkerInstalling(bo));
       waiting = await boxOf(bo, ".update-prompt");
+      await insideAt360And390(bo, ".update-prompt");
       await bo.tap("Not now", ".update-prompt");
       await bo.until(`!document.querySelector(".update-prompt")`, "the prompt to close on Not now");
     } finally {
@@ -1174,6 +1175,7 @@ try {
       tappedAt = Date.now();
       await waitFor("Lee's new service worker to start installing", 20000, () => newWorkerInstalling(lee));
       busy = await boxOf(lee, ".update-self");
+      await insideAt360And390(lee, ".update-self");
       await lee.until(`(document.querySelector(".update-self")?.textContent ?? "").includes(${js(OFFLINE)})`, "the line on Lee's strip once the wait runs out", NEW_WORKER_WAIT_MS + 30_000);
       const waited = Date.now() - tappedAt;
       assert.ok(waited >= NEW_WORKER_WAIT_MS - 1000, `the line comes when the ${NEW_WORKER_WAIT_MS / 1000} s wait runs out, not before (${(waited / 1000).toFixed(1)} s)`);
@@ -1189,21 +1191,66 @@ try {
     assert.deepEqual(busy.buttons, [], "while it waits, Reload is not shown again (UI rule 3)");
   });
 
-  await check("U22 the gig ends while Update now waits", async () => {
-    const { boWas, spare } = await boBehindUnderItsWorker();
-    bo.front.setHeld(spare);
+  await check("U23 Not now before the published version answers", async () => {
+    const { boWas } = await boBehindUnderItsWorker();
+    bo.front.setHeld("/build.json");
+    let waiting = { words: "", buttons: [] as string[] };
     try {
       await boTapsUpdateNow();
-      await waitFor("Bo's new service worker to start installing", 20000, () => newWorkerInstalling(bo));
-      ok(await ada.call("/api/bands/gig/end", { bandId, gigId }), "Ada ends the gig");
-      await waitFor("Bo's phone to leave the gig that ended", 30000, async () => !(await following(bo)) && (await bo.prompts()) === 0);
+      await pause(1000);
+      waiting = await boxOf(bo, ".update-prompt");
+      await bo.tap("Not now", ".update-prompt");
+      await bo.until(`!document.querySelector(".update-prompt")`, "the prompt to close on Not now");
     } finally {
       bo.front.setHeld(null);
     }
+    await pause(2000);
+    await bo.evaluate(`navigator.serviceWorker.getRegistration().then((r) => r?.update()).then(() => true, () => false)`);
+    await waitFor("Bo's new service worker to take charge", 30000, () => newWorkerInCharge(bo));
+    await pause(4000);
+    assert.ok(!(await bo.reloaded()), "Bo's page did not reload after Bo tapped Not now while the published version was still on its way");
+    assert.equal(await bo.reported(gigId), boWas, "Bo's page still runs the version Bo had");
+    assert.ok(await following(bo), "Bo still follows the gig");
+    assert.ok(waiting.words.includes(GETTING), `while it waits, the prompt says ${GETTING} (${js(waiting.words)})`);
+  });
+
+  await check("U22 the gig ends while Update now waits", async () => {
+    const { boWas, spare } = await boBehindUnderItsWorker();
+    bo.front.setHeld(spare);
+    const leeOn = await lee.reported(gigId);
+    const leeOther = leeOn === NEW_ID ? oldBuild : newBuild;
+    let leeBusy = { words: "", buttons: [] as string[] };
+    try {
+      await boTapsUpdateNow();
+      await waitFor("Bo's new service worker to start installing", 20000, () => newWorkerInstalling(bo));
+      // Lee's own Reload waits too: Lee's worker first holds Lee's version, then the other one is published, held back.
+      await lee.evaluate(`navigator.serviceWorker.getRegistration().then((r) => r?.update()).then(() => true, () => false)`);
+      await waitFor("Lee's service worker to hold the version Lee's page runs", 30_000, () => lee.evaluate<boolean>(workerHoldsItsPage));
+      assert.ok(await rememberWorker(lee), "Lee's page has an active service worker");
+      publish(leeDir, leeOther);
+      lee.front.setHeld(precachedSpare(leeOther));
+      const sockets = await lee.evaluate<number>(`window.__rooms.length`);
+      await lee.blink();
+      await lee.until(`window.__rooms.slice(${sockets}).some((ws) => ws.readyState === 1 && ws.url.includes("/api/rooms/"))`, "Lee's page to open a new room socket", 20000);
+      await lee.until(`(document.querySelector(".update-self")?.textContent ?? "").includes(${js(SELF_FIRST)})`, "Update this phone first on Lee's strip", 20000);
+      await lee.mark();
+      await lee.tap("Reload", ".update-self");
+      await waitFor("Lee's new service worker to start installing", 20000, () => newWorkerInstalling(lee));
+      leeBusy = await boxOf(lee, ".update-self");
+      ok(await ada.call("/api/bands/gig/end", { bandId, gigId }), "Ada ends the gig");
+      await waitFor("Bo's phone to leave the gig that ended", 30000, async () => !(await following(bo)) && (await bo.prompts()) === 0);
+      await waitFor("Lee's phone to leave the gig that ended", 30000, async () => !(await following(lee)) && !(await lee.has(".update-self")));
+    } finally {
+      bo.front.setHeld(null);
+      lee.front.setHeld(null);
+    }
     await waitFor("Bo's new service worker to take charge once its files arrive", 30000, () => newWorkerInCharge(bo));
+    await waitFor("Lee's new service worker to take charge once its files arrive", 30000, () => newWorkerInCharge(lee));
     await pause(4000);
     assert.ok(!(await bo.reloaded()), "Bo's page did not reload after the gig ended");
     assert.equal(await bo.reported(gigId), boWas, "Bo's page still runs the version Bo had");
+    assert.ok(leeBusy.words.includes(GETTING), `Lee's Reload was waiting when the gig ended (${js(leeBusy.words)})`);
+    assert.ok(!(await lee.reloaded()), "Lee's page did not reload after the gig ended");
   });
 } catch (error) {
   failed += 1;

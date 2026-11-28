@@ -13,6 +13,15 @@ is hidden on screen.
 version" and "Needs the update" report someone else's phone. The brief fixes these words and U3 checks them, so they stay
 as words. If Brian reads rule 4 as covering this too, the row needs an icon form, and that is a new brief.
 
+**Rule 3, and words the brief does not name (deep fix, 2026-11-28).** Since 9347b91 a tap can wait up to 120 s for the
+new service worker, so the player's prompt and the leader's strip now say "Getting the new version." while it waits.
+The brief names no words for this wait. While it waits, the button that started it (Update now on the prompt, Reload
+on the leader's strip) is hidden, because a second tap would do nothing (rule 3). Not now stays and calls the wait off.
+So during the wait, the leader's strip shows "Getting the new version." in place of Reload, which steps outside pass
+condition 1's "only Update this phone first, Reload and Between songs is best". U19, U21 and U23 check these words. If the
+owner wants other words, or Reload kept on screen with a busy icon (rule 4), that is a one-line change in
+src/gig-check-in.tsx `VERSION_WORDS.getting` and the check's `GETTING`.
+
 # PR #130 deep fix: check:links case 1 and Chrome's srflx-first pair (owner ruling needed)
 
 CI run 46071174653 failed `check:links` case 1 on both attempts at d3956f9, the same way PR #107's run 45281740592 did.

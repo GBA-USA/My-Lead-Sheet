@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { build as bundle } from "esbuild";
 import { build } from "vite";
 import { DATA_KINDS, PRIVACY_HREF } from "../src/data-kinds.ts";
 import { CONTACT_PLACEHOLDER } from "./build-privacy.ts";
@@ -25,6 +26,22 @@ if (failures > 0) {
 
 const SONG_SEARCH_LINE = "When you search for a song, the app sends the title you typed to MusicBrainz (musicbrainz.org), a public music catalog.";
 const LIVE_GIG_LINE = "A live-gig link between bandmates, and Test now in the connection setting, ask stun.cloudflare.com for the public network address of this phone.";
+const PASTE_LOOKUP_LINE = "When you paste a chart with no title or artist, the app looks it up on MusicBrainz. It sends the chart's title, or, when the chart has none, up to two of its sung lines.";
+
+/** What the real `pasteLookup` sends the catalog for a pasted chart with no title, by a searcher that finds nothing. */
+async function sentForUntitledPaste(): Promise<string[]> {
+  const built = await bundle({ entryPoints: [join(root, "src", "song-search.ts")], bundle: true, write: false, format: "esm", platform: "neutral", logLevel: "silent" });
+  const { pasteLookup } = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString("base64")}`);
+  const sent: string[] = [];
+  const searcher = { titled: (asked: string, report: (state: { kind: string; query: string }) => void) => (sent.push(asked), report({ kind: "none", query: asked })) };
+  const sections = [
+    { heading: "Verse", lines: [{ chords: [], lyrics: "walking down the lonely road" }] },
+    { heading: "Chorus", lines: [{ chords: [], lyrics: "hold me close tonight" }, { chords: [], lyrics: "hold me close tonight" }] },
+  ];
+  pasteLookup(searcher, { title: "", artist: "" }, sections, () => {});
+  return sent;
+}
+const untitledPasteSends = await sentForUntitledPaste();
 
 function filesUnder(dir: string): string[] {
   if (!existsSync(dir)) return [];
@@ -88,6 +105,10 @@ try {
   check(/name, your email address/.test(html) && /Deleting your data/.test(html), "the privacy page covers Google sign-in and deleting data");
   check(html.includes(SONG_SEARCH_LINE), "the privacy page says song search sends the typed title to MusicBrainz (musicbrainz.org)");
   check(html.includes(LIVE_GIG_LINE), "the privacy page says a live-gig link and Test now ask stun.cloudflare.com for the public network address of this phone");
+  check(
+    (untitledPasteSends.length > 0) === html.includes(PASTE_LOOKUP_LINE),
+    `the privacy page says a pasted chart with no title sends its sung lines to MusicBrainz exactly when the app sends them (sent ${JSON.stringify(untitledPasteSends)})`,
+  );
   check(!/\/\/|stun:/i.test(html), "the privacy page names outside hosts as plain text, with no web or stun: address");
 
   await site.send("Page.navigate", { url: `${site.origin}/#/songs` });

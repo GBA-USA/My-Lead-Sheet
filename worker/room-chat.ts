@@ -12,14 +12,17 @@ const MESSAGE_COLUMNS_ADDED: Record<string, string> = { kind: "TEXT NOT NULL DEF
 
 /** The only table and column names, and column types, `addColumns` puts into SQL text. */
 const SQL_NAME = /^[a-z][a-z0-9_]*$/;
-const SQL_COLUMN_TYPE = /^(TEXT|INTEGER|REAL|BLOB)( NOT NULL)?( DEFAULT ('[a-z]*'|-?[0-9]+))?$/;
+const SQL_COLUMN_TYPES = new Set(["TEXT", "INTEGER", "REAL", "BLOB", "TEXT NOT NULL DEFAULT 'text'", "TEXT NOT NULL DEFAULT 'gig'"]);
 
+/** Adds each missing column, or refuses before any change when one name or type is off its list. */
 export function addColumns(sql: SqlStorage, table: string, columns: Record<string, string>) {
   if (!SQL_NAME.test(table)) throw new Error("bad-sql-name");
-  const have = new Set(sql.exec<{ name: string }>(`PRAGMA table_info(${table})`).toArray().map((row) => row.name));
-  for (const [name, type] of Object.entries(columns)) {
-    if (!SQL_NAME.test(name) || !SQL_COLUMN_TYPE.test(type)) throw new Error("bad-sql-name");
-    if (!have.has(name)) sql.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
+  const have = new Set(sql.exec<{ name: string }>(`PRAGMA table_info("${table}")`).toArray().map((row) => row.name));
+  for (const write of [false, true]) {
+    for (const [name, type] of Object.entries(columns)) {
+      if (!SQL_NAME.test(name) || !SQL_COLUMN_TYPES.has(type)) throw new Error("bad-sql-name");
+      if (write && !have.has(name)) sql.exec(`ALTER TABLE "${table}" ADD COLUMN "${name}" ${type}`);
+    }
   }
 }
 

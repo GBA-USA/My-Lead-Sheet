@@ -13,7 +13,8 @@ import { Phone, startApi } from "./api-session.ts";
  * 1. A static pass over every `worker/**` file. Every call that runs SQL (`.exec`, `.prepare`, `.batch`, `.raw` on a
  *    `sql` handle, or any call whose first argument reads as SQL) must take its SQL text from code alone. A `${...}` or
  *    a `+` inside that text may only name a top-level constant of fixed text in the same file, or a name checked
- *    just before by an allow-list constant (`if (!LIST.includes(x)) throw`, or an anchored `^...$` pattern's `.test`).
+ *    just before by an allow-list constant (`if (!LIST.includes(x)) throw`, or `.test` of a pattern that matches only
+ *    one bare word of letters, digits and `_`). A SQL handle is `sql`, `<x>.sql`, a const holding one, or a `SqlStorage` parameter.
  *    A text passed in through a parameter is fixed only when the helper is not exported and every call in the file
  *    passes fixed text. Every value goes through `?` and the bindings. `LIKE` needs an `ESCAPE` clause.
  * 2. The same pass run on made-up sources, so each rule is shown to turn red on the mistake it names.
@@ -41,7 +42,23 @@ type SqlCall = { file: string; line: number; method: string; text: string; value
 
 const SQL_METHODS = new Set(["exec", "prepare", "batch", "raw"]);
 const SQL_HEAD = /^\s*(SELECT|INSERT|UPDATE|DELETE|REPLACE|CREATE|DROP|ALTER|PRAGMA|WITH|ATTACH|DETACH|VACUUM|BEGIN|COMMIT|ROLLBACK)\b/i;
-const LOOSE_PATTERN = /(^|[^\\])\.|\\[sSwWdD]|\[\^/;
+const WORD_CLASS = /^\[(?:[a-z]-[a-z]|[A-Z]-[A-Z]|[0-9]-[0-9]|[A-Za-z0-9_])+\]/;
+const REPEAT = /^(?:[*+?]|\{[0-9]+(?:,[0-9]*)?\})\??/;
+
+/** Whether every string the pattern matches is one bare word of letters, digits and `_`, so it can't spell SQL. */
+function wordOnly(body: string, flags: string): boolean {
+  if (!/^[iu]*$/.test(flags) || !body.startsWith("^") || !body.endsWith("$")) return false;
+  let depth = 0;
+  for (let at = 1; at < body.length - 1; ) {
+    const rest = body.slice(at, -1);
+    const step = /^[A-Za-z0-9_]/.exec(rest) ?? WORD_CLASS.exec(rest) ?? REPEAT.exec(rest) ?? /^\((?:\?:)?/.exec(rest) ?? (depth > 0 ? /^[)|]/.exec(rest) : null);
+    if (!step) return false;
+    if (step[0].startsWith("(")) depth += 1;
+    if (step[0] === ")") depth -= 1;
+    at += step[0].length;
+  }
+  return depth === 0;
+}
 
 const unwrap = (node: ts.Expression): ts.Expression => {
   let at = node;
@@ -92,14 +109,14 @@ function audit(file: string, text: string): SqlCall[] {
     return false;
   }
 
-  /** A top-level constant that lists the only names allowed: an array or Set of string literals, or an anchored pattern with no wildcard. */
+  /** A top-level constant that lists the only names allowed: an array or Set of string literals, or a pattern that matches one bare word. */
   function allowList(name: string): boolean {
     const init = topConsts.get(name);
     if (!init) return false;
     const at = unwrap(init);
     if (ts.isRegularExpressionLiteral(at)) {
       const match = /^\/(.*)\/([a-z]*)$/s.exec(at.text);
-      return !!match && match[1].startsWith("^") && match[1].endsWith("$") && !match[2].includes("m") && !LOOSE_PATTERN.test(match[1]);
+      return !!match && wordOnly(match[1], match[2]);
     }
     const strings = (list: ts.Expression) => ts.isArrayLiteralExpression(list) && list.elements.length > 0 && list.elements.every((e) => ts.isStringLiteral(e) || ts.isNoSubstitutionTemplateLiteral(e));
     if (ts.isArrayLiteralExpression(at)) return strings(at);
@@ -247,11 +264,20 @@ function audit(file: string, text: string): SqlCall[] {
     return at.getText();
   };
 
+  /** A SQL handle: `sql`, `<x>.sql`, a local const holding one, or a parameter typed `SqlStorage`. */
+  const sqlHandle = (receiver: ts.Expression): boolean => {
+    if (ts.isPropertyAccessExpression(receiver)) return receiver.name.text === "sql";
+    if (!ts.isIdentifier(receiver)) return false;
+    if (receiver.text === "sql") return true;
+    const declared = declarationOf(receiver.text, receiver);
+    if (declared?.kind === "const") return sqlHandle(unwrap(declared.init));
+    return declared?.kind === "param" && declared.fn.parameters[declared.index].type?.getText() === "SqlStorage";
+  };
+
   const calls: SqlCall[] = [];
   const visit = (node: ts.Node) => {
     if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && SQL_METHODS.has(node.expression.name.text) && node.arguments.length > 0) {
-      const receiver = unwrap(node.expression.expression);
-      const onSql = (ts.isIdentifier(receiver) && receiver.text === "sql") || (ts.isPropertyAccessExpression(receiver) && receiver.name.text === "sql");
+      const onSql = sqlHandle(unwrap(node.expression.expression));
       const first = node.arguments[0];
       const looksSql = SQL_HEAD.test(literalText(first));
       if (onSql || looksSql) {
@@ -312,6 +338,23 @@ await check("a dynamic ORDER BY only passes when checked against a listed consta
   assert.equal(order('if (!ORDERS.includes(order)) throw new Error("bad-order");'), 0, "checked against the list");
   assert.equal(order('if (!SORT.test(order)) throw new Error("bad-order");', "const SORT = /^.*$/;"), 1, "a wildcard pattern");
   assert.equal(order('if (!ORDERS.includes(order)) console.log("odd");'), 1, "a check that does not stop the query");
+});
+
+await check("a guard pattern counts as an allow-list only when every string it matches is one bare word of letters, digits and _", () => {
+  const guardedBy = (pattern: string) =>
+    problemsOf(`const GUARD = ${pattern};\nexport function f(sql, col) { if (!GUARD.test(col)) throw new Error("x"); return sql.exec(\`SELECT \${col} FROM songs\`); }`).length;
+  const payload = "title from songs; drop table songs; --";
+  assert.ok(/^[a-z ;-]+$/.test(payload) && /^[a-z_]+|x$/.test(payload), "both wide guards really let the payload through");
+  const wide = ["/^[a-z ;-]+$/", "/^[a-z_]+|x$/", "/^.*$/", "/^[^;]+$/", "/^[0-z]+$/", "/^(title|;| |[a-z])+$/", "/^( [a-z]+){0,9}$/", "/^\\s*[a-z]+$/", "/^[a-z]+\\$/", "/^[a-z]+$/m", "/^[a-z]+$/g", "/^[a-z]+$/y", "/^(?=[a-z])[a-z ]+$/", "/^[a-z]+;$/", "/^[a-z]+ [a-z]+$/", "/^'[a-z]+'or'[a-z]+'$/", "/^[a-z]+-?-?[a-z]+$/", "/^[a-z-]+$/", "/^[a-z]+/", "/[a-z]+$/"];
+  assert.deepEqual(wide.filter((pattern) => guardedBy(pattern) === 0), [], "wide patterns that counted as allow-lists");
+  const narrow = ["/^[a-z][a-z0-9_]*$/", "/^(title|artist)$/", "/^(?:[a-z]+_)?id$/", "/^[a-z]+$/i", "/^[A-Z][a-z]{0,8}$/"];
+  assert.deepEqual(narrow.filter((pattern) => guardedBy(pattern) !== 0), [], "narrow patterns that were refused");
+});
+
+await check("SQL run on a handle under another name is still audited: a local alias of .sql, or a parameter typed SqlStorage", () => {
+  assert.equal(problemsOf("export function f(storage, query) { const db = storage.sql; return db.exec(query); }").length, 1, "alias of storage.sql");
+  assert.equal(problemsOf("export function f(db: SqlStorage, query: string) { return db.exec(query); }").length, 1, "typed parameter");
+  assert.equal(made("const ROOM = /^x$/; export function f(p) { const re = ROOM; return re.exec(p); }").length, 0, "a regex under another name is not SQL");
 });
 
 await check("a LIMIT or OFFSET from the request must be bound, not templated", () => {
@@ -404,6 +447,8 @@ await check("addColumns adds a listed column, and refuses a table, column or typ
     ["gigs", { notes: "TEXT; DROP TABLE songs; --" }],
     ["gigs", { "' OR 1=1 --": "TEXT" }],
     ["gigs", { notes: "TEXT DEFAULT (abs(1))" }],
+    ["gigs", { notes: "TEXT", "bad name": "TEXT" }],
+    ["gigs", { notes: "TEXT", size: "INTEGER NOT NULL" }],
   ];
   for (const [table, columns] of attempts) {
     let refused = false;
@@ -415,6 +460,103 @@ await check("addColumns adds a listed column, and refuses a table, column or typ
     assert.deepEqual({ tables: db.tables(), gigs: db.columns("gigs") }, before, `nothing changed for ${JSON.stringify([table, columns])}`);
     assert.ok(refused, `refused ${JSON.stringify([table, columns])}`);
   }
+  chat.addColumns(db.sql, "gigs", { notes: "TEXT", order: "TEXT" });
+  assert.deepEqual(db.columns("gigs"), ["gig_id", "venue", "kind", "notes", "order"], "a column named like a SQL word is added like any other");
+});
+
+const SEED = Number(process.env.SQL_AUDIT_SEED ?? 20261127);
+const TRIALS = 600;
+
+/** mulberry32: the same seed gives the same inputs on every run. */
+function seeded(seed: number) {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(state ^ (state >>> 15), state | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+await check(`addColumns, ${TRIALS} seeded inputs (seed ${SEED}): plain names and the callers' types are all added, and one bad table, name or type anywhere is refused with nothing changed`, async () => {
+  const chat = await workerModule<{ addColumns: (sql: unknown, table: string, columns: Record<string, string>) => void }>(`export { addColumns } from "./worker/room-chat.ts";`);
+  const random = seeded(SEED);
+  const pick = <T,>(list: readonly T[]): T => list[Math.floor(random() * list.length)];
+  const run = (chars: string, most: number) => Array.from({ length: Math.floor(random() * (most + 1)) }, () => pick([...chars])).join("");
+  const insert = (text: string, piece: string) => {
+    const at = Math.floor(random() * (text.length + 1));
+    return text.slice(0, at) + piece + text.slice(at);
+  };
+  const LOWER = "abcdefghijklmnopqrstuvwxyz";
+  const KEYWORDS = ["order", "select", "from", "group", "table", "default", "where", "index", "values", "drop"];
+  const TYPES = ["TEXT", "INTEGER", "REAL", "BLOB", "TEXT NOT NULL DEFAULT 'text'", "TEXT NOT NULL DEFAULT 'gig'"];
+  const PUNCTUATION = [";", " ", "'", '"', "-", "--", "(", ")", "\n", "\t", "A", "Z", "é", ".", "`", "[", "]", ",", "/*", "\0", "ı"];
+  const goodName = () => (random() < 0.2 ? pick(KEYWORDS) : pick([...LOWER]) + run(`${LOWER}0123456789_`, 8));
+  const badName = () => {
+    const how = random();
+    if (how < 0.15) return pick(["gigs; DROP TABLE songs; --", "x TEXT; DROP TABLE songs; --", "' OR 1=1 --", '"; DROP TABLE songs; --', 'x" TEXT, "y', "x /* */"]);
+    if (how < 0.25) return pick(["0", "_", "9x", "_x"]) + run(LOWER, 4);
+    if (how < 0.35) return `Q${goodName().toUpperCase()}`;
+    if (how < 0.45) return goodName() + pick(["\n", " ", "\t", "\r\n"]);
+    if (how < 0.5) return "";
+    return insert(goodName(), pick(PUNCTUATION));
+  };
+  const badType = () => {
+    const how = random();
+    if (how < 0.15) return `${pick(TYPES)}; DROP TABLE songs; --`;
+    if (how < 0.3) return `${pick(["TEXT", "INTEGER", "REAL", "BLOB"])} NOT NULL`;
+    if (how < 0.4) return pick(TYPES).toLowerCase();
+    if (how < 0.5) return pick(["", "TEXT ", " TEXT", "TEXT\n", "TEXT DEFAULT (abs(1))", "TEXT DEFAULT 'a' || 'b'", "TEXT PRIMARY KEY", "TEXT UNIQUE", "VARCHAR(20)", "TEXT DEFAULT ''''"]);
+    return insert(pick(TYPES), pick(PUNCTUATION.filter((piece) => piece !== " " && piece !== "A" && piece !== "Z")));
+  };
+
+  const misses: string[] = [];
+  for (let trial = 0; trial < TRIALS && misses.length < 3; trial += 1) {
+    const db = await memorySql();
+    db.sql.exec(`CREATE TABLE songs (id TEXT)`);
+    db.sql.exec(`CREATE TABLE gigs (gig_id TEXT, venue TEXT)`);
+    db.sql.exec(`INSERT INTO songs (id) VALUES ('s1')`);
+    db.sql.exec(`INSERT INTO gigs (gig_id, venue) VALUES ('g1', 'Hall')`);
+    const snapshot = () => JSON.stringify({
+      schema: db.sql.exec(`SELECT type, name, sql FROM sqlite_master ORDER BY name`).toArray(),
+      rows: db.tables().map((table) => [table, db.sql.exec(`SELECT count(*) AS n FROM "${table}"`).one()?.n]),
+    });
+    const before = snapshot();
+
+    const badTable = random() < 0.2;
+    const table = badTable ? badName() : pick(["gigs", "songs"]);
+    const entries: [string, string][] = Array.from({ length: 1 + Math.floor(random() * 4) }, () => [random() < 0.15 ? pick(["gig_id", "venue", "id"]) : goodName(), pick(TYPES)]);
+    const badColumn = !badTable && random() < 0.45;
+    if (badColumn) entries[Math.floor(random() * entries.length)] = random() < 0.5 ? [badName(), pick(TYPES)] : [goodName(), badType()];
+    const columns = Object.fromEntries(entries);
+    const input = JSON.stringify([table, columns]);
+    const had = badTable ? [] : db.columns(table);
+    const added = Object.keys(columns).filter((name) => !had.includes(name));
+
+    let error: unknown = null;
+    try {
+      chat.addColumns(db.sql, table, columns);
+    } catch (thrown) {
+      error = thrown;
+    }
+    const after = snapshot();
+    const miss = (why: string) => misses.push(`trial ${trial} ${input}: ${why}`);
+    if (badTable || badColumn) {
+      if (!error) miss("accepted, but it should be refused");
+      else if (after !== before) miss(`refused (${String(error)}) after the schema changed`);
+      continue;
+    }
+    if (error) {
+      miss(`refused a plain input: ${String(error)}`);
+      continue;
+    }
+    const types = db.sql.exec(`SELECT name, type FROM pragma_table_info(?)`, table).toArray() as { name: string; type: string }[];
+    if (JSON.stringify(types.map((row) => row.name)) !== JSON.stringify([...had, ...added])) miss(`columns are ${JSON.stringify(types.map((row) => row.name))}`);
+    for (const name of added) if (types.find((row) => row.name === name)?.type !== columns[name].split(" ")[0]) miss(`${name} has the wrong type`);
+    chat.addColumns(db.sql, table, columns);
+    if (snapshot() !== after) miss("a second run changed something");
+  }
+  assert.deepEqual(misses, [], `rerun with SQL_AUDIT_SEED=${SEED}`);
 });
 
 type Reply = { status: number; body: any };

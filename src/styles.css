@@ -1219,6 +1219,10 @@ a:focus-visible {
   display: none;
 }
 
+.app:has(.gig-corners) .song-header {
+  grid-template-columns: 48px minmax(0, 1fr) 48px;
+}
+
 .app:has(.gig-corners) .sheet {
   padding-bottom: 80px;
 }

@@ -1,12 +1,13 @@
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { build } from "vite";
 import { DATA_KINDS, PRIVACY_HREF } from "../src/data-kinds.ts";
 import { CONTACT_PLACEHOLDER } from "./build-privacy.ts";
 import { openSite } from "./chrome.ts";
 
-const root = new URL("..", import.meta.url).pathname;
+const root = fileURLToPath(new URL("..", import.meta.url));
 
 let failures = 0;
 function check(ok: boolean, message: string) {

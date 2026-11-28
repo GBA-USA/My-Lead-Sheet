@@ -112,7 +112,12 @@ const HARNESS = `
       send(m) {
         if (hub.down.has(me)) return false;
         hub.log.push({ me, kind: m.kind });
-        if (m.kind === "join-gig") later(() => tell({ kind: "gig", gigId: GIG, you: me + "-sock", leader: hub.held ? hub.held.leader + "-sock" : null, openedAt: 0 }));
+        // As worker/room.ts joinGig does, the leader's socket joining is told to every other phone in the gig too.
+        if (m.kind === "join-gig") {
+          const peers = (you) => ({ kind: "gig", gigId: GIG, you: you + "-sock", leader: hub.held ? hub.held.leader + "-sock" : null, openedAt: 0 });
+          later(() => tell(peers(me)));
+          if (hub.held && hub.held.leader === me) for (const [who, other] of hub.rooms) if (who !== me) other.hear(peers(who));
+        }
         else if (m.kind === "gig-state") later(() => tell({ kind: "gig-state", state: hub.held, at: hub.held ? hub.held.changedAt : null }));
         else if (m.kind === "link" && m.body && m.body.k === "ping") later(() => tell({ kind: "link", from: m.to, body: { k: "pong", n: m.body.n, t0: m.body.t0, band: localNow() }, rx: 0, tx: 0 }));
         else if (m.kind === "gig-op" || m.kind === "gig-start") {
@@ -183,6 +188,10 @@ const HARNESS = `
   };
   w.__follow = () => {
     w.__follower = liveGig({ me: "sam", gigId: GIG, room: fakeRoom("sam"), stun: [], rows: ["server"] });
+  };
+  /** Mike, the backup, on a phone of his own in the gig. */
+  w.__backup = () => {
+    w.__mike = liveGig({ me: "mike", gigId: GIG, room: fakeRoom("mike"), stun: [], rows: ["server"] });
   };
   w.__session = () => (w.__live && w.__live.joined ? w.__live.joined.session : null);
   w.__now = () => localNow();
@@ -1044,6 +1053,74 @@ async function run(site: Site, script: string, css: string) {
       check(seen.length > 30 && off.length === 0, `on every frame of the 1.5 s after the tap the row holds within a row height plus the band scroll's own travel (${off.length} of ${seen.length} frames off${off[0] ? `, first at ${off[0].top.toFixed(1)} px against ${was.top.toFixed(1)}` : ""})`);
     } finally {
       await metrics(PHONE);
+    }
+  });
+
+  it("H8 the live speed ends with the lead", async () => {
+    /**
+     * Terry leads, counts in, taps Scroll faster `taps` times, and loses the lead: he hands it to Sam, or Mike, the backup,
+     * takes it over. Once Terry's phone hears the band clock from the new leader, returns 12 s of his sheet's scrollTop
+     * against band seconds since the scroll's start.
+     */
+    const leadLost = async (how: "hand-off" | "take-over", taps: number) => {
+      const to = how === "hand-off" ? "sam" : "mike";
+      await asLeader({ scrollAlong: true });
+      await countIn();
+      if (!(await need(FASTER, "while the band scroll runs, Terry's Scroll faster"))) return null;
+      await until("Sam's band clock", () => page<number | null>("window.__follower.bandNow()"), (t) => t !== null, 20_000);
+      if (how === "take-over") {
+        await page("window.__backup()");
+        await until("Mike's band clock", () => page<number | null>("window.__mike.bandNow()"), (t) => t !== null, 20_000);
+      }
+      for (let i = 0; i < taps; i += 1) await tap(FASTER);
+      await sleep(2000);
+      if (how === "hand-off") {
+        await tap('[data-stage="more"]');
+        await tap('[data-stage="hand-off"]');
+        await until("the hand-off list", () => has('[data-stage-to="sam"]'), Boolean);
+        await hold('[data-stage-to="sam"]');
+        await until("the ask to reach Sam", () => followerState(), (state) => state?.handoff?.to === "sam");
+      }
+      const took = await page<any>(how === "hand-off" ? `window.__follower.tap({ kind: "accept" })` : `window.__mike.tap({ kind: "takeOver" })`);
+      check(took?.ok === true, `${to} takes the lead by ${how} (${js(took?.refused ?? took?.ok)})`);
+      await until(`Terry's phone to hear ${to} leads`, () => leaderState(), (state) => state?.leader === to);
+      await until("Terry's stage bar to go", () => has(BAR), (there) => !there, 4000);
+      check(!(await has(CORNERS)), `once ${to} leads by ${how}, Terry has no speed pair to see or reset the speed with`);
+      const ticking = `new Promise((done) => { const s = window.__session(); const a = s.bandNow(); setTimeout(() => done(a !== null && s.bandNow() > a), 300); })`;
+      await until(`Terry's band clock to run from ${to}`, () => page<boolean>(ticking), Boolean, 30_000);
+      await sleep(1000);
+      const samples = await page<[number, number][]>(`new Promise((done) => {
+        const s = window.__session();
+        const from = s.view().state.scroll.at(-1).value.startAt;
+        const el = document.getElementById("sheet-scroll");
+        const out = [];
+        const take = () => {
+          out.push([(s.bandNow() - from) / 1000, el.scrollTop]);
+          if (out.length < 48) setTimeout(take, 250); else done(out);
+        };
+        take();
+      })`);
+      if (how === "take-over") await page("window.__mike.close()");
+      return samples;
+    };
+    /** scrollTop at band second `t`, read off the samples in a straight line between the two around it. */
+    const at = (samples: [number, number][], t: number) => {
+      const i = samples.findIndex(([s]) => s >= t);
+      if (i <= 0) return samples[Math.max(i, 0)][1];
+      const [[t0, y0], [t1, y1]] = [samples[i - 1], samples[i]];
+      return y0 + ((y1 - y0) * (t - t0)) / (t1 - t0);
+    };
+    for (const how of ["hand-off", "take-over"] as const) {
+      const plain = await leadLost(how, 0);
+      const sped = await leadLost(how, 4);
+      if (!plain || !sped) continue;
+      const from = Math.max(plain[0][0], sped[0][0]);
+      const to = Math.min(plain[plain.length - 1][0], sped[sped.length - 1][0]);
+      const slope = (samples: [number, number][]) => (at(samples, to) - at(samples, from)) / (to - from);
+      const ratio = slope(sped) / slope(plain);
+      console.log(`       after the ${how}, over band ${from.toFixed(1)}-${to.toFixed(1)} s Terry's sheet moves ${slope(plain).toFixed(1)} px/s after leading at 100%, ${slope(sped).toFixed(1)} px/s after leading at 120%`);
+      check(to - from >= 6 && slope(plain) > 2, `after the ${how} the two runs share at least 6 band seconds of a moving sheet (${(to - from).toFixed(1)} s, ${slope(plain).toFixed(1)} px/s)`);
+      check(Math.abs(ratio - 1) <= 0.05, `after the ${how}, Terry's sheet moves at the band's own pace whatever speed he led at, within 0.05 (${ratio.toFixed(3)})`);
     }
   });
 

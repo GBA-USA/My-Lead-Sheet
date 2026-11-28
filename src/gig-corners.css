@@ -70,7 +70,8 @@
 }
 
 .gig-corner-percent:empty {
-  display: none;
+  padding: 0;
+  background: none;
 }
 
 @media (prefers-reduced-motion: no-preference) {

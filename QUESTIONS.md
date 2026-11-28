@@ -1,3 +1,21 @@
+# p4-gig-corners: 2026-11-28: UI rule 11, the gig top line still reads `~96 bpm`
+
+The gig sheet's top line, `3 of 12 · A major · ~96 bpm`, is drawn by `src/App.tsx:295` with `tempoText` from
+`src/storage.ts`, and `tempoText` writes the `~`. This cook does not draw that line: the brief lets it add one prop to
+App's `GigStageBar` mount and nothing else in `src/App.tsx`, and `src/storage.ts` is on its do-not-touch list. The same
+`tempoText` writes the sheet's own `Tempo: ~96 bpm` meta line, so changing it is one change for every screen.
+Kept to the brief: the line is unchanged. **Asking:** which cook owns `tempoText` for rule 11 (exact `96 bpm` everywhere)?
+
+# p4-gig-corners: 2026-11-28: UI rule 3 and the corner buttons at their ends
+
+Rule 3 says nothing disabled or greyed is ever shown. The brief (empty states, C3, C4) has A− off and dim at the smallest
+text size, A+ at the largest, Scroll slower at 50% and Scroll faster at 150%, the way the top bar's A− A+ and the song
+page's speed group already behave. Read here as no conflict: rule 3 is about controls that do not work, and a stepper at
+its end works and says where the end is (rule 9 asks every stepper to look and behave the same). Built as the brief says.
+**Asking:** only if Brian reads rule 3 as covering a stepper's end stop.
+
+---
+
 # PR #130 deep fix: check:links case 1 and Chrome's srflx-first pair (owner ruling needed)
 
 CI run 46071174653 failed `check:links` case 1 on both attempts at d3956f9, the same way PR #107's run 45281740592 did.

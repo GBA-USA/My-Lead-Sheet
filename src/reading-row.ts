@@ -56,8 +56,9 @@ export function useReadingRow(scale: number) {
   useLayoutEffect(() => {
     const was = held.current;
     held.current = null;
+    if (!was || !was.row.isConnected) return;
     const el = document.getElementById("sheet-scroll");
-    if (!was || !el || !was.row.isConnected) return;
+    if (!el) return;
     const by = was.row.getBoundingClientRect().top - shownTop(el) - was.offset;
     if (Math.abs(by) < 1) return;
     unheard(el);

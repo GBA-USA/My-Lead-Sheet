@@ -1,15 +1,16 @@
-import { useEffect, useState, useSyncExternalStore, type KeyboardEvent } from "react";
+import { lazy, Suspense, useEffect, useId, useRef, useState, useSyncExternalStore, type ComponentProps, type ComponentType, type KeyboardEvent } from "react";
 import { bandSongRef, songFromSent } from "./band-library-model";
 import { PRIVACY_HREF } from "./data-kinds";
 import { GigSong } from "./gig-plan";
+import { useEscape } from "./hooks";
 import type { useMetronome } from "./metronome-view";
 import type { Notation } from "./music";
 import { allOnPhone, heldFor, onPhoneChange, phoneGeneration, type CachedBandSong } from "./phone-db";
 import { songHref, type TabName } from "./route";
 import { groupedSongs, keyName, matchingSetlists, NO_CHIPS } from "./search";
 import { SearchBox, SearchChips } from "./search-box";
-import { CodeOfferButton } from "./setlist-code";
-import { codeOffer } from "./setlist-code-model";
+import type { BuilderTarget, SetlistBuilder as Builder } from "./setlist-builder";
+import "./setlist-builder.css";
 import { LeadSheet } from "./sheet";
 // @ts-expect-error TS5097: song-search.ts holds the same stem, so only ".tsx" names this file in tsc, Vite and esbuild.
 import { SongSearch } from "./song-search.tsx";
@@ -217,22 +218,106 @@ export function SongList({ songs, userId, onAdd, onImport }: { songs: Song[]; us
   );
 }
 
+type BuilderProps = ComponentProps<typeof Builder>;
+
+/**
+ * The builder loads on the first tap, so the main script keeps its size. The service worker holds every built file,
+ * so it opens offline too. Code that still cannot load shows why, and the next tap loads again.
+ */
+const loadBuilder = () =>
+  lazy<ComponentType<BuilderProps>>(() =>
+    import("./setlist-builder").then(
+      (module) => ({ default: module.SetlistBuilder }),
+      () => ({ default: BuilderUnloaded }),
+    ),
+  );
+let SetlistBuilder = loadBuilder();
+
+const MESSAGES = {
+  notLoaded: "The setlist builder couldn't load. Check your connection and try again.",
+  newSetlist: "New setlist",
+  close: "Close",
+};
+
+function BuilderUnloaded({ target, setlists, onClose }: BuilderProps) {
+  const titleId = useId();
+  const close = () => {
+    SetlistBuilder = loadBuilder();
+    onClose();
+  };
+  useEscape(close);
+  const heading = target.kind === "edit" ? (setlists.find((setlist) => setlist.id === target.id)?.name ?? MESSAGES.newSetlist) : MESSAGES.newSetlist;
+  return (
+    <div className="account-backdrop" onClick={close}>
+      <section className="setlist-builder" role="alertdialog" aria-modal="true" aria-labelledby={titleId} onClick={(event) => event.stopPropagation()}>
+        <header className="account-top">
+          <h2 id={titleId}>{heading}</h2>
+          <button type="button" className="account-close" aria-label={MESSAGES.close} onClick={close}>
+            ✕
+          </button>
+        </header>
+        <p className="account-error" role="alert">
+          {MESSAGES.notLoaded}
+        </p>
+      </section>
+    </div>
+  );
+}
+
 /** `onShowCode` is there only while signed in, since a code is made on the server. */
 export function SetlistList({ setlists, songs, onShowCode }: { setlists: Setlist[]; songs: Song[]; onShowCode?: (setlist: Setlist) => void }) {
   const [query, setQuery] = useState("");
+  const [builder, setBuilder] = useState<BuilderTarget | null>(null);
+  const newBtnRef = useRef<HTMLButtonElement>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
   const shown = matchingSetlists(setlists, songs, query);
+
+  const openBuilder = (target: BuilderTarget, trigger: HTMLElement | null) => {
+    returnFocusRef.current = trigger;
+    setBuilder(target);
+  };
+
+  const closeBuilder = () => {
+    const target = returnFocusRef.current;
+    setBuilder(null);
+    requestAnimationFrame(() => {
+      if (document.querySelector("[role=dialog]")) return;
+      if (target && target.isConnected) target.focus();
+      else newBtnRef.current?.focus();
+    });
+  };
+
   return (
     <>
       <SearchBox label="Search setlists" value={query} onChange={setQuery} />
+      <div className="setlists-actions">
+        <button
+          ref={newBtnRef}
+          type="button"
+          className="setlists-new-btn"
+          onClick={(event) => openBuilder({ kind: "new" }, event.currentTarget)}
+        >
+          + New setlist
+        </button>
+      </div>
       {query && shown.length === 0 ? (
         <p className="search-empty" role="status">No setlists match.</p>
+      ) : setlists.length === 0 ? (
+        <p className="search-empty" role="status">No setlists yet.</p>
       ) : (
         <div className="setlists">
           {shown.map((setlist) => (
             <section key={setlist.id} className="setlist" aria-label={setlist.name}>
               <div className="setlist-head">
-                <h2>{setlist.name}</h2>
-                {onShowCode ? <CodeOfferButton offer={codeOffer(setlist.songRefs.length, setlist.copy?.canSendOn !== false)} onShow={() => onShowCode(setlist)} /> : null}
+                <h2>
+                  <button
+                    type="button"
+                    className="setlist-name-btn"
+                    onClick={(event) => openBuilder({ kind: "edit", id: setlist.id }, event.currentTarget)}
+                  >
+                    {setlist.name}
+                  </button>
+                </h2>
                 <a className="live-launch" href={`#/live/${setlist.id}/0`}>
                   Live
                 </a>
@@ -267,6 +352,18 @@ export function SetlistList({ setlists, songs, onShowCode }: { setlists: Setlist
           ))}
         </div>
       )}
+      {builder ? (
+        <Suspense fallback={null}>
+          <SetlistBuilder
+            target={builder}
+            setlists={setlists}
+            songs={songs}
+            onShowCode={onShowCode}
+            onCreated={(id) => setBuilder({ kind: "edit", id })}
+            onClose={closeBuilder}
+          />
+        </Suspense>
+      ) : null}
     </>
   );
 }

@@ -1,3 +1,34 @@
+# p6-setlist-builder self-check fix pass 1 (Nov 28 2026): a rename from another phone while you type (owner: Brian or Terry)
+
+Before this pass, when Phone B renamed a setlist while Phone A was typing a new name for it, Phone A's half-typed name
+was silently replaced by B's. Now the name box keeps what Phone A is typing, and leaving the box saves it over B's name
+(the last edit wins, as with every other setlist edit). While Phone A types, the sheet's heading already shows B's
+name. Escape or Close still throws Phone A's typing away and keeps B's name (B20). Case B30. Ask: is the last edit
+winning right here, or should Phone A see a line such as "Renamed on another phone to ..." before it saves?
+
+---
+
+# p6-setlist-builder fix round (Nov 28 2026): B6 stays green under "let a ticked duplicate through" (owner: CoS)
+
+The brief's mutation table says this mutation must turn B6 red. It does not, in either shape (no dedupe in `added`, or
+no double-tap guard and no dedupe). B6 ticks songs that are not yet in the setlist, and the picker never lets a listed
+song be ticked, so no duplicate can reach Add. Add also closes the picker, so a second quick tap lands on nothing. B6 is
+a commit-1 case and may not be edited. B25 builds the one real path, where a ticked song reaches the setlist by sync
+while the picker is open, and it turns red under both shapes. B19 turns red under the model shape. Ask: is B25 enough
+as this mutation's proof, or should B6 be rewritten to cover it?
+
+---
+
+# p6-setlist-builder fix round (Nov 28 2026): UI rules 1 and 3 against the brief's words (owner: Brian or Terry)
+
+- Rule 3 (no disabled or greyed control). The brief says a song already in the setlist "cannot be ticked", and cases
+  B6, B7 and B15 (commit 1, which may not change) assert that its checkbox is `disabled`. Kept to the rule as far as
+  those cases allow: the box is no longer greyed and reads as a filled tick beside "Already in this setlist", and the
+  picker's Add button appears only once a song is ticked instead of showing greyed. The input itself stays `disabled`.
+  Ask: is a filled, unchangeable tick acceptable, or should the box become a plain check icon (B6, B7, B15 would then
+  need to read the icon instead of `disabled`)?
+- Rule 1 (icons over words for add). The brief dictates the words "+ New setlist" and "+ Add songs", the same pattern
+  as the existing "+ New band". Kept as dictated. Ask: icon only, or keep the words?
 # p6-update-now: 2026-11-27: where the brief and the Groovist UI rules disagree (kept to the rules)
 
 **Rule 3, no dead controls.** In "Empty and error states", the brief says that when only phones from before this cook

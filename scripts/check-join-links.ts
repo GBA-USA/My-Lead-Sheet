@@ -314,7 +314,9 @@ try {
     await site.evaluate(`document.getElementById("tab-setlists").click()`);
     const worship = `document.querySelector("section.setlist[aria-label='Worship Set']")`;
     await waitFor(`!!${worship}`, "the built-in Worship Set");
-    await app.click("Show code", worship);
+    await app.click("Worship Set", worship);
+    await waitFor(`!!document.querySelector(".setlist-builder")`, "the Worship Set builder");
+    await app.click("Show code", `document.querySelector(".setlist-builder")`);
     await waitFor(`!!document.querySelector(".setlist-code-sheet")`, "the setlist code sheet");
     await app.click("Public", `document.querySelector(".setlist-code-sheet")`);
     await fromNoLinks();

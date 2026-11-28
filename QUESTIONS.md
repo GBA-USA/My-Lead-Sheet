@@ -143,12 +143,12 @@ assert.ok(await has(gigView(gigId)), "the gig's screen is still showing");
 ```
 
 `has(selector)` runs `document.querySelector(selector)`. `gigView(gigId)` is not a selector. It returns the JS
-expression `document.querySelector(".gig-view[data-gig=\"â€¦\"]")`, which every other caller drops into `evaluate` or
-`until`. So `querySelector` throws `SyntaxError: â€¦ is not a valid selector` on every run, whatever the app does. On the
+expression `document.querySelector(".gig-view[data-gig=\"…\"]")`, which every other caller drops into `evaluate` or
+`until`. So `querySelector` throws `SyntaxError: … is not a valid selector` on every run, whatever the app does. On the
 first build run K3 failed on exactly that line:
 
 ```
-FAIL K3 joins without a tap: â€¦ SyntaxError: Failed to execute 'querySelector' on 'Document':
+FAIL K3 joins without a tap: … SyntaxError: Failed to execute 'querySelector' on 'Document':
 'document.querySelector(".gig-view[data-gig=\"gig_FMCF4Y8cK2sOWlQpIP3lJA\"]")' is not a valid selector.
 ```
 
@@ -274,7 +274,7 @@ If the Linux Deep verify fails the y line alone, the glyph's offset in its row i
 # p2-song-info: check:ux-metronome-sheet's chord x pin cannot pass on the Windows laptop
 
 The brief asks every listed check to exit 0 before the push, and says pixel pins come from Linux. One case of
-check:ux-metronome-sheet ("the chart's first chord moves up by exactly the block's heightâ€¦", renamed in fix pass 2 to
+check:ux-metronome-sheet ("the chart's first chord moves up by exactly the block's height…", renamed in fix pass 2 to
 "with Song info closed, the chart's first chord and the card's blocks sit exactly at their pinned places") pins the first chord's x
 at 109.59 px at 390 px. On the laptop it reads 112.00, at this branch and on the untouched base 4d4ba74. The chart font
 is the app's own IBM Plex Mono file. Linux draws it at 7.8 px a character, and Windows Edge at a whole 8.0 px:
@@ -287,7 +287,7 @@ changed (src/styles.css, not this cook's file).
 # c23 fix: Band status opens for the admin and the leader on a live gig, and says what it is waiting for
 
 What ships in PR #107: the faces strip and the Band status panel on the band page and the gig view. Before and after
-a gig, anyone in the band can open it and it reads the planned route, Downloaded âœ“ or Not yet (from the pack receipts),
+a gig, anyone in the band can open it and it reads the planned route, Downloaded ✓ or Not yet (from the pack receipts),
 and "Sync and timing show during a live gig." During a live gig, only the band's admin and the gig's leader can open
 it. Members and the backup see the faces as pictures.
 
@@ -632,7 +632,7 @@ The build (c8c061e) is committed. Under the queue rules I did not edit the commi
 `scripts/check-stage.ts:550`, in "two holds in flight: Next, then a section chip before Next lands, and both land". The
 case starts the band's click with `startClick()`, which holds Count in, so the page-side room records three ops from the
 leader: `countIn`, `goTo`, `section`. The assertion asks for exactly two, `[goTo, section]`, so it fails on correct
-behavior. Every other line in the case passes: the pending Next is kept, the chip says "On 4 â–¸", and Sam's phone turns
+behavior. Every other line in the case passes: the pending Next is kept, the chip says "On 4 ▸", and Sam's phone turns
 the section and flips the song each at its own landing.
 
 **Fix (counter only):** count the ops after the click started. No requirement moves.
@@ -737,7 +737,7 @@ index c620867..8f59583 100644
 +      const dropped = await until("dropped", () => view(samSite), (v) => v.strips.some((s) => s.key === "dropped"), 40_000);
        const droppedLog = dropped.strips.filter((s) => s.key === "dropped").pop()!;
        const droppedAfter = (droppedLog.local - droppedLog.heardAt!) / 1000;
-       assert.equal(dropped.strip.words, `Mike's phone dropped Â· still on ${songNumber}`);
+       assert.equal(dropped.strip.words, `Mike's phone dropped · still on ${songNumber}`);
 @@ -683,7 +684,7 @@ async function fakeClock() {
      const at = turned.last.at;
      room.push(turned, at - truth() + 200);

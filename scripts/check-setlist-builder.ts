@@ -305,6 +305,11 @@ const BROWSER_CASES = [
   "B16 delete, then a new one",
   "B17 a built-in setlist changed",
   "B18 one write per drop",
+  "B20 closing mid-rename keeps the stored name",
+  "B21 closing the picker adds nothing",
+  "B22 a song missing from the library",
+  "B23 Show code keeps focus out of the screen behind",
+  "B24 no setlists yet",
 ] as const;
 
 let apiBase = "";
@@ -776,6 +781,164 @@ try {
     assert.ok((await readStoredLibrary()).setlists.some((entry) => entry.id === 904 && entry.name === "Renamed Porch"), "renamed setlist persists via reader");
   });
 
+  const nameBox = '.setlist-builder input[aria-label="Setlist name"]';
+  const tapAt = async (x: number, y: number) => {
+    await touchStart(x, y);
+    await sleep(40);
+    await touchEnd();
+    await settle(150);
+  };
+  const centerOf = async (selector: string) => {
+    const spot = await s.evaluate<{ x: number; y: number } | null>(`(() => {
+      const el = document.querySelector(${js(selector)});
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    })()`);
+    assert.ok(spot, `${selector} is on screen`);
+    return spot;
+  };
+  const pressEscape = async () => {
+    await s.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
+    await s.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
+    await settle(150);
+  };
+  const storedSetlist = async (id: number) => (await readStoredLibrary()).setlists.find((entry) => entry.id === id);
+
+  // ---------------------------------------------------------------------------------------------- B20 closing mid-rename keeps the stored name
+  await check("B20 closing mid-rename keeps the stored name", async () => {
+    const backdropSpot = async () => {
+      const spot = { x: WIDTH / 2, y: 24 };
+      const onBackdrop = await s.evaluate<boolean>(`document.elementFromPoint(${spot.x}, ${spot.y})?.classList.contains("account-backdrop") ?? false`);
+      assert.ok(onBackdrop, "the top of the screen above the builder is the backdrop");
+      return spot;
+    };
+    const ways: { how: string; close: () => Promise<void> }[] = [
+      {
+        how: "a tap on the backdrop",
+        close: async () => {
+          const spot = await backdropSpot();
+          await tapAt(spot.x, spot.y);
+        },
+      },
+      {
+        how: "a mouse click on the backdrop",
+        close: async () => {
+          const spot = await backdropSpot();
+          await s.send("Input.dispatchMouseEvent", { type: "mousePressed", x: spot.x, y: spot.y, button: "left", clickCount: 1 });
+          await s.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: spot.x, y: spot.y, button: "left", clickCount: 1 });
+          await settle(150);
+        },
+      },
+      { how: "Escape", close: pressEscape },
+      {
+        how: "a tap on Close",
+        close: async () => {
+          const spot = await centerOf('.setlist-builder [aria-label="Close"]');
+          await tapAt(spot.x, spot.y);
+        },
+      },
+    ];
+    for (const way of ways) {
+      await openBuilderFor("Twin Check");
+      await s.evaluate(`(() => {
+        const el = document.querySelector(${js(nameBox)});
+        el.focus();
+        el.setSelectionRange(el.value.length, el.value.length);
+      })()`);
+      await s.send("Input.insertText", { text: " Draft" });
+      await settle(60);
+      assert.equal(await s.evaluate<string>(`document.querySelector(${js(nameBox)}).value`), "Twin Check Draft", `a new name is typed before ${way.how}`);
+      await way.close();
+      await app.until(`!document.querySelector(".setlist-builder[role=dialog]")`, `${way.how} closes the builder`);
+      await settle(100);
+      assert.equal((await storedSetlist(903))?.name, "Twin Check", `${way.how} in the middle of a rename keeps the stored name`);
+      assert.equal(await s.evaluate<boolean>(`!!document.querySelector('section.setlist[aria-label="Twin Check"]')`), true, `${way.how}: the Setlists screen keeps the old name`);
+    }
+    await reloadSetlists();
+    assert.equal((await storedSetlist(903))?.name, "Twin Check", "the old name holds after a reload");
+    assert.equal(await s.evaluate<boolean>(`!!document.querySelector('section.setlist[aria-label="Twin Check Draft"]')`), false, "no draft name on the Setlists screen after a reload");
+  });
+
+  // ---------------------------------------------------------------------------------------------- B21 closing the picker adds nothing
+  await check("B21 closing the picker adds nothing", async () => {
+    const before = ["local/810", "local/811"];
+    assert.deepEqual((await storedSetlist(903))?.songRefs, before, "Twin Check holds its two songs before");
+    const pickerBox = `document.querySelector('.setlist-picker-row input[type="checkbox"]')`;
+    const tickLantern = async () => {
+      if (!(await s.evaluate<boolean>(`!!document.querySelector(".setlist-picker")`))) {
+        await app.click("+ Add songs", `document.querySelector(".setlist-builder")`);
+        await app.until(`!!document.querySelector(".setlist-picker")`, "the picker opens");
+      }
+      await setInputValue('.setlist-picker input[type="search"]', "Lantern Road");
+      await settle(80);
+      assert.equal(await s.evaluate<boolean>(`${pickerBox}.checked`), false, "Lantern Road starts unticked");
+      await s.evaluate(`${pickerBox}.click()`);
+      await settle(50);
+      assert.equal(await s.evaluate<boolean>(`${pickerBox}.checked`), true, "Lantern Road is ticked");
+    };
+
+    await openBuilderFor("Twin Check");
+    await tickLantern();
+    const back = await centerOf('.setlist-builder [aria-label="Back"]');
+    await tapAt(back.x, back.y);
+    await app.until(`!document.querySelector(".setlist-picker")`, "Back closes the picker");
+    assert.deepEqual(await builderTitles(), ["Same Horizon", "Same Horizon"], "Back adds nothing on screen");
+    assert.deepEqual((await storedSetlist(903))?.songRefs, before, "Back adds nothing stored");
+
+    await tickLantern();
+    await pressEscape();
+    await app.until(`!document.querySelector(".setlist-picker")`, "Escape closes the picker");
+    assert.equal(await s.evaluate<boolean>(`!!document.querySelector(".setlist-builder[role=dialog]")`), true, "Escape on the picker leaves the builder open");
+    assert.deepEqual(await builderTitles(), ["Same Horizon", "Same Horizon"], "Escape adds nothing on screen");
+    assert.deepEqual((await storedSetlist(903))?.songRefs, before, "Escape adds nothing stored");
+
+    await tickLantern();
+    const close = await centerOf('.setlist-builder [aria-label="Close"]');
+    await tapAt(close.x, close.y);
+    await app.until(`!document.querySelector(".setlist-builder[role=dialog]")`, "Close shuts the builder from the picker");
+    assert.deepEqual((await storedSetlist(903))?.songRefs, before, "Close from the picker adds nothing stored");
+
+    await reloadSetlists();
+    assert.deepEqual(await setlistScreenTitles("Twin Check"), ["Same Horizon", "Same Horizon"], "nothing was added after a reload");
+    assert.deepEqual((await storedSetlist(903))?.songRefs, before, "nothing was added through the reader after a reload");
+  });
+
+  // ---------------------------------------------------------------------------------------------- B22 a song missing from the library
+  await check("B22 a song missing from the library", async () => {
+    await s.evaluate(`(() => {
+      const lib = JSON.parse(localStorage.getItem("leadSheetsLibraryV2"));
+      lib.setlists = [...lib.setlists.filter((each) => each.id !== 908), { id: 908, name: "Ghost Row", songIds: [801, 899, 802] }];
+      localStorage.setItem("leadSheetsLibraryV2", JSON.stringify(lib));
+    })()`);
+    await reloadSetlists();
+    const songsBefore = (await readStoredLibrary()).songs.map((song) => song.ref).sort();
+    assert.equal(songsBefore.includes("local/899"), false, "the library has no song 899");
+
+    const rowTexts = () => s.evaluate<string[]>(`[...document.querySelectorAll(".setlist-builder [data-builder-row] .setlist-builder-song")].map((el) => el.textContent.trim())`);
+    await openBuilderFor("Ghost Row");
+    const opened = await rowTexts();
+    assert.equal(opened.length, 3, `three rows open (${js(opened)})`);
+    assert.equal(opened[1], "Missing from this library", `the second row reads Missing from this library (${js(opened)})`);
+
+    const first = await rowCenter(0);
+    await holdAndDrag(1, first.top - 10, { holdMs: 600 });
+    assert.equal((await rowTexts())[0], "Missing from this library", "the missing row is dragged to the top");
+    assert.deepEqual(await builderTitles(), ["Lantern Road", "Copper Kettle"], "the other rows keep their order");
+    assert.deepEqual((await storedSetlist(908))?.songRefs, ["local/899", "local/801", "local/802"], "the drag of the missing row is saved");
+
+    await s.evaluate(`document.querySelectorAll(".setlist-builder [data-builder-row] .setlist-builder-remove")[0].click()`);
+    await settle(150);
+    assert.deepEqual(await rowTexts().then((rows) => rows.length), 2, "Remove takes the missing row off");
+    assert.deepEqual((await storedSetlist(908))?.songRefs, ["local/801", "local/802"], "the remove of the missing row is saved");
+    await closeBuilder();
+
+    await reloadSetlists();
+    assert.deepEqual(await setlistScreenTitles("Ghost Row"), ["Lantern Road", "Copper Kettle"], "Ghost Row after a reload");
+    assert.deepEqual((await storedSetlist(908))?.songRefs, ["local/801", "local/802"], "Ghost Row through the reader after a reload");
+    assert.deepEqual((await readStoredLibrary()).songs.map((song) => song.ref).sort(), songsBefore, "My Songs is unchanged");
+  });
+
   // ---------------------------------------------------------------------------------------------- B11 delete
   await check("B11 delete", async () => {
     // 1. Built-in setlist has no Delete button and shows its line
@@ -1036,6 +1199,24 @@ try {
     await app.until(`!!document.querySelector(".setlist-code-sheet")`, "MySetlistCodeSheet opens from builder");
     await s.evaluate(`document.querySelector(".setlist-code-sheet .account-close")?.click()`);
     await app.until(`!document.querySelector(".setlist-code-sheet")`, "code sheet closes");
+  });
+
+  // ---------------------------------------------------------------------------------------------- B23 Show code keeps focus out of the screen behind
+  await check("B23 Show code keeps focus out of the screen behind", async () => {
+    await openBuilderFor("Worship Set");
+    await app.click("Show code", `document.querySelector(".setlist-builder")`);
+    await app.until(`!!document.querySelector(".setlist-code-sheet")`, "the code sheet opens from the builder");
+    await s.evaluate(`new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))`);
+    await settle(150);
+    const where = await s.evaluate<string>(`(() => {
+      const el = document.activeElement;
+      if (el?.closest("section.setlist")) return "setlists: " + el.textContent.trim();
+      if (el?.closest(".setlist-code-sheet")) return "code sheet";
+      return el?.tagName ?? "";
+    })()`);
+    assert.ok(!where.startsWith("setlists:"), `focus stays out of the Setlists screen behind the code sheet (${where})`);
+    await s.evaluate(`document.querySelector(".setlist-code-sheet .account-close")?.click()`);
+    await app.until(`!document.querySelector(".setlist-code-sheet")`, "the code sheet closes");
   });
 
   // Set up Phone B on the same account via password for B12, B16, B17
@@ -1341,6 +1522,57 @@ try {
       }
     } finally {
       await perAcc.worker.dispose();
+    }
+  });
+
+  // ---------------------------------------------------------------------------------------------- B24 no setlists yet
+  await check("B24 no setlists yet", async () => {
+    const harness = await build({
+      stdin: {
+        contents: `
+          import { createElement } from "react";
+          import { createRoot } from "react-dom/client";
+          import { SetlistList } from "./src/library-lists.tsx";
+          window.__mountEmptySetlists = () => {
+            const host = document.createElement("div");
+            host.id = "empty-setlists";
+            host.className = "app";
+            document.body.append(host);
+            const reactRoot = createRoot(host);
+            reactRoot.render(createElement(SetlistList, { setlists: [], songs: [] }));
+            window.__unmountEmptySetlists = () => {
+              reactRoot.unmount();
+              host.remove();
+            };
+          };`,
+        resolveDir: root,
+        loader: "tsx",
+      },
+      bundle: true,
+      write: false,
+      format: "iife",
+      platform: "browser",
+      jsx: "automatic",
+      logLevel: "silent",
+      loader: { ".css": "empty" },
+      define: { "process.env.NODE_ENV": '"production"' },
+    });
+    await s.evaluate(`${harness.outputFiles[0].text}; window.__mountEmptySetlists(); true`);
+    try {
+      await app.until(`!!document.querySelector("#empty-setlists [role=status]")`, "the empty Setlists screen");
+      const seen = await s.evaluate<{ lines: string[]; buttons: string[]; setlists: number }>(`(() => {
+        const host = document.getElementById("empty-setlists");
+        return {
+          lines: [...host.querySelectorAll("[role=status]")].map((el) => el.textContent.trim()),
+          buttons: [...host.querySelectorAll("button")].map((b) => b.textContent.trim()),
+          setlists: host.querySelectorAll("section.setlist").length,
+        };
+      })()`);
+      assert.deepEqual(seen.lines, ["No setlists yet."], "the screen says there are no setlists yet");
+      assert.ok(seen.buttons.includes("+ New setlist"), `+ New setlist is offered (${js(seen.buttons)})`);
+      assert.equal(seen.setlists, 0, "no setlist sections");
+    } finally {
+      await s.evaluate(`window.__unmountEmptySetlists?.(); true`);
     }
   });
 

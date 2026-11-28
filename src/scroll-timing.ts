@@ -502,9 +502,15 @@ function sungPoints(sections: SungSection[], laid: LaidSection[]): { at: number;
   ];
 }
 
-/** The sheet puts each point's y on the reading line at its time, in straight lines between. */
+/**
+ * The sheet puts each point's y on the reading line at its time, in straight lines between. A chart whose first line
+ * starts above the reading line moves at once: its sung line starts where the chart puts it and eases down to the
+ * reading line while the sheet moves at half the song's pace.
+ */
 function sungTrack(points: { at: number; y: number }[], reading: number, clamp: (at: number) => number): Track {
-  const lines = points.map((point) => clamp(point.y - reading));
+  const top = points[0].y;
+  const line = (y: number) => (top < reading ? Math.min(reading, (top + y) / 2) : reading);
+  const lines = points.map((point) => clamp(point.y - line(point.y)));
   const start = lines[0];
   const end = lines[lines.length - 1];
   const songEnd = points[points.length - 1].at;
@@ -556,9 +562,11 @@ interface Scroller {
  * The timed clock is written to `clock` for teach taps. It moves with `time`, so in a gig every frame lands where
  * band time puts it however late the frame is.
  * The song's own pace holds the line being sung on the sheet's middle, so lines ahead are below it and lines just
- * played above. The even pace started from the top of the chord section holds there for its first 2 seconds, so the
- * first chords can be read, and plays the rest a touch faster to still end on time. A taught version keeps its own
- * timing, and a resume or a live take does not hold. `onProgress` hears how far through its path each timed frame is.
+ * played above; a chart that starts higher eases its sung line down to the middle. The even pace started from the
+ * top of the chord section holds there for its first 2 seconds, so the first chords can be read, and plays the rest a
+ * touch faster to still end on time. A taught version keeps its own timing, and a resume or a live take does not hold.
+ * When what sits above the chart grows or shrinks mid-run, the path moves with the chart and keeps its shape.
+ * `onProgress` hears how far through its path each timed frame is.
  */
 export function runScroll(
   el: Scroller,
@@ -570,14 +578,18 @@ export function runScroll(
   onProgress?: (progress: number) => void,
 ): () => void {
   const limit = () => Math.max(0, el.scrollHeight - el.clientHeight);
+  /** Where the chart starts as this run begins. */
+  let origin: number | undefined;
   /** Null for the page speed. */
   const track = (current: Motion): Path | null => {
     const max = limit();
-    const clamp = (at: number) => Math.min(max, Math.max(0, at));
     const found = section();
+    origin ??= found?.start;
+    const shift = found && origin !== undefined ? found.start - origin : 0;
+    const clamp = (at: number) => Math.min(max, Math.max(0, shift, at));
     const sung = current.kind === "learned" ? undefined : current.sung;
-    const points = sung ? sungPoints(sung.sections, found?.laid?.() ?? []) : [];
-    if (sung && points.length) return { ...sungTrack(points, el.clientHeight * SUNG_READING, clamp), rate: sung.rate, sung: true };
+    const points = sung ? sungPoints(sung.sections, found?.laid?.() ?? []).map(({ at, y }) => ({ at, y: y - shift })) : [];
+    if (sung && points.length) return { ...sungTrack(points, el.clientHeight * SUNG_READING, (at) => clamp(at + shift)), rate: sung.rate, sung: true };
     if (current.kind === "pace") return null;
     const box = found ?? { start: 0, end: max };
     if (current.kind === "learned") return { ...learnedTrack(current.arrivals, (box.lines?.() ?? [box.start, box.end]).map(clamp)), rate: current.rate };
